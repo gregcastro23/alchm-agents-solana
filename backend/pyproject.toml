@@ -1,0 +1,64 @@
+# ---------------------------------------------------------------------------
+# Packaging for the Planetary Agents MCP server (sibling to @alchm/mcp-server).
+#
+# This publishes backend/planetary_agents_mcp_server.py as a standalone PyPI
+# distribution (`uvx alchm-planetary-agents-mcp` / `planetary-agents-mcp`) for
+# the MCP registry entry io.github.gregcastro23/planetary-agents.
+#
+# Only the 5 modules in the server's import closure are shipped (py-modules
+# whitelist below) — the server is a thin client that proxies to the hosted
+# FastAPI backend over HTTP, so it does NOT need the rest of backend/. The
+# Railway deploy builds via backend/Dockerfile (pip install -r requirements.txt)
+# and never `pip install .`, so this [project] block does not affect prod.
+# ---------------------------------------------------------------------------
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "alchm-planetary-agents-mcp"
+version = "1.0.0"
+description = "Planetary Agents MCP server — converse with historical-figure personas, council-feed threads, and culinary debates from alchm.kitchen."
+readme = "pa-mcp-README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "gregcastro23" }]
+keywords = ["mcp", "model-context-protocol", "agents", "personas", "astrology", "alchemy"]
+dependencies = [
+    "httpx>=0.27",
+    "sqlalchemy>=2.0",
+    "python-dotenv>=1.0",
+]
+
+[project.scripts]
+planetary-agents-mcp = "planetary_agents_mcp_server:run"
+
+[project.urls]
+Homepage = "https://agents.alchm.kitchen"
+Repository = "https://github.com/gregcastro23/alchm-agents-app"
+
+[tool.setuptools]
+# Flat single-file modules — exactly the server's import closure. `crud`
+# (jing/synastry natal-chart lookup) is intentionally omitted; it is imported
+# lazily and degrades gracefully when absent, so the package stays lean and
+# free of the backend's pydantic/schemas graph.
+py-modules = [
+    "planetary_agents_mcp_server",
+    "alchm_mcp",
+    "mcp_invocation_log",
+    "database",
+    "models",
+]
+
+[tool.ruff]
+target-version = "py311"
+
+[tool.ruff.lint]
+# Enable select rules (E: pycodestyle, F: Pyflakes)
+select = ["E", "F"]
+
+# Ignore specific rules
+# E701: multiple statements on one line (colon) -> sometimes useful for short guard clauses
+# E402: module level import not at top of file -> needed for circular dependency workarounds in local files
+# E501: line too long -> prompts and strings should be allowed to be long
+ignore = ["E701", "E402", "E501"]

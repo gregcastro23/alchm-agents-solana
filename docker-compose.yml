@@ -1,0 +1,235 @@
+# Planetary Agents - Production Docker Compose Configuration
+# Complete full-stack deployment with all services
+
+version: '3.8'
+
+services:
+  # ==============================================
+  # Frontend Service (Next.js)
+  # ==============================================
+  frontend:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      target: runner
+      args:
+        - DOCKER_BUILD=true
+    container_name: planetary-frontend
+    ports:
+      - '3000:3000'
+    environment:
+      - NODE_ENV=production
+      - NEXT_TELEMETRY_DISABLED=1
+      - NEXT_PUBLIC_BETA_MODE=true
+      - DATABASE_URL=postgresql://planetary:consciousness@postgres:5432/planetary_agents
+      - REDIS_URL=redis://redis:6379
+      - BACKEND_URL=http://backend:8000
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GALILEO_PROJECT=${GALILEO_PROJECT}
+      - GALILEO_API_KEY=${GALILEO_API_KEY}
+      # Beta optimization flags
+      - NEXT_PUBLIC_FEEDBACK_ENABLED=true
+      - NEXT_PUBLIC_PERFORMANCE_MONITORING=true
+      - NEXT_PUBLIC_ACCESSIBILITY_MODE=true
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      backend:
+        condition: service_healthy
+    volumes:
+      - frontend_logs:/app/logs
+    restart: unless-stopped
+    healthcheck:
+      test:
+        [
+          'CMD',
+          'node',
+          '-e',
+          "require('http').get('http://localhost:3000/api/health', (res) => process.exit(res.statusCode === 200 ? 0 : 1)).on('error', () => process.exit(1))",
+        ]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    labels:
+      - 'traefik.enable=true'
+      - 'traefik.http.routers.frontend.rule=Host(`planetary-agents.local`)'
+      - 'traefik.http.routers.frontend.entrypoints=websecure'
+      - 'traefik.http.routers.frontend.tls.certresolver=letsencrypt'
+      - 'traefik.http.services.frontend.loadbalancer.server.port=3000'
+    networks:
+      - planetary-network
+
+  # ==============================================
+  # Backend Service (Express.js Gateway)
+  # ==============================================
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+      target: production
+    container_name: planetary-backend
+    ports:
+      - '8000:8000'
+      - '8001:8001' # WebSocket port
+    environment:
+      - NODE_ENV=production
+      - PORT=8000
+      - WEBSOCKET_PORT=8001
+      - REDIS_URL=redis://redis:6379
+      - ALCHM_BACKEND_URL=https://alchm-backend.onrender.com
+      - PLANETARY_HOURS_BACKEND=true
+      - THERMODYNAMICS_BACKEND=true
+      - TOKEN_CALCULATIONS_BACKEND=true
+      - KINETICS_BACKEND=true
+      - CORS_ORIGIN=http://frontend:3000
+    depends_on:
+      redis:
+        condition: service_healthy
+    volumes:
+      - backend_logs:/app/logs
+      - backend_temp:/app/temp
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'node', 'scripts/health-check.js']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 15s
+    networks:
+      - planetary-network
+
+  # ==============================================
+  # Database Service (PostgreSQL)
+  # ==============================================
+  postgres:
+    image: postgres:15-alpine
+    container_name: planetary-postgres
+    ports:
+      - '5432:5432'
+    environment:
+      - POSTGRES_DB=planetary_agents
+      - POSTGRES_USER=planetary
+      - POSTGRES_PASSWORD=consciousness
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./database/init:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U planetary -d planetary_agents']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    networks:
+      - planetary-network
+
+  # ==============================================
+  # Cache Service (Redis)
+  # ==============================================
+  redis:
+    image: redis:7-alpine
+    container_name: planetary-redis
+    ports:
+      - '6379:6379'
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 512mb
+      --maxmemory-policy allkeys-lru
+      --save 900 1
+      --save 300 10
+      --save 60 10000
+    volumes:
+      - redis_data:/data
+      - ./redis/redis.conf:/usr/local/etc/redis/redis.conf
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+    networks:
+      - planetary-network
+
+  # ==============================================
+  # Reverse Proxy (Traefik)
+  # ==============================================
+  traefik:
+    image: traefik:v3.0
+    container_name: planetary-traefik
+    ports:
+      - '80:80'
+      - '443:443'
+      - '8080:8080' # Traefik dashboard
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./traefik/traefik.yml:/etc/traefik/traefik.yml:ro
+      - ./traefik/dynamic:/etc/traefik/dynamic:ro
+      - traefik_acme:/letsencrypt
+    environment:
+      - TRAEFIK_API_INSECURE=true
+      - TRAEFIK_PROVIDERS_DOCKER=true
+      - TRAEFIK_PROVIDERS_DOCKER_EXPOSED_BY_DEFAULT=false
+    restart: unless-stopped
+    profiles:
+      - proxy
+    networks:
+      - planetary-network
+
+  # ==============================================
+  # Monitoring Service (Watchtower)
+  # ==============================================
+  watchtower:
+    image: containrrr/watchtower
+    container_name: planetary-watchtower
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    environment:
+      - WATCHTOWER_CLEANUP=true
+      - WATCHTOWER_POLL_INTERVAL=3600
+      - WATCHTOWER_INCLUDE_RESTARTING=true
+      - WATCHTOWER_LABEL_ENABLE=true
+    restart: unless-stopped
+    profiles:
+      - monitoring
+    networks:
+      - planetary-network
+
+# ==============================================
+# Volumes
+# ==============================================
+volumes:
+  postgres_data:
+    driver: local
+    name: planetary_postgres_data
+  redis_data:
+    driver: local
+    name: planetary_redis_data
+  frontend_logs:
+    driver: local
+    name: planetary_frontend_logs
+  backend_logs:
+    driver: local
+    name: planetary_backend_logs
+  backend_temp:
+    driver: local
+    name: planetary_backend_temp
+  traefik_acme:
+    driver: local
+    name: planetary_traefik_acme
+
+# ==============================================
+# Networks
+# ==============================================
+networks:
+  planetary-network:
+    name: planetary-agents-network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.20.0.0/16

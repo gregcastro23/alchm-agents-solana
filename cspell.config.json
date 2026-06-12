@@ -1,0 +1,14 @@
+{
+  "version": "0.2",
+  "language": "en",
+  "ignorePaths": [
+    "**/*.env",
+    "render-backend.env",
+    "render-frontend.env",
+    ".env",
+    ".env.*",
+    "backend/.env",
+    "backend/.env.*"
+  ],
+  "words": ["Alchm", "ALCHM", "GALILEO", "NextAuth", "Prisma", "ioredis", "tsx", "cronjob", "csrf"]
+}

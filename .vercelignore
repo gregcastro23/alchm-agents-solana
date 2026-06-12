@@ -1,0 +1,61 @@
+# ============================================
+# Vercel Build Exclusions
+# ============================================
+# Exclude backend folder and its dependencies from Vercel builds
+# This prevents swisseph compilation errors on the frontend
+
+# Backend directory (built on Render separately)
+backend/
+pa-rust-backend/
+
+# Desktop app sources and local build output (distributed separately via releases)
+src-tauri/
+
+# Local dependency/build/git artifacts
+node_modules/
+.next/
+.git/
+.turbo/
+coverage/
+test-results/
+storybook-static/
+
+# Backend dependency artifacts
+backend/node_modules/
+backend/dist/
+backend/.yarn/
+
+# Yarn workspace artifacts that might include backend deps
+.yarn/cache/
+.yarn/install-state.gz
+
+# Environment files (use Vercel dashboard instead)
+.env.local
+.env.*.local
+backend/.env*
+
+# Local databases/state files
+*.db
+*.db-shm
+*.db-wal
+*.sqlite
+*.sqlite-shm
+*.sqlite-wal
+*.sqlite3
+*.sqlite3-shm
+*.sqlite3-wal
+prisma/dev.db
+
+# Test and development files
+backend/tests/
+backend/scripts/
+backend/docker/
+test-site.js
+test-results-*.png
+*.log
+.DS_Store
+**/.DS_Store
+
+# Documentation specific to backend
+backend/RENDER_*.txt
+backend/.env.render.*

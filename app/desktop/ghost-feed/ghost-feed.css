@@ -1,0 +1,176 @@
+html.desktop-ghost-feed-html,
+html:has(.desktop-ghost-feed),
+body:has(.desktop-ghost-feed),
+body.desktop-ghost-feed-body {
+  background: transparent !important;
+  overflow: hidden !important;
+}
+
+body:has(.desktop-ghost-feed),
+body.desktop-ghost-feed-body {
+  min-height: 100vh;
+}
+
+body:has(.desktop-ghost-feed) .nav-cosmic,
+body.desktop-ghost-feed-body .nav-cosmic,
+body:has(.desktop-ghost-feed) .fixed.bottom-4.right-4.z-50,
+body.desktop-ghost-feed-body .fixed.bottom-4.right-4.z-50 {
+  display: none !important;
+}
+
+body:has(.desktop-ghost-feed) main,
+body.desktop-ghost-feed-body main {
+  background: transparent !important;
+  min-height: 100vh;
+}
+
+.desktop-ghost-feed {
+  --surface: transparent;
+  --surface-2: rgba(25, 25, 25, 0.4);
+  --surface-hi: rgba(25, 25, 25, 0.58);
+  --border: rgba(255, 255, 255, 0.13);
+  --border-hi: rgba(255, 255, 255, 0.24);
+  --border-gold: rgba(245, 181, 66, 0.3);
+  --r-sm: 6px;
+  --r-md: 8px;
+  --r-lg: 8px;
+  position: fixed;
+  inset: 0;
+  overflow: hidden;
+  background: transparent;
+}
+
+.ghost-drag-rail {
+  position: fixed;
+  top: 8px;
+  left: 12px;
+  right: 12px;
+  z-index: 50;
+  height: 24px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(25, 25, 25, 0.34);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  user-select: none;
+}
+
+.ghost-drag-rail span {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: rgba(242, 237, 230, 0.42);
+}
+
+.desktop-ghost-feed .cosmic-feed-root {
+  background: transparent;
+  color: var(--ink);
+}
+
+.desktop-ghost-feed .cosmic-feed-root::before,
+.desktop-ghost-feed .cosmic-feed-root::after {
+  display: none;
+}
+
+.desktop-ghost-feed .cosmic-feed-root .app {
+  grid-template-rows: 1fr;
+  height: 100vh;
+  background: transparent;
+}
+
+.desktop-ghost-feed .topbar {
+  display: none;
+}
+
+.desktop-ghost-feed .shell {
+  grid-template-columns: minmax(0, 1fr);
+  gap: 0;
+  height: 100vh;
+  padding: 42px 10px 10px;
+  background: transparent;
+}
+
+.desktop-ghost-feed .shell > .col {
+  min-width: 0;
+  overflow: visible;
+  border: 0;
+  border-radius: 0;
+  background: transparent;
+  box-shadow: none;
+  backdrop-filter: none;
+}
+
+.desktop-ghost-feed .feed-head,
+.desktop-ghost-feed .composer {
+  display: none;
+}
+
+.desktop-ghost-feed .col-body {
+  overflow-y: auto;
+  overflow-x: visible;
+  scrollbar-width: none;
+}
+
+.desktop-ghost-feed .col-body::-webkit-scrollbar {
+  display: none;
+}
+
+.desktop-ghost-feed .feed-list {
+  gap: 10px;
+  padding: 0 0 34px;
+}
+
+.desktop-ghost-feed .card {
+  border-radius: 8px;
+  border-color: rgba(255, 255, 255, 0.13);
+  background: rgba(25, 25, 25, 0.4);
+  box-shadow:
+    0 0 0 1px rgba(255, 255, 255, 0.05),
+    0 14px 36px rgba(0, 0, 0, 0.32);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  padding: 14px;
+}
+
+.desktop-ghost-feed .card:hover {
+  border-color: rgba(255, 255, 255, 0.24);
+}
+
+.desktop-ghost-feed .card.duel.active,
+.desktop-ghost-feed .streaming-card {
+  box-shadow:
+    0 0 0 1px rgba(245, 181, 66, 0.18),
+    0 18px 44px rgba(0, 0, 0, 0.38),
+    0 0 34px rgba(245, 181, 66, 0.1);
+}
+
+.desktop-ghost-feed .card-enter {
+  animation: ghostCardIn 280ms ease both;
+}
+
+.desktop-ghost-feed .drawer {
+  width: min(92vw, 380px);
+  border-radius: 8px 0 0 8px;
+  background: rgba(25, 25, 25, 0.58);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+}
+
+.desktop-ghost-feed .drawer-backdrop {
+  background: transparent;
+}
+
+@keyframes ghostCardIn {
+  from {
+    opacity: 0;
+    transform: translate3d(0, 8px, 0);
+  }
+  to {
+    opacity: 1;
+    transform: translate3d(0, 0, 0);
+  }
+}

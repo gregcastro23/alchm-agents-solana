@@ -1,0 +1,27 @@
+# Cursor ignore file - lists files that should be hidden in the Cursor IDE
+
+# IMPORTANT: DO NOT ignore .env files
+# !.env
+# !.env.*
+
+# dependencies
+/node_modules
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# debug logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo 

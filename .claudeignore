@@ -1,0 +1,70 @@
+# Claude AI Assistant - Ignore File
+# Files and directories to ignore when providing context to Claude
+
+# Dependencies and build artifacts
+node_modules/
+.next/
+dist/
+build/
+out/
+
+# Lock files and package manager artifacts
+package-lock.json
+yarn.lock
+pnpm-lock.yaml
+.pnpm-store/
+
+# Environment and configuration
+.env*
+!.env.example
+.vercel/
+
+# IDE and editor files
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS generated files
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+
+# Logs
+logs/
+*.log
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+
+# Runtime and cache
+.cache/
+.temp/
+.tmp/
+*.tsbuildinfo
+
+# Testing
+coverage/
+.nyc_output/
+
+# Documentation that doesn't need context
+*.md
+!CLAUDE.md
+!README.md
+
+# Large data files
+*.ipynb
+*.csv
+*.json.bak
+*.mjs.bak
+
+# Generated or temporary files
+test-galileo.*
+copy-env-template.sh
+start-dev.sh
+update-env.mjs

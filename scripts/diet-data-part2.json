@@ -1,0 +1,153 @@
+{
+  "rene-descartes": {
+    "staples": ["Bread", "Cheese", "Ragout (stew)", "Eggs", "Fresh vegetables"],
+    "favoriteFoods": [
+      "Late breakfast (slept until noon)",
+      "French ragout",
+      "Dutch cheese",
+      "Simple one-pot meals"
+    ],
+    "avoidedFoods": ["Heavy meals early in the day", "Excess in general"],
+    "dietaryPhilosophy": "Descartes approached food rationally, eating moderately and believing good digestion was essential for clear thinking. He famously stayed in bed until noon.",
+    "culturalCuisine": "17th-century French-Dutch",
+    "beverages": ["Coffee", "Wine", "Water"],
+    "foodLore": "Descartes spent years in the Netherlands where he adopted simpler Dutch eating habits. He believed his late-rising, moderate-eating lifestyle contributed to his mental clarity."
+  },
+  "voltaire": {
+    "staples": ["Light meals", "Vegetables", "Bread", "Fruit", "Chocolate"],
+    "favoriteFoods": [
+      "Coffee (reportedly drank 40-50 cups daily)",
+      "Chocolate",
+      "Eggs",
+      "Light vegetable dishes"
+    ],
+    "avoidedFoods": ["Heavy meats", "Rich sauces", "Large meals"],
+    "dietaryPhilosophy": "Voltaire was famous for his coffee obsession and light eating. He believed heavy meals dulled the mind. His dinner parties at Ferney were legendary for wit, not for food.",
+    "culturalCuisine": "18th-century French Enlightenment",
+    "beverages": ["Coffee (enormous quantities)", "Chocolate", "Wine (light)"],
+    "foodLore": "When warned coffee was a slow poison, Voltaire replied: 'I think it must be slow, for I have been drinking it for sixty-five years and am not yet dead.'"
+  },
+  "john-locke": {
+    "staples": ["Bread", "Meat (moderate portions)", "Fresh fruit", "Vegetables", "Small beer"],
+    "favoriteFoods": [
+      "Plain roast meats",
+      "Fresh fruit (especially apples)",
+      "Bread and butter",
+      "Simple salads"
+    ],
+    "avoidedFoods": [
+      "Sweets and pastries for children (he wrote against them)",
+      "Excessive spices",
+      "Heavy sauces"
+    ],
+    "dietaryPhilosophy": "Locke wrote extensively about diet in Some Thoughts Concerning Education, advocating plain food, plenty of fruit, and limited sweets. He believed diet shaped character.",
+    "culturalCuisine": "English Enlightenment",
+    "beverages": ["Small beer", "Water", "Tea"],
+    "foodLore": "In his educational writings, Locke insisted children should eat coarse bread, little meat, and no wine — he believed plain eating produced strong bodies and clear minds."
+  },
+  "david-hume": {
+    "staples": ["Scotch broth", "Oatcakes", "Roast meats", "Root vegetables", "Cheese"],
+    "favoriteFoods": ["Sheep-head broth", "Haggis", "Roast beef", "His own cooking experiments"],
+    "avoidedFoods": ["Nothing — Hume was an enthusiastic and adventurous eater"],
+    "dietaryPhilosophy": "Hume was a famously good cook and gourmand. He took great pride in his cooking abilities and hosted dinner parties in Edinburgh. His corpulence was well-known.",
+    "culturalCuisine": "Scottish Enlightenment",
+    "beverages": ["Claret (Bordeaux wine)", "Port", "Ale", "Tea"],
+    "foodLore": "Hume was so proud of his sheep-head broth recipe that he included cooking instructions in his personal letters. Boswell called him the fattest philosopher in Edinburgh."
+  },
+  "johannes-kepler": {
+    "staples": ["Dark bread", "Sausage", "Root vegetables", "Cabbage", "Beer", "Dried peas"],
+    "favoriteFoods": ["Hearty German stews", "Bratwurst", "Dark rye bread", "Root vegetable soup"],
+    "avoidedFoods": ["Expensive luxuries (lived in chronic poverty)"],
+    "dietaryPhilosophy": "Kepler lived in financial hardship most of his life. His diet was that of a modestly paid scholar — hearty but simple German fare. His mother was once accused of witchcraft for her herbal preparations.",
+    "culturalCuisine": "Early Modern German",
+    "beverages": ["Beer", "Water", "Wine when affordable"],
+    "foodLore": "Kepler once calculated the optimal shape of wine barrels — his Nova Stereometria Doliorum Vinariorum applied mathematics to winemaking, making him the original food scientist."
+  },
+  "immanuel-kant": {
+    "staples": ["Fish", "Mustard", "Bread", "Cheese", "Beef", "Vegetables"],
+    "favoriteFoods": [
+      "Cod with mustard sauce (his signature dish)",
+      "Königsberg marzipan",
+      "English cheese",
+      "Beef with mustard"
+    ],
+    "avoidedFoods": ["Eating alone (insisted on dining companions)", "Breakfast (rarely ate it)"],
+    "dietaryPhilosophy": "Kant ate one large meal per day at exactly 1pm, always with company. He believed dinner conversation was essential to digestion and held that eating alone was unhealthy for the philosopher.",
+    "culturalCuisine": "Prussian (Königsberg)",
+    "beverages": ["Wine (especially red)", "Water", "Coffee (later in life)"],
+    "foodLore": "Kant's daily schedule was so precise that neighbors set their clocks by his afternoon walk. His dinner parties always had exactly the right number of guests — 'no fewer than the Graces, no more than the Muses.'"
+  },
+  "adam-smith": {
+    "staples": ["Oat porridge", "Roast beef", "Bread", "Root vegetables", "Fish"],
+    "favoriteFoods": [
+      "Oatmeal porridge (Scottish staple)",
+      "Simple roast beef",
+      "Bread and butter",
+      "Plain boiled vegetables"
+    ],
+    "avoidedFoods": [
+      "Elaborate French cuisine (despite studying in France)",
+      "Ostentation in dining"
+    ],
+    "dietaryPhilosophy": "The father of economics was personally frugal and absent-minded about food. His housekeeper managed his simple diet. He wrote about food economics in The Wealth of Nations.",
+    "culturalCuisine": "Scottish Enlightenment",
+    "beverages": ["Tea", "Ale", "Wine (when in company)"],
+    "foodLore": "Smith was famously absent-minded. His mother's housekeeper reported he once made himself a bread-and-butter sandwich, declared it the worst tea he ever tasted, then realized he had put the bread in the teapot."
+  },
+  "jean-jacques-rousseau": {
+    "staples": ["Dairy products", "Bread", "Cherries", "Vegetables", "Cheese", "Fruit"],
+    "favoriteFoods": [
+      "Milk and dairy",
+      "Fresh cherries",
+      "Bread and cheese",
+      "Simple salads",
+      "Fresh fruit"
+    ],
+    "avoidedFoods": [
+      "Meat (largely vegetarian by preference)",
+      "Elaborate prepared dishes",
+      "Rich sauces"
+    ],
+    "dietaryPhilosophy": "Rousseau advocated returning to simple, natural foods in Émile. He was largely vegetarian, believing meat-eating made people aggressive. He saw simple food as moral food.",
+    "culturalCuisine": "Swiss-French (Naturalist)",
+    "beverages": ["Mountain spring water", "Milk", "Light wine"],
+    "foodLore": "In Confessions, Rousseau describes stealing apples, cherries, and asparagus with such vivid pleasure that food becomes a vehicle for memory and innocence."
+  },
+  "mary-wollstonecraft": {
+    "staples": ["Tea", "Bread and butter", "Plain roast meats", "Vegetables", "Fruit"],
+    "favoriteFoods": ["Tea with bread", "Simple English fare", "Fresh fruit"],
+    "avoidedFoods": ["Extravagant meals (lived modestly)", "Excess sugar"],
+    "dietaryPhilosophy": "Wollstonecraft lived frugally and valued simplicity. In Vindication of the Rights of Woman, she argued against the idle luxury culture that kept women focused on appearance rather than mind.",
+    "culturalCuisine": "Georgian English",
+    "beverages": ["Tea (her daily staple)", "Water", "Wine occasionally"],
+    "foodLore": "During her time in revolutionary Paris, Wollstonecraft experienced both the grand salons and the bread shortages that fueled the Revolution — deepening her views on food justice."
+  },
+  "benjamin-franklin": {
+    "staples": ["Corn bread", "Potatoes", "Vegetable broth", "Fish", "Bread", "Cheese"],
+    "favoriteFoods": [
+      "Cranberries",
+      "Indian corn pudding",
+      "Tofu (he introduced it to America)",
+      "Simple vegetable soups"
+    ],
+    "avoidedFoods": ["Meat (was vegetarian for periods)", "Excess alcohol (practiced moderation)"],
+    "dietaryPhilosophy": "Franklin was an early American vegetarian, inspired by Thomas Tryon. He later resumed eating meat but always advocated moderation. His Poor Richard's Almanack is full of dietary wisdom.",
+    "culturalCuisine": "Colonial American",
+    "beverages": ["Beer", "Cider", "Water", "Coffee"],
+    "foodLore": "Franklin wrote: 'To lengthen thy life, lessen thy meals.' He was the first American to write about tofu, sending soybeans from London in 1770 calling them 'Chinese cheese.'"
+  },
+  "wolfgang-amadeus-mozart": {
+    "staples": ["Liver dumplings", "Sauerkraut", "Pork cutlets", "Bread", "Fresh fruit"],
+    "favoriteFoods": [
+      "Leberknödel (liver dumplings — his absolute favorite)",
+      "Wiener Schnitzel",
+      "Sauerkraut",
+      "Bolognese-style macaroni"
+    ],
+    "avoidedFoods": ["Nothing — Mozart was an enthusiastic eater"],
+    "dietaryPhilosophy": "Mozart loved food with the same exuberance he brought to music. His letters to his father and wife are filled with rapturous descriptions of meals. Good food put him in the mood to compose.",
+    "culturalCuisine": "Austrian-Salzburg",
+    "beverages": ["Punch (his favorite drink)", "Tokaji wine", "Beer", "Coffee"],
+    "foodLore": "In a letter to his father, Mozart wrote ecstatically about a magnificent meal of 'capon with sauerkraut' followed by liver dumplings. He composed Don Giovanni's supper scene from personal experience."
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "scripts": {
+    "dev": "uvicorn main:app --reload",
+    "start": "uvicorn main:app --host 0.0.0.0 --port ${PORT:-8000}"
+  },
+  "environments": {
+    "production": {
+      "ALCHM_KITCHEN_URL": "https://whattoeatnext-production.up.railway.app"
+    }
+  }
+}

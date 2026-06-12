@@ -1,0 +1,421 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Planetary Positions API - Example for alchm.kitchen</title>
+    <style>
+      body {
+        font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+        max-width: 1200px;
+        margin: 0 auto;
+        padding: 20px;
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: #333;
+      }
+      .container {
+        background: white;
+        border-radius: 12px;
+        padding: 30px;
+        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.2);
+      }
+      h1 {
+        color: #667eea;
+        border-bottom: 3px solid #764ba2;
+        padding-bottom: 10px;
+      }
+      .controls {
+        margin: 20px 0;
+        display: flex;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      button {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        color: white;
+        border: none;
+        padding: 12px 24px;
+        border-radius: 6px;
+        cursor: pointer;
+        font-size: 14px;
+        font-weight: 600;
+        transition: transform 0.2s;
+      }
+      button:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+      }
+      button:active {
+        transform: translateY(0);
+      }
+      .loading {
+        color: #667eea;
+        font-weight: 600;
+      }
+      .error {
+        color: #e74c3c;
+        background: #fadbd8;
+        padding: 15px;
+        border-radius: 6px;
+        margin: 10px 0;
+      }
+      .metadata {
+        background: #f8f9fa;
+        padding: 15px;
+        border-radius: 6px;
+        margin: 20px 0;
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+        gap: 10px;
+      }
+      .metadata-item {
+        display: flex;
+        flex-direction: column;
+      }
+      .metadata-label {
+        font-size: 12px;
+        color: #666;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .metadata-value {
+        font-size: 16px;
+        font-weight: 600;
+        color: #333;
+      }
+      .positions-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fill, minmax(250px, 1fr));
+        gap: 15px;
+        margin-top: 20px;
+      }
+      .planet-card {
+        background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+        padding: 20px;
+        border-radius: 8px;
+        box-shadow: 0 2px 8px rgba(0, 0, 0, 0.1);
+        transition: transform 0.2s;
+      }
+      .planet-card:hover {
+        transform: translateY(-4px);
+        box-shadow: 0 4px 16px rgba(0, 0, 0, 0.15);
+      }
+      .planet-name {
+        font-size: 20px;
+        font-weight: 700;
+        color: #667eea;
+        margin-bottom: 10px;
+      }
+      .planet-position {
+        font-size: 16px;
+        color: #333;
+        margin: 5px 0;
+      }
+      .retrograde {
+        display: inline-block;
+        background: #e74c3c;
+        color: white;
+        padding: 2px 8px;
+        border-radius: 4px;
+        font-size: 12px;
+        margin-left: 8px;
+      }
+      .alchemy-section {
+        background: linear-gradient(135deg, #ffeaa7 0%, #fdcb6e 100%);
+        padding: 20px;
+        border-radius: 8px;
+        margin: 20px 0;
+      }
+      .alchemy-title {
+        font-size: 22px;
+        font-weight: 700;
+        margin-bottom: 15px;
+        color: #2d3436;
+      }
+      .alchemy-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 10px;
+      }
+      .alchemy-item {
+        background: rgba(255, 255, 255, 0.7);
+        padding: 12px;
+        border-radius: 6px;
+        text-align: center;
+      }
+      .alchemy-label {
+        font-size: 12px;
+        color: #636e72;
+        text-transform: uppercase;
+      }
+      .alchemy-value {
+        font-size: 20px;
+        font-weight: 700;
+        color: #2d3436;
+      }
+      code {
+        background: #2d3436;
+        color: #00ff88;
+        padding: 2px 6px;
+        border-radius: 3px;
+        font-family: 'Courier New', monospace;
+      }
+    </style>
+  </head>
+  <body>
+    <div class="container">
+      <h1>🌟 Planetary Positions API Integration</h1>
+      <p>
+        This example demonstrates how to fetch planetary positions from the Planetary Agents API for
+        use on <strong>alchm.kitchen</strong>.
+      </p>
+
+      <div class="controls">
+        <button onclick="fetchCurrentPositions()">📍 Fetch Current Positions</button>
+        <button onclick="fetchWithAlchemy()">🧪 Fetch with Alchemy Data</button>
+        <button onclick="fetchSpecificDate()">📅 Fetch Historical (Nov 1, 2025)</button>
+        <button onclick="clearResults()">🗑️ Clear</button>
+      </div>
+
+      <div id="loading" style="display: none" class="loading">
+        ⏳ Loading planetary positions...
+      </div>
+
+      <div id="error" style="display: none" class="error"></div>
+
+      <div id="metadata" style="display: none" class="metadata"></div>
+
+      <div id="alchemy" style="display: none" class="alchemy-section"></div>
+
+      <div id="positions" class="positions-grid"></div>
+
+      <div style="margin-top: 40px; padding: 20px; background: #f8f9fa; border-radius: 8px">
+        <h3>💡 Integration Notes</h3>
+        <ul>
+          <li>
+            <strong>API Endpoint:</strong>
+            <code>https://your-domain.com/api/planetary-positions</code>
+          </li>
+          <li><strong>CORS:</strong> Enabled for <code>https://alchm.kitchen</code></li>
+          <li><strong>Caching:</strong> 5-minute cache for high accuracy data</li>
+          <li>
+            <strong>Update Frequency:</strong> Planetary positions change slowly - update every 5-10
+            minutes is sufficient
+          </li>
+          <li><strong>Fallback:</strong> Multiple calculation methods ensure reliability</li>
+        </ul>
+      </div>
+    </div>
+
+    <script>
+      // Replace with your actual API endpoint
+      const API_ENDPOINT = 'http://localhost:3001/api/planetary-positions'
+
+      // For production on alchm.kitchen, use:
+      // const API_ENDPOINT = 'https://your-production-domain.com/api/planetary-positions';
+
+      const planetSymbols = {
+        Sun: '☉',
+        Moon: '☽',
+        Mercury: '☿',
+        Venus: '♀',
+        Mars: '♂',
+        Jupiter: '♃',
+        Saturn: '♄',
+        Uranus: '⛢',
+        Neptune: '♆',
+        Pluto: '♇',
+        'North Node': '☊',
+      }
+
+      function showLoading() {
+        document.getElementById('loading').style.display = 'block'
+        document.getElementById('error').style.display = 'none'
+      }
+
+      function hideLoading() {
+        document.getElementById('loading').style.display = 'none'
+      }
+
+      function showError(message) {
+        const errorDiv = document.getElementById('error')
+        errorDiv.textContent = message
+        errorDiv.style.display = 'block'
+        hideLoading()
+      }
+
+      function displayMetadata(data) {
+        const metadataDiv = document.getElementById('metadata')
+        metadataDiv.innerHTML = `
+                <div class="metadata-item">
+                    <span class="metadata-label">Timestamp</span>
+                    <span class="metadata-value">${new Date(data.timestamp).toLocaleString()}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Source</span>
+                    <span class="metadata-value">${data.source}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Accuracy</span>
+                    <span class="metadata-value">${data.accuracy}</span>
+                </div>
+                <div class="metadata-item">
+                    <span class="metadata-label">Cached</span>
+                    <span class="metadata-value">${data.cached ? 'Yes' : 'No'}${data.cacheAge ? ` (${Math.round(data.cacheAge / 1000)}s ago)` : ''}</span>
+                </div>
+            `
+        metadataDiv.style.display = 'grid'
+      }
+
+      function displayAlchemy(data) {
+        if (!data.alchmQuantities) {
+          document.getElementById('alchemy').style.display = 'none'
+          return
+        }
+
+        const alchemyDiv = document.getElementById('alchemy')
+        const alchm = data.alchmQuantities
+
+        alchemyDiv.innerHTML = `
+                <div class="alchemy-title">🧪 Alchemical Quantities</div>
+                <div class="alchemy-grid">
+                    <div class="alchemy-item">
+                        <div class="alchemy-label">Spirit</div>
+                        <div class="alchemy-value">${alchm.spirit.toFixed(2)}</div>
+                    </div>
+                    <div class="alchemy-item">
+                        <div class="alchemy-label">Essence</div>
+                        <div class="alchemy-value">${alchm.essence.toFixed(2)}</div>
+                    </div>
+                    <div class="alchemy-item">
+                        <div class="alchemy-label">Matter</div>
+                        <div class="alchemy-value">${alchm.matter.toFixed(2)}</div>
+                    </div>
+                    <div class="alchemy-item">
+                        <div class="alchemy-label">Substance</div>
+                        <div class="alchemy-value">${alchm.substance.toFixed(2)}</div>
+                    </div>
+                    <div class="alchemy-item">
+                        <div class="alchemy-label">Heat</div>
+                        <div class="alchemy-value">${alchm.Heat.toFixed(2)}</div>
+                    </div>
+                    <div class="alchemy-item">
+                        <div class="alchemy-label">Entropy</div>
+                        <div class="alchemy-value">${alchm.Entropy.toFixed(2)}</div>
+                    </div>
+                    <div class="alchemy-item">
+                        <div class="alchemy-label">Reactivity</div>
+                        <div class="alchemy-value">${alchm.Reactivity.toFixed(2)}</div>
+                    </div>
+                    <div class="alchemy-item">
+                        <div class="alchemy-label">Energy</div>
+                        <div class="alchemy-value">${alchm.Energy.toFixed(2)}</div>
+                    </div>
+                </div>
+                ${data.monicaConstant ? `<div style="margin-top: 15px; text-align: center; font-size: 18px;"><strong>Monica Constant:</strong> ${data.monicaConstant.toFixed(4)}</div>` : ''}
+            `
+        alchemyDiv.style.display = 'block'
+      }
+
+      function displayPositions(positions) {
+        const positionsDiv = document.getElementById('positions')
+        positionsDiv.innerHTML = positions
+          .map(
+            planet => `
+                <div class="planet-card">
+                    <div class="planet-name">
+                        ${planetSymbols[planet.planet] || ''} ${planet.planet}
+                    </div>
+                    <div class="planet-position">
+                        <strong>${planet.sign}</strong> ${planet.degree.toFixed(2)}°
+                        ${planet.retrograde ? '<span class="retrograde">℞ Retrograde</span>' : ''}
+                    </div>
+                    ${planet.speed ? `<div style="font-size: 12px; color: #666; margin-top: 5px;">Speed: ${planet.speed.toFixed(4)}°/day</div>` : ''}
+                    ${planet.longitude ? `<div style="font-size: 12px; color: #666;">Longitude: ${planet.longitude.toFixed(2)}°</div>` : ''}
+                </div>
+            `
+          )
+          .join('')
+      }
+
+      async function fetchCurrentPositions() {
+        showLoading()
+        try {
+          const response = await fetch(API_ENDPOINT)
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          }
+
+          const data = await response.json()
+          displayMetadata(data)
+          displayPositions(data.planetaryPositions)
+          displayAlchemy(data)
+          hideLoading()
+        } catch (error) {
+          showError(`Error fetching positions: ${error.message}`)
+        }
+      }
+
+      async function fetchWithAlchemy() {
+        showLoading()
+        try {
+          const response = await fetch(`${API_ENDPOINT}?includeAlchemy=true`)
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          }
+
+          const data = await response.json()
+          displayMetadata(data)
+          displayPositions(data.planetaryPositions)
+          displayAlchemy(data)
+          hideLoading()
+        } catch (error) {
+          showError(`Error fetching positions with alchemy: ${error.message}`)
+        }
+      }
+
+      async function fetchSpecificDate() {
+        showLoading()
+        try {
+          const response = await fetch(API_ENDPOINT, {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({
+              date: '2025-11-01T12:00:00Z',
+              includeAlchemy: true,
+              accuracy: 'high',
+            }),
+          })
+
+          if (!response.ok) {
+            throw new Error(`HTTP ${response.status}: ${response.statusText}`)
+          }
+
+          const data = await response.json()
+          displayMetadata(data)
+          displayPositions(data.planetaryPositions)
+          displayAlchemy(data)
+          hideLoading()
+        } catch (error) {
+          showError(`Error fetching historical positions: ${error.message}`)
+        }
+      }
+
+      function clearResults() {
+        document.getElementById('positions').innerHTML = ''
+        document.getElementById('metadata').style.display = 'none'
+        document.getElementById('alchemy').style.display = 'none'
+        document.getElementById('error').style.display = 'none'
+      }
+
+      // Auto-fetch on page load
+      window.addEventListener('load', () => {
+        fetchCurrentPositions()
+      })
+    </script>
+  </body>
+</html>

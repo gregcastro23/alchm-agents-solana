@@ -1,0 +1,49 @@
+# Planetary Agents Frontend - Development Dockerfile
+# Optimized for development with hot reloading and debugging
+
+# =====================================
+# Development Stage
+# =====================================
+FROM node:18-alpine AS development
+
+WORKDIR /app
+
+# Install development dependencies
+RUN apk add --no-cache libc6-compat git
+
+# Copy package files
+COPY package.json yarn.lock* ./
+
+# Install all dependencies (including dev dependencies)
+RUN yarn install --frozen-lockfile
+
+# Copy source code
+COPY . .
+
+# Generate Prisma client without bundling the engine binary
+RUN npx prisma generate --no-engine || echo "Prisma generation skipped"
+
+# Set development environment
+ENV NODE_ENV=development
+ENV NEXT_TELEMETRY_DISABLED=1
+ENV NODE_OPTIONS="--max-old-space-size=4096 --inspect=0.0.0.0:9229"
+
+# Create non-root user for development
+RUN addgroup --gid 1001 --system nodejs
+RUN adduser --system nextjs --uid 1001
+
+# Create necessary directories
+RUN mkdir -p .next logs && chown -R nextjs:nodejs .next logs
+
+# Expose ports
+EXPOSE 3000 9229
+
+# Switch to non-root user
+USER nextjs
+
+# Development health check
+HEALTHCHECK --interval=30s --timeout=10s --start-period=10s --retries=3 \
+  CMD curl -f http://localhost:3000/api/health || exit 1
+
+# Start development server
+CMD ["yarn", "dev"]

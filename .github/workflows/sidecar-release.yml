@@ -1,0 +1,104 @@
+name: Sidecar release (pa-mcp)
+
+# Builds the PyInstaller-frozen pa-mcp MCP stdio sidecar for all four Tauri
+# target triples. PyInstaller cannot cross-compile — its bootloader is
+# platform-native and wheels must be resolved on the target OS — so each
+# triple is built on its matching runner. This is "Path A" from
+# src-tauri/bin/README.md: the durable way to keep Windows/Linux coverage
+# current, since neither can be produced from the Apple-Silicon dev machine
+# (scripts/build-sidecar.sh covers only the two macOS arches locally).
+#
+# Output: one artifact per triple, named pa-mcp-<triple> (with .exe on
+# Windows). Download from the run and drop into src-tauri/bin/ for the
+# desktop bundle. The binaries are gitignored build artifacts (see
+# .gitignore), so CI is the canonical place they are produced for release.
+
+on:
+  push:
+    tags: ['v*', 'sidecar-*']
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build-pa-mcp:
+    name: pa-mcp (${{ matrix.triple }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      # One broken target should not cancel the other three — each is an
+      # independent platform artifact.
+      fail-fast: false
+      matrix:
+        include:
+          - os: macos-latest # GitHub's macos-latest is Apple Silicon (arm64)
+            triple: aarch64-apple-darwin
+          - os: macos-13 # last x86_64 (Intel) macOS runner
+            triple: x86_64-apple-darwin
+          - os: windows-latest
+            triple: x86_64-pc-windows-msvc
+          - os: ubuntu-latest
+            triple: x86_64-unknown-linux-gnu
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+
+      # Only the four runtime deps the stdio server actually uses. The spec's
+      # aggressive excludes mean the heavy FastAPI/ML/Postgres deps are never
+      # bundled, so a minimal install keeps CI fast and the binary small.
+      - name: Install build deps
+        run: python -m pip install --upgrade pip httpx sqlalchemy python-dotenv pyinstaller
+
+      - name: Build pa-mcp
+        working-directory: backend
+        run: python -m PyInstaller pa-mcp.spec --noconfirm --clean
+
+      # Strongest possible check short of a full Tauri install: spawn the
+      # freshly built binary and drive a real MCP initialize + tools/list
+      # handshake. Runs natively on each runner, so it proves the per-OS
+      # binary actually boots (not just that `file` reports an executable).
+      - name: Smoke test (initialize + tools/list handshake)
+        shell: python
+        run: |
+          import glob, json, os, subprocess
+          matches = glob.glob(os.path.join("backend", "dist", "pa-mcp*"))
+          assert matches, "no pa-mcp binary was produced in backend/dist"
+          exe = matches[0]
+          reqs = (
+              json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize",
+                          "params": {"protocolVersion": "2025-06-18", "capabilities": {},
+                                     "clientInfo": {"name": "ci", "version": "1"}}}) + "\n"
+              + json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}) + "\n"
+          )
+          # Strip any runner-set Postgres DSN: the frozen binary forces local
+          # SQLite regardless (database.IS_FROZEN_SIDECAR), but keep it hermetic.
+          env = {k: v for k, v in os.environ.items() if k not in ("DATABASE_URL", "DIRECT_URL")}
+          proc = subprocess.run([exe], input=reqs, capture_output=True, text=True, timeout=90, env=env)
+          lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
+          assert len(lines) >= 2, f"expected 2 responses; stdout={proc.stdout!r} stderr={proc.stderr!r}"
+          init, tools = json.loads(lines[0]), json.loads(lines[1])
+          assert init["result"]["serverInfo"]["name"] == "planetary-agents-mcp-server", init
+          names = sorted(t["name"] for t in tools["result"]["tools"])
+          assert len(names) == 4, f"expected 4 tools, got {names}"
+          print("handshake OK:", names)
+
+      - name: Stage artifact with triple-suffixed name
+        shell: bash
+        run: |
+          mkdir -p out
+          if [[ "${{ matrix.triple }}" == *windows* ]]; then
+            cp backend/dist/pa-mcp.exe "out/pa-mcp-${{ matrix.triple }}.exe"
+          else
+            cp backend/dist/pa-mcp "out/pa-mcp-${{ matrix.triple }}"
+          fi
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: pa-mcp-${{ matrix.triple }}
+          path: out/*
+          if-no-files-found: error

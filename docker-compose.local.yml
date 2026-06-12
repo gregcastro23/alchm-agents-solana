@@ -1,0 +1,53 @@
+# ============================================
+# Local Development - PostgreSQL & Redis
+# ============================================
+# Usage: docker-compose -f docker-compose.local.yml up -d
+
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15-alpine
+    container_name: planetary-postgres-local
+    ports:
+      - '5432:5432'
+    environment:
+      - POSTGRES_DB=planetary_agents
+      - POSTGRES_USER=planetary
+      - POSTGRES_PASSWORD=consciousness
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres_local_data:/var/lib/postgresql/data
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD-SHELL', 'pg_isready -U planetary -d planetary_agents']
+      interval: 10s
+      timeout: 5s
+      retries: 5
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: planetary-redis-local
+    ports:
+      - '6379:6379'
+    command: >
+      redis-server
+      --appendonly yes
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_local_data:/data
+    restart: unless-stopped
+    healthcheck:
+      test: ['CMD', 'redis-cli', 'ping']
+      interval: 10s
+      timeout: 3s
+      retries: 3
+
+volumes:
+  postgres_local_data:
+    name: planetary_postgres_local
+  redis_local_data:
+    name: planetary_redis_local

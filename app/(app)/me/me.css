@@ -1,0 +1,1372 @@
+/* ==========================================================================
+   /me Page — Cosmic Zodiac Theme
+   Scoped styles for the personalized user landing page.
+   CSS custom properties (--zodiac-*) are set inline by MeClient.tsx
+   based on the user's sun sign.
+   ========================================================================== */
+
+/* ---- Zodiac Custom Property Defaults ---- */
+.me-page {
+  --zodiac-gradient: linear-gradient(135deg, #0c0319 0%, #1e0a3c 30%, #2e1065 60%, #0c0319 100%);
+  --zodiac-card-gradient: linear-gradient(
+    135deg,
+    rgba(138, 43, 226, 0.12) 0%,
+    rgba(15, 10, 30, 0.9) 100%
+  );
+  --zodiac-accent: 263 70% 50%;
+  --zodiac-glow: rgba(138, 43, 226, 0.4);
+  --zodiac-border: rgba(138, 43, 226, 0.3);
+}
+
+/* ---- Page Background Overlay ---- */
+.me-page {
+  position: relative;
+  min-height: 100vh;
+  overflow-x: hidden;
+}
+
+.me-page::before {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: var(--zodiac-gradient);
+  z-index: -4;
+  transition: background 1.2s ease;
+}
+
+/* Nebula layer */
+.me-page::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background:
+    radial-gradient(
+      ellipse 80% 60% at 20% 80%,
+      hsla(var(--zodiac-accent) / 0.15) 0%,
+      transparent 70%
+    ),
+    radial-gradient(
+      ellipse 60% 50% at 80% 20%,
+      hsla(var(--zodiac-accent) / 0.1) 0%,
+      transparent 60%
+    ),
+    radial-gradient(circle at 50% 50%, hsla(var(--zodiac-accent) / 0.05) 0%, transparent 50%);
+  z-index: -3;
+  animation: nebula-drift 30s ease-in-out infinite alternate;
+  pointer-events: none;
+}
+
+@keyframes nebula-drift {
+  0% {
+    transform: scale(1) translate(0, 0);
+  }
+  100% {
+    transform: scale(1.05) translate(2%, -1%);
+  }
+}
+
+/* ---- Starfield ---- */
+.me-starfield {
+  position: fixed;
+  inset: 0;
+  z-index: -2;
+  pointer-events: none;
+  background-image:
+    radial-gradient(2px 2px at 15% 25%, rgba(255, 255, 255, 0.7), transparent),
+    radial-gradient(1.5px 1.5px at 78% 12%, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1px 1px at 35% 68%, rgba(255, 255, 255, 0.8), transparent),
+    radial-gradient(2px 2px at 62% 82%, rgba(255, 255, 255, 0.5), transparent),
+    radial-gradient(1px 1px at 88% 55%, rgba(255, 255, 255, 0.7), transparent),
+    radial-gradient(1.5px 1.5px at 8% 90%, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1px 1px at 52% 38%, rgba(255, 255, 255, 0.9), transparent),
+    radial-gradient(2px 2px at 45% 15%, hsla(var(--zodiac-accent) / 0.6), transparent),
+    radial-gradient(1.5px 1.5px at 70% 70%, hsla(var(--zodiac-accent) / 0.5), transparent),
+    radial-gradient(1px 1px at 25% 50%, hsla(var(--zodiac-accent) / 0.4), transparent);
+  background-size:
+    500% 500%,
+    450% 450%,
+    400% 400%,
+    380% 380%,
+    420% 420%,
+    460% 460%,
+    350% 350%,
+    480% 480%,
+    390% 390%,
+    410% 410%;
+  animation:
+    star-twinkle 10s ease-in-out infinite,
+    star-drift 25s linear infinite;
+}
+
+@keyframes star-twinkle {
+  0%,
+  100% {
+    opacity: 0.6;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+@keyframes star-drift {
+  0% {
+    transform: rotate(0deg) translateX(0px);
+  }
+  100% {
+    transform: rotate(360deg) translateX(15px);
+  }
+}
+
+/* ---- Hero Section ---- */
+.me-hero {
+  position: relative;
+  padding: 3rem 0 2rem;
+  text-align: center;
+}
+
+.me-hero-avatar-ring {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 7rem;
+  height: 7rem;
+  border-radius: 50%;
+  background: conic-gradient(
+    from 0deg,
+    hsla(var(--zodiac-accent) / 0.6),
+    hsla(var(--zodiac-accent) / 0.2),
+    hsla(var(--zodiac-accent) / 0.6),
+    hsla(var(--zodiac-accent) / 0.2),
+    hsla(var(--zodiac-accent) / 0.6)
+  );
+  animation: avatar-glow-spin 8s linear infinite;
+}
+
+.me-hero-avatar-ring::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  box-shadow:
+    0 0 30px var(--zodiac-glow),
+    0 0 60px var(--zodiac-glow);
+  animation: avatar-pulse 3s ease-in-out infinite;
+}
+
+@keyframes avatar-glow-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes avatar-pulse {
+  0%,
+  100% {
+    opacity: 0.5;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+
+.me-hero-avatar-inner {
+  width: 6rem;
+  height: 6rem;
+  border-radius: 50%;
+  overflow: hidden;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(10, 5, 20, 0.9);
+  border: 2px solid var(--zodiac-border);
+  font-size: 2.5rem;
+  z-index: 1;
+}
+
+.me-hero-avatar-inner img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+.me-hero h1 {
+  font-size: 2.25rem;
+  font-weight: 800;
+  margin-top: 1.25rem;
+  background: linear-gradient(
+    135deg,
+    hsl(var(--zodiac-accent)),
+    hsl(var(--zodiac-accent) / 0.7),
+    #fff
+  );
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+  line-height: 1.2;
+}
+
+.me-hero-tagline {
+  font-size: 1.05rem;
+  color: rgba(255, 255, 255, 0.6);
+  margin-top: 0.5rem;
+}
+
+.me-zodiac-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  margin-top: 1rem;
+  padding: 0.5rem 1.25rem;
+  border-radius: 9999px;
+  background: hsla(var(--zodiac-accent) / 0.15);
+  border: 1px solid var(--zodiac-border);
+  color: hsl(var(--zodiac-accent));
+  font-weight: 600;
+  font-size: 0.95rem;
+  box-shadow: 0 0 20px hsla(var(--zodiac-accent) / 0.2);
+}
+
+.me-zodiac-badge .constellation {
+  font-size: 1.4rem;
+}
+
+/* ---- MC Display ---- */
+.me-mc-display {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 2rem;
+  margin-top: 1.5rem;
+  flex-wrap: wrap;
+}
+
+.me-mc-value {
+  text-align: center;
+}
+
+.me-mc-value .number {
+  font-size: 2.5rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  background: linear-gradient(180deg, #fff, rgba(255, 255, 255, 0.6));
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.me-mc-value .label {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  margin-top: 0.15rem;
+}
+
+.me-mc-level {
+  display: inline-flex;
+  padding: 0.35rem 0.9rem;
+  border-radius: 6px;
+  background: hsla(var(--zodiac-accent) / 0.2);
+  border: 1px solid var(--zodiac-border);
+  color: hsl(var(--zodiac-accent));
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+/* ---- Alchemical Strip ---- */
+.me-alchemy-strip {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1rem;
+  margin-top: 2rem;
+  padding: 0 1rem;
+}
+
+@media (max-width: 640px) {
+  .me-alchemy-strip {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+.me-alchemy-tile {
+  text-align: center;
+  padding: 1.25rem 0.75rem;
+  border-radius: 16px;
+  background: var(--zodiac-card-gradient);
+  border: 1px solid var(--zodiac-border);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  transition: all 0.3s ease;
+}
+
+.me-alchemy-tile:hover {
+  transform: translateY(-3px);
+  box-shadow: 0 8px 32px var(--zodiac-glow);
+  border-color: hsla(var(--zodiac-accent) / 0.5);
+}
+
+.me-alchemy-tile .tile-icon {
+  font-size: 1.5rem;
+  margin-bottom: 0.35rem;
+}
+
+.me-alchemy-tile .tile-value {
+  font-size: 1.75rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  color: #fff;
+}
+
+.me-alchemy-tile .tile-label {
+  font-size: 0.75rem;
+  color: rgba(255, 255, 255, 0.5);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  margin-top: 0.15rem;
+}
+
+.me-alchemy-tile .tile-bar {
+  width: 100%;
+  height: 4px;
+  border-radius: 2px;
+  background: rgba(255, 255, 255, 0.1);
+  margin-top: 0.75rem;
+  overflow: hidden;
+}
+
+.me-alchemy-tile .tile-bar-fill {
+  height: 100%;
+  border-radius: 2px;
+  transition: width 0.8s ease;
+}
+
+.tile-spirit .tile-bar-fill {
+  background: linear-gradient(90deg, #ef4444, #f97316);
+}
+.tile-essence .tile-bar-fill {
+  background: linear-gradient(90deg, #3b82f6, #60a5fa);
+}
+.tile-matter .tile-bar-fill {
+  background: linear-gradient(90deg, #22c55e, #4ade80);
+}
+.tile-substance .tile-bar-fill {
+  background: linear-gradient(90deg, #eab308, #facc15);
+}
+
+/* ---- Shared ESMS Wallet ---- */
+.profile-yield-panel {
+  margin: 1.5rem 1rem 0;
+  padding: 1.25rem;
+  border-radius: 8px;
+  background:
+    linear-gradient(135deg, rgba(8, 8, 18, 0.92), rgba(22, 13, 36, 0.86)),
+    var(--zodiac-card-gradient);
+  border: 1px solid var(--zodiac-border);
+  backdrop-filter: blur(22px);
+  -webkit-backdrop-filter: blur(22px);
+  box-shadow:
+    0 18px 60px rgba(0, 0, 0, 0.35),
+    0 0 30px hsla(var(--zodiac-accent) / 0.08);
+}
+
+.profile-yield-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.profile-yield-kicker {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  margin-bottom: 0.45rem;
+  color: hsl(var(--zodiac-accent));
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.11em;
+  text-transform: uppercase;
+}
+
+.profile-yield-header h2 {
+  color: #fff;
+  font-size: 1.35rem;
+  font-weight: 800;
+  line-height: 1.15;
+}
+
+.profile-yield-header p {
+  max-width: 44rem;
+  margin-top: 0.45rem;
+  color: rgba(255, 255, 255, 0.58);
+  font-size: 0.9rem;
+  line-height: 1.55;
+}
+
+.profile-yield-refresh {
+  width: 2.25rem;
+  height: 2.25rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  background: rgba(255, 255, 255, 0.06);
+  color: rgba(255, 255, 255, 0.76);
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    color 0.2s ease;
+}
+
+.profile-yield-refresh:hover:not(:disabled) {
+  border-color: var(--zodiac-border);
+  background: hsla(var(--zodiac-accent) / 0.14);
+  color: #fff;
+}
+
+.profile-yield-refresh:disabled {
+  cursor: not-allowed;
+  opacity: 0.58;
+}
+
+.spinning {
+  animation: profile-spin 0.8s linear infinite;
+}
+
+@keyframes profile-spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.profile-yield-error {
+  margin-top: 1rem;
+  padding: 0.75rem 0.85rem;
+  border-radius: 8px;
+  border: 1px solid rgba(248, 113, 113, 0.28);
+  background: rgba(127, 29, 29, 0.24);
+  color: rgba(254, 202, 202, 0.95);
+  font-size: 0.82rem;
+}
+
+.profile-yield-balance {
+  display: grid;
+  grid-template-columns: minmax(10rem, 0.65fr) 1.6fr;
+  gap: 0.9rem;
+  margin-top: 1rem;
+}
+
+.profile-yield-total,
+.profile-yield-token {
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  background: rgba(0, 0, 0, 0.22);
+}
+
+.profile-yield-total {
+  display: flex;
+  min-height: 7.8rem;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.profile-yield-total-value {
+  min-height: 2.5rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: #fff;
+  font-family: var(--ff-mono, monospace);
+  font-size: 2.15rem;
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  line-height: 1;
+}
+
+.profile-yield-total-label {
+  margin-top: 0.35rem;
+  color: rgba(255, 255, 255, 0.45);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+}
+
+.profile-yield-token-grid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.profile-yield-token {
+  min-height: 7.8rem;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0.8rem 0.5rem;
+  text-align: center;
+}
+
+.profile-yield-token svg {
+  flex-shrink: 0;
+}
+
+.profile-yield-token span {
+  color: rgba(255, 255, 255, 0.5);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.profile-yield-token strong {
+  color: #fff;
+  font-family: var(--ff-mono, monospace);
+  font-size: 1rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.profile-token-spirit svg,
+.profile-token-spirit strong {
+  color: #fb923c;
+}
+
+.profile-token-essence svg,
+.profile-token-essence strong {
+  color: #7dd3fc;
+}
+
+.profile-token-matter svg,
+.profile-token-matter strong {
+  color: #86efac;
+}
+
+.profile-token-substance svg,
+.profile-token-substance strong {
+  color: #facc15;
+}
+
+.profile-site-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+  margin-top: 0.9rem;
+}
+
+.profile-site-card {
+  padding: 1rem;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.09);
+  background: rgba(5, 8, 18, 0.48);
+}
+
+.profile-site-agents {
+  border-color: rgba(129, 140, 248, 0.24);
+}
+
+.profile-site-kitchen {
+  border-color: rgba(251, 191, 36, 0.22);
+}
+
+.profile-site-card header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 0.75rem;
+}
+
+.profile-site-card h3 {
+  color: #fff;
+  font-size: 1rem;
+  font-weight: 800;
+}
+
+.profile-site-card a {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  margin-top: 0.25rem;
+  color: rgba(255, 255, 255, 0.48);
+  font-family: var(--ff-mono, monospace);
+  font-size: 0.68rem;
+  text-decoration: none;
+}
+
+.profile-site-card a:hover {
+  color: rgba(255, 255, 255, 0.78);
+}
+
+.profile-site-status {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.25rem;
+  flex-shrink: 0;
+  padding: 0.24rem 0.45rem;
+  border-radius: 6px;
+  border: 1px solid rgba(52, 211, 153, 0.24);
+  background: rgba(16, 185, 129, 0.11);
+  color: rgba(167, 243, 208, 0.95);
+  font-size: 0.65rem;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.profile-site-meta {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 0.75rem;
+  margin-top: 1rem;
+  padding-top: 0.8rem;
+  border-top: 1px solid rgba(255, 255, 255, 0.08);
+}
+
+.profile-site-meta span {
+  color: rgba(255, 255, 255, 0.42);
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+.profile-site-meta strong {
+  color: rgba(255, 255, 255, 0.72);
+  font-size: 0.8rem;
+  font-weight: 600;
+  text-align: right;
+}
+
+.profile-site-claim {
+  width: 100%;
+  min-height: 2.55rem;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.45rem;
+  margin-top: 0.9rem;
+  border-radius: 8px;
+  border: 1px solid hsla(var(--zodiac-accent) / 0.25);
+  background: hsla(var(--zodiac-accent) / 0.18);
+  color: #fff;
+  font-size: 0.82rem;
+  font-weight: 800;
+  transition:
+    border-color 0.2s ease,
+    background 0.2s ease,
+    transform 0.2s ease;
+}
+
+.profile-site-claim:hover:not(:disabled) {
+  border-color: hsla(var(--zodiac-accent) / 0.5);
+  background: hsla(var(--zodiac-accent) / 0.28);
+  transform: translateY(-1px);
+}
+
+.profile-site-claim:disabled {
+  cursor: not-allowed;
+  border-color: rgba(255, 255, 255, 0.08);
+  background: rgba(255, 255, 255, 0.05);
+  color: rgba(255, 255, 255, 0.42);
+}
+
+.profile-site-message {
+  margin-top: 0.65rem;
+  font-size: 0.78rem;
+  line-height: 1.4;
+}
+
+.profile-site-message-success {
+  color: rgba(167, 243, 208, 0.94);
+}
+
+.profile-site-message-cooldown {
+  color: rgba(253, 230, 138, 0.95);
+}
+
+.profile-site-message-error {
+  color: rgba(254, 202, 202, 0.95);
+}
+
+@media (max-width: 900px) {
+  .profile-yield-balance {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 720px) {
+  .profile-yield-panel {
+    padding: 1rem;
+  }
+
+  .profile-yield-token-grid,
+  .profile-site-grid {
+    grid-template-columns: 1fr 1fr;
+  }
+}
+
+@media (max-width: 520px) {
+  .profile-yield-header {
+    align-items: stretch;
+  }
+
+  .profile-yield-refresh {
+    flex-shrink: 0;
+  }
+
+  .profile-yield-token-grid,
+  .profile-site-grid {
+    grid-template-columns: 1fr;
+  }
+
+  .profile-site-card header,
+  .profile-site-meta {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .profile-site-meta strong {
+    text-align: left;
+  }
+}
+
+/* ---- Explore / Tour Section ---- */
+.me-section-title {
+  text-align: center;
+  margin-top: 3.5rem;
+  margin-bottom: 2rem;
+}
+
+.me-section-title h2 {
+  font-size: 1.75rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.me-section-title p {
+  font-size: 0.95rem;
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 0.5rem;
+}
+
+.me-section-title .divider {
+  width: 4rem;
+  height: 3px;
+  border-radius: 2px;
+  background: hsl(var(--zodiac-accent));
+  margin: 0.75rem auto 0;
+  box-shadow: 0 0 12px var(--zodiac-glow);
+}
+
+.me-tour-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 1.25rem;
+  padding: 0 1rem;
+}
+
+@media (max-width: 1024px) {
+  .me-tour-grid {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}
+
+@media (max-width: 640px) {
+  .me-tour-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+.me-tour-card {
+  position: relative;
+  padding: 1.75rem;
+  border-radius: 20px;
+  background: var(--zodiac-card-gradient);
+  border: 1px solid var(--zodiac-border);
+  backdrop-filter: blur(24px);
+  -webkit-backdrop-filter: blur(24px);
+  cursor: pointer;
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  text-decoration: none;
+  color: inherit;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  /* Stagger entrance */
+  opacity: 0;
+  transform: translateY(20px);
+  animation: card-enter 0.6s ease forwards;
+}
+
+.me-tour-card:nth-child(1) {
+  animation-delay: 0.1s;
+}
+.me-tour-card:nth-child(2) {
+  animation-delay: 0.2s;
+}
+.me-tour-card:nth-child(3) {
+  animation-delay: 0.3s;
+}
+.me-tour-card:nth-child(4) {
+  animation-delay: 0.4s;
+}
+.me-tour-card:nth-child(5) {
+  animation-delay: 0.5s;
+}
+.me-tour-card:nth-child(6) {
+  animation-delay: 0.6s;
+}
+
+@keyframes card-enter {
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.me-tour-card:hover {
+  transform: translateY(-6px);
+  border-color: hsla(var(--zodiac-accent) / 0.5);
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.4),
+    0 0 40px var(--zodiac-glow);
+}
+
+.me-tour-card .tour-icon {
+  width: 3rem;
+  height: 3rem;
+  border-radius: 14px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: hsla(var(--zodiac-accent) / 0.15);
+  color: hsl(var(--zodiac-accent));
+  margin-bottom: 1rem;
+  font-size: 1.25rem;
+  box-shadow: 0 0 16px hsla(var(--zodiac-accent) / 0.2);
+  transition: all 0.3s ease;
+}
+
+.me-tour-card:hover .tour-icon {
+  background: hsla(var(--zodiac-accent) / 0.25);
+  box-shadow: 0 0 24px hsla(var(--zodiac-accent) / 0.35);
+  transform: scale(1.08);
+}
+
+.me-tour-card .tour-title {
+  font-size: 1.1rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 0.5rem;
+}
+
+.me-tour-card .tour-desc {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.55);
+  line-height: 1.5;
+  flex: 1;
+}
+
+.me-tour-card .tour-cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.4rem;
+  margin-top: 1rem;
+  font-size: 0.85rem;
+  font-weight: 600;
+  color: hsl(var(--zodiac-accent));
+  transition: gap 0.3s ease;
+}
+
+.me-tour-card:hover .tour-cta {
+  gap: 0.7rem;
+}
+
+/* ---- Charts Section ---- */
+.me-charts-section {
+  margin-top: 3rem;
+  padding: 0 1rem;
+}
+
+.me-glass-card {
+  border-radius: 20px;
+  background: var(--zodiac-card-gradient);
+  border: 1px solid var(--zodiac-border);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 1.5rem;
+  transition: all 0.3s ease;
+}
+
+.me-glass-card:hover {
+  border-color: hsla(var(--zodiac-accent) / 0.45);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.3);
+}
+
+.me-glass-card h3 {
+  font-size: 1.15rem;
+  font-weight: 700;
+  color: #fff;
+  margin-bottom: 0.5rem;
+}
+
+.me-glass-card p {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.55);
+}
+
+/* ---- Insight Cards ---- */
+.me-insight-card {
+  padding: 1rem;
+  border-radius: 14px;
+  background: hsla(var(--zodiac-accent) / 0.08);
+  border: 1px solid hsla(var(--zodiac-accent) / 0.15);
+}
+
+.me-insight-card h4 {
+  font-size: 0.9rem;
+  font-weight: 600;
+  color: hsl(var(--zodiac-accent));
+  margin-bottom: 0.35rem;
+}
+
+.me-insight-card p {
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.5;
+}
+
+/* ---- Sign Out Button ---- */
+.me-sign-out {
+  position: absolute;
+  top: 1rem;
+  right: 1rem;
+  padding: 0.4rem 1rem;
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.6);
+  font-size: 0.8rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.me-sign-out:hover {
+  background: rgba(255, 255, 255, 0.14);
+  color: rgba(255, 255, 255, 0.9);
+}
+
+/* ---- Computation Warning ---- */
+.me-warning {
+  padding: 0.75rem 1rem;
+  border-radius: 12px;
+  background: rgba(234, 179, 8, 0.1);
+  border: 1px solid rgba(234, 179, 8, 0.25);
+  color: rgba(234, 179, 8, 0.8);
+  font-size: 0.8rem;
+  margin: 1rem;
+}
+
+/* ---- Footer ---- */
+.me-footer {
+  text-align: center;
+  padding: 3rem 1rem 2rem;
+  color: rgba(255, 255, 255, 0.3);
+  font-size: 0.75rem;
+}
+
+/* ---- Guest CTA ---- */
+.me-guest-cta {
+  min-height: 80vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 2rem;
+  text-align: center;
+}
+
+.me-guest-card {
+  max-width: 28rem;
+  padding: 2.5rem;
+  border-radius: 24px;
+  background: linear-gradient(135deg, rgba(30, 20, 60, 0.95) 0%, rgba(15, 10, 40, 0.9) 100%);
+  border: 1px solid rgba(138, 43, 226, 0.3);
+  backdrop-filter: blur(30px);
+  -webkit-backdrop-filter: blur(30px);
+  box-shadow:
+    0 12px 48px rgba(0, 0, 0, 0.5),
+    0 0 40px rgba(138, 43, 226, 0.15);
+}
+
+.me-guest-card h1 {
+  font-size: 2rem;
+  font-weight: 800;
+  background: linear-gradient(135deg, var(--violet), #818cf8, #fff);
+  -webkit-background-clip: text;
+  background-clip: text;
+  -webkit-text-fill-color: transparent;
+}
+
+.me-guest-card p {
+  color: rgba(255, 255, 255, 0.5);
+  margin-top: 0.75rem;
+  font-size: 0.95rem;
+  line-height: 1.6;
+}
+
+.me-guest-card .feature-list {
+  list-style: none;
+  padding: 0;
+  margin: 1.5rem 0;
+  text-align: left;
+}
+
+.me-guest-card .feature-list li {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0;
+  color: rgba(255, 255, 255, 0.7);
+  font-size: 0.9rem;
+}
+
+.me-guest-card .feature-list li .icon {
+  color: var(--violet);
+  flex-shrink: 0;
+}
+
+.me-guest-buttons {
+  display: flex;
+  gap: 0.75rem;
+  margin-top: 1.5rem;
+}
+
+.me-guest-buttons .btn-primary {
+  flex: 1;
+  padding: 0.7rem 1.5rem;
+  border-radius: 12px;
+  background: linear-gradient(135deg, #7c3aed, #6366f1);
+  color: #fff;
+  font-weight: 600;
+  font-size: 0.9rem;
+  border: none;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-decoration: none;
+  text-align: center;
+}
+
+.me-guest-buttons .btn-primary:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 8px 24px rgba(124, 58, 237, 0.4);
+}
+
+.me-guest-buttons .btn-secondary {
+  flex: 1;
+  padding: 0.7rem 1.5rem;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.06);
+  border: 1px solid rgba(255, 255, 255, 0.15);
+  color: rgba(255, 255, 255, 0.8);
+  font-weight: 600;
+  font-size: 0.9rem;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  text-decoration: none;
+  text-align: center;
+}
+
+.me-guest-buttons .btn-secondary:hover {
+  background: rgba(255, 255, 255, 0.12);
+  transform: translateY(-2px);
+}
+
+/* ==========================================================================
+   Supplemental Cosmic Nodes Styles
+   ========================================================================== */
+
+/* Glass Panel / Cards */
+.me-cosmic-card {
+  border-radius: 20px;
+  background: var(--zodiac-card-gradient);
+  border: 1px solid var(--zodiac-border);
+  backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
+  padding: 2rem;
+  transition: all 0.35s cubic-bezier(0.4, 0, 0.2, 1);
+  box-shadow: 0 8px 32px rgba(0, 0, 0, 0.2);
+}
+
+.me-cosmic-card:hover {
+  border-color: hsla(var(--zodiac-accent) / 0.5);
+  box-shadow:
+    0 16px 48px rgba(0, 0, 0, 0.35),
+    0 0 30px var(--zodiac-glow);
+}
+
+/* Dual-Zodiac Pane */
+.me-zodiac-toggle-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.me-zodiac-tabs {
+  display: flex;
+  border-radius: 9999px;
+  background: rgba(255, 255, 255, 0.05);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  padding: 0.25rem;
+  width: fit-content;
+}
+
+.me-zodiac-tab-btn {
+  padding: 0.5rem 1.5rem;
+  border-radius: 9999px;
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  border: none;
+  transition: all 0.3s ease;
+  background: transparent;
+  color: rgba(255, 255, 255, 0.6);
+}
+
+.me-zodiac-tab-btn.active {
+  background: hsl(var(--zodiac-accent));
+  color: #fff;
+  box-shadow: 0 0 15px hsla(var(--zodiac-accent) / 0.4);
+}
+
+.me-zodiac-positions-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  gap: 1rem;
+}
+
+.me-zodiac-planet-item {
+  padding: 1rem;
+  border-radius: 12px;
+  background: hsla(var(--zodiac-accent) / 0.05);
+  border: 1px solid hsla(var(--zodiac-accent) / 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 0.25rem;
+  transition: all 0.25s ease;
+}
+
+.me-zodiac-planet-item:hover {
+  transform: translateY(-2px);
+  background: hsla(var(--zodiac-accent) / 0.08);
+  border-color: hsla(var(--zodiac-accent) / 0.25);
+}
+
+.me-zodiac-planet-name {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.me-zodiac-planet-placement {
+  font-size: 1rem;
+  font-weight: 700;
+  color: #fff;
+}
+
+.me-zodiac-planet-degree {
+  font-size: 0.8rem;
+  color: hsl(var(--zodiac-accent));
+  font-family: monospace;
+}
+
+/* Tarot Oracle Pane */
+.me-tarot-oracle-pane {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 1.5rem;
+}
+
+.me-tarot-card-item {
+  padding: 1.5rem;
+  border-radius: 16px;
+  background: hsla(var(--zodiac-accent) / 0.06);
+  border: 1px solid hsla(var(--zodiac-accent) / 0.12);
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  transition: all 0.3s ease;
+}
+
+.me-tarot-card-item:hover {
+  transform: translateY(-4px);
+  border-color: hsla(var(--zodiac-accent) / 0.3);
+  box-shadow: 0 10px 24px hsla(var(--zodiac-accent) / 0.15);
+}
+
+.me-tarot-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.me-tarot-card-type {
+  font-size: 0.75rem;
+  font-weight: 700;
+  color: hsl(var(--zodiac-accent));
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+}
+
+.me-tarot-card-badge {
+  font-size: 1rem;
+}
+
+.me-tarot-card-name {
+  font-size: 1.25rem;
+  font-weight: 800;
+  color: #fff;
+}
+
+.me-tarot-card-desc {
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.5);
+  line-height: 1.5;
+}
+
+/* Stellium & Aspect Synergy Pane */
+.me-synergy-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.me-stellium-section {
+  padding: 1.25rem;
+  border-radius: 14px;
+  background: rgba(34, 197, 94, 0.06);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+}
+
+.me-stellium-header {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #22c55e;
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+}
+
+.me-aspects-section {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.me-aspects-subgrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+}
+
+.me-aspect-group-item {
+  padding: 1rem;
+  border-radius: 12px;
+  background: hsla(var(--zodiac-accent) / 0.04);
+  border: 1px solid hsla(var(--zodiac-accent) / 0.1);
+  display: flex;
+  flex-direction: column;
+  gap: 0.5rem;
+}
+
+.me-aspect-group-title {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: #fff;
+  display: flex;
+  justify-content: space-between;
+}
+
+.me-aspect-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.35rem;
+}
+
+.me-aspect-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.8rem;
+  color: rgba(255, 255, 255, 0.65);
+}
+
+.me-aspect-row span:last-child {
+  font-family: monospace;
+  color: hsl(var(--zodiac-accent));
+}
+
+/* Imaginizer Prompt Engine */
+.me-imaginizer-pane {
+  display: flex;
+  flex-direction: column;
+  gap: 1rem;
+}
+
+.me-prompt-box {
+  padding: 1.25rem;
+  border-radius: 12px;
+  background: rgba(0, 0, 0, 0.3);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  font-family: monospace;
+  font-size: 0.85rem;
+  color: rgba(255, 255, 255, 0.8);
+  line-height: 1.6;
+  white-space: pre-wrap;
+  word-break: break-all;
+}
+
+.me-copy-prompt-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  padding: 0.6rem 1.25rem;
+  border-radius: 10px;
+  background: hsla(var(--zodiac-accent) / 0.15);
+  border: 1px solid var(--zodiac-border);
+  color: hsl(var(--zodiac-accent));
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: all 0.25s ease;
+  width: fit-content;
+}
+
+.me-copy-prompt-btn:hover {
+  background: hsla(var(--zodiac-accent) / 0.25);
+  box-shadow: 0 0 12px hsla(var(--zodiac-accent) / 0.3);
+}
+
+/* Grid Layout for new nodes */
+.me-supplemental-nodes-grid {
+  display: grid;
+  grid-template-columns: repeat(2, 1fr);
+  gap: 1.5rem;
+  margin-top: 2rem;
+  padding: 0 1rem;
+}
+
+@media (max-width: 1024px) {
+  .me-supplemental-nodes-grid {
+    grid-template-columns: 1fr;
+  }
+}

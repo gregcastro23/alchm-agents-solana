@@ -1,0 +1,241 @@
+{
+  "marcus-aurelius": {
+    "staples": [
+      "Wheat bread",
+      "Olives",
+      "Garum (fermented fish sauce)",
+      "Roast meat",
+      "Lentils",
+      "Cheese"
+    ],
+    "favoriteFoods": [
+      "Simple soldier's rations",
+      "Bread dipped in wine",
+      "Roasted fowl",
+      "Fresh figs"
+    ],
+    "avoidedFoods": ["Excessive banquet luxuries", "Decadent imported delicacies"],
+    "dietaryPhilosophy": "Marcus Aurelius practiced Stoic temperance in eating. He preferred simple camp food and frugal meals, viewing excess at the table as moral weakness.",
+    "culturalCuisine": "Imperial Roman",
+    "beverages": ["Posca (vinegar water)", "Watered wine", "Mulsum (honey wine)"],
+    "foodLore": "The Historia Augusta notes he ate sparingly, often dining on dry bread and simple fare even when lavish imperial feasts were available."
+  },
+  "dante-alighieri": {
+    "staples": ["Bean soup (fagioli)", "Chestnuts", "Bread", "Olive oil", "Pork", "Fresh pasta"],
+    "favoriteFoods": [
+      "Ribollita (Tuscan bread soup)",
+      "Roasted chestnuts",
+      "Fresh figs with cheese",
+      "Pasta with herbs"
+    ],
+    "avoidedFoods": ["Gluttony in all forms (placed gluttons in Hell's Third Circle)"],
+    "dietaryPhilosophy": "Dante viewed food through a moral lens. In the Commedia, gluttons suffer in Hell while the temperate ascend. He valued modest Florentine cuisine over excess.",
+    "culturalCuisine": "Medieval Florentine",
+    "beverages": ["Chianti wine", "Water", "Vin Santo"],
+    "foodLore": "In Purgatorio, Dante describes the penitent gluttons gazing at unreachable fruit trees — food as spiritual metaphor was central to his worldview."
+  },
+  "thomas-aquinas": {
+    "staples": ["Bread", "Herring", "Root vegetables", "Porridge", "Eggs", "Cheese"],
+    "favoriteFoods": ["Herring (his favorite food)", "Bread and cheese", "Simple stews"],
+    "avoidedFoods": [
+      "Meat on fast days (followed strict monastic fasting calendar)",
+      "Luxurious fare"
+    ],
+    "dietaryPhilosophy": "As a Dominican friar, Aquinas followed monastic dietary rules with regular fasting. Yet he was known for his large appetite — his corpulence was legendary among his brothers.",
+    "culturalCuisine": "Medieval Monastic Italian",
+    "beverages": ["Ale", "Water", "Wine at feast days"],
+    "foodLore": "A famous anecdote tells how a semicircular piece was cut from his dining table to accommodate his large belly. Despite his appetite, he considered temperance a cardinal virtue."
+  },
+  "geoffrey-chaucer": {
+    "staples": [
+      "Pottage (thick stew)",
+      "Roast meats",
+      "Cheese",
+      "Bread",
+      "Root vegetables",
+      "Peas"
+    ],
+    "favoriteFoods": ["Roast capon", "Venison pasties", "Blancmange", "Mortrews (meat paste)"],
+    "avoidedFoods": ["Nothing specifically — Chaucer celebrated all food in his tales"],
+    "dietaryPhilosophy": "As a courtier and customs official, Chaucer experienced both peasant and aristocratic tables. The Canterbury Tales are filled with loving food descriptions revealing his deep appreciation for English cuisine.",
+    "culturalCuisine": "Medieval English",
+    "beverages": ["Ale", "Mead", "Hippocras (spiced wine)", "Cider"],
+    "foodLore": "The Cook in the Canterbury Tales serves 'blankmanger' and the Franklin's table 'snowed with meat and drink.' Chaucer knew food from every social class."
+  },
+  "rumi": {
+    "staples": [
+      "Pilaf (rice with lamb)",
+      "Flatbread (naan)",
+      "Yogurt",
+      "Pomegranate",
+      "Dates",
+      "Lamb"
+    ],
+    "favoriteFoods": [
+      "Saffron rice pilaf",
+      "Lamb kebab",
+      "Pomegranate-walnut stew (fesenjān)",
+      "Halva"
+    ],
+    "avoidedFoods": [
+      "Pork (Islamic prohibition)",
+      "Alcohol (though used wine as spiritual metaphor)",
+      "Excess food during Sufi fasting"
+    ],
+    "dietaryPhilosophy": "Rumi used food as spiritual metaphor throughout his poetry. Fasting was central to his Sufi practice — hunger sharpened spiritual perception. Yet he celebrated the joy of communal meals at the Sufi lodge.",
+    "culturalCuisine": "Seljuk Persian-Anatolian",
+    "beverages": ["Rosewater sherbet", "Ayran (yogurt drink)", "Tea", "Spring water"],
+    "foodLore": "Rumi wrote: 'Fasting is the first principle of medicine.' His whirling meditation was sometimes performed on an empty stomach to heighten spiritual ecstasy."
+  },
+  "murasaki-shikibu": {
+    "staples": [
+      "Steamed rice",
+      "Grilled fish (ayu, sea bream)",
+      "Pickled plums (umeboshi)",
+      "Miso soup",
+      "Seasonal vegetables"
+    ],
+    "favoriteFoods": [
+      "Delicate rice cakes (mochi)",
+      "Grilled sweetfish",
+      "Pickled vegetables",
+      "Sweet azuki bean confections"
+    ],
+    "avoidedFoods": [
+      "Strong-smelling foods (garlic, onions — considered unrefined at Heian court)",
+      "Meat (Buddhist influence)"
+    ],
+    "dietaryPhilosophy": "Heian court cuisine was an art of aesthetic presentation and seasonal awareness. Food reflected social rank and cultural refinement. Murasaki describes elaborate court banquets in The Tale of Genji.",
+    "culturalCuisine": "Heian Period Japanese Court",
+    "beverages": ["Sake", "Amazake (sweet rice drink)", "Hot water"],
+    "foodLore": "In The Tale of Genji, food scenes reveal character and season — a New Year's feast of seven-herb rice gruel, or autumn moon-viewing with sweet chestnuts."
+  },
+  "ibn-sina-avicenna": {
+    "staples": ["Lamb", "Flatbread", "Yogurt", "Rice", "Melon", "Chickpeas", "Almonds"],
+    "favoriteFoods": [
+      "Lamb with dried fruits",
+      "Melon (considered it a perfect food)",
+      "Almond milk preparations",
+      "Rose-petal preserves"
+    ],
+    "avoidedFoods": [
+      "Pork (Islamic law)",
+      "Combining fish and dairy",
+      "Cold water with meals (medical opinion)"
+    ],
+    "dietaryPhilosophy": "As the father of early modern medicine, Ibn Sina wrote extensively about food as medicine in The Canon. He classified foods by their hot/cold and wet/dry properties, prescribing specific diets for specific conditions.",
+    "culturalCuisine": "Persian-Islamic Golden Age",
+    "beverages": ["Rosewater drinks", "Fruit syrups (sharbat)", "Warm water with honey"],
+    "foodLore": "Ibn Sina's Canon of Medicine contains detailed dietary prescriptions. He considered melon the king of fruits and recommended it for nearly every condition."
+  },
+  "joan-of-arc": {
+    "staples": ["Dark rye bread", "Onion soup", "Turnips", "Cabbage", "Salt pork", "Pottage"],
+    "favoriteFoods": ["Bread soaked in wine (sop)", "Simple vegetable pottage", "Apples"],
+    "avoidedFoods": [
+      "Meat on fast days (deeply devout Catholic)",
+      "Rich foods (chose peasant simplicity)"
+    ],
+    "dietaryPhilosophy": "Joan ate the simple fare of a Lorraine peasant girl. During her military campaigns, she reportedly ate very little, sometimes going days with minimal food during fasting and prayer.",
+    "culturalCuisine": "Medieval French Peasant",
+    "beverages": ["Cider", "Water", "Watered wine"],
+    "foodLore": "During her trial, Joan was asked about her fasting practices. She confirmed she fasted regularly and received communion — her relationship with food was deeply tied to faith."
+  },
+  "hildegard-of-bingen": {
+    "staples": [
+      "Spelt (her most recommended grain)",
+      "Fennel",
+      "Chestnuts",
+      "Herbs from her garden",
+      "Root vegetables"
+    ],
+    "favoriteFoods": [
+      "Spelt porridge",
+      "Fennel preparations",
+      "Chestnut flour cakes",
+      "Herb-infused dishes",
+      "Roasted root vegetables"
+    ],
+    "avoidedFoods": [
+      "Strawberries (she warned against them)",
+      "Raw salads (considered harmful)",
+      "Pork (she cautioned against it for the sick)",
+      "Leeks"
+    ],
+    "dietaryPhilosophy": "Hildegard developed one of the most detailed medieval dietary systems. Her concept of 'viriditas' (greening power) connected food directly to spiritual and physical health. She classified all foods by their healing properties.",
+    "culturalCuisine": "Medieval German Monastic",
+    "beverages": [
+      "Beer (she considered it healthful)",
+      "Herbal tisanes",
+      "Spelt coffee",
+      "Fennel water"
+    ],
+    "foodLore": "Hildegard wrote: 'Let food be your medicine.' Her Physica catalogs hundreds of foods with medicinal properties. She championed spelt above all grains as the ideal food for body and soul."
+  },
+  "leonardo-da-vinci": {
+    "staples": [
+      "Minestrone soup",
+      "Fresh vegetables from his garden",
+      "Pasta",
+      "Bread",
+      "Olive oil",
+      "Fresh fruit"
+    ],
+    "favoriteFoods": [
+      "Fresh salads",
+      "Minestrone",
+      "Vegetable preparations",
+      "Fresh figs and grapes"
+    ],
+    "avoidedFoods": [
+      "Meat (Leonardo was a noted vegetarian — called the body a 'tomb for animals')",
+      "Cruelty-sourced foods"
+    ],
+    "dietaryPhilosophy": "Leonardo was one of history's earliest documented ethical vegetarians. He purchased caged birds at markets just to set them free. His notebooks contain observations on the cruelty of eating animals.",
+    "culturalCuisine": "Renaissance Italian (Vegetarian)",
+    "beverages": ["Wine (in moderation)", "Water", "Fresh fruit juices"],
+    "foodLore": "Vasari records that Leonardo was so averse to harming living creatures that he would buy caged birds solely to release them. Andrea Corsali wrote that Leonardo 'does not eat anything that contains blood.'"
+  },
+  "william-shakespeare": {
+    "staples": [
+      "Roast meats (beef, mutton)",
+      "Meat pies",
+      "Bread",
+      "Cheese",
+      "Seasonal vegetables",
+      "Oysters"
+    ],
+    "favoriteFoods": [
+      "Roast capon",
+      "Venison",
+      "Marchpane (marzipan)",
+      "Oysters (cheap and plentiful)",
+      "Fruit tarts"
+    ],
+    "avoidedFoods": ["No particular avoidances documented"],
+    "dietaryPhilosophy": "Shakespeare's plays are filled with food imagery — from Falstaff's sack and capons to the banquet scene in Macbeth. Food in his work reveals character, class, and moral standing.",
+    "culturalCuisine": "Elizabethan English",
+    "beverages": ["Sack (sweet sherry)", "Ale", "Small beer", "Canary wine"],
+    "foodLore": "Falstaff's legendary appetites mirror Elizabethan excess: 'A goodly portly man, i' faith, and a corpulent.' Shakespeare left his wife his 'second best bed' but his plays are a feast of culinary references."
+  },
+  "galileo-galilei": {
+    "staples": [
+      "Bread",
+      "Salami",
+      "Cheese (especially pecorino)",
+      "Fresh fruit",
+      "Olive oil",
+      "Beans"
+    ],
+    "favoriteFoods": [
+      "Chianti wine",
+      "Salami and cheese",
+      "Candied citron",
+      "Fresh grapes from his vineyard"
+    ],
+    "avoidedFoods": ["Excess — though he was known to enjoy his food heartily"],
+    "dietaryPhilosophy": "Galileo was a noted food enthusiast and winemaker. He maintained a vineyard in Arcetri and took great pride in his wine. His letters frequently discuss food and drink with the same precision he applied to astronomy.",
+    "culturalCuisine": "Renaissance Tuscan Italian",
+    "beverages": ["Chianti from his own vineyard", "Water", "Wine"],
+    "foodLore": "During his house arrest at Arcetri, Galileo's letters to his daughter Sister Maria Celeste are filled with exchanges of food — she sent him candied citron and cakes, he sent wine from his vineyard."
+  }
+}

@@ -1,0 +1,65 @@
+{
+  "compilerOptions": {
+    "lib": ["dom", "dom.iterable", "esnext"],
+    "allowJs": true,
+    "target": "ES2022",
+    "skipLibCheck": true,
+    "strict": true,
+    "noEmit": true,
+    "esModuleInterop": true,
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "resolveJsonModule": true,
+    "isolatedModules": true,
+    "jsx": "preserve",
+    "incremental": true,
+    "noImplicitAny": true,
+    "noImplicitReturns": true,
+    "noImplicitThis": true,
+    "noUnusedLocals": false,
+    "noUnusedParameters": false,
+    "exactOptionalPropertyTypes": false,
+    "noImplicitOverride": true,
+    "noPropertyAccessFromIndexSignature": false,
+    "noUncheckedIndexedAccess": false,
+    "plugins": [
+      {
+        "name": "next"
+      }
+    ],
+    "paths": {
+      "@/*": ["./*"]
+    }
+  },
+  "include": ["next-env.d.ts", "**/*.ts", "**/*.tsx", ".next/types/**/*.ts"],
+  "exclude": [
+    "node_modules",
+    "desktop-shell",
+    "backend",
+    "scripts",
+    "scratch",
+    "lib/_archive",
+    "test",
+    "test-results",
+    "examples",
+    "workflow.config.ts",
+    "utils",
+    "**/*.spec.ts",
+    "**/*.spec.tsx",
+    "**/*.test.ts",
+    "**/*.test.tsx",
+    "**/__tests__/**",
+    "**/*.stories.tsx",
+    "**/*.stories.ts",
+    "**/test-*.js",
+    "**/test-*.ts",
+    "**/test-*.mjs",
+    "**/jest.config.js",
+    "**/jest.setup.js",
+    "**/*.log",
+    "**/coverage/**",
+    "**/build/**",
+    "**/dist/**",
+    "**/.next/cache/**"
+  ]
+}

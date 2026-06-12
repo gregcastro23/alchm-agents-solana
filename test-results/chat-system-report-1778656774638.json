@@ -1,0 +1,50 @@
+{
+  "timestamp": "2026-05-13T07:19:34.637Z",
+  "environment": "test",
+  "totalTests": 5,
+  "totalPassed": 0,
+  "totalFailed": 5,
+  "totalSkipped": 0,
+  "overallDuration": 22483,
+  "results": [
+    {
+      "suite": "Historical Council Chat",
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 5628
+    },
+    {
+      "suite": "Planetary Wisdom Chat",
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 4717
+    },
+    {
+      "suite": "Consciousness Laboratory Chat",
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 4348
+    },
+    {
+      "suite": "Unified Multi-Agent API",
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 4360
+    },
+    {
+      "suite": "Performance Benchmarks",
+      "passed": 0,
+      "failed": 1,
+      "skipped": 0,
+      "duration": 3430
+    }
+  ],
+  "recommendations": [
+    "🔧 Consider increasing test coverage - current pass rate is below 90%",
+    "🔗 API integration issues detected - review error handling and model selection"
+  ]
+}

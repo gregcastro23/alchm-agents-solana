@@ -1,0 +1,316 @@
+/* Monica's Enhanced Cosmic Home Styling */
+
+/* Base Monica Container */
+.monica-home {
+  min-height: 100vh;
+  background: linear-gradient(
+    135deg,
+    #f0fdf4 0%,
+    /* Light green */ #ecfdf5 25%,
+    /* Lighter green */ #f0f9ff 50%,
+    /* Light blue */ #faf5ff 75%,
+    /* Light purple */ #fdf2f8 100% /* Light pink */
+  );
+  background-size: 400% 400%;
+  animation: monicaGradientShift 20s ease infinite;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Cosmic Background Animation */
+@keyframes monicaGradientShift {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Floating Cosmic Particles */
+.monica-home::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image:
+    radial-gradient(2px 2px at 20px 30px, rgba(34, 197, 94, 0.3), transparent),
+    radial-gradient(2px 2px at 40px 70px, rgba(59, 130, 246, 0.2), transparent),
+    radial-gradient(1px 1px at 90px 40px, rgba(168, 85, 247, 0.2), transparent),
+    radial-gradient(1px 1px at 130px 80px, rgba(34, 197, 94, 0.1), transparent),
+    radial-gradient(2px 2px at 160px 30px, rgba(59, 130, 246, 0.1), transparent);
+  background-repeat: repeat;
+  background-size: 200px 100px;
+  animation: monicaStarfield 30s linear infinite;
+  pointer-events: none;
+  z-index: 1;
+}
+
+@keyframes monicaStarfield {
+  0% {
+    transform: translateY(0);
+  }
+  100% {
+    transform: translateY(-100px);
+  }
+}
+
+/* Monica Header Enhancement */
+.monica-header {
+  position: relative;
+  z-index: 10;
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+  border-radius: 24px;
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  box-shadow:
+    0 8px 32px rgba(34, 197, 94, 0.1),
+    0 2px 8px rgba(0, 0, 0, 0.05);
+  margin-bottom: 2rem;
+  padding: 2rem;
+  transition: all 0.3s ease;
+}
+
+.monica-header:hover {
+  transform: translateY(-2px);
+  box-shadow:
+    0 12px 40px rgba(34, 197, 94, 0.15),
+    0 4px 12px rgba(0, 0, 0, 0.08);
+}
+
+/* Monica Avatar Container */
+.monica-avatar {
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+  background: linear-gradient(135deg, #dcfce7, #f0fdf4);
+  border-radius: 50%;
+  border: 3px solid rgba(34, 197, 94, 0.3);
+  margin-bottom: 1rem;
+  animation: monicaPulse 4s ease-in-out infinite;
+}
+
+@keyframes monicaPulse {
+  0%,
+  100% {
+    transform: scale(1);
+    box-shadow: 0 0 0 0 rgba(34, 197, 94, 0.4);
+  }
+  50% {
+    transform: scale(1.05);
+    box-shadow: 0 0 0 10px rgba(34, 197, 94, 0.1);
+  }
+}
+
+/* Monica Title Styling */
+.monica-title {
+  background: linear-gradient(135deg, #059669, #16a34a, #22c55e);
+  background-clip: text;
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  font-weight: 800;
+  font-size: 2.5rem;
+  letter-spacing: -0.02em;
+  margin-bottom: 0.5rem;
+  text-shadow: none;
+}
+
+.monica-subtitle {
+  color: #065f46;
+  font-weight: 600;
+  font-size: 1rem;
+  opacity: 0.8;
+  margin-bottom: 1rem;
+}
+
+/* Enhanced Badge Styling */
+.monica-badge {
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.1), rgba(16, 185, 129, 0.1));
+  border: 1px solid rgba(34, 197, 94, 0.3);
+  color: #065f46;
+  font-weight: 600;
+  padding: 0.375rem 0.75rem;
+  border-radius: 12px;
+  transition: all 0.2s ease;
+  backdrop-filter: blur(4px);
+}
+
+.monica-badge:hover {
+  transform: translateY(-1px);
+  background: linear-gradient(135deg, rgba(34, 197, 94, 0.2), rgba(16, 185, 129, 0.2));
+  box-shadow: 0 4px 12px rgba(34, 197, 94, 0.15);
+}
+
+.monica-badge-outline {
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  color: #047857;
+  font-weight: 500;
+  padding: 0.25rem 0.5rem;
+  border-radius: 8px;
+  font-size: 0.75rem;
+  transition: all 0.2s ease;
+}
+
+.monica-badge-outline:hover {
+  background: rgba(34, 197, 94, 0.1);
+  border-color: rgba(34, 197, 94, 0.4);
+}
+
+/* Monica Description */
+.monica-description {
+  color: #047857;
+  font-size: 0.95rem;
+  line-height: 1.6;
+  max-width: 42rem;
+  margin: 0 auto;
+  font-weight: 500;
+  text-align: center;
+}
+
+/* Chat Interface Enhancement */
+.monica-chat-container {
+  position: relative;
+  z-index: 10;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(15px);
+  border-radius: 20px;
+  border: 1px solid rgba(34, 197, 94, 0.2);
+  box-shadow:
+    0 10px 40px rgba(34, 197, 94, 0.08),
+    0 2px 10px rgba(0, 0, 0, 0.05);
+  overflow: visible; /* Allow content to be scrollable */
+  transition: all 0.3s ease;
+}
+
+.monica-chat-container:hover {
+  box-shadow:
+    0 15px 50px rgba(34, 197, 94, 0.12),
+    0 4px 15px rgba(0, 0, 0, 0.08);
+}
+
+/* Elemental Icon Styling */
+.monica-element-fire {
+  color: #dc2626;
+  filter: drop-shadow(0 0 4px rgba(220, 38, 38, 0.3));
+}
+
+.monica-element-earth {
+  color: #16a34a;
+  filter: drop-shadow(0 0 4px rgba(22, 163, 74, 0.3));
+}
+
+.monica-element-air {
+  color: #2563eb;
+  filter: drop-shadow(0 0 4px rgba(37, 99, 235, 0.3));
+}
+
+.monica-element-water {
+  color: #0891b2;
+  filter: drop-shadow(0 0 4px rgba(8, 145, 178, 0.3));
+}
+
+/* Sparkle Animation */
+.monica-sparkle {
+  animation: monicaSparkle 2s ease-in-out infinite;
+}
+
+@keyframes monicaSparkle {
+  0%,
+  100% {
+    opacity: 0.6;
+    transform: scale(1) rotate(0deg);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.2) rotate(180deg);
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .monica-home {
+    padding: 1rem;
+  }
+
+  .monica-header {
+    padding: 1.5rem;
+    margin-bottom: 1.5rem;
+  }
+
+  .monica-title {
+    font-size: 2rem;
+  }
+
+  .monica-subtitle {
+    font-size: 0.9rem;
+  }
+
+  .monica-description {
+    font-size: 0.875rem;
+  }
+}
+
+/* Advanced Cosmic Effects */
+.monica-cosmic-glow {
+  position: relative;
+}
+
+.monica-cosmic-glow::after {
+  content: '';
+  position: absolute;
+  top: -2px;
+  left: -2px;
+  right: -2px;
+  bottom: -2px;
+  background: linear-gradient(
+    45deg,
+    rgba(34, 197, 94, 0.3),
+    rgba(59, 130, 246, 0.2),
+    rgba(168, 85, 247, 0.2),
+    rgba(34, 197, 94, 0.3)
+  );
+  border-radius: inherit;
+  z-index: -1;
+  opacity: 0;
+  transition: opacity 0.3s ease;
+}
+
+.monica-cosmic-glow:hover::after {
+  opacity: 1;
+}
+
+/* Monica Constant Mathematical Styling */
+.monica-constant-formula {
+  background: linear-gradient(135deg, #f0fdf4, #dcfce7);
+  border: 2px solid rgba(34, 197, 94, 0.2);
+  border-radius: 12px;
+  padding: 1rem;
+  font-family: 'JetBrains Mono', monospace;
+  color: #065f46;
+  font-weight: 600;
+  text-align: center;
+  margin: 1rem 0;
+  position: relative;
+}
+
+.monica-constant-formula::before {
+  content: '✨ Monica Constant ✨';
+  position: absolute;
+  top: -12px;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #16a34a;
+  color: white;
+  padding: 0.25rem 0.75rem;
+  border-radius: 6px;
+  font-size: 0.75rem;
+  font-weight: 700;
+}

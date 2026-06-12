@@ -1,0 +1,119 @@
+/* ═══════════════════════════════════════════════════════════════════
+   Alchm Convergence v1 · shared design tokens
+   Drop this block into app/globals.css alongside the shadcn HSL tokens
+   (different namespace, no conflict). Tauri desktop reads these from
+   styles.css with the same names.
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ESMS coin currency — independent of element.
+     Match components/TokenHUD.tsx exactly (Tailwind 400 shade tokens). */
+  --alchm-spirit: #facc15; /* yellow-400  · Sparkles  · Principle of Spirit    */
+  --alchm-essence: #60a5fa; /* blue-400    · Droplets  · Principle of Essence   */
+  --alchm-matter: #fb923c; /* orange-400  · Box       · Principle of Matter    */
+  --alchm-substance: #4ade80; /* green-400   · Zap       · Principle of Substance */
+
+  /* Four classical elements — drive aura color & visual identity.
+     Decoupled from coins. There is no Aether. */
+  --alchm-fire: #e8723a; /* △ · spark   */
+  --alchm-water: #4a9fd4; /* ▽ · flow    */
+  --alchm-earth: #8aa14a; /* ⏃ · ground  */
+  --alchm-air: #b8a8ff; /* ⏆ · breath  */
+
+  /* Web · cosmic palette — lifted from app/globals.css .dark theme.
+     Use these for any new surface that should feel "alchm". */
+  --alchm-bg-0: #050210;
+  --alchm-bg-1: #0c0319;
+  --alchm-bg-2: #1e0a3c;
+  --alchm-bg-3: #2e1065;
+  --alchm-violet: #8b5cf6; /* primary 263 70% 50% */
+  --alchm-violet-2: #a78bfa;
+  --alchm-ink: #e8e8ff;
+  --alchm-ink-dim: #b8b2cc;
+
+  /* Desktop · ember palette — char + ember + ochre.
+     Use for the Tauri shell only. */
+  --alchm-char-0: #0e0805;
+  --alchm-char-1: #150c08;
+  --alchm-char-2: #1a0f0a;
+  --alchm-ember: #c44a2e;
+  --alchm-ochre: #e8b04a;
+  --alchm-bone: #ede4d2;
+
+  /* Type stack — shared across both surfaces. */
+  --alchm-f-ritual: 'Cinzel', 'Trajan Pro', serif;
+  --alchm-f-display: 'Cormorant Garamond', 'EB Garamond', Georgia, serif;
+  --alchm-f-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+
+  /* Status semantics */
+  --alchm-ok: #4ade80;
+  --alchm-warn: #facc15;
+  --alchm-err: #ef4444;
+
+  /* The 28 AuraType animation timing tokens — owned by desktop, mirrored here */
+  --alchm-aura-pulsing: 2800ms;
+  --alchm-aura-crackling: 1400ms;
+  --alchm-aura-radiant: 4000ms;
+  --alchm-aura-burning: 1100ms;
+  --alchm-aura-flowing: 5000ms;
+  --alchm-aura-crystalline: 6000ms;
+  --alchm-aura-swirling: 8000ms;
+  --alchm-aura-shimmering: 3200ms;
+  --alchm-aura-mystical: 3500ms;
+  --alchm-aura-steady: 1000ms;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Coin badge utility — apply via class to any element representing a
+   single ESMS token in the UI. Pairs with Lucide React icons.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.alchm-coin {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--alchm-f-mono);
+  font-variant-numeric: tabular-nums;
+}
+.alchm-coin-spirit {
+  color: var(--alchm-spirit);
+}
+.alchm-coin-essence {
+  color: var(--alchm-essence);
+}
+.alchm-coin-matter {
+  color: var(--alchm-matter);
+}
+.alchm-coin-substance {
+  color: var(--alchm-substance);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Element halo utility — apply to agent cards / chips. The aura color
+   tracks the agent.dominantElement.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.alchm-aura-fire {
+  --alchm-aura: var(--alchm-fire);
+  box-shadow:
+    0 0 0 1px var(--alchm-aura),
+    0 0 24px -8px var(--alchm-aura);
+}
+.alchm-aura-water {
+  --alchm-aura: var(--alchm-water);
+  box-shadow:
+    0 0 0 1px var(--alchm-aura),
+    0 0 24px -8px var(--alchm-aura);
+}
+.alchm-aura-earth {
+  --alchm-aura: var(--alchm-earth);
+  box-shadow:
+    0 0 0 1px var(--alchm-aura),
+    0 0 24px -8px var(--alchm-aura);
+}
+.alchm-aura-air {
+  --alchm-aura: var(--alchm-air);
+  box-shadow:
+    0 0 0 1px var(--alchm-aura),
+    0 0 24px -8px var(--alchm-aura);
+}

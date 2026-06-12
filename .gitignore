@@ -1,0 +1,94 @@
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# See https://help.github.com/articles/ignoring-files/ for more about ignoring files.
+
+# dependencies
+/node_modules
+
+# yarn cache files
+.yarn/cache
+.yarn/install-state.gz
+
+# lock files - only use yarn.lock
+package-lock.json
+pnpm-lock.yaml
+
+# next.js
+/.next/
+/out/
+
+# production
+/build
+
+# debug
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+.pnpm-debug.log*
+
+# env files
+.env*
+backend/.env.render
+.env.render
+
+# vercel
+.vercel
+
+# typescript
+*.tsbuildinfo
+next-env.d.ts
+/lib/generated/prisma
+
+*storybook.log
+storybook-static
+test-results/
+.cache/
+.gitlab-webhook-config.txt
+
+# Remove tracked env files with secrets
+vercel-env-variables.env
+vercel-env-import.env
+render-backend.env
+render-frontend.env
+
+# Python & virtualenv
+backend/venv/
+backend/venv-x86_64/
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+
+# PyInstaller build artifacts (pa-mcp sidecar)
+backend/build/
+backend/build-x86_64/
+backend/dist/
+backend/dist-x86_64/
+
+# Python packaging build artifacts (alchm-planetary-agents-mcp)
+*.egg-info/
+backend/*.egg-info/
+
+# Databases
+backend/chroma_db/
+backend/planetary_agents.db
+chroma_db/
+*.db
+
+# Temporary Logs and Scratch files
+*.log
+scratch/
+test-import.ts
+.dev_server*
+AGENTS.md
+
+backend/node_modules/
+.env*.local
+src-tauri/target/
+*.DS_Store
+.DS_Store
+src-tauri/bin/llama-server*
+src-tauri/icons/icon_rgb.png
+src-tauri/bin/orchestrator-*
+src-tauri/bin/alchm-mcp-*
+src-tauri/bin/pa-mcp-*

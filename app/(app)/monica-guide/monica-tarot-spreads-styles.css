@@ -1,0 +1,274 @@
+/* Monica Tarot Spreads Enhanced Styling */
+
+.monica-tarot-spreads {
+  min-height: 100vh;
+  background: linear-gradient(135deg, #faf5ff 0%, #fff1f2 50%, #fef3c7 100%);
+  animation: cosmicGlow 8s ease-in-out infinite alternate;
+}
+
+@keyframes cosmicGlow {
+  0% {
+    background: linear-gradient(135deg, #faf5ff 0%, #fff1f2 50%, #fef3c7 100%);
+  }
+  100% {
+    background: linear-gradient(135deg, #f3e8ff 0%, #fef2f2 50%, #fbbf24 100%);
+  }
+}
+
+/* Enhanced Card Layouts */
+.monica-spread-layout {
+  perspective: 1000px;
+  min-height: 400px;
+}
+
+.monica-spread-card {
+  transform-style: preserve-3d;
+  transition: all 0.3s ease;
+  animation: cardAppear 0.8s ease-out;
+  animation-fill-mode: both;
+}
+
+.monica-spread-card:hover {
+  transform: translateY(-8px) rotateX(5deg);
+  box-shadow: 0 20px 40px -10px rgba(168, 85, 247, 0.4);
+}
+
+@keyframes cardAppear {
+  0% {
+    opacity: 0;
+    transform: translateY(30px) rotateX(-15deg);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0) rotateX(0);
+  }
+}
+
+/* Specific Layout Styles */
+.three-card-layout .monica-spread-card:nth-child(1) {
+  animation-delay: 0.1s;
+}
+
+.three-card-layout .monica-spread-card:nth-child(2) {
+  animation-delay: 0.2s;
+}
+
+.three-card-layout .monica-spread-card:nth-child(3) {
+  animation-delay: 0.3s;
+}
+
+.celtic-layout .monica-spread-card {
+  border-radius: 12px;
+  overflow: hidden;
+}
+
+.celtic-position-1,
+.celtic-position-2 {
+  border: 3px solid #a855f7;
+  background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%);
+  box-shadow: 0 8px 25px -5px rgba(168, 85, 247, 0.3);
+}
+
+.celtic-position-10 {
+  border: 3px solid #eab308;
+  background: linear-gradient(135deg, #fefce8 0%, #fef3c7 100%);
+  box-shadow: 0 8px 25px -5px rgba(234, 179, 8, 0.3);
+}
+
+.consciousness-layout .monica-spread-card {
+  position: relative;
+  overflow: hidden;
+}
+
+.chakra-position-1 {
+  border-left: 4px solid #dc2626;
+} /* Root - Red */
+.chakra-position-2 {
+  border-left: 4px solid #ea580c;
+} /* Sacral - Orange */
+.chakra-position-3 {
+  border-left: 4px solid #ca8a04;
+} /* Solar - Yellow */
+.chakra-position-4 {
+  border-left: 4px solid #16a34a;
+} /* Heart - Green */
+.chakra-position-5 {
+  border-left: 4px solid #2563eb;
+} /* Throat - Blue */
+.chakra-position-6 {
+  border-left: 4px solid #7c3aed;
+} /* Third Eye - Indigo */
+.chakra-position-7 {
+  border-left: 4px solid #9333ea;
+} /* Crown - Violet */
+
+/* Enhanced Mystical Effects */
+.monica-mystical-button {
+  position: relative;
+  overflow: hidden;
+  background: linear-gradient(45deg, #a855f7, #ec4899, #eab308);
+  background-size: 300% 300%;
+  animation: mysticGradient 3s ease infinite;
+  border: none;
+  color: white;
+  font-weight: 600;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.2);
+}
+
+.monica-mystical-button::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -100%;
+  width: 100%;
+  height: 100%;
+  background: linear-gradient(90deg, transparent, rgba(255, 255, 255, 0.3), transparent);
+  transition: left 0.5s;
+}
+
+.monica-mystical-button:hover::before {
+  left: 100%;
+}
+
+@keyframes mysticGradient {
+  0% {
+    background-position: 0% 50%;
+  }
+  50% {
+    background-position: 100% 50%;
+  }
+  100% {
+    background-position: 0% 50%;
+  }
+}
+
+/* Tarot Card Visual Enhancements */
+.monica-spread-card .card-header {
+  background: linear-gradient(135deg, #faf5ff 0%, #f3e8ff 100%);
+  border-bottom: 1px solid #e5e7eb;
+}
+
+.monica-spread-card .card-content {
+  background: rgba(255, 255, 255, 0.9);
+  backdrop-filter: blur(10px);
+}
+
+/* Loading Animation */
+.monica-tarot-spreads-loading {
+  background: linear-gradient(135deg, #faf5ff 0%, #fff1f2 50%, #fef3c7 100%);
+  border: 2px solid #a855f7;
+  animation: loadingPulse 2s ease-in-out infinite;
+}
+
+@keyframes loadingPulse {
+  0%,
+  100% {
+    box-shadow: 0 0 20px rgba(168, 85, 247, 0.3);
+    border-color: #a855f7;
+  }
+  50% {
+    box-shadow: 0 0 40px rgba(168, 85, 247, 0.6);
+    border-color: #ec4899;
+  }
+}
+
+/* Interpretation Cards */
+.monica-spread-interpretation {
+  background: linear-gradient(135deg, #fef3c7 0%, #fbbf24 100%);
+  border: 2px solid #eab308;
+  border-radius: 16px;
+  padding: 20px;
+  margin: 16px 0;
+  box-shadow: 0 8px 25px -5px rgba(234, 179, 8, 0.3);
+  animation: interpretationGlow 4s ease-in-out infinite alternate;
+}
+
+@keyframes interpretationGlow {
+  0% {
+    box-shadow: 0 8px 25px -5px rgba(234, 179, 8, 0.3);
+  }
+  100% {
+    box-shadow: 0 12px 30px -5px rgba(234, 179, 8, 0.5);
+  }
+}
+
+/* Responsive Design */
+@media (max-width: 768px) {
+  .monica-spread-layout {
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+
+  .monica-spread-card {
+    margin: 8px 0;
+  }
+
+  .monica-mystical-button {
+    padding: 12px 20px;
+    font-size: 14px;
+  }
+}
+
+@media (min-width: 1200px) {
+  .celtic-layout {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 16px;
+  }
+
+  .celtic-position-1 {
+    grid-column: 3;
+    grid-row: 2;
+  }
+
+  .celtic-position-2 {
+    grid-column: 3;
+    grid-row: 3;
+    transform: rotate(90deg);
+  }
+
+  .celtic-position-10 {
+    grid-column: 5;
+    grid-row: 1;
+  }
+}
+
+/* Gold gradient for special elements */
+.monica-gold-gradient {
+  background: linear-gradient(135deg, #fbbf24 0%, #f59e0b 50%, #d97706 100%);
+  color: white;
+  text-shadow: 0 1px 2px rgba(0, 0, 0, 0.3);
+}
+
+/* Cosmic particle effects */
+.monica-cosmic-particles {
+  position: relative;
+  overflow: hidden;
+}
+
+.monica-cosmic-particles::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-image:
+    radial-gradient(2px 2px at 20px 30px, rgba(255, 255, 255, 0.3), transparent),
+    radial-gradient(2px 2px at 40px 70px, rgba(168, 85, 247, 0.3), transparent),
+    radial-gradient(1px 1px at 90px 40px, rgba(236, 72, 153, 0.3), transparent),
+    radial-gradient(1px 1px at 130px 80px, rgba(234, 179, 8, 0.3), transparent);
+  background-repeat: repeat;
+  background-size: 150px 150px;
+  animation: particleFloat 20s linear infinite;
+  pointer-events: none;
+}
+
+@keyframes particleFloat {
+  0% {
+    transform: translateY(0) translateX(0);
+  }
+  100% {
+    transform: translateY(-150px) translateX(-150px);
+  }
+}

@@ -1,0 +1,82 @@
+# Planetary Agents - Dynamic Routing Configuration
+# Additional routing rules and middlewares
+
+http:
+  middlewares:
+    # Security headers
+    security-headers:
+      headers:
+        customRequestHeaders:
+          X-Frame-Options: 'DENY'
+          X-Content-Type-Options: 'nosniff'
+          X-XSS-Protection: '1; mode=block'
+          Referrer-Policy: 'strict-origin-when-cross-origin'
+          Content-Security-Policy: "default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; font-src 'self' data:; connect-src 'self' https:;"
+        customResponseHeaders:
+          Server: ''
+          X-Powered-By: ''
+
+    # Rate limiting
+    rate-limit:
+      rateLimit:
+        burst: 100
+        average: 50
+
+    # Compression
+    gzip:
+      compress:
+        defaultEncoding: 'gzip'
+        encodings:
+          - 'gzip'
+          - 'deflate'
+
+    # Redirect HTTP to HTTPS
+    redirect-to-https:
+      redirectScheme:
+        scheme: https
+        permanent: true
+
+  routers:
+    # API rate limiting
+    api-rate-limit:
+      rule: 'PathPrefix(`/api/`)'
+      middlewares:
+        - rate-limit
+        - security-headers
+        - gzip
+      service: planetary-frontend
+      priority: 100
+
+    # Static assets caching
+    static-assets:
+      rule: 'PathPrefix(`/_next/static/`)'
+      middlewares:
+        - gzip
+        - security-headers
+      service: planetary-frontend
+      priority: 90
+
+    # Health check bypass
+    health-check:
+      rule: 'Path(`/api/health`)'
+      service: planetary-frontend
+      priority: 200
+
+  services:
+    planetary-frontend:
+      loadBalancer:
+        servers:
+          - url: 'http://frontend:3000'
+        healthCheck:
+          path: '/api/health'
+          interval: '10s'
+          timeout: '3s'
+
+    planetary-backend:
+      loadBalancer:
+        servers:
+          - url: 'http://backend:8000'
+        healthCheck:
+          path: '/api/health'
+          interval: '10s'
+          timeout: '3s'

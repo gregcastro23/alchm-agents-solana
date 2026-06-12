@@ -1,0 +1,653 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+body {
+  font-family: var(--ff-ui, system-ui, sans-serif);
+}
+
+@layer utilities {
+  .text-balance {
+    text-wrap: balance;
+  }
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Alchm Convergence v1 · shared design tokens
+   Drop this block into app/globals.css alongside the shadcn HSL tokens
+   (different namespace, no conflict). Tauri desktop reads these from
+   styles.css with the same names.
+   ═══════════════════════════════════════════════════════════════════ */
+
+:root {
+  /* ESMS coin currency — independent of element.
+     Match components/TokenHUD.tsx exactly (Tailwind 400 shade tokens). */
+  --alchm-spirit: #facc15; /* yellow-400  · Sparkles  · Principle of Spirit    */
+  --alchm-essence: #60a5fa; /* blue-400    · Droplets  · Principle of Essence   */
+  --alchm-matter: #fb923c; /* orange-400  · Box       · Principle of Matter    */
+  --alchm-substance: #4ade80; /* green-400   · Zap       · Principle of Substance */
+
+  /* Four classical elements — drive aura color & visual identity.
+     Decoupled from coins. There is no Aether. */
+  --alchm-fire: #e8723a; /* △ · spark   */
+  --alchm-water: #4a9fd4; /* ▽ · flow    */
+  --alchm-earth: #8aa14a; /* ⏃ · ground  */
+  --alchm-air: #b8a8ff; /* ⏆ · breath  */
+
+  /* Web · cosmic palette — lifted from app/globals.css .dark theme.
+     Use these for any new surface that should feel "alchm". */
+  --alchm-bg-0: #050210;
+  --alchm-bg-1: #0c0319;
+  --alchm-bg-2: #1e0a3c;
+  --alchm-bg-3: #2e1065;
+  --alchm-violet: #8b5cf6; /* primary 263 70% 50% */
+  --alchm-violet-2: #a78bfa;
+  --alchm-ink: #e8e8ff;
+  --alchm-ink-dim: #b8b2cc;
+
+  /* Desktop · ember palette — char + ember + ochre.
+     Use for the Tauri shell only. */
+  --alchm-char-0: #0e0805;
+  --alchm-char-1: #150c08;
+  --alchm-char-2: #1a0f0a;
+  --alchm-ember: #c44a2e;
+  --alchm-ochre: #e8b04a;
+  --alchm-bone: #ede4d2;
+
+  /* Type stack — shared across both surfaces. */
+  --alchm-f-ritual: 'Cinzel', 'Trajan Pro', serif;
+  --alchm-f-display: 'Cormorant Garamond', 'EB Garamond', Georgia, serif;
+  --alchm-f-mono: 'JetBrains Mono', 'SF Mono', Menlo, monospace;
+
+  /* Status semantics */
+  --alchm-ok: #4ade80;
+  --alchm-warn: #facc15;
+  --alchm-err: #ef4444;
+
+  /* The 28 AuraType animation timing tokens — owned by desktop, mirrored here */
+  --alchm-aura-pulsing: 2800ms;
+  --alchm-aura-crackling: 1400ms;
+  --alchm-aura-radiant: 4000ms;
+  --alchm-aura-burning: 1100ms;
+  --alchm-aura-flowing: 5000ms;
+  --alchm-aura-crystalline: 6000ms;
+  --alchm-aura-swirling: 8000ms;
+  --alchm-aura-shimmering: 3200ms;
+  --alchm-aura-mystical: 3500ms;
+  --alchm-aura-steady: 1000ms;
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Coin badge utility — apply via class to any element representing a
+   single ESMS token in the UI. Pairs with Lucide React icons.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.alchm-coin {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-family: var(--alchm-f-mono);
+  font-variant-numeric: tabular-nums;
+}
+.alchm-coin-spirit {
+  color: var(--alchm-spirit);
+}
+.alchm-coin-essence {
+  color: var(--alchm-essence);
+}
+.alchm-coin-matter {
+  color: var(--alchm-matter);
+}
+.alchm-coin-substance {
+  color: var(--alchm-substance);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Element halo utility — apply to agent cards / chips. The aura color
+   tracks the agent.dominantElement.
+   ═══════════════════════════════════════════════════════════════════ */
+
+.alchm-aura-fire {
+  --alchm-aura: var(--alchm-fire);
+  box-shadow:
+    0 0 0 1px var(--alchm-aura),
+    0 0 24px -8px var(--alchm-aura);
+}
+.alchm-aura-water {
+  --alchm-aura: var(--alchm-water);
+  box-shadow:
+    0 0 0 1px var(--alchm-aura),
+    0 0 24px -8px var(--alchm-aura);
+}
+.alchm-aura-earth {
+  --alchm-aura: var(--alchm-earth);
+  box-shadow:
+    0 0 0 1px var(--alchm-aura),
+    0 0 24px -8px var(--alchm-aura);
+}
+.alchm-aura-air {
+  --alchm-aura: var(--alchm-aura);
+  box-shadow:
+    0 0 0 1px var(--alchm-aura),
+    0 0 24px -8px var(--alchm-aura);
+}
+
+@layer base {
+  /* ═══════════════════════════════════════════════════════════════════
+     Alchm Design System — dark-first cosmic theme.
+     Tokens live in :root so the whole token system is dark by default
+     (no dependence on a .dark class being applied). .dark mirrors them
+     for any dark:-variant usage. Same shadcn HSL "H S% L%" format → these
+     feed tailwind.config.ts via hsl(var(--token)).
+     ═══════════════════════════════════════════════════════════════════ */
+  :root {
+    color-scheme: dark;
+
+    /* Semantic (HSL) */
+    --background: 249 56% 4%;
+    --foreground: 40 25% 92%;
+    --card: 249 44% 9%;
+    --card-foreground: 40 20% 91%;
+    --popover: 249 48% 8%;
+    --popover-foreground: 40 20% 91%;
+    --primary: 263 70% 58%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 249 40% 14%;
+    --secondary-foreground: 40 18% 90%;
+    --muted: 249 26% 16%;
+    --muted-foreground: 268 9% 62%;
+    --accent: 258 89% 76%;
+    --accent-foreground: 249 56% 6%;
+    --destructive: 2 78% 62%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 145 46% 52%;
+    --success-foreground: 145 60% 8%;
+    --warning: 38 84% 64%;
+    --warning-foreground: 38 70% 8%;
+    --border: 255 30% 22%;
+    --border-glow: 263 70% 58%;
+    --input: 249 30% 15%;
+    --ring: 258 89% 76%;
+    --chart-1: 220 70% 50%;
+    --chart-2: 160 60% 45%;
+    --chart-3: 30 80% 55%;
+    --chart-4: 280 65% 60%;
+    --chart-5: 340 75% 55%;
+    --radius: 0.625rem;
+    --sidebar-background: 249 46% 7%;
+    --sidebar-foreground: 40 18% 90%;
+    --sidebar-primary: 263 70% 58%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 249 40% 13%;
+    --sidebar-accent-foreground: 40 18% 90%;
+    --sidebar-border: 255 28% 20%;
+    --sidebar-ring: 258 89% 76%;
+
+    /* Brand / elemental (hex) */
+    --bg-base: #0a0918;
+    --bg-deep: #050410;
+    --fire: #ef5d4e;
+    --water: #5e9bd6;
+    --air: #d9c87a;
+    --earth: #8aa56a;
+    --gold: #e9b86f;
+    --gold-hi: #f5d195;
+    --rose: #f4a8c8;
+    --violet: #a78bfa;
+    --violet-hi: #c4b5fd;
+    /* RGB channel forms for alpha compositing (rgb(var(--x) / a)).
+       Exact legacy values → tokenizing bespoke CSS causes zero color shift. */
+    --violet-rgb: 167 139 250; /* #a78bfa */
+    --violet-500: #8b5cf6;
+    --violet-500-rgb: 139 92 246; /* the dominant legacy brand violet */
+    --hairline: rgba(196, 181, 253, 0.1);
+    --aurora: linear-gradient(125deg, #7c5cf0 0%, #a78bfa 38%, #f4a8c8 72%, #e9b86f 100%);
+    --aurora-soft: linear-gradient(
+      125deg,
+      rgba(124, 92, 240, 0.22),
+      rgba(244, 168, 200, 0.16) 60%,
+      rgba(233, 184, 111, 0.14)
+    );
+    --nebula:
+      radial-gradient(120% 120% at 12% 8%, rgba(124, 92, 192, 0.2), transparent 55%),
+      radial-gradient(120% 120% at 88% 92%, rgba(80, 60, 160, 0.18), transparent 60%),
+      radial-gradient(90% 90% at 60% 30%, rgba(244, 168, 200, 0.06), transparent 55%);
+
+    /* Elevation */
+    --e-1: 0 1px 0 0 rgba(196, 181, 253, 0.06), 0 1px 2px rgba(5, 4, 16, 0.6);
+    --e-2: 0 0 0 1px hsl(var(--border) / 0.6), 0 8px 24px rgba(5, 4, 16, 0.5);
+    --e-3: 0 0 0 1px hsl(var(--border) / 0.7), 0 16px 44px rgba(5, 4, 16, 0.62);
+    --e-glow: 0 0 0 1px hsl(var(--border-glow) / 0.4), 0 12px 40px rgba(124, 92, 240, 0.18);
+
+    /* Radius scale */
+    --r-xs: 6px;
+    --r-sm: 8px;
+    --r-md: 10px;
+    --r-lg: 14px;
+    --r-xl: 20px;
+    --r-pill: 999px;
+
+    /* Spacing scale */
+    --space-1: 4px;
+    --space-2: 8px;
+    --space-3: 12px;
+    --space-4: 16px;
+    --space-5: 24px;
+    --space-6: 32px;
+    --space-7: 48px;
+    --space-8: 64px;
+
+    /* Motion */
+    --dur-1: 120ms;
+    --dur-2: 200ms;
+    --dur-3: 320ms;
+    --ease: cubic-bezier(0.22, 0.61, 0.36, 1);
+
+    /* Fluid type scale */
+    --text-xs: 0.75rem;
+    --text-sm: 0.8125rem;
+    --text-base: 0.9375rem;
+    --text-md: 1.0625rem;
+    --text-lg: clamp(1.125rem, 0.9rem + 0.6vw, 1.375rem);
+    --text-xl: clamp(1.5rem, 1.1rem + 1.2vw, 2.125rem);
+    --text-2xl: clamp(2rem, 1.4rem + 2.4vw, 3.25rem);
+    --text-3xl: clamp(2.75rem, 1.8rem + 4vw, 4.75rem);
+
+    /* Font stacks (families loaded via next/font in app/layout.tsx) */
+    --ff-display: var(--font-cormorant), 'Iowan Old Style', Georgia, serif;
+    --ff-ui: var(--font-manrope), 'DM Sans', -apple-system, system-ui, sans-serif;
+    --ff-mono: var(--font-ibm-plex-mono), ui-monospace, monospace;
+  }
+  /* Mirror the semantic tokens under .dark so dark:-variant usage stays
+     consistent if the class is ever applied. App is dark-first via :root. */
+  .dark {
+    --background: 249 56% 4%;
+    --foreground: 40 25% 92%;
+    --card: 249 44% 9%;
+    --card-foreground: 40 20% 91%;
+    --popover: 249 48% 8%;
+    --popover-foreground: 40 20% 91%;
+    --primary: 263 70% 58%;
+    --primary-foreground: 0 0% 100%;
+    --secondary: 249 40% 14%;
+    --secondary-foreground: 40 18% 90%;
+    --muted: 249 26% 16%;
+    --muted-foreground: 268 9% 62%;
+    --accent: 258 89% 76%;
+    --accent-foreground: 249 56% 6%;
+    --destructive: 2 78% 62%;
+    --destructive-foreground: 0 0% 100%;
+    --success: 145 46% 52%;
+    --success-foreground: 145 60% 8%;
+    --warning: 38 84% 64%;
+    --warning-foreground: 38 70% 8%;
+    --border: 255 30% 22%;
+    --border-glow: 263 70% 58%;
+    --input: 249 30% 15%;
+    --ring: 258 89% 76%;
+    --sidebar-background: 249 46% 7%;
+    --sidebar-foreground: 40 18% 90%;
+    --sidebar-primary: 263 70% 58%;
+    --sidebar-primary-foreground: 0 0% 100%;
+    --sidebar-accent: 249 40% 13%;
+    --sidebar-accent-foreground: 40 18% 90%;
+    --sidebar-border: 255 28% 20%;
+    --sidebar-ring: 258 89% 76%;
+  }
+}
+
+@layer base {
+  * {
+    @apply border-border;
+  }
+  body {
+    @apply bg-background text-foreground;
+    font-family: var(--ff-ui, system-ui, sans-serif);
+  }
+}
+
+/* Suppress global cosmic layers when a page provides its own (e.g. /me zodiac theme) */
+body:has(.me-page)::before,
+body:has(.me-page)::after {
+  display: none !important;
+}
+
+/* Enhanced cosmic background with multiple layers */
+body::before {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background:
+    radial-gradient(ellipse at top, #2e1065 0%, #1e0a3c 25%, #0c0319 50%, #050210 100%),
+    radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 40% 40%, rgba(120, 200, 255, 0.1) 0%, transparent 50%);
+  background-size:
+    100% 100%,
+    80% 80%,
+    60% 60%,
+    40% 40%;
+  z-index: -3;
+}
+
+/* Animated cosmic particles and nebula */
+@keyframes twinkle {
+  0%,
+  100% {
+    opacity: 0.3;
+    transform: scale(1);
+  }
+  50% {
+    opacity: 1;
+    transform: scale(1.1);
+  }
+}
+
+@keyframes drift {
+  0% {
+    transform: rotate(0deg) translateX(0px) rotate(0deg);
+  }
+  100% {
+    transform: rotate(360deg) translateX(30px) rotate(-360deg);
+  }
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+  50% {
+    opacity: 0.8;
+  }
+}
+
+/* Main starfield */
+body::after {
+  content: '';
+  position: fixed;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  background-image:
+    radial-gradient(3px 3px at 10% 20%, rgba(255, 255, 255, 0.8), transparent),
+    radial-gradient(2px 2px at 85% 15%, rgba(120, 200, 255, 0.9), transparent),
+    radial-gradient(1px 1px at 30% 70%, rgba(255, 180, 255, 0.8), transparent),
+    radial-gradient(2px 2px at 70% 80%, rgba(255, 255, 255, 0.6), transparent),
+    radial-gradient(1px 1px at 90% 50%, rgba(180, 255, 180, 0.7), transparent),
+    radial-gradient(3px 3px at 20% 90%, rgba(255, 200, 120, 0.5), transparent),
+    radial-gradient(1px 1px at 60% 30%, rgba(255, 255, 255, 0.9), transparent),
+    radial-gradient(2px 2px at 40% 60%, rgba(120, 255, 255, 0.6), transparent),
+    radial-gradient(1px 1px at 80% 70%, rgba(255, 255, 255, 0.8), transparent),
+    radial-gradient(1px 1px at 15% 50%, rgba(255, 150, 255, 0.7), transparent);
+  background-size:
+    400% 400%,
+    350% 350%,
+    300% 300%,
+    280% 280%,
+    320% 320%,
+    360% 360%,
+    250% 250%,
+    330% 330%,
+    290% 290%,
+    310% 310%;
+  animation:
+    twinkle 8s ease-in-out infinite,
+    drift 20s linear infinite;
+  z-index: -2;
+  pointer-events: none;
+}
+
+/* Additional cosmic dust layer */
+.dark body:before {
+  background:
+    radial-gradient(ellipse at top, #2e1065 0%, #1e0a3c 25%, #0c0319 50%, #050210 100%),
+    radial-gradient(circle at 20% 80%, rgba(120, 119, 198, 0.3) 0%, transparent 50%),
+    radial-gradient(circle at 80% 20%, rgba(255, 119, 198, 0.15) 0%, transparent 50%),
+    radial-gradient(circle at 40% 40%, rgba(120, 200, 255, 0.1) 0%, transparent 50%),
+    linear-gradient(45deg, rgba(138, 43, 226, 0.1) 0%, transparent 50%);
+}
+
+/* Opt-in glass surface — token-driven, applied intentionally to cards/panels.
+   Replaces the old blanket `.dark [class*='bg-']` override, which forced a
+   gradient onto every element with any bg-* class (fragile, fought Tailwind). */
+.surface {
+  background: linear-gradient(135deg, hsl(var(--card)) 0%, hsl(var(--background)) 100%);
+  backdrop-filter: blur(15px) saturate(1.2);
+  border: 1px solid hsl(var(--border));
+  box-shadow: var(--e-2);
+  transition:
+    border-color var(--dur-2) var(--ease),
+    box-shadow var(--dur-2) var(--ease),
+    transform var(--dur-2) var(--ease);
+}
+.surface-hover:hover,
+.surface.surface-hover:hover {
+  border-color: hsl(var(--border-glow) / 0.5);
+  box-shadow: var(--e-glow);
+  transform: translateY(-2px);
+}
+
+/* Fix text contrast */
+.dark {
+  color-scheme: dark;
+}
+
+/* Ensure all dark text has proper contrast in dark mode */
+.dark .text-gray-900 {
+  color: rgb(243, 244, 246) !important;
+}
+
+.dark .text-gray-800 {
+  color: rgb(243, 244, 246) !important;
+}
+
+.dark .text-black {
+  color: rgb(243, 244, 246) !important;
+}
+
+/* Ensure muted text is readable */
+.dark .text-muted-foreground {
+  color: rgb(156, 163, 175) !important;
+}
+
+.dark .text-gray-600 {
+  color: rgb(156, 163, 175) !important;
+}
+
+.dark .text-gray-500 {
+  color: rgb(156, 163, 175) !important;
+}
+
+/* Removed: the blanket `.dark h1..p, div` color-forcing and the
+   `.dark .rounded-lg` / `.dark .rounded-md` background overrides. They painted
+   gradients onto every rounded element and forced text color globally, fighting
+   Tailwind utilities and risking white-on-white / dark-on-dark. Color now comes
+   from the foreground token; surfaces use the opt-in `.surface` utility above. */
+
+/* Cosmic glow effects for interactive elements */
+.dark button:hover,
+.dark .cursor-pointer:hover {
+  box-shadow:
+    0 0 20px rgba(138, 43, 226, 0.4),
+    0 4px 15px rgba(0, 0, 0, 0.3);
+  transition: all 0.3s ease;
+}
+
+/* Custom Premium Scrollbar */
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+
+::-webkit-scrollbar-track {
+  background: rgba(12, 3, 25, 0.5);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb {
+  background: rgb(var(--violet-500-rgb) / 0.4);
+  border-radius: 4px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--violet-500-rgb) / 0.7);
+}
+
+.dark ::-webkit-scrollbar-track {
+  background: rgba(0, 0, 0, 0.3);
+}
+
+.dark ::-webkit-scrollbar-thumb {
+  background: rgb(var(--violet-rgb) / 0.4);
+}
+
+.dark ::-webkit-scrollbar-thumb:hover {
+  background: rgb(var(--violet-rgb) / 0.7);
+}
+
+body.desktop-companion-body {
+  overflow: hidden;
+}
+
+body.desktop-companion-body .nav-cosmic,
+body.desktop-companion-body .fixed.bottom-4.right-4.z-50,
+body.desktop-companion-body .fixed.bottom-4.right-4.z-\[100\] {
+  display: none !important;
+}
+
+/* ---------------------------------------------------------------------------
+ * alchm.kitchen glass system — ported from WTEN src/app/globals.css so agent
+ * profile pages match the alchm.kitchen user-profile aesthetic (dark glass).
+ * Used by /agent/[id] and components/agent-profile/AgentActivity.tsx.
+ * ------------------------------------------------------------------------- */
+.glass-base {
+  background: rgba(10, 10, 15, 0.4);
+  backdrop-filter: blur(8px);
+  -webkit-backdrop-filter: blur(8px);
+  border: 1px solid rgba(255, 255, 255, 0.03);
+}
+
+.glass-card-premium {
+  background: linear-gradient(135deg, rgba(255, 255, 255, 0.08) 0%, rgba(255, 255, 255, 0.03) 100%);
+  backdrop-filter: blur(24px) saturate(200%);
+  -webkit-backdrop-filter: blur(24px) saturate(200%);
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  box-shadow:
+    0 10px 40px rgba(0, 0, 0, 0.3),
+    inset 0 0 0 1px rgba(255, 255, 255, 0.05);
+}
+
+.glass-highlight {
+  background: rgba(255, 255, 255, 0.07);
+  border: 1px solid rgba(255, 255, 255, 0.1);
+  box-shadow: inset 0 0 20px rgba(255, 255, 255, 0.02);
+}
+
+.alchm-gradient-text {
+  background: linear-gradient(135deg, #c084fc, #fbbf24, #f472b6);
+  -webkit-background-clip: text;
+  -webkit-text-fill-color: transparent;
+  background-clip: text;
+  filter: drop-shadow(0 0 10px rgba(192, 132, 252, 0.3));
+}
+
+.grad-spirit-fire {
+  background: linear-gradient(135deg, #ff5f5f, #dc2626);
+}
+.grad-essence-water {
+  background: linear-gradient(135deg, #60a5fa, #2563eb);
+}
+.grad-matter-earth {
+  background: linear-gradient(135deg, #4ade80, #16a34a);
+}
+.grad-substance-air {
+  background: linear-gradient(135deg, #fcd34d, #d97706);
+}
+
+.glow-purple {
+  box-shadow: 0 0 20px rgb(var(--violet-rgb) / 0.3);
+}
+.glow-orange {
+  box-shadow: 0 0 20px rgba(251, 146, 60, 0.3);
+}
+.glow-blue {
+  box-shadow: 0 0 20px rgba(59, 130, 246, 0.3);
+}
+.glow-emerald {
+  box-shadow: 0 0 20px rgba(52, 211, 153, 0.3);
+}
+
+/* ═══════════════════════════════════════════════════════════════════
+   Alchm Design System — site-wide polish, typography & a11y.
+   Low-specificity base rules (page/component classes still win).
+   ═══════════════════════════════════════════════════════════════════ */
+@layer base {
+  html {
+    scroll-behavior: smooth;
+    -webkit-text-size-adjust: 100%;
+  }
+  body {
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  /* Editorial display serif for top-level headings (overridable per page). */
+  h1,
+  h2 {
+    font-family: var(--ff-display);
+    letter-spacing: -0.01em;
+    line-height: 1.1;
+  }
+  code,
+  pre,
+  kbd,
+  samp {
+    font-family: var(--ff-mono);
+  }
+}
+
+@layer components {
+  /* Aurora gradient text — opt-in for hero/emphasis headings. */
+  .text-aurora {
+    background: var(--aurora);
+    -webkit-background-clip: text;
+    background-clip: text;
+    color: transparent;
+  }
+  /* Hairline divider/border token. */
+  .hairline {
+    border-color: var(--hairline);
+  }
+}
+
+/* Token-driven text selection. */
+::selection {
+  background: hsl(var(--primary) / 0.32);
+  color: hsl(var(--foreground));
+}
+
+/* Accessible, on-brand focus ring (keyboard navigation only). */
+:focus-visible {
+  outline: 2px solid hsl(var(--ring) / 0.75);
+  outline-offset: 2px;
+  border-radius: var(--r-xs);
+}
+
+/* Respect reduced-motion: calm the starfield drift/twinkle + transitions. */
+@media (prefers-reduced-motion: reduce) {
+  html {
+    scroll-behavior: auto;
+  }
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.001ms !important;
+  }
+}

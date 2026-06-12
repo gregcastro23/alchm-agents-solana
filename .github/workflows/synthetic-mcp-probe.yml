@@ -1,0 +1,94 @@
+name: Synthetic MCP probe
+
+# Fires the in-process synthetic probe on the Planetary Agents FastAPI
+# backend every 30 minutes. The probe exercises two MCP tool handlers
+# (chat_with_planetary_agent and get_agent_feed_discussion) and records
+# each invocation in the mcp_invocations Postgres table. The /api/admin/
+# mcp-summary aggregator reads those rows to power the cross-server
+# admin panel's "Synthetic Probe" verdict — without this cron, that
+# field stays UNKNOWN forever.
+#
+# Required GitHub repository secret:
+#   PA_CRON_SECRET — matches PA_CRON_SECRET env var on Railway. The
+#                    probe endpoint authenticates the request by
+#                    comparing this against the X-Cron-Secret header.
+#
+# Manual trigger is also available via the Actions tab so we can fire
+# the probe on-demand when debugging a stale admin-summary verdict.
+
+on:
+  schedule:
+    # Every 30 minutes. GitHub Actions cron uses UTC; the 30-min cadence
+    # is independent of timezone so this matches the README claims.
+    # Note: GitHub may delay scheduled workflows by up to ~15 minutes
+    # during peak load — that's fine for a 30-min probe but means the
+    # admin summary's "lastSeen" timestamps will be approximate.
+    - cron: '*/30 * * * *'
+  workflow_dispatch:
+    inputs:
+      backend_url:
+        description: 'Override backend base URL (default https://api.agents.alchm.kitchen)'
+        required: false
+        default: 'https://api.agents.alchm.kitchen'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    runs-on: ubuntu-latest
+    # Don't fail the whole workflow on a single probe failure — the
+    # next run 30 minutes from now is the right retry, and we don't
+    # want a transient Railway hiccup to spam GitHub failure emails.
+    continue-on-error: true
+    steps:
+      - name: Fire synthetic probe
+        env:
+          PA_CRON_SECRET: ${{ secrets.PA_CRON_SECRET }}
+          BACKEND_URL: ${{ inputs.backend_url || 'https://api.agents.alchm.kitchen' }}
+        run: |
+          set -uo pipefail
+          if [[ -z "${PA_CRON_SECRET:-}" ]]; then
+            echo "::error::PA_CRON_SECRET secret is not configured. Add it under repo Settings > Secrets and variables > Actions."
+            exit 1
+          fi
+
+          echo "Firing synthetic probe at ${BACKEND_URL}/api/cron/synthetic-mcp-probe"
+
+          # -s suppresses progress, -S keeps errors visible. -o captures
+          # the body to a file so we can both print it and use the
+          # status code from -w for the exit decision.
+          http_code=$(curl -sS \
+            -o /tmp/probe-response.json \
+            -w "%{http_code}" \
+            -X POST \
+            -H "X-Cron-Secret: ${PA_CRON_SECRET}" \
+            -H "Content-Type: application/json" \
+            --max-time 60 \
+            "${BACKEND_URL}/api/cron/synthetic-mcp-probe") || curl_exit=$?
+
+          echo "HTTP ${http_code}"
+          echo "--- response body ---"
+          cat /tmp/probe-response.json || true
+          echo
+          echo "---------------------"
+
+          # 200 is success. 401 likely means the secret rotated and
+          # GitHub's copy is stale — surface that explicitly so the
+          # operator knows to update the secret rather than debug the
+          # endpoint.
+          case "${http_code}" in
+            200)
+              echo "Probe successful."
+              ;;
+            401)
+              echo "::error::Probe rejected with 401. PA_CRON_SECRET likely diverged between GitHub and Railway. Rotate both to match."
+              exit 1
+              ;;
+            5*)
+              echo "::warning::Backend returned ${http_code}. Probe may still have partially recorded — check /api/admin/mcp-summary."
+              ;;
+            *)
+              echo "::warning::Unexpected HTTP ${http_code}."
+              ;;
+          esac

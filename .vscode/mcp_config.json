@@ -1,0 +1,12 @@
+{
+  "servers": {
+    "galileo_mcp_server": {
+      "url": "https://api.galileo.ai/mcp/http/mcp",
+      "headers": {
+        "Galileo-API-Key": "${GALILEO_API_KEY}",
+        "Accept": "text/event-stream"
+      }
+    }
+  },
+  "inputs": []
+}

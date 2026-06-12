@@ -1,0 +1,13 @@
+-- Safe ADD-only slice of the prod schema-drift reconciliation.
+--
+-- `prisma migrate diff` (prod -> schema) proposed three changes:
+--   1. ADD user_profiles.dietary_preferences JSONB        <- APPLIED (additive, safe)
+--   2. DROP CONSTRAINT agent_conversations_agentId_fkey   <- SKIPPED (destructive)
+--   3. DROP TABLE agent_conversations                      <- SKIPPED (destructive; the
+--      lowercase legacy table still holds rows on prod and is referenced by
+--      historical-agents-db relations — dropping it would lose data)
+--
+-- Per the "apply safe ADD-only" decision, only the additive column is applied.
+-- The agent_conversations cleanup should be done deliberately (with a data
+-- check/migration to AgentConversation) if ever wanted — not as a blind drop.
+ALTER TABLE "user_profiles" ADD COLUMN IF NOT EXISTS "dietary_preferences" JSONB;

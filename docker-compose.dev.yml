@@ -1,0 +1,208 @@
+# Planetary Agents - Development Docker Compose Configuration
+# Optimized for development with hot reloading and debugging
+
+version: '3.8'
+
+services:
+  # ==============================================
+  # Frontend Development Service (Next.js)
+  # ==============================================
+  frontend-dev:
+    build:
+      context: .
+      dockerfile: Dockerfile.dev
+      target: development
+    container_name: planetary-frontend-dev
+    ports:
+      - '3000:3000'
+      - '9229:9229' # Node.js debugging port
+    environment:
+      - NODE_ENV=development
+      - NEXT_TELEMETRY_DISABLED=1
+      - DATABASE_URL=postgresql://planetary:consciousness@postgres-dev:5432/planetary_agents_dev
+      - REDIS_URL=redis://redis-dev:6379
+      - BACKEND_URL=http://backend-dev:8000
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY}
+      - OPENAI_API_KEY=${OPENAI_API_KEY}
+      - GALILEO_PROJECT=${GALILEO_PROJECT}
+      - GALILEO_API_KEY=${GALILEO_API_KEY}
+      - WATCHPACK_POLLING=true
+    depends_on:
+      - postgres-dev
+      - redis-dev
+      - backend-dev
+    volumes:
+      - .:/app
+      - /app/node_modules
+      - /app/.next
+      - dev_logs:/app/logs
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    networks:
+      - planetary-dev-network
+
+  # ==============================================
+  # Backend Development Service (Express.js)
+  # ==============================================
+  backend-dev:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile.dev
+      target: development
+    container_name: planetary-backend-dev
+    ports:
+      - '8000:8000'
+      - '8001:8001' # WebSocket port
+      - '9230:9230' # Node.js debugging port
+    environment:
+      - NODE_ENV=development
+      - PORT=8000
+      - WEBSOCKET_PORT=8001
+      - REDIS_URL=redis://redis-dev:6379
+      - ALCHM_BACKEND_URL=https://alchm-backend.onrender.com
+      - PLANETARY_HOURS_BACKEND=true
+      - THERMODYNAMICS_BACKEND=true
+      - TOKEN_CALCULATIONS_BACKEND=true
+      - KINETICS_BACKEND=true
+      - CORS_ORIGIN=http://frontend-dev:3000
+    depends_on:
+      - redis-dev
+    volumes:
+      - ./backend:/app
+      - /app/node_modules
+      - /app/dist
+      - dev_backend_logs:/app/logs
+    restart: unless-stopped
+    stdin_open: true
+    tty: true
+    networks:
+      - planetary-dev-network
+
+  # ==============================================
+  # Development Database Service (PostgreSQL)
+  # ==============================================
+  postgres-dev:
+    image: postgres:15-alpine
+    container_name: planetary-postgres-dev
+    ports:
+      - '5433:5432' # Different port to avoid conflicts
+    environment:
+      - POSTGRES_DB=planetary_agents_dev
+      - POSTGRES_USER=planetary
+      - POSTGRES_PASSWORD=consciousness
+      - POSTGRES_INITDB_ARGS=--encoding=UTF-8 --lc-collate=C --lc-ctype=C
+    volumes:
+      - postgres_dev_data:/var/lib/postgresql/data
+      - ./database/init-dev:/docker-entrypoint-initdb.d
+    restart: unless-stopped
+    networks:
+      - planetary-dev-network
+
+  # ==============================================
+  # Development Cache Service (Redis)
+  # ==============================================
+  redis-dev:
+    image: redis:7-alpine
+    container_name: planetary-redis-dev
+    ports:
+      - '6380:6379' # Different port to avoid conflicts
+    command: >
+      redis-server
+      --appendonly no
+      --maxmemory 256mb
+      --maxmemory-policy allkeys-lru
+    volumes:
+      - redis_dev_data:/data
+    restart: unless-stopped
+    networks:
+      - planetary-dev-network
+
+  # ==============================================
+  # Redis Commander (Development UI)
+  # ==============================================
+  redis-commander:
+    image: rediscommander/redis-commander:latest
+    container_name: planetary-redis-commander
+    environment:
+      - REDIS_HOSTS=local:redis-dev:6379
+      - HTTP_USER=admin
+      - HTTP_PASSWORD=consciousness
+    ports:
+      - '8081:8081'
+    depends_on:
+      - redis-dev
+    restart: unless-stopped
+    profiles:
+      - tools
+    networks:
+      - planetary-dev-network
+
+  # ==============================================
+  # Database Admin (pgAdmin)
+  # ==============================================
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: planetary-pgadmin
+    environment:
+      - PGADMIN_DEFAULT_EMAIL=admin@planetary-agents.dev
+      - PGADMIN_DEFAULT_PASSWORD=consciousness
+      - PGADMIN_CONFIG_SERVER_MODE=False
+    ports:
+      - '8082:80'
+    depends_on:
+      - postgres-dev
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    restart: unless-stopped
+    profiles:
+      - tools
+    networks:
+      - planetary-dev-network
+
+  # ==============================================
+  # Development Tools Container
+  # ==============================================
+  dev-tools:
+    image: node:18-alpine
+    container_name: planetary-dev-tools
+    working_dir: /workspace
+    volumes:
+      - .:/workspace
+      - /workspace/node_modules
+    command: sleep infinity
+    profiles:
+      - tools
+    networks:
+      - planetary-dev-network
+
+# ==============================================
+# Development Volumes
+# ==============================================
+volumes:
+  postgres_dev_data:
+    driver: local
+    name: planetary_postgres_dev_data
+  redis_dev_data:
+    driver: local
+    name: planetary_redis_dev_data
+  pgadmin_data:
+    driver: local
+    name: planetary_pgadmin_data
+  dev_logs:
+    driver: local
+    name: planetary_dev_logs
+  dev_backend_logs:
+    driver: local
+    name: planetary_dev_backend_logs
+
+# ==============================================
+# Development Networks
+# ==============================================
+networks:
+  planetary-dev-network:
+    name: planetary-agents-dev-network
+    driver: bridge
+    ipam:
+      config:
+        - subnet: 172.21.0.0/16

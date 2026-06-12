@@ -1,0 +1,12 @@
+{
+  "mcpServers": {
+    "planetary-agents": {
+      "command": "python",
+      "args": ["-m", "planetary_agents_mcp_server"],
+      "env": {
+        "PA_USER_API_KEY": "sk_pa_live_xxx",
+        "ALLOW_SQLITE_FALLBACK": "true"
+      }
+    }
+  }
+}

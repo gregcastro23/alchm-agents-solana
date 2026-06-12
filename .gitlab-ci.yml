@@ -1,0 +1,150 @@
+spec:
+  inputs:
+    environment:
+      description: 'Deployment environment (affects NODE_ENV)'
+      options: ['development', 'staging', 'production']
+      default: development
+    node_version:
+      description: 'Node.js major version for CI image'
+      default: '20'
+---
+stages:
+  - security
+  - test
+  - build
+  - deploy
+
+default:
+  interruptible: true
+
+# =============================================================================
+# SECURITY STAGE
+# =============================================================================
+
+include:
+  - template: Security/SAST.gitlab-ci.yml
+  - template: Security/Secret-Detection.gitlab-ci.yml
+
+sast:
+  stage: security
+  before_script: []
+
+secret_detection:
+  stage: security
+  before_script: []
+
+# =============================================================================
+# BACKEND (PYTHON) STAGE
+# =============================================================================
+
+.backend_python_base:
+  image: python:3.11-slim
+  before_script:
+    - cd backend
+    - pip install -r requirements.txt
+
+backend:lint:
+  extends: .backend_python_base
+  stage: test
+  script:
+    - ruff check .
+  only:
+    changes:
+      - backend/**/*
+      - .gitlab-ci.yml
+
+backend:test:
+  extends: .backend_python_base
+  stage: test
+  script:
+    - pytest
+  only:
+    changes:
+      - backend/**/*
+      - .gitlab-ci.yml
+
+backend:smoke-health:
+  extends: .backend_python_base
+  stage: build
+  variables:
+    PORT: '8000'
+    DATABASE_URL: 'sqlite:///./test.db'
+    ALCHM_KITCHEN_URL: 'https://whattoeatnext-production.up.railway.app'
+  script:
+    - uvicorn main:app --host 0.0.0.0 --port 8000 &
+    - BACK_PID=$!
+    - echo "Backend started with pid ${BACK_PID}"
+    - apt-get update && apt-get install -y curl
+    - |
+      set +e
+      ok=0
+      for i in 1 2 3 4 5; do
+        sleep 3
+        echo "Attempting health check on http://127.0.0.1:8000/health"
+        if curl -fsS http://127.0.0.1:8000/health > /dev/null; then
+          echo "Health OK"
+          ok=1
+          break
+        fi
+      done
+      kill ${BACK_PID} || true
+      if [ "$ok" != "1" ]; then
+        echo "Health endpoint did not become ready"
+        exit 1
+      fi
+  only:
+    changes:
+      - backend/**/*
+      - .gitlab-ci.yml
+
+# =============================================================================
+# FRONTEND (NODE.JS) STAGE
+# =============================================================================
+
+frontend:install:
+  stage: test
+  image: oven/bun:1-alpine
+  script:
+    - bun install --frozen-lockfile
+  cache:
+    key: '${CI_COMMIT_REF_SLUG}-bun-frontend'
+    paths:
+      - node_modules/
+  only:
+    changes:
+      - app/**/*
+      - components/**/*
+      - lib/**/*
+      - package.json
+      - bun.lock
+
+# =============================================================================
+# DEPLOY STAGE
+# =============================================================================
+
+deploy_to_vercel:
+  stage: deploy
+  image: node:20-alpine
+  variables:
+    VERCEL_ORG_ID: 'team_eVYHTIN1tCXo7sPrkzqJbLzO'
+    VERCEL_PROJECT_ID: 'prj_47jKTcJvhdXzrf3YSTbbYu9SVRTf'
+  before_script:
+    - npm install -g vercel@latest
+  script:
+    - vercel deploy --token=$VERCEL_TOKEN --prod --yes --scope=team_eVYHTIN1tCXo7sPrkzqJbLzO --cwd=.
+  only:
+    - main
+
+# GitLab Pages deployment for documentation
+pages:
+  stage: deploy
+  image: alpine:latest
+  script:
+    - mkdir -p public
+    - echo "<h1>Planetary Agents Project</h1>" > public/index.html
+    - echo "<p>Path C Migration in progress.</p>" >> public/index.html
+  artifacts:
+    paths:
+      - public
+  only:
+    - main
