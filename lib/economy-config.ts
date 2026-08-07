@@ -1,7 +1,14 @@
-export const BASE_AGENTS_YIELD = 10
+/**
+ * One free daily claim: 6 ESMS per axis. This funds three neutral consultations
+ * or two even at the maximum elemental clash markup; resonance stretches it
+ * further.
+ */
+export const DAILY_ESMS_YIELD = 24
+export const BASE_AGENTS_YIELD = DAILY_ESMS_YIELD
 export const PREMIUM_MULTIPLIER = 2.0
 export const TOKEN_TYPES = ['Spirit', 'Essence', 'Matter', 'Substance'] as const
 export type TokenType = (typeof TOKEN_TYPES)[number]
+export type EsmsCost = Record<TokenType, number>
 
 /**
  * Agent Action System — Activation threshold.
@@ -11,11 +18,10 @@ export type TokenType = (typeof TOKEN_TYPES)[number]
 export const AGENT_ACTIVATION_THRESHOLD = 0.4
 
 /**
- * Base daily yield amount credited to each agentic user during the
- * automated daily claim cron (`/api/cron/agents/claim-yield`).
- * Distributed evenly across the four ESMS token types.
+ * Base daily yield amount credited to each agentic user during the automated
+ * daily claim cron (`/api/cron/agents/claim-yield`), evenly split across axes.
  */
-export const AGENT_DAILY_YIELD = 8
+export const AGENT_DAILY_YIELD = DAILY_ESMS_YIELD
 
 /**
  * Weekly guided "attunement circle" reward — credited to the HUMAN's
@@ -33,8 +39,20 @@ export const CHAT_QUEST_REWARD = {
   perAxisPerExchange: 0.5,
 }
 
+/**
+ * Base price for one agent consultation before live-sky resonance is applied.
+ * Every consultation consumes all four axes so one axis cannot become the
+ * permanent bottleneck while the others accumulate unused.
+ */
+export const UNIFIED_CHAT_BASE_COST: EsmsCost = {
+  Spirit: 2,
+  Essence: 1,
+  Matter: 1,
+  Substance: 1,
+}
+
 export const AGENT_OPERATION_COSTS: Record<string, Partial<Record<TokenType, number>>> = {
-  unified_chat: { Spirit: 5, Essence: 2 },
+  unified_chat: UNIFIED_CHAT_BASE_COST,
   report_generation: { Spirit: 10, Substance: 5 },
   // The Forge — birthing a vessel into the shared roster (45 ESMS total,
   // just under ev_reset; signed-in forging debits this, anonymous forging

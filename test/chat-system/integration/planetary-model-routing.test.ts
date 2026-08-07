@@ -20,6 +20,14 @@ vi.mock('@/lib/models/registry', () => ({
 }))
 
 vi.mock('@/lib/backend', () => ({
+  getAlchemicalQuantitiesLegacy: vi.fn(async () => ({
+    'Alchemy Effects': {
+      'Total Spirit': 4,
+      'Total Essence': 2,
+      'Total Matter': 1,
+      'Total Substance': 3,
+    },
+  })),
   backend: {
     agents: {
       chat: vi.fn(req =>
@@ -51,8 +59,18 @@ vi.mock('@/lib/agent-cache-system', () => ({
 }))
 
 vi.mock('@/lib/auth', () => ({
-  auth: vi.fn(async () => null),
-  requireAuthOrRedirect: vi.fn(async () => null),
+  auth: vi.fn(async () => ({ user: { id: 'planetary-routing-user' } })),
+  requireAuthOrRedirect: vi.fn(async () => ({ id: 'planetary-routing-user' })),
+}))
+
+vi.mock('@/lib/services/economyService', () => ({
+  EconomyService: {
+    debitDynamic: vi.fn(async () => ({ ok: true, balances: {} })),
+  },
+}))
+
+vi.mock('@/lib/agents/weekly-feature-rotation', () => ({
+  resolveWeeklyFeature: vi.fn(async () => ({ freeAgentIds: [] })),
 }))
 
 vi.mock('@/lib/agents/sacred-stats-prompt-generator', () => ({

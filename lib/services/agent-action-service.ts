@@ -271,9 +271,9 @@ export class AgentActionService {
   /**
    * Claim daily ESMS yield for every active agentic user.
    *
-   * Distributes `AGENT_DAILY_YIELD` tokens evenly across the four token
-   * types. Skips any agent that has already claimed today (idempotent via
-   * `lastDailyClaimAt` check inside the transaction).
+   * Distributes `AGENT_DAILY_YIELD` evenly across the four token types. Skips
+   * any agent that has already claimed today (idempotent via the
+   * in-transaction daily claim guard).
    */
   async runDailyYieldForAgents(): Promise<DailyYieldSummary> {
     // Only historical "wallet" agents accrue daily yield. Sky sprites
@@ -314,7 +314,7 @@ export class AgentActionService {
           continue
         }
 
-        await this.claimYieldForAgent(agent.id, agent)
+        await this.claimYieldForAgent(agent.id)
         summary.claimedCount++
 
         const agentName = `${agent.name ?? agent.email.split('@')[0]} `
@@ -359,39 +359,20 @@ export class AgentActionService {
   }
 
   /**
-   * Atomic yield claim for a single agentic user. Uses the same
-   * transaction pattern as `EconomyService.claimAgentsYield` but
-   * with the agent-specific daily yield amount.
+   * Atomic yield claim for a single agentic user. Uses the same transaction
+   * pattern as `EconomyService.claimAgentsYield`, with an even per-axis split
+   * so every daily claim can fund two interactions even at maximum clash cost.
    */
-  private async claimYieldForAgent(userId: string, agent: any): Promise<void> {
+  private async claimYieldForAgent(userId: string): Promise<void> {
     const totalYield = AGENT_DAILY_YIELD
     const dateStr = new Date().toISOString().split('T')[0]
     const transactionGroupId = crypto.randomUUID()
-
-    const natalPositions = this.extractNatalPositions(agent)
-    let fire = 1,
-      earth = 1,
-      air = 1,
-      water = 1
-
-    if (natalPositions && natalPositions.length > 0) {
-      const positionsObj: Record<string, CurrentPlanetPosition> = {}
-      for (const p of natalPositions) {
-        positionsObj[p.planet] = { sign: p.sign, degree: p.degree } as any
-      }
-      const elementCounts = this.countElements(positionsObj)
-      fire += elementCounts.Fire || 0
-      earth += elementCounts.Earth || 0
-      air += elementCounts.Air || 0
-      water += elementCounts.Water || 0
-    }
-
-    const totalWeight = fire + earth + air + water
+    const perAxis = totalYield / TOKEN_TYPES.length
     const amountsObj: Record<string, number> = {
-      spirit: (fire / totalWeight) * totalYield,
-      matter: (earth / totalWeight) * totalYield,
-      substance: (air / totalWeight) * totalYield,
-      essence: (water / totalWeight) * totalYield,
+      spirit: perAxis,
+      essence: perAxis,
+      matter: perAxis,
+      substance: perAxis,
     }
 
     await prisma.$transaction(async tx => {

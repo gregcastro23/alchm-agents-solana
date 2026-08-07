@@ -41,8 +41,28 @@ vi.mock('@/lib/agent-cache-system', () => ({
 }))
 
 vi.mock('@/lib/auth', () => ({
-  auth: vi.fn(async () => null),
-  requireAuthOrRedirect: vi.fn(async () => null),
+  auth: vi.fn(async () => ({ user: { id: 'chat-test-user' } })),
+  requireAuthOrRedirect: vi.fn(async () => ({ id: 'chat-test-user' })),
+}))
+
+vi.mock('@/lib/services/economyService', () => ({
+  EconomyService: {
+    debitDynamic: vi.fn(async () => ({
+      ok: true,
+      balances: {
+        spirit: 100,
+        essence: 100,
+        matter: 100,
+        substance: 100,
+        lastDailyClaimAt: null,
+        lastDailyClaimAgentsAt: null,
+      },
+    })),
+  },
+}))
+
+vi.mock('@/lib/agents/weekly-feature-rotation', () => ({
+  resolveWeeklyFeature: vi.fn(async () => ({ freeAgentIds: [] })),
 }))
 
 vi.mock('@/lib/consciousness-persistence', () => ({

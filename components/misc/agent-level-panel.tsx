@@ -13,6 +13,7 @@ import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
 import { RotateCw, Sparkles, Loader2, Dumbbell } from 'lucide-react'
 import { useToast } from '@/hooks/use-toast'
+import { createUnifiedChatHeaders } from '@/lib/agents/unified-chat-request'
 import {
   SACRED_7_KEYS,
   EV_TOTAL_CAP,
@@ -164,7 +165,7 @@ export function AgentLevelPanel({ agentId }: { agentId: string }) {
       // dominant Sacred 7 stat. Free tier keeps training cheap.
       const res = await fetch('/api/agents/unified', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: createUnifiedChatHeaders(),
         body: JSON.stringify({
           action: 'chat',
           parameters: {

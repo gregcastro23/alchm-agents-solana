@@ -38,6 +38,14 @@ export interface TokenBalances {
   lastDailyClaimAgentsAt: string | null
 }
 
+export interface DynamicDebitOptions {
+  /**
+   * Stable caller-supplied request key. Retries with the same key return the
+   * already-applied result without moving balances a second time.
+   */
+  idempotencyKey?: string
+}
+
 export class EconomyService {
   static readonly ZERO_BALANCES: TokenBalances = {
     spirit: 0,
@@ -362,21 +370,55 @@ export class EconomyService {
    * `debitOperation` looks a fixed price up in `AGENT_OPERATION_COSTS`, this
    * takes a caller-computed one.
    */
-  static async debitDynamic(userId: string, cost: Partial<Record<TokenType, number>>) {
+  static async debitDynamic(
+    userId: string,
+    cost: Partial<Record<TokenType, number>>,
+    options: DynamicDebitOptions = {}
+  ) {
     const spirit = cost.Spirit || 0
     const essence = cost.Essence || 0
     const matter = cost.Matter || 0
     const substance = cost.Substance || 0
 
+    for (const amount of [spirit, essence, matter, substance]) {
+      if (!Number.isFinite(amount) || amount < 0) {
+        throw new Error('Dynamic debit costs must be finite, non-negative numbers')
+      }
+    }
+
     const transactionGroupId = crypto.randomUUID()
     const entries = Object.entries(cost).filter(([_, amount]) => amount && amount > 0)
+    const idempotencyKey = options.idempotencyKey?.trim() || undefined
+    if (idempotencyKey && idempotencyKey.length > 220) {
+      throw new Error('Dynamic debit idempotency key is too long')
+    }
+
+    const firstLedgerKey =
+      idempotencyKey && entries[0] ? `${idempotencyKey}:${entries[0][0]}` : undefined
+    const alreadyApplied = async () => {
+      if (!firstLedgerKey) return null
+      const existing = await prisma.tokenTransaction.findUnique({
+        where: { idempotencyKey: firstLedgerKey },
+      })
+      if (!existing) return null
+      return {
+        ok: true as const,
+        reason: 'already_applied' as const,
+        transactionGroupId: existing.transactionGroupId,
+        balances: await this.getBalances(userId),
+      }
+    }
+
+    const existing = await alreadyApplied()
+    if (existing) return existing
 
     // Same atomicity contract as debitOperation: balance movement and ledger
     // rows share one transaction so they can never diverge.
-    return prisma.$transaction(async tx => {
-      // Single atomic CTE query. See DEBIT vs CREDIT ASYMMETRY above.
-      const updatedBalanceRows = await tx.$queryRawUnsafe<any[]>(
-        `
+    try {
+      return await prisma.$transaction(async tx => {
+        // Single atomic CTE query. See DEBIT vs CREDIT ASYMMETRY above.
+        const updatedBalanceRows = await tx.$queryRawUnsafe<any[]>(
+          `
       WITH updated AS (
         UPDATE token_balances
         SET spirit = spirit - $1,
@@ -393,51 +435,65 @@ export class EconomyService {
       )
       SELECT * FROM updated;
     `,
-        spirit,
-        essence,
-        matter,
-        substance,
-        userId
-      )
+          spirit,
+          essence,
+          matter,
+          substance,
+          userId
+        )
 
-      if (!updatedBalanceRows || updatedBalanceRows.length === 0) {
-        // Nothing was written, so committing this empty transaction is a no-op.
-        return { ok: false, reason: 'insufficient_funds' }
-      }
+        if (!updatedBalanceRows || updatedBalanceRows.length === 0) {
+          // Nothing was written, so committing this empty transaction is a no-op.
+          return { ok: false as const, reason: 'insufficient_funds' as const }
+        }
 
-      const updated = updatedBalanceRows[0]
+        const updated = updatedBalanceRows[0]
 
-      // Insert transaction rows for non-zero costs
-      for (const [token, amount] of entries) {
-        await tx.$queryRawUnsafe(
-          `
+        // Insert transaction rows for non-zero costs. The per-axis suffix keeps
+        // each ledger key unique while binding all four rows to one request.
+        for (const [token, amount] of entries) {
+          await tx.$queryRawUnsafe(
+            `
         INSERT INTO token_transactions (
-          transaction_group_id, user_id, token_type, amount, source_type, created_at
+          transaction_group_id, user_id, token_type, amount, source_type, idempotency_key, created_at
         ) VALUES (
-          $1, $2, $3, $4, $5, NOW()
+          $1, $2, $3, $4, $5, $6, NOW()
         )
       `,
-          transactionGroupId,
-          userId,
-          token,
-          -amount,
-          'agents_operation'
-        )
-      }
+            transactionGroupId,
+            userId,
+            token,
+            -amount,
+            'agents_operation',
+            idempotencyKey ? `${idempotencyKey}:${token}` : null
+          )
+        }
 
-      return {
-        ok: true,
-        transactionGroupId,
-        balances: {
-          spirit: Number(updated.spirit),
-          essence: Number(updated.essence),
-          matter: Number(updated.matter),
-          substance: Number(updated.substance),
-          lastDailyClaimAt: updated.last_daily_claim_at?.toISOString() || null,
-          lastDailyClaimAgentsAt: updated.last_daily_claim_agents_at?.toISOString() || null,
-        },
+        return {
+          ok: true as const,
+          transactionGroupId,
+          balances: {
+            spirit: Number(updated.spirit),
+            essence: Number(updated.essence),
+            matter: Number(updated.matter),
+            substance: Number(updated.substance),
+            lastDailyClaimAt: updated.last_daily_claim_at?.toISOString() || null,
+            lastDailyClaimAgentsAt: updated.last_daily_claim_agents_at?.toISOString() || null,
+          },
+        }
+      })
+    } catch (error: any) {
+      // Concurrent requests can both miss the read above. PostgreSQL's unique
+      // idempotency index lets only one commit; the loser rolls back its debit.
+      const uniqueConflict =
+        error?.code === 'P2002' ||
+        (error?.code === 'P2010' && String(error?.meta?.code) === '23505')
+      if (idempotencyKey && uniqueConflict) {
+        const raced = await alreadyApplied()
+        if (raced) return raced
       }
-    })
+      throw error
+    }
   }
 
   /**

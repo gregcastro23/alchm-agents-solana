@@ -5,6 +5,7 @@ import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
 import { useSession } from 'next-auth/react'
+import { DAILY_ESMS_YIELD, type TokenType } from '@/lib/economy-config'
 import { usePathname } from 'next/navigation'
 import { Sparkles, Zap, Box, Droplets } from 'lucide-react'
 import { TokenBalances } from '@/lib/services/economyService'
@@ -78,9 +79,21 @@ export function TokenHUD() {
       }
 
       setBalances({ ...data.balances, canClaimAgentsYield: false })
+      const distribution = (data.distribution || {}) as Partial<
+        Record<TokenType | Lowercase<TokenType>, number>
+      >
+      const basePerAxis = DAILY_ESMS_YIELD / 4
+      const lowercaseToken: Record<TokenType, Lowercase<TokenType>> = {
+        Spirit: 'spirit',
+        Essence: 'essence',
+        Matter: 'matter',
+        Substance: 'substance',
+      }
+      const amount = (token: TokenType) =>
+        distribution[token] ?? distribution[lowercaseToken[token]] ?? basePerAxis
       toast({
         title: 'Cosmic Yield Claimed!',
-        description: `Received ${data.distribution?.Spirit || 2.5} Spirit, ${data.distribution?.Essence || 2.5} Essence, ${data.distribution?.Matter || 2.5} Matter, ${data.distribution?.Substance || 2.5} Substance. ${data.isPremium ? '(2.0x Premium Multiplier applied!)' : ''}`,
+        description: `Received ${amount('Spirit')} Spirit, ${amount('Essence')} Essence, ${amount('Matter')} Matter, ${amount('Substance')} Substance. ${data.isPremium ? '(2.0x Premium Multiplier applied!)' : ''}`,
       })
     } catch (error) {
       toast({

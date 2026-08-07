@@ -280,6 +280,17 @@ async function loadGuideCandidates(): Promise<GuideCandidate[]> {
 let _featureCache: { key: string; feature: WeeklyFeature } | null = null
 
 /**
+ * Last-known-good waiver check for transient ephemeris/rotation failures.
+ * A stale free grant is safer than charging a guest for an agent the UI still
+ * presents as free; no cache remains fail-closed.
+ */
+export function isAgentFreeInCachedRotation(agentId: string): boolean {
+  if (!agentId || !_featureCache) return false
+  const id = agentId.toLowerCase()
+  return _featureCache.feature.freeAgentIds.some(x => x.toLowerCase() === id)
+}
+
+/**
  * Weekly feature with historical guides resolved. Memoized per DAY so the sky
  * (aspects + degree participants) refreshes daily; the featured guides stay
  * week-stable because they derive from the week key inside selectFeaturedGuides.

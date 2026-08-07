@@ -23,8 +23,18 @@ vi.mock('@/lib/agent-cache-system', () => ({
 }))
 
 vi.mock('@/lib/auth', () => ({
-  auth: vi.fn(async () => null),
-  requireAuthOrRedirect: vi.fn(async () => null),
+  auth: vi.fn(async () => ({ user: { id: 'agent-type-test-user' } })),
+  requireAuthOrRedirect: vi.fn(async () => ({ id: 'agent-type-test-user' })),
+}))
+
+vi.mock('@/lib/services/economyService', () => ({
+  EconomyService: {
+    debitDynamic: vi.fn(async () => ({ ok: true, balances: {} })),
+  },
+}))
+
+vi.mock('@/lib/agents/weekly-feature-rotation', () => ({
+  resolveWeeklyFeature: vi.fn(async () => ({ freeAgentIds: [] })),
 }))
 
 vi.mock('@/lib/agents/sacred-stats-prompt-generator', () => ({

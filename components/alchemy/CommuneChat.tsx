@@ -5,6 +5,7 @@ import Link from 'next/link'
 
 import { AlchemicalButton } from './AlchemicalButton'
 import { RitualInput } from './RitualInput'
+import { createUnifiedChatHeaders } from '@/lib/agents/unified-chat-request'
 import { useOccultStore } from '@/lib/store/occult-store'
 
 /**
@@ -69,7 +70,7 @@ export function CommuneChat({ agentId, name, title, essence }: CommuneChatProps)
     try {
       const res = await fetch('/api/agents/unified', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: createUnifiedChatHeaders(),
         body: JSON.stringify({
           action: 'chat',
           parameters: {

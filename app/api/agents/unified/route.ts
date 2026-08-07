@@ -1,8 +1,10 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
-import { backend } from '@/lib/backend'
+import { backend, getAlchemicalQuantitiesLegacy } from '@/lib/backend'
 import { buildAgentContext } from '@/lib/agents/persona/build-agent-context'
 import { consciousnessPersistence } from '@/lib/consciousness-persistence'
+import { calculateAgentChatPricing } from '@/lib/economy/chat-pricing'
+import { createHash } from 'node:crypto'
 
 interface UnifiedAgentRequest {
   action: string
@@ -15,6 +17,35 @@ interface UnifiedAgentResponse {
   error?: string
   message?: string
   timestamp: string
+}
+
+function requestParameter(
+  parameters: Record<string, unknown>,
+  body: UnifiedAgentRequest,
+  ...keys: string[]
+): unknown {
+  const root = body as unknown as Record<string, unknown>
+  for (const key of keys) {
+    if (parameters[key] !== undefined) return parameters[key]
+    if (root[key] !== undefined) return root[key]
+  }
+  return undefined
+}
+
+function chatDebitIdempotencyKey(
+  userId: string,
+  requestKey: unknown,
+  agentId: string,
+  message: string
+): string | undefined {
+  if (typeof requestKey !== 'string' || !requestKey.trim()) return undefined
+  // Bind a client request ID to the immutable operation payload. Reusing the
+  // same ID for a different prompt must produce a different debit key rather
+  // than turning the first successful charge into an unlimited-chat coupon.
+  const digest = createHash('sha256')
+    .update(JSON.stringify([requestKey.trim(), agentId, message]))
+    .digest('hex')
+  return `unified_chat:${userId}:${digest}`
 }
 
 // Main handler for all agent operations proxied to Railway backend
@@ -51,6 +82,15 @@ export async function POST(request: NextRequest): Promise<NextResponse<UnifiedAg
 
       case 'interact':
       case 'chat': {
+        // A few older clients still send chat fields at the request root. Keep
+        // accepting that shape while treating `parameters` as canonical.
+        const agentId = requestParameter(parameters, body, 'agentId') as string | undefined
+        const requestedMessage = requestParameter(parameters, body, 'message', 'userMessage') as
+          | string
+          | undefined
+        if (!agentId) throw new Error('Missing agentId')
+        if (!requestedMessage) throw new Error('Missing message')
+
         // Bridge-aware: recognizes PA-native sessions AND alchm.kitchen sessions.
         const session = await auth()
         const userId = session?.user?.id
@@ -58,12 +98,21 @@ export async function POST(request: NextRequest): Promise<NextResponse<UnifiedAg
         // ESMS Token Economy: Spend resources for agent operation —
         // UNLESS this agent is in the current week's free rotation (waive cost).
         const { EconomyService } = await import('@/lib/services/economyService')
-        const { AGENT_OPERATION_COSTS } = await import('@/lib/economy-config')
-        const { isAgentFreeThisWeek } = await import('@/lib/agents/weekly-feature-rotation')
+        const { isAgentFreeThisWeek, isAgentFreeInCachedRotation } =
+          await import('@/lib/agents/weekly-feature-rotation')
 
-        const freeThisWeek = parameters.agentId
-          ? await isAgentFreeThisWeek(parameters.agentId).catch(() => false)
-          : false
+        const freeThisWeek = await isAgentFreeThisWeek(agentId).catch(error => {
+          const cachedFree = isAgentFreeInCachedRotation(agentId)
+          // Guests cannot repair a failed ephemeris lookup by signing in or
+          // paying. Fail open for this rate-limited request so a cold serverless
+          // instance never turns the advertised free rotation into a 401/402.
+          const waiveForGuest = !userId
+          console.warn(
+            `[agents/unified] Weekly rotation lookup failed; waiver ${cachedFree || waiveForGuest ? 'applied' : 'unavailable'}`,
+            error
+          )
+          return cachedFree || waiveForGuest
+        })
 
         if (!userId && !freeThisWeek) {
           const { logSecurityEvent } = await import('@/lib/security-audit-logger')
@@ -106,40 +155,94 @@ export async function POST(request: NextRequest): Promise<NextResponse<UnifiedAg
           )
         }
 
+        // Resolve the chart from trusted server-side agent data. Canonical
+        // historical/star agents take the in-memory fast path; DB-only crafted
+        // and degree agents use the broader resolver only when needed.
+        const personaCtx = buildAgentContext(agentId)
+        let agentElement = personaCtx?.agent.consciousness?.dominantElement
+        if (!agentElement) {
+          const { resolveAnyAgent } = await import('@/lib/agents/resolve-any-agent')
+          const resolvedAgent = await resolveAnyAgent(agentId)
+          agentElement = resolvedAgent?.consciousness?.dominantElement
+        }
+
         let balances
+        let pricing
         if (freeThisWeek) {
           balances = userId
             ? await EconomyService.getBalances(userId)
             : EconomyService.ZERO_BALANCES
         } else if (userId) {
-          const debitResult = await EconomyService.debitOperation(userId, 'unified_chat')
+          // Transit lookup is advisory to the multiplier, not availability.
+          // If the ephemeris/backend is temporarily unavailable, bill the
+          // balanced neutral price instead of turning a chat into a 500.
+          let currentAlchemy: unknown
+          try {
+            currentAlchemy = await getAlchemicalQuantitiesLegacy()
+          } catch (error) {
+            console.warn(
+              '[agents/unified] Live transit pricing unavailable; using neutral base price',
+              error
+            )
+          }
+          pricing = calculateAgentChatPricing(agentElement, currentAlchemy)
+
+          const requestKey =
+            request.headers.get('Idempotency-Key') ||
+            requestParameter(parameters, body, 'requestId', 'idempotencyKey')
+          const idempotencyKey = chatDebitIdempotencyKey(
+            userId,
+            requestKey,
+            agentId,
+            requestedMessage
+          )
+
+          // token_balances is the shared off-chain source of truth for human
+          // chat. Do not also call syncDebitToAlchm here: that endpoint serves
+          // remote agent-action actors and a second debit would double-charge.
+          const debitResult = await EconomyService.debitDynamic(
+            userId,
+            pricing.cost,
+            idempotencyKey ? { idempotencyKey } : undefined
+          )
           if (!debitResult.ok) {
             return NextResponse.json(
               {
                 success: false,
                 error: 'Insufficient tokens',
-                data: { required: AGENT_OPERATION_COSTS.unified_chat },
+                data: { required: pricing.cost, pricing },
                 timestamp,
               },
               { status: 402 }
             )
           }
+          if (debitResult.reason === 'already_applied') {
+            return NextResponse.json(
+              {
+                success: false,
+                error: 'This chat request has already been processed.',
+                data: { code: 'CHAT_REQUEST_ALREADY_PROCESSED' },
+                timestamp,
+              },
+              { status: 409 }
+            )
+          }
           balances = debitResult.balances
         }
 
-        const personaCtx = parameters.agentId ? buildAgentContext(parameters.agentId) : null
         const { sanitizePromptInput } = await import('@/lib/utils/sanitizer')
-        const rawUserMessage = parameters.message || parameters.userMessage
-        const userMessage = rawUserMessage ? sanitizePromptInput(rawUserMessage) : rawUserMessage
+        const userMessage = requestedMessage
+          ? sanitizePromptInput(requestedMessage)
+          : requestedMessage
 
         // Walrus memory: inject the agent's most-relevant past memories into the
         // persona (no-op without MemWal). Never blocks chat — falls back to the raw block.
         let personaBlock = personaCtx?.personaBlock
-        if (personaCtx && parameters.agentId && userMessage) {
+        if (personaCtx && userMessage) {
           const { augmentPersonaWithMemory } = await import('@/lib/walrus')
           personaBlock = await augmentPersonaWithMemory(
             personaCtx.personaBlock,
-            parameters.agentId,
+            agentId,
             userMessage
           )
         }
@@ -173,8 +276,8 @@ export async function POST(request: NextRequest): Promise<NextResponse<UnifiedAg
         }
 
         const chatData = await backend.agents.chat({
-          agentId: parameters.agentId,
-          message: parameters.message || parameters.userMessage,
+          agentId,
+          message: requestedMessage,
           sessionId: parameters.sessionId,
           userId: parameters.userId || userId,
           context: parameters.context,
@@ -190,13 +293,13 @@ export async function POST(request: NextRequest): Promise<NextResponse<UnifiedAg
           consciousnessPersistence
             .logInteraction({
               userId,
-              agentId: parameters.agentId,
+              agentId,
               interactionType: 'historical-chat',
               powerGained,
               planetaryInfluence: 'unknown',
               elementalResonance: 0.5,
               metadata: {
-                userMessage: parameters.message || parameters.userMessage,
+                userMessage: requestedMessage,
               },
             })
             .catch(err => console.warn('Failed to log unified agent interaction:', err))
@@ -204,32 +307,32 @@ export async function POST(request: NextRequest): Promise<NextResponse<UnifiedAg
 
         // Walrus memory write-back: remember this exchange so future turns can recall
         // it (MemWal-gated; fire-and-forget so it never blocks or fails the response).
-        if (chatData?.text && parameters.agentId && userMessage) {
+        if (chatData?.text && userMessage) {
           import('@/lib/walrus')
             .then(({ rememberConversation }) =>
-              rememberConversation(parameters.agentId, userMessage, chatData.text)
+              rememberConversation(agentId, userMessage, chatData.text)
             )
             .catch(() => {})
         }
 
         // Cosmic Leveling: award XP/EVs from this conversation. Fire-and-forget
         // so leveling never blocks or fails the chat response.
-        if (chatData?.text && parameters.agentId) {
+        if (chatData?.text) {
           const { HistoricalAgentsService } = await import('@/lib/historical-agents-db')
           // Deeper / longer answers earn a little more XP (0.5x–2x of base).
           const qualityMultiplier = Math.min(2, Math.max(0.5, (chatData.text.length || 0) / 600))
 
           // The agent the user spoke with gains XP.
-          HistoricalAgentsService.awardXp(parameters.agentId, { qualityMultiplier }).catch(err =>
+          HistoricalAgentsService.awardXp(agentId, { qualityMultiplier }).catch(err =>
             console.warn('awardXp failed:', err)
           )
 
           // Training session: a crafted agent (trainerAgentId) grouped with this
           // partner earns XP and EVs in the partner's dominant Sacred 7 stat.
           const trainerId = parameters.trainerAgentId
-          if (trainerId && trainerId !== parameters.agentId) {
+          if (trainerId && trainerId !== agentId) {
             HistoricalAgentsService.awardXp(trainerId, { qualityMultiplier }).catch(() => {})
-            HistoricalAgentsService.awardEvs(trainerId, parameters.agentId).catch(err =>
+            HistoricalAgentsService.awardEvs(trainerId, agentId).catch(err =>
               console.warn('awardEvs failed:', err)
             )
           }
@@ -245,6 +348,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<UnifiedAg
           disclaimer,
           balances,
           free: freeThisWeek,
+          pricing: freeThisWeek ? { waived: true } : pricing,
           timestamp,
         })
       }
@@ -252,13 +356,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<UnifiedAg
       case 'multi_agent_chat': {
         const session = await auth()
         const userId = session?.user?.id
-        const agentIds: string[] = parameters.agentIds ||
-          (body as any).agentIds || ['sirius', 'arcturus', 'vega', 'polaris']
+        const agentIds = (requestParameter(parameters, body, 'agentIds') as
+          | string[]
+          | undefined) || ['sirius', 'arcturus', 'vega', 'polaris']
         const userMessage =
-          parameters.message ||
-          parameters.userMessage ||
-          (body as any).message ||
-          (body as any).userMessage ||
+          (requestParameter(parameters, body, 'message', 'userMessage') as string | undefined) ||
           'How should I allocate my USDC collateral today?'
 
         const systemPromptOverrides: Record<string, string> = {}

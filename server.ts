@@ -21,6 +21,7 @@ import {
   computePower,
   type ElementVector,
 } from './lib/alchemical-kinetics'
+import { DAILY_ESMS_YIELD } from '@/lib/economy-config'
 
 const DATABASE_URL = process.env.RAILWAY_DATABASE_URL || process.env.DATABASE_URL
 const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null
@@ -202,7 +203,7 @@ interface PhilosopherStoneInput {
   style?: string
 }
 
-const DAILY_YIELD_TOTAL = 10
+const DAILY_YIELD_TOTAL = DAILY_ESMS_YIELD
 const DAILY_YIELD_PER_TYPE = DAILY_YIELD_TOTAL / 4
 
 function todayKey() {

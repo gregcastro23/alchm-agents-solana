@@ -47,6 +47,7 @@ interface LedgerRow {
   userId: string
   tokenType: string
   amount: number
+  idempotencyKey?: string | null
 }
 
 function toRawShape(row: BalanceRow) {
@@ -180,13 +181,15 @@ class FakeDb {
 
         if (/INSERT INTO token_transactions/i.test(s)) {
           self.noteLedgerInsert()
-          const [transactionGroupId, userId, tokenType, amount] = params as [
+          const [transactionGroupId, userId, tokenType, amount, , idempotencyKey] = params as [
             string,
             string,
             string,
             number,
+            string,
+            string | null,
           ]
-          store.ledger.push({ transactionGroupId, userId, tokenType, amount })
+          store.ledger.push({ transactionGroupId, userId, tokenType, amount, idempotencyKey })
           return []
         }
 
@@ -194,6 +197,9 @@ class FakeDb {
       },
 
       tokenBalance: {
+        async findUnique({ where }: any) {
+          return store.balances.get(where.userId) ?? null
+        },
         async upsert({ where, create, update }: any) {
           const existing = store.balances.get(where.userId)
           if (!existing) {
@@ -216,6 +222,9 @@ class FakeDb {
       },
 
       tokenTransaction: {
+        async findUnique({ where }: any) {
+          return store.ledger.find(row => row.idempotencyKey === where.idempotencyKey) ?? null
+        },
         async create({ data }: any) {
           self.noteLedgerInsert()
           store.ledger.push({
@@ -223,6 +232,7 @@ class FakeDb {
             userId: data.userId,
             tokenType: data.tokenType,
             amount: Number(data.amount),
+            idempotencyKey: data.idempotencyKey,
           })
           return data
         },
@@ -301,8 +311,8 @@ fakeDb.current = db
 const USER = 'user-with-a-balance'
 const GHOST = 'user-with-no-balance-row'
 
-// unified_chat costs { Spirit: 5, Essence: 2 }
-const CHAT_COST = { spirit: 5, essence: 2 }
+// unified_chat uses all four axes at its neutral base price.
+const CHAT_COST = { spirit: 2, essence: 1, matter: 1, substance: 1 }
 
 let EconomyService: typeof import('@/lib/services/economyService').EconomyService
 
@@ -342,19 +352,19 @@ describe('debit refuses for a missing balance row (credit/debit asymmetry)', () 
   })
 
   it('a debit never drives any axis negative, even when only one axis is short', async () => {
-    // Plenty of Spirit, not enough Essence for unified_chat (needs 5 / 2).
-    db.seedBalance(USER, { spirit: 100, essence: 1, matter: 100, substance: 100 })
+    // Plenty of every other axis, but not enough Essence for unified_chat.
+    db.seedBalance(USER, { spirit: 100, essence: 0.5, matter: 100, substance: 100 })
 
     const result = await EconomyService.debitOperation(USER, 'unified_chat')
 
     expect(result.ok).toBe(false)
     // All-or-nothing: the Spirit side must not have been taken either.
-    expect(axes(USER)).toEqual([100, 1, 100, 100])
+    expect(axes(USER)).toEqual([100, 0.5, 100, 100])
     expect(db.ledger).toHaveLength(0)
   })
 
   it('a sufficient debit succeeds and leaves every axis non-negative', async () => {
-    db.seedBalance(USER, { spirit: 5, essence: 2, matter: 0, substance: 0 })
+    db.seedBalance(USER, { spirit: 2, essence: 1, matter: 1, substance: 1 })
 
     const result = await EconomyService.debitOperation(USER, 'unified_chat')
 
@@ -385,7 +395,7 @@ describe('a credit for a missing balance row DOES create it', () => {
 describe('the debit and its ledger rows commit together or not at all', () => {
   it('debitOperation: a failing ledger insert unwinds the balance movement', async () => {
     db.seedBalance(USER, { spirit: 100, essence: 100, matter: 100, substance: 100 })
-    // unified_chat writes 2 ledger rows (Spirit, Essence); blow up on the second
+    // unified_chat writes 4 ledger rows; blow up on the second
     // so the balance is already decremented and one row is already staged.
     db.failLedgerInsertOnCall = 2
 
@@ -394,7 +404,7 @@ describe('the debit and its ledger rows commit together or not at all', () => {
     )
 
     // If the debit committed on its own (the pre-fix behaviour), the balance
-    // would read [95, 98, 100, 100] with an incomplete ledger behind it.
+    // would read [98, 99, 99, 99] with an incomplete ledger behind it.
     expect(axes(USER)).toEqual([100, 100, 100, 100])
     expect(db.ledger).toHaveLength(0)
   })
@@ -420,11 +430,13 @@ describe('the debit and its ledger rows commit together or not at all', () => {
     const result: any = await EconomyService.debitOperation(USER, 'unified_chat')
 
     expect(result.ok).toBe(true)
-    expect(axes(USER)).toEqual([95, 98, 100, 100])
-    expect(db.ledger).toHaveLength(2)
+    expect(axes(USER)).toEqual([98, 99, 99, 99])
+    expect(db.ledger).toHaveLength(4)
     expect(db.ledger.map(r => [r.tokenType, r.amount])).toEqual([
       ['Spirit', -CHAT_COST.spirit],
       ['Essence', -CHAT_COST.essence],
+      ['Matter', -CHAT_COST.matter],
+      ['Substance', -CHAT_COST.substance],
     ])
     // Every ledger row is tagged with the group id handed back to the caller,
     // which create-agent stores for its refund path.
@@ -441,7 +453,7 @@ describe('the debit and its ledger rows commit together or not at all', () => {
     expect(spy).toHaveBeenCalledTimes(1)
     seen.push(...db.seenSql)
     expect(seen.filter(s => /UPDATE token_balances/i.test(s))).toHaveLength(1)
-    expect(seen.filter(s => /INSERT INTO token_transactions/i.test(s))).toHaveLength(2)
+    expect(seen.filter(s => /INSERT INTO token_transactions/i.test(s))).toHaveLength(4)
 
     // The load-bearing assertion, and the one this test is NAMED for: every
     // statement went through the TRANSACTION handle. Counting statements alone
@@ -453,9 +465,45 @@ describe('the debit and its ledger rows commit together or not at all', () => {
       onRoot.map(e => e.sql),
       'these statements escaped the transaction and would survive its rollback'
     ).toEqual([])
-    expect(db.seenBy.filter(e => /INSERT INTO token_transactions/i.test(e.sql))).toHaveLength(2)
+    expect(db.seenBy.filter(e => /INSERT INTO token_transactions/i.test(e.sql))).toHaveLength(4)
     expect(db.seenBy.every(e => e.handle === 'tx')).toBe(true)
     spy.mockRestore()
+  })
+})
+
+describe('dynamic debit idempotency', () => {
+  it('applies a retried request key exactly once', async () => {
+    db.seedBalance(USER, { spirit: 10, essence: 10, matter: 10, substance: 10 })
+    const cost = { Spirit: 2, Essence: 1, Matter: 1, Substance: 1 }
+    const options = { idempotencyKey: 'unified_chat:user-1:request-1' }
+
+    const first: any = await EconomyService.debitDynamic(USER, cost, options)
+    const retry: any = await EconomyService.debitDynamic(USER, cost, options)
+
+    expect(first.ok).toBe(true)
+    expect(retry).toMatchObject({
+      ok: true,
+      reason: 'already_applied',
+      transactionGroupId: first.transactionGroupId,
+    })
+    expect(axes(USER)).toEqual([8, 9, 9, 9])
+    expect(db.ledger).toHaveLength(4)
+    expect(db.ledger.map(row => row.idempotencyKey)).toEqual([
+      `${options.idempotencyKey}:Spirit`,
+      `${options.idempotencyKey}:Essence`,
+      `${options.idempotencyKey}:Matter`,
+      `${options.idempotencyKey}:Substance`,
+    ])
+  })
+
+  it('rejects negative dynamic costs instead of turning a debit into a credit', async () => {
+    db.seedBalance(USER, { spirit: 10, essence: 10, matter: 10, substance: 10 })
+
+    await expect(EconomyService.debitDynamic(USER, { Spirit: -1 })).rejects.toThrow(
+      /finite, non-negative/
+    )
+    expect(axes(USER)).toEqual([10, 10, 10, 10])
+    expect(db.ledger).toHaveLength(0)
   })
 })
 
@@ -484,8 +532,10 @@ describe('return contract relied on by callers', () => {
       'spirit',
       'substance',
     ])
-    expect(result.balances.spirit).toBe(5)
-    expect(result.balances.essence).toBe(8)
+    expect(result.balances.spirit).toBe(8)
+    expect(result.balances.essence).toBe(9)
+    expect(result.balances.matter).toBe(9)
+    expect(result.balances.substance).toBe(9)
     expect(result.balances.lastDailyClaimAt).toBeNull()
   })
 

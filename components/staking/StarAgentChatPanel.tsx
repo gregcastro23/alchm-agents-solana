@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react'
 import Link from 'next/link'
+import { createUnifiedChatHeaders } from '@/lib/agents/unified-chat-request'
 import { ELEMENT_COLOR, ESMS_LABEL } from '@/lib/staking/ui'
 import { Button } from '@/components/ui/button'
 import {
@@ -194,7 +195,7 @@ export function StarAgentChatPanel() {
       if (chatMode === 'single') {
         const res = await fetch('/api/agents/unified', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: createUnifiedChatHeaders(),
           body: JSON.stringify({
             action: 'chat',
             agentId: selectedStar.name.toLowerCase(),

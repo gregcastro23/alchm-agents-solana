@@ -17,6 +17,7 @@ import {
   TrendingUp,
   Wallet,
 } from 'lucide-react'
+import { DAILY_ESMS_YIELD, PREMIUM_MULTIPLIER } from '@/lib/economy-config'
 
 // Privy's SDK is a ~1.4MB client chunk — load it only when this panel
 // actually renders, never in the route's first-load bundle.
@@ -41,7 +42,7 @@ type Props = {
 const PREMIUM_FEATURES = [
   {
     title: 'Double Daily ESMS Yield',
-    desc: 'Receive double daily ESMS tokens (20/day total instead of 10) to fuel alchemical actions.',
+    desc: `Receive double daily ESMS tokens (${DAILY_ESMS_YIELD * PREMIUM_MULTIPLIER}/day total instead of ${DAILY_ESMS_YIELD}) to fuel alchemical actions.`,
     icon: Zap,
   },
   {
