@@ -48,6 +48,8 @@ export interface SyncDebitPayload {
     actionType: string
     activationScore: number
     triggers: string[]
+    targetChain?: string
+    walletAddress?: string
     agentProfile?: {
       bio?: string | null
       monicaCreationStory?: string | null

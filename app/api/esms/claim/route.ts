@@ -6,13 +6,15 @@ import { prisma } from '@/lib/db'
 import { syncDebitToAlchm } from '@/lib/alchm-debit-sync'
 import { mintEsmsClaim } from '@/lib/esms-chain/minter'
 import { readEsmsClaimed } from '@/lib/esms-chain/contract'
+import { mintEsmsClaimSolana } from '@/lib/solana/solana-minter'
 
 export const dynamic = 'force-dynamic'
 
 const CLAIM_ID_PATTERN = /^0x[0-9a-f]{64}$/i
+const SOLANA_ADDRESS_PATTERN = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
 
 /**
- * Claim off-chain ESMS to the user's Base wallet. Debit-first (authoritative
+ * Claim off-chain ESMS to the user's Solana or Base wallet. Debit-first (authoritative
  * off-chain ledger), then mint on-chain. Both keyed by the same `claimId` →
  * idempotent end to end; a mint failure never grants free tokens (retryable).
  */
@@ -28,12 +30,17 @@ export async function POST(request: NextRequest) {
   })
   if (!user?.walletAddress) {
     return NextResponse.json(
-      { error: 'Connect your wallet (Privy) before claiming.' },
+      { error: 'Connect your wallet (Privy or Solana) before claiming.' },
       { status: 400 }
     )
   }
 
-  let body: { amounts?: Record<string, unknown>; claimId?: unknown }
+  let body: {
+    amounts?: Record<string, unknown>
+    claimId?: unknown
+    walletAddress?: string
+    chainNamespace?: string
+  }
   try {
     body = await request.json()
   } catch {
@@ -79,8 +86,12 @@ export async function POST(request: NextRequest) {
   }
 
   const claimId = (existingClaim?.id || keccak256(toHex(`${userId}:${randomUUID()}`))) as Hex
-  const walletAddress = (existingClaim?.walletAddress || user.walletAddress) as Address
-  const network = existingClaim?.network || process.env.NEXT_PUBLIC_ESMS_CHAIN || 'base-sepolia'
+  const targetWallet = body.walletAddress || existingClaim?.walletAddress || user.walletAddress
+  const network =
+    existingClaim?.network ||
+    (body.chainNamespace === 'solana'
+      ? 'solana-devnet'
+      : process.env.NEXT_PUBLIC_ESMS_CHAIN || 'solana-devnet')
   const amountStrings = {
     spirit: String(amounts.spirit),
     essence: String(amounts.essence),
@@ -90,7 +101,14 @@ export async function POST(request: NextRequest) {
 
   if (!existingClaim) {
     await prisma.esms_claims.create({
-      data: { id: claimId, userId, walletAddress, ...amounts, status: 'pending', network },
+      data: {
+        id: claimId,
+        userId,
+        walletAddress: targetWallet,
+        ...amounts,
+        status: 'pending',
+        network,
+      },
     })
   }
 
@@ -131,14 +149,23 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  // 2) Mint on-chain (idempotent by claimId; the backend minter pays gas).
+  // 2) Mint on-chain (idempotent by claimId; the backend minter pays gas/fees).
   try {
-    const txHash = await mintEsmsClaim({ to: walletAddress, claimId, amounts: amountStrings })
+    const isSolana = SOLANA_ADDRESS_PATTERN.test(targetWallet) || network.includes('solana')
+    const txHash = isSolana
+      ? await mintEsmsClaimSolana({ recipient: targetWallet, claimId, amounts: amountStrings })
+      : await mintEsmsClaim({ to: targetWallet as Address, claimId, amounts: amountStrings })
+
     await prisma.esms_claims.update({
       where: { id: claimId },
       data: { status: 'minted', txHash, error: null },
     })
-    return NextResponse.json({ ok: true, claimId, txHash })
+    return NextResponse.json({
+      ok: true,
+      claimId,
+      txHash,
+      network: isSolana ? 'solana-devnet' : network,
+    })
   } catch (err) {
     // Off-chain debit already applied — leave status 'debited' for retry; the on-chain
     // claimId guard prevents a double-mint on retry.
