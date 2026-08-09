@@ -315,6 +315,26 @@ def ensure_postgres_runtime_schema() -> None:
             )
             conn.execute(
                 text(
+                    'ALTER TABLE historical_agents ADD COLUMN IF NOT EXISTS "agentCategory" VARCHAR(50) DEFAULT \'historical\''
+                )
+            )
+            conn.execute(
+                text(
+                    'ALTER TABLE historical_agents ADD COLUMN IF NOT EXISTS "hasBirthchart" BOOLEAN DEFAULT TRUE'
+                )
+            )
+            conn.execute(
+                text(
+                    'CREATE INDEX IF NOT EXISTS "idx_historical_agents_category_active" ON historical_agents ("agentCategory", "isActive")'
+                )
+            )
+            conn.execute(
+                text(
+                    'CREATE INDEX IF NOT EXISTS "idx_historical_agents_chart_active" ON historical_agents ("hasBirthchart", "isActive")'
+                )
+            )
+            conn.execute(
+                text(
                     """
                     UPDATE historical_agents
                     SET "kalchmConstant" = COALESCE("kalchmConstant", "monicaConstant", 0.5),
@@ -325,7 +345,16 @@ def ensure_postgres_runtime_schema() -> None:
                         "evTotal" = COALESCE("evTotal", 0),
                         "isActive" = COALESCE("isActive", TRUE),
                         "version" = COALESCE("version", '2.0.0'),
-                        "craftedBy" = COALESCE("craftedBy", 'philosopher-stone')
+                        "craftedBy" = COALESCE("craftedBy", 'philosopher-stone'),
+                        "agentCategory" = CASE
+                            WHEN "agentId" LIKE 'planetary-%' THEN 'planetary'
+                            WHEN "agentId" LIKE 'moon-phase-%' OR "agentId" LIKE 'moon-agent-%' THEN 'moon_phase'
+                            ELSE 'historical'
+                        END,
+                        "hasBirthchart" = CASE
+                            WHEN "agentId" LIKE 'planetary-%' OR "agentId" LIKE 'moon-phase-%' OR "agentId" LIKE 'moon-agent-%' THEN FALSE
+                            ELSE TRUE
+                        END
                     """
                 )
             )

@@ -3,6 +3,7 @@ import { backend } from '@/lib/backend'
 import { DEMO_AGENTS } from '@/lib/demo-agents-data'
 import { HISTORICAL_AGENTS } from '@/lib/agents/historical'
 import { prisma } from '@/lib/db'
+import { HistoricalAgentsService } from '@/lib/historical-agents-db'
 
 interface GetAgentsResponse {
   success: boolean
@@ -92,9 +93,27 @@ function formatAgentRow(agent: any) {
 
 export async function GET(request: NextRequest): Promise<NextResponse<GetAgentsResponse>> {
   const { searchParams } = new URL(request.url)
+  const category = searchParams.get('category') || 'historical'
 
-  // Legacy escape hatch: proxy a raw window of the Railway table (the old
-  // default — an arbitrary slice of the ~3,700-row table including sprites).
+  // Dedicated planetary degree agent category query.
+  if (category === 'planetary') {
+    try {
+      const limit = parseInt(searchParams.get('limit') || '100')
+      const offset = parseInt(searchParams.get('offset') || '0')
+      const dbAgents = await HistoricalAgentsService.getPlanetaryDegreeAgents({ limit, offset })
+      const agents = dbAgents.map(formatAgentRow)
+      return NextResponse.json({ success: true, agents, total: agents.length })
+    } catch (error: any) {
+      return NextResponse.json({
+        success: false,
+        agents: [],
+        total: 0,
+        error: `Failed to fetch planetary agents: ${error.message}`,
+      })
+    }
+  }
+
+  // Legacy escape hatch: proxy a raw window of the Railway table.
   if (searchParams.get('source') === 'backend') {
     try {
       const limit = parseInt(searchParams.get('limit') || '100')
@@ -112,25 +131,30 @@ export async function GET(request: NextRequest): Promise<NextResponse<GetAgentsR
     }
   }
 
-  // Default roster: the canonical in-memory historical agents (the source of
-  // truth per CLAUDE.md — complete and instant) plus user-forged vessels from
-  // Neon. Replaces the old arbitrary 100-row window of the full table that
-  // mislabeled a sprite-heavy slice as "the roster".
-  // Strip prose-heavy fields no gallery consumer reads (diet lore, quotes,
-  // beliefs, creation story) — they were ~60% of a 442KB response.
+  // Default roster: canonical historical agents with birthcharts plus user-forged vessels from Neon.
   const canonical = HISTORICAL_AGENTS.map(agent => {
     const { historicalDiet, quotes, coreBeliefs, monicaCreationStory, ...slim } = agent as any
     return {
       ...slim,
       isUserCreated: false,
       historicalEra: (agent as any).historicalEra ?? agent.era,
+      category: 'historical',
+      hasBirthchart: true,
     }
   })
 
   let userCreated: any[] = []
   try {
     const rows = await prisma.historical_agents.findMany({
-      where: { isActive: true, craftedBy: 'philosopher-stone-user' },
+      where: {
+        isActive: true,
+        craftedBy: 'philosopher-stone-user',
+        AND: [
+          { agentId: { not: { startsWith: 'planetary-' } } },
+          { agentId: { not: { startsWith: 'moon-phase-' } } },
+          { agentId: { not: { startsWith: 'moon-agent-' } } },
+        ],
+      },
       orderBy: { createdAt: 'desc' },
       take: 500,
     })

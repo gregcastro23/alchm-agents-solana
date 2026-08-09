@@ -96,6 +96,8 @@ class HistoricalAgent(Base):
     # Metadata
     version = Column(String, default="2.0.0")
     craftedBy = Column(String, default="philosopher-stone")
+    agentCategory = Column(String, default="historical")
+    hasBirthchart = Column(Boolean, default=True)
     createdAt = Column(DateTime, default=lambda: datetime.now(timezone.utc))
     updatedAt = Column(
         DateTime,

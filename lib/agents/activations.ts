@@ -148,7 +148,7 @@ export async function getAgentActivations(
   let agents: Array<EnhancedHistoricalAgent | any>
 
   try {
-    agents = await HistoricalAgentsService.getAllAgents({ limit: Math.max(limit * 3, 24) })
+    agents = await HistoricalAgentsService.getHistoricalAgents({ limit: Math.max(limit * 3, 24) })
   } catch (error) {
     console.warn('[agent-activations] DB unavailable, using demo fallback:', error)
     agents = DEMO_AGENTS

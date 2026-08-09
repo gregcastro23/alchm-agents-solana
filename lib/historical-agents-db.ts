@@ -32,6 +32,32 @@ export interface EnhancedHistoricalAgent extends HistoricalAgent {
   agentKnowledge?: AgentKnowledge[]
 }
 
+export function isSyntheticDegreeAgentId(id: string): boolean {
+  if (!id) return false
+  const lower = id.toLowerCase().trim()
+  return (
+    lower.startsWith('planetary-') ||
+    lower.startsWith('moon-phase-') ||
+    lower.startsWith('moon-agent-') ||
+    lower.startsWith('planetary_')
+  )
+}
+
+export function isHistoricalAgent(agent: { agentId: string; natalChart?: any }): boolean {
+  if (!agent || !agent.agentId) return false
+  if (isSyntheticDegreeAgentId(agent.agentId)) return false
+  return true
+}
+
+export function isPlanetaryAgent(agent: { agentId: string }): boolean {
+  if (!agent || !agent.agentId) return false
+  return isSyntheticDegreeAgentId(agent.agentId)
+}
+
+export function getAgentCategory(agent: { agentId: string }): 'historical' | 'planetary' {
+  return isSyntheticDegreeAgentId(agent.agentId) ? 'planetary' : 'historical'
+}
+
 export class HistoricalAgentsService {
   /**
    * Enhanced migration for 69-agent Gallery of Perpetuity expansion
@@ -208,6 +234,8 @@ export class HistoricalAgentsService {
       // Metadata
       version: '2.0.0', // Updated version for 69-agent expansion
       craftedBy: 'philosopher-stone',
+      agentCategory: 'historical',
+      hasBirthchart: true,
     }
   }
 
@@ -405,10 +433,13 @@ export class HistoricalAgentsService {
   }
 
   /**
-   * Get all active historical agents with enhanced filtering
+   * Get active agents sequestered by category.
+   * Options:
+   *  - category: 'historical' (default) | 'planetary' | 'all'
    */
   static async getAllAgents(
     options: {
+      category?: 'historical' | 'planetary' | 'all'
       includeStats?: boolean
       era?: string
       culture?: string
@@ -417,7 +448,22 @@ export class HistoricalAgentsService {
       offset?: number
     } = {}
   ): Promise<HistoricalAgent[]> {
+    const category = options.category ?? 'historical'
     const where: any = { isActive: true }
+
+    if (category === 'historical') {
+      where.AND = [
+        { agentId: { not: { startsWith: 'planetary-' } } },
+        { agentId: { not: { startsWith: 'moon-phase-' } } },
+        { agentId: { not: { startsWith: 'moon-agent-' } } },
+      ]
+    } else if (category === 'planetary') {
+      where.OR = [
+        { agentId: { startsWith: 'planetary-' } },
+        { agentId: { startsWith: 'moon-phase-' } },
+        { agentId: { startsWith: 'moon-agent-' } },
+      ]
+    }
 
     if (options.era) where.historicalEra = options.era
     if (options.culture) where.culture = { contains: options.culture, mode: 'insensitive' }
@@ -434,15 +480,41 @@ export class HistoricalAgentsService {
     return await (prisma.historical_agents as any).findMany(queryOptions)
   }
 
+  static async getHistoricalAgents(
+    options: Omit<Parameters<typeof HistoricalAgentsService.getAllAgents>[0], 'category'> = {}
+  ): Promise<HistoricalAgent[]> {
+    return this.getAllAgents({ ...options, category: 'historical' })
+  }
+
+  static async getPlanetaryDegreeAgents(
+    options: Omit<Parameters<typeof HistoricalAgentsService.getAllAgents>[0], 'category'> = {}
+  ): Promise<HistoricalAgent[]> {
+    return this.getAllAgents({ ...options, category: 'planetary' })
+  }
+
   /**
-   * Count of active agents. Used by the feed activation engine to bound a
-   * timestamp-derived rotating window so every agent participates over time
-   * without evaluating all ~3,700 per tick. Returns 0 on error (caller
-   * degrades to a fixed offset).
+   * Count of active historical agents with charts. Used by the feed activation engine
+   * to bound a timestamp-derived rotating window over genuine historical agents.
    */
-  static async countActiveAgents(): Promise<number> {
+  static async countActiveAgents(
+    category: 'historical' | 'planetary' | 'all' = 'historical'
+  ): Promise<number> {
     try {
-      return await (prisma.historical_agents as any).count({ where: { isActive: true } })
+      const where: any = { isActive: true }
+      if (category === 'historical') {
+        where.AND = [
+          { agentId: { not: { startsWith: 'planetary-' } } },
+          { agentId: { not: { startsWith: 'moon-phase-' } } },
+          { agentId: { not: { startsWith: 'moon-agent-' } } },
+        ]
+      } else if (category === 'planetary') {
+        where.OR = [
+          { agentId: { startsWith: 'planetary-' } },
+          { agentId: { startsWith: 'moon-phase-' } },
+          { agentId: { startsWith: 'moon-agent-' } },
+        ]
+      }
+      return await (prisma.historical_agents as any).count({ where })
     } catch (error) {
       console.warn('[HistoricalAgentsService] countActiveAgents failed:', error)
       return 0

@@ -185,7 +185,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<UnifiedAg
               error
             )
           }
-          pricing = calculateAgentChatPricing(agentElement, currentAlchemy)
+          pricing = calculateAgentChatPricing(
+            personaCtx?.agent || parameters.agentId || agentElement,
+            currentAlchemy,
+            { message: requestedMessage }
+          )
 
           const requestKey =
             request.headers.get('Idempotency-Key') ||

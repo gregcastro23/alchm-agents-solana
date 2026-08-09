@@ -787,6 +787,8 @@ model historical_agents {
   isActive               Boolean                  @default(true)
   version                String                   @default("1.0.0")
   craftedBy              String                   @default("philosopher-stone")
+  agentCategory          String                   @default("historical")
+  hasBirthchart          Boolean                  @default(true)
   createdAt              DateTime                 @default(now())
   updatedAt              DateTime                 @updatedAt
   AgentConversation      AgentConversation[]
@@ -799,6 +801,8 @@ model historical_agents {
   jingDuelsAsTarget      AgentJingDuel[]          @relation("JingTarget")
 
   @@index([agentId])
+  @@index([agentCategory, isActive])
+  @@index([hasBirthchart, isActive])
   @@index([birthYear, culture])
   @@index([birthYear])
   @@index([consciousnessLevel])

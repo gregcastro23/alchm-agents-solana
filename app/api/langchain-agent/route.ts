@@ -46,13 +46,22 @@ export async function POST(request: NextRequest) {
     if (freeThisWeek) {
       balances = userId ? await EconomyService.getBalances(userId) : EconomyService.ZERO_BALANCES
     } else if (userId) {
-      const debitResult = await EconomyService.debitOperation(userId, 'unified_chat')
+      let currentAlchemy: unknown
+      try {
+        const { getAlchemicalQuantitiesLegacy } = await import('@/lib/alchemizer')
+        currentAlchemy = await getAlchemicalQuantitiesLegacy()
+      } catch {}
+
+      const { calculateAgentChatPricing } = await import('@/lib/economy/chat-pricing')
+      const pricing = calculateAgentChatPricing(agentId, currentAlchemy, { message: query })
+
+      const debitResult = await EconomyService.debitDynamic(userId, pricing.cost)
       if (!debitResult.ok) {
         return NextResponse.json(
           {
             success: false,
             error: 'Insufficient tokens',
-            data: { required: AGENT_OPERATION_COSTS.unified_chat },
+            data: { required: pricing.cost, pricing },
           },
           { status: 402 }
         )

@@ -45,10 +45,10 @@ export const CHAT_QUEST_REWARD = {
  * permanent bottleneck while the others accumulate unused.
  */
 export const UNIFIED_CHAT_BASE_COST: EsmsCost = {
-  Spirit: 2,
-  Essence: 1,
-  Matter: 1,
-  Substance: 1,
+  Spirit: 0.3,
+  Essence: 0.2,
+  Matter: 0.2,
+  Substance: 0.2,
 }
 
 export const AGENT_OPERATION_COSTS: Record<string, Partial<Record<TokenType, number>>> = {

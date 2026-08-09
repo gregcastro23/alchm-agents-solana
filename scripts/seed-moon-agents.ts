@@ -142,6 +142,8 @@ async function seedMoonAgents() {
           isActive: true,
           version: '2.0.0',
           craftedBy: 'philosopher-stone',
+          agentCategory: 'moon_phase',
+          hasBirthchart: false,
         })
 
         createdCount++

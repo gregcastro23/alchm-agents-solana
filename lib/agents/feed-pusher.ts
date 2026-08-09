@@ -264,17 +264,19 @@ export class FeedPusherService {
       //    (same hourly cadence as the activation engine) sweeps the pool
       //    across the whole roster so debates aren't always among the same
       //    top-50 agents — every agent can be a debate partner over time.
-      const { HistoricalAgentsService } = await import('../historical-agents-db')
+      const { HistoricalAgentsService, isHistoricalAgent } = await import('../historical-agents-db')
       const DEBATE_POOL = 80
-      const total = await HistoricalAgentsService.countActiveAgents()
+      const total = await HistoricalAgentsService.countActiveAgents('historical')
       const offset =
         total > DEBATE_POOL ? (Math.floor(Date.now() / 3_600_000) * DEBATE_POOL) % total : 0
-      const activeAgents = await HistoricalAgentsService.getAllAgents({
+      const activeAgents = await HistoricalAgentsService.getHistoricalAgents({
         limit: DEBATE_POOL,
         offset,
       })
 
-      const candidates = activeAgents.filter(a => a.agentId !== parentAgentId)
+      const candidates = activeAgents.filter(
+        a => a.agentId !== parentAgentId && isHistoricalAgent(a)
+      )
       if (candidates.length === 0) return
 
       // 2. Compute compatibility and filter candidates

@@ -180,7 +180,9 @@ def seed_3600():
                     "lastActive": datetime.utcnow(),
                     "isActive": True,
                     "version": "2.0.0",
-                    "craftedBy": "philosopher-stone"
+                    "craftedBy": "philosopher-stone",
+                    "agentCategory": "planetary",
+                    "hasBirthchart": False
                 }
                 
                 db_agent = models.HistoricalAgent(**agent_data)

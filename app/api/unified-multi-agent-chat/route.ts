@@ -215,41 +215,25 @@ export async function POST(request: NextRequest) {
         )
       }
 
-      const currentAlchemy = await getAlchemicalQuantitiesLegacy()
-      const alchemyEffects = currentAlchemy['Alchemy Effects'] || {}
+      let currentAlchemy: unknown
+      try {
+        currentAlchemy = await getAlchemicalQuantitiesLegacy()
+      } catch (err) {
+        console.warn(
+          '[unified-multi-agent-chat] Live transit pricing unavailable; using chart base price',
+          err
+        )
+      }
 
-      const elementsNow = [
-        { name: 'Fire', val: alchemyEffects['Total Spirit'] || 0 },
-        { name: 'Water', val: alchemyEffects['Total Essence'] || 0 },
-        { name: 'Earth', val: alchemyEffects['Total Matter'] || 0 },
-        { name: 'Air', val: alchemyEffects['Total Substance'] || 0 },
-      ]
-
-      elementsNow.sort((a, b) => b.val - a.val)
-      const dominantNow = elementsNow[0]?.name || 'Earth'
-
+      const { calculateAgentChatPricing } = await import('@/lib/economy/chat-pricing')
       let totalCost = { Spirit: 0, Essence: 0, Matter: 0, Substance: 0 }
-      const baseCost = { Spirit: 2, Essence: 1, Matter: 1, Substance: 1 }
 
       for (const agent of activeAgents) {
-        const agentElement = agent.consciousness?.dominantElement || 'Earth'
-        let multiplier = 1.0
-
-        if (agentElement === dominantNow) {
-          multiplier = 0.5 // discount when agent is in resonance
-        } else if (
-          (agentElement === 'Fire' && dominantNow === 'Water') ||
-          (agentElement === 'Water' && dominantNow === 'Fire') ||
-          (agentElement === 'Earth' && dominantNow === 'Air') ||
-          (agentElement === 'Air' && dominantNow === 'Earth')
-        ) {
-          multiplier = 1.5 // markup when agent clashes
-        }
-
-        totalCost.Spirit += Math.ceil(baseCost.Spirit * multiplier)
-        totalCost.Essence += Math.ceil(baseCost.Essence * multiplier)
-        totalCost.Matter += Math.ceil(baseCost.Matter * multiplier)
-        totalCost.Substance += Math.ceil(baseCost.Substance * multiplier)
+        const pricing = calculateAgentChatPricing(agent, currentAlchemy)
+        totalCost.Spirit += pricing.cost.Spirit
+        totalCost.Essence += pricing.cost.Essence
+        totalCost.Matter += pricing.cost.Matter
+        totalCost.Substance += pricing.cost.Substance
       }
 
       const debitResult = await EconomyService.debitDynamic(userId, totalCost)

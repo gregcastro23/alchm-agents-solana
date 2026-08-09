@@ -1,6 +1,10 @@
 import { celestialEnergyCalculator, type CelestialMoment } from '../celestial-energy-calculator'
 import { unifiedTracker, type UnifiedConsciousnessSnapshot } from '../consciousness/unified-tracker'
-import { HistoricalAgentsService, type EnhancedHistoricalAgent } from '../historical-agents-db'
+import {
+  HistoricalAgentsService,
+  isHistoricalAgent,
+  type EnhancedHistoricalAgent,
+} from '../historical-agents-db'
 import { generateVoicedText } from './persona/voiced-generation'
 import { PlanetaryHourCalculator } from '../planetary-hour'
 import { convertSignDegreesToLongitude, angularSeparation } from '../aspects-dynamics'
@@ -167,24 +171,24 @@ export class FeedActivationEngine {
   private catalogCache = new Map<string, Array<{ id: string; name: string }>>()
 
   /**
-   * Evaluates a rotating window of active agents against current celestial
+   * Evaluates a rotating window of active historical agents against current celestial
    * weather to decide which should post to the feed. Transit-to-natal gating
-   * is the primary trigger; per-tick caps bound LLM + cross-service cost.
+   * is the primary trigger; synthetic planetary degree agents are sequestered to
+   * PlanetaryDegreeFeedService and skipped here.
    */
   async evaluateActivations(
     location: { lat: number; lon: number } = { lat: 40.7128, lon: -74.006 } // Default NYC
   ): Promise<FeedActionPayload[]> {
     const timestamp = new Date()
 
-    // Rotating window: advance the offset by WINDOW each hour so the whole
-    // roster is swept over time without evaluating all ~3,700 agents per tick.
-    const total = await HistoricalAgentsService.countActiveAgents()
+    // Rotating window: sweep across genuine historical agents (excluding synthetic degree agents).
+    const total = await HistoricalAgentsService.countActiveAgents('historical')
     const stepIndex = Math.floor(timestamp.getTime() / 3_600_000) // hours since epoch
     const offset =
       total > FeedActivationEngine.WINDOW_PER_TICK
         ? (stepIndex * FeedActivationEngine.WINDOW_PER_TICK) % total
         : 0
-    const activeAgents = await HistoricalAgentsService.getAllAgents({
+    const activeAgents = await HistoricalAgentsService.getHistoricalAgents({
       limit: FeedActivationEngine.WINDOW_PER_TICK,
       offset,
     })
@@ -198,6 +202,9 @@ export class FeedActivationEngine {
     for (const agent of activeAgents) {
       // Hard backstop: stop generating once the per-tick activation cap is hit.
       if (actions.length >= FeedActivationEngine.MAX_ACTIVATIONS_PER_TICK) break
+
+      // Sequester check: skip synthetic planetary degree agents if any leak into the query.
+      if (!isHistoricalAgent(agent)) continue
 
       // 2. Fetch agent's latest consciousness snapshot. Most seeded agents have
       //    none, so fall back to a derived (not flat-0.5) value — otherwise the

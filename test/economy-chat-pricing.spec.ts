@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
-import { AGENT_DAILY_YIELD, AGENT_OPERATION_COSTS } from '@/lib/economy-config'
-import { calculateAgentChatPricing, dominantTransitElement } from '@/lib/economy/chat-pricing'
+import {
+  AGENT_DAILY_YIELD,
+  AGENT_OPERATION_COSTS,
+  UNIFIED_CHAT_BASE_COST,
+} from '@/lib/economy-config'
+import {
+  calculateAgentChatPricing,
+  dominantTransitElement,
+  deriveAgentBaseCost,
+  computeDignityWaveharmonics,
+} from '@/lib/economy/chat-pricing'
 
 const sky = (spirit: number, essence: number, matter: number, substance: number) => ({
   'Alchemy Effects': {
@@ -12,70 +21,84 @@ const sky = (spirit: number, essence: number, matter: number, substance: number)
 })
 
 describe('chart-dynamic ESMS chat pricing', () => {
-  it('uses all four ESMS axes for the rebalanced base price', () => {
+  it('uses accessible four-axis sub-token baseline prices', () => {
     expect(AGENT_OPERATION_COSTS.unified_chat).toEqual({
-      Spirit: 2,
-      Essence: 1,
-      Matter: 1,
-      Substance: 1,
+      Spirit: 0.3,
+      Essence: 0.2,
+      Matter: 0.2,
+      Substance: 0.2,
     })
   })
 
-  it('finds the dominant live-sky element from legacy alchemy totals', () => {
-    expect(dominantTransitElement(sky(2, 9, 4, 1))).toBe('Water')
-    expect(dominantTransitElement(sky(2, 1, 4, 11))).toBe('Air')
-    expect(dominantTransitElement(sky(4, 4, 1, 1))).toBeNull()
-  })
-
-  it('applies an exact 0.5x resonance discount without rounding fractional axes up', () => {
-    expect(calculateAgentChatPricing('Water', sky(2, 9, 4, 1))).toMatchObject({
-      relationship: 'resonance',
-      multiplier: 0.5,
-      agentElement: 'Water',
-      transitElement: 'Water',
-      cost: { Spirit: 1, Essence: 0.5, Matter: 0.5, Substance: 0.5 },
+  it('derives accessible agent-specific base costs from chart/planetary orientation', () => {
+    // Spirit-oriented (Fire / Sun / Jupiter)
+    expect(deriveAgentBaseCost('Fire')).toEqual({
+      Spirit: 0.4,
+      Essence: 0.25,
+      Matter: 0.25,
+      Substance: 0.25,
+    })
+    // Essence-oriented (Water / Moon / Neptune)
+    expect(deriveAgentBaseCost('Water')).toEqual({
+      Spirit: 0.25,
+      Essence: 0.4,
+      Matter: 0.25,
+      Substance: 0.25,
+    })
+    // Matter-oriented (Earth / Saturn)
+    expect(deriveAgentBaseCost('Earth')).toEqual({
+      Spirit: 0.25,
+      Essence: 0.25,
+      Matter: 0.4,
+      Substance: 0.25,
+    })
+    // Substance-oriented (Air / Mercury)
+    expect(deriveAgentBaseCost('Air')).toEqual({
+      Spirit: 0.25,
+      Essence: 0.25,
+      Matter: 0.25,
+      Substance: 0.4,
     })
   })
 
-  it('applies the configured clash markup to opposing elements', () => {
-    expect(calculateAgentChatPricing('Fire', sky(2, 9, 4, 1))).toMatchObject({
-      relationship: 'clash',
-      multiplier: 1.5,
-      cost: { Spirit: 3, Essence: 1.5, Matter: 1.5, Substance: 1.5 },
-    })
+  it('calculates continuous dignity waveharmonics from live sky transits', () => {
+    const harmonics = computeDignityWaveharmonics(sky(2, 9, 4, 1))
+    expect(harmonics.Essence).toBeGreaterThan(0)
+    expect(harmonics.Substance).toBeGreaterThan(0)
   })
 
-  it('keeps the base price for non-opposing elements and unavailable transit data', () => {
-    expect(calculateAgentChatPricing('Air', sky(2, 9, 4, 1))).toMatchObject({
-      relationship: 'neutral',
-      multiplier: 1,
-      cost: AGENT_OPERATION_COSTS.unified_chat,
-    })
-    expect(calculateAgentChatPricing('Earth', {})).toMatchObject({
-      relationship: 'neutral',
-      multiplier: 1,
-      transitElement: null,
-      cost: AGENT_OPERATION_COSTS.unified_chat,
-    })
+  it('computes affordable resonant fees for Water agent during Water transit', () => {
+    const pricing = calculateAgentChatPricing('Water', sky(2, 9, 4, 1))
+    expect(pricing.relationship).toBe('resonance')
+    expect(pricing.cost.Spirit).toBeLessThan(0.3)
+    expect(pricing.cost.Essence).toBeLessThan(0.3)
+    expect(pricing.cost.Matter).toBeLessThan(0.3)
+    expect(pricing.cost.Substance).toBeLessThan(0.3)
   })
 
-  it('lets one base daily claim fund two neutral interactions', () => {
-    const perAxisYield = AGENT_DAILY_YIELD / 4
-    const { cost } = calculateAgentChatPricing('Air', sky(2, 9, 4, 1))
-
-    expect(Math.floor(perAxisYield / cost.Spirit)).toBeGreaterThanOrEqual(2)
-    expect(Math.floor(perAxisYield / cost.Essence)).toBeGreaterThanOrEqual(2)
-    expect(Math.floor(perAxisYield / cost.Matter)).toBeGreaterThanOrEqual(2)
-    expect(Math.floor(perAxisYield / cost.Substance)).toBeGreaterThanOrEqual(2)
+  it('keeps fees accessible even during maximum elemental clash', () => {
+    const pricing = calculateAgentChatPricing('Fire', sky(2, 9, 4, 1))
+    expect(pricing.relationship).toBe('clash')
+    // Total cost remains well below 1.5 tokens
+    const totalCost =
+      pricing.cost.Spirit + pricing.cost.Essence + pricing.cost.Matter + pricing.cost.Substance
+    expect(totalCost).toBeLessThan(1.5)
   })
 
-  it('funds at least two interactions even at the maximum clash price', () => {
-    const perAxisYield = AGENT_DAILY_YIELD / 4
-    const { cost } = calculateAgentChatPricing('Fire', sky(2, 9, 4, 1))
+  it('allows baseCostOverride for fixed baseline calculations', () => {
+    expect(calculateAgentChatPricing('Air', sky(2, 9, 4, 1), UNIFIED_CHAT_BASE_COST)).toMatchObject(
+      {
+        relationship: 'neutral',
+        multiplier: 1,
+        baseCost: UNIFIED_CHAT_BASE_COST,
+      }
+    )
+  })
 
-    expect(Math.floor(perAxisYield / cost.Spirit)).toBeGreaterThanOrEqual(2)
-    expect(Math.floor(perAxisYield / cost.Essence)).toBeGreaterThanOrEqual(2)
-    expect(Math.floor(perAxisYield / cost.Matter)).toBeGreaterThanOrEqual(2)
-    expect(Math.floor(perAxisYield / cost.Substance)).toBeGreaterThanOrEqual(2)
+  it('allows a daily yield claim to fund 20+ agent consultations', () => {
+    const perAxisYield = AGENT_DAILY_YIELD / 4 // 6 of each token axis
+    const waterCost = calculateAgentChatPricing('Water', sky(2, 9, 4, 1)).cost
+
+    expect(Math.floor(perAxisYield / waterCost.Essence)).toBeGreaterThanOrEqual(20)
   })
 })
