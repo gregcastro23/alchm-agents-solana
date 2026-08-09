@@ -30,7 +30,7 @@ The code ships defaulting to **legacy** so nothing breaks before credentials exi
 1. **Google Cloud Console** — on the OAuth 2.0 client (reuse the alchm.kitchen client, or make a new one):
    - Authorized JavaScript origin: `https://agents.alchm.kitchen`
    - Authorized redirect URI: `https://agents.alchm.kitchen/api/auth/callback/google`
-2. **Vercel env** (agents project, `cookingwithcastro-llc/alchm-agents-eth`, Production):
+2. **Vercel env** (agents project, `cookingwithcastro-llc/alchm-agents-solana`, Production):
    - `AUTH_GOOGLE_ID` = client id
    - `AUTH_GOOGLE_SECRET` = client secret
    - `NEXTAUTH_URL` = `https://agents.alchm.kitchen`
