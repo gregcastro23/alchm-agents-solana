@@ -23,7 +23,7 @@ ANTHROPIC_API_KEY
 **Value field:**
 
 ```
-sk-placeholder-key-redacted
+sk-placeholder-key-redacted-for-security
 ```
 
 (Copy this exactly - no quotes, no spaces before/after)
@@ -55,7 +55,7 @@ OPENAI_API_KEY
 **Value field:**
 
 ```
-sk-placeholder-key-redacted
+sk-placeholder-key-redacted-for-security
 ```
 
 **Environments:**
@@ -122,8 +122,8 @@ Try this alternative:
 3. Add these two lines:
 
 ```
-ANTHROPIC_API_KEY=sk-placeholder-key-redacted
-OPENAI_API_KEY=sk-placeholder-key-redacted
+ANTHROPIC_API_KEY=sk-placeholder-key-redacted-for-security
+OPENAI_API_KEY=sk-placeholder-key-redacted-for-security
 ```
 
 4. Save the file

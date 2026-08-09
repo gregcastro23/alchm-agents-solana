@@ -15,8 +15,8 @@ PORT=8000
 HOST=0.0.0.0
 DATABASE_URL=postgresql://neondb_owner:npg_J8CabeXrf5Od@ep-mute-thunder-ahui2n87-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require&channel_binding=require
 CORS_ORIGINS=https://v0-planetary-agents1.vercel.app,https://v0-planetary-agents-git-main-gregcastro23s-projects.vercel.app,https://*.vercel.app,https://planetary-agents.vercel.app
-ANTHROPIC_API_KEY=sk-placeholder-key-redacted
-OPENAI_API_KEY=sk-placeholder-key-redacted
+ANTHROPIC_API_KEY=sk-placeholder-key-redacted-for-security
+OPENAI_API_KEY=sk-placeholder-key-redacted-for-security
 PLANETARY_HOURS_BACKEND=true
 THERMODYNAMICS_BACKEND=true
 TOKEN_CALCULATIONS_BACKEND=true
@@ -67,8 +67,8 @@ NEXT_PUBLIC_BACKEND_URL=https://planetary-agents-backend.onrender.com
 ### Other Variables (Should Already Exist)
 
 ```bash
-ANTHROPIC_API_KEY=sk-placeholder-key-redacted
-OPENAI_API_KEY=sk-placeholder-key-redacted
+ANTHROPIC_API_KEY=sk-placeholder-key-redacted-for-security
+OPENAI_API_KEY=sk-placeholder-key-redacted-for-security
 DATABASE_URL=postgresql://neondb_owner:npg_J8CabeXrf5Od@ep-mute-thunder-ahui2n87-pooler.c-3.us-east-1.aws.neon.tech/neondb?sslmode=require
 NEXT_PUBLIC_BETA_MODE=true
 NEXT_PUBLIC_FEEDBACK_ENABLED=true

@@ -40,7 +40,7 @@ Environments: ✅ Production ✅ Preview ✅ Development
 
 ```
 Name: ANTHROPIC_API_KEY
-Value: sk-placeholder-key-redacted
+Value: sk-placeholder-key-redacted-for-security
 Environments: ✅ Production ✅ Preview ✅ Development
 ```
 
@@ -48,7 +48,7 @@ Environments: ✅ Production ✅ Preview ✅ Development
 
 ```
 Name: OPENAI_API_KEY
-Value: sk-placeholder-key-redacted
+Value: sk-placeholder-key-redacted-for-security
 Environments: ✅ Production ✅ Preview ✅ Development
 ```
 

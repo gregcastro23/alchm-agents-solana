@@ -77,10 +77,10 @@ NEXTAUTH_URL=https://planetary-agents.vercel.app
 
 ```bash
 # Anthropic API Key should start with: sk-ant-api03-
-ANTHROPIC_API_KEY=sk-placeholder-key-redacted
+ANTHROPIC_API_KEY=sk-placeholder-key-redacted-for-security
 
 # OpenAI API Key should start with: sk-
-OPENAI_API_KEY=sk-placeholder-key-redacted
+OPENAI_API_KEY=sk-placeholder-key-redacted-for-security
 ```
 
 **Note**: These keys look unusual. Verify they're valid:

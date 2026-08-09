@@ -26,9 +26,9 @@ POSTGRES_URL_NON_POOLING=postgresql://neondb_owner:npg_J8CabeXrf5Od@ep-mute-thun
 ### 🤖 AI API Keys
 
 ```bash
-ANTHROPIC_API_KEY=sk-placeholder-key-redacted
+ANTHROPIC_API_KEY=sk-placeholder-key-redacted-for-security
 
-OPENAI_API_KEY=sk-placeholder-key-redacted
+OPENAI_API_KEY=sk-placeholder-key-redacted-for-security
 
 GALILEO_API_KEY=q01AM1oNTjbStxEaiHx44gKLg0FUCd-yzmk4hV55pjU
 

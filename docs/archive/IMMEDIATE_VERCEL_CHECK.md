@@ -63,9 +63,9 @@ In Vercel env vars, verify the keys match your .env files:
 **Should be:**
 
 ```
-ANTHROPIC_API_KEY = sk-placeholder-key-redacted
+ANTHROPIC_API_KEY = sk-placeholder-key-redacted-for-security
 
-OPENAI_API_KEY = sk-placeholder-key-redacted
+OPENAI_API_KEY = sk-placeholder-key-redacted-for-security
 ```
 
 (Without quotes in Vercel UI - just paste the raw value)

@@ -50,9 +50,7 @@ async function testModel(apiKey, modelName) {
 }
 
 async function testAllModels() {
-  const apiKey =
-    process.env.ANTHROPIC_API_KEY ||
-    'sk-placeholder-key-redacted'
+  const apiKey = process.env.ANTHROPIC_API_KEY || 'sk-placeholder-key-redacted-for-security'
 
   console.log('🔍 Testing all Claude models with your API key...\n')
 

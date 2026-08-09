@@ -547,7 +547,7 @@ All components follow WCAG 2.1 AA standards:
 
 **Solution:**
 Contact Anthropic support to enable Claude model access for API key:
-`sk-placeholder-key-redacted`
+`sk-placeholder-key-redacted-for-security`
 
 **Impact on Phase 4:**
 

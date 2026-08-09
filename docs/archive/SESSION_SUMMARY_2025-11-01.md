@@ -92,8 +92,8 @@ The chat API (`/api/monica-agent`) is failing at runtime, likely due to:
 Check if these exist and are applied to **Production**:
 
 ```bash
-ANTHROPIC_API_KEY = sk-placeholder-key-redacted
-OPENAI_API_KEY = sk-placeholder-key-redacted
+ANTHROPIC_API_KEY = sk-placeholder-key-redacted-for-security
+OPENAI_API_KEY = sk-placeholder-key-redacted-for-security
 DATABASE_URL = postgresql://... (your Neon database)
 ```
 
