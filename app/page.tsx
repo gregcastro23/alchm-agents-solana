@@ -35,7 +35,7 @@ import ResonantStarVaultsWidget from '@/components/staking/ResonantStarVaultsWid
 import { usePlanetaryPositions } from '@/hooks/usePlanetaryPositions'
 import { LivePlanetaryCouncilThread } from '@/components/landing/live-planetary-council-thread'
 import { QuickChartAttachmentGenerator } from '@/components/landing/quick-chart-attachment-generator'
-import { BarbaultBasketPromotionalThread } from '@/components/landing/barbault-basket-promotional-thread'
+import { CurrentPromotionalThread } from '@/components/landing/current-promotional-thread'
 import FreeAgentsOfTheWeek from '@/components/landing/free-agents-of-the-week'
 import { useFreeAgents } from '@/hooks/use-free-agents'
 import {
@@ -765,21 +765,21 @@ export default function LandingPage() {
           </div>
         </section>
 
+        {/* ==================== CURRENT PROMOTION FEATURED (ACTIVE CELESTIAL EVENT) ==================== */}
+        <section id="current-promotion" className="space-y-6">
+          <CurrentPromotionalThread
+            positions={planetaryData.planetaryPositions}
+            alchmQuantities={planetaryData.alchmQuantities}
+            monicaConstant={displayMonica}
+            currentMoonAgent={currentMoonAgent}
+            onOpenCouncil={() => router.push('/planetary-council')}
+          />
+        </section>
+
         <QuickChartAttachmentGenerator />
 
         {/* ======================= PLANETARY AGENTS & SKY COUNCIL ======================= */}
         <section id="planetary" className="space-y-6">
-          {/* ==================== BARBAULT'S BASKET FEATURED (ACTIVE MEGA-TRANSIT) ==================== */}
-          <section id="barbault-basket" className="space-y-6">
-            <BarbaultBasketPromotionalThread
-              positions={planetaryData.planetaryPositions}
-              alchmQuantities={planetaryData.alchmQuantities}
-              monicaConstant={displayMonica}
-              currentMoonAgent={currentMoonAgent}
-              onOpenCouncil={() => router.push('/planetary-council')}
-            />
-          </section>
-
           <SectionHead
             eyebrow="Attuned to this moment"
             title="Planetary Agents"

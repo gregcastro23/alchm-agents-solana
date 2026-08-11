@@ -428,21 +428,21 @@ export class PlanetaryPositionsService {
 
   /**
    * Method 4: Static Fallback Positions (low accuracy, guaranteed availability)
-   * Updated to July 2026 Barbault Cradle alignment positions
+   * Updated to August 12, 2026 Total Solar Eclipse positions
    */
   private getStaticFallbackPositions(date: Date): PlanetaryData {
-    // Positions as of July 2026 Barbault Cradle Alignment
+    // Positions as of August 12, 2026 Total Solar Eclipse (Peak Totality)
     const planetaryPositions: PlanetaryPosition[] = [
-      { planet: 'Sun', sign: 'Leo', degree: 0.8, retrograde: false },
-      { planet: 'Moon', sign: 'Scorpio', degree: 25.7, retrograde: false },
-      { planet: 'Mercury', sign: 'Cancer', degree: 16.3, retrograde: true },
-      { planet: 'Venus', sign: 'Virgo', degree: 15.3, retrograde: false },
-      { planet: 'Mars', sign: 'Gemini', degree: 17.4, retrograde: false },
-      { planet: 'Jupiter', sign: 'Leo', degree: 4.0, retrograde: false },
-      { planet: 'Saturn', sign: 'Aries', degree: 14.7, retrograde: false },
-      { planet: 'Uranus', sign: 'Gemini', degree: 4.0, retrograde: false },
-      { planet: 'Neptune', sign: 'Aries', degree: 4.0, retrograde: true },
-      { planet: 'Pluto', sign: 'Aquarius', degree: 4.0, retrograde: true },
+      { planet: 'Sun', sign: 'Leo', degree: 20.0, retrograde: false },
+      { planet: 'Moon', sign: 'Leo', degree: 20.0, retrograde: false },
+      { planet: 'Mercury', sign: 'Leo', degree: 3.75, retrograde: false },
+      { planet: 'Venus', sign: 'Libra', degree: 5.13, retrograde: false },
+      { planet: 'Mars', sign: 'Cancer', degree: 0.4, retrograde: false },
+      { planet: 'Jupiter', sign: 'Leo', degree: 9.37, retrograde: false },
+      { planet: 'Saturn', sign: 'Aries', degree: 14.52, retrograde: true },
+      { planet: 'Uranus', sign: 'Gemini', degree: 5.32, retrograde: false },
+      { planet: 'Neptune', sign: 'Aries', degree: 4.08, retrograde: true },
+      { planet: 'Pluto', sign: 'Aquarius', degree: 3.92, retrograde: true },
     ]
 
     return {
@@ -451,7 +451,8 @@ export class PlanetaryPositionsService {
       source: 'static-fallback',
       accuracy: 'fallback',
       cached: false,
-      error: 'All calculation methods failed, using static fallback positions (July 2026)',
+      error:
+        'All calculation methods failed, using static fallback positions (August 12, 2026 Total Solar Eclipse)',
     }
   }
 

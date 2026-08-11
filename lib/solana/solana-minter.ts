@@ -107,7 +107,7 @@ export async function mintEsmsClaimSolana(params: {
 
   return withSolanaRpcFailover({
     rpcUrls,
-    action: async connection => {
+    operation: async connection => {
       const client = new AaeSolanaClient({
         connection,
         wallet: {

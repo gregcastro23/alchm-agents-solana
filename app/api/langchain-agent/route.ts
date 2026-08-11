@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
     } else if (userId) {
       let currentAlchemy: unknown
       try {
-        const { getAlchemicalQuantitiesLegacy } = await import('@/lib/alchemizer')
+        const { getAlchemicalQuantitiesLegacy } = await import('@/lib/backend')
         currentAlchemy = await getAlchemicalQuantitiesLegacy()
       } catch {}
 
