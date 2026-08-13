@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type { Address } from 'viem'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { catalogByKind, kitchenBaseUrl } from '@/lib/shop/catalog'
+import { catalogByKind } from '@/lib/shop/catalog'
 import { listUnlocks } from '@/lib/shop/entitlement'
 import {
   esmsOnchainConfigured,
@@ -30,7 +30,6 @@ function toWhole(b: OnchainEsms) {
 export async function GET() {
   const catalog = catalogByKind()
   const onchainConfigured = esmsOnchainConfigured()
-  const kitchenUrl = kitchenBaseUrl()
 
   const session = await auth().catch(() => null)
   const userId = session?.user?.id
@@ -38,7 +37,6 @@ export async function GET() {
     return NextResponse.json({
       catalog,
       onchainConfigured,
-      kitchenUrl,
       signedIn: false,
     })
   }
@@ -63,7 +61,6 @@ export async function GET() {
   return NextResponse.json({
     catalog,
     onchainConfigured,
-    kitchenUrl,
     signedIn: true,
     walletAddress,
     onchainBalances,

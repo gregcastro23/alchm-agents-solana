@@ -11,9 +11,10 @@ import {
   Loader2,
   Check,
   AlertTriangle,
-  ExternalLink,
-  BookOpen,
+  Coins,
   FlaskConical,
+  Shield,
+  CreditCard,
 } from 'lucide-react'
 import type { ShopItem, ShopItemKind, ElementKey } from '@/lib/shop/catalog'
 
@@ -52,7 +53,6 @@ interface ShopClientProps {
   walletAddress: string | null
   onchainBalances: Balances | null
   onchainConfigured: boolean
-  kitchenUrl: string
 }
 
 type PurchaseState =
@@ -63,9 +63,9 @@ type PurchaseState =
   | { status: 'error'; message: string; shortfall?: Balances }
 
 const TABS: { key: ShopItemKind; label: string; icon: typeof Sparkles }[] = [
-  { key: 'apothecary', label: 'Apothecary', icon: FlaskConical },
-  { key: 'recipe', label: 'Recipes', icon: BookOpen },
-  { key: 'food', label: 'Food', icon: Flame },
+  { key: 'tokens', label: 'Tokens & Bundles', icon: Coins },
+  { key: 'apothecary', label: 'Apothecary & Boosts', icon: FlaskConical },
+  { key: 'pentacles', label: 'Pentacles & Sigils', icon: Shield },
 ]
 
 const AXES: ElementKey[] = ['spirit', 'essence', 'matter', 'substance']
@@ -97,7 +97,7 @@ function ShopClientInner({
   onchainConfigured,
 }: ShopClientProps) {
   const { wallets } = useWallets()
-  const [tab, setTab] = useState<ShopItemKind>('apothecary')
+  const [tab, setTab] = useState<ShopItemKind>('tokens')
   const [balances, setBalances] = useState<Balances | null>(onchainBalances)
   const [ownedSet, setOwnedSet] = useState<Set<string>>(new Set(owned))
   const [states, setStates] = useState<Record<string, PurchaseState>>({})
@@ -126,8 +126,6 @@ function ShopClientInner({
       throw new Error('Connect your wallet on the Account page, then try again.')
     }
     const provider = await embedded.getEthereumProvider()
-    // Sign via raw EIP-1193 eth_signTypedData_v4 — the challenge is already JSON-encoded
-    // (string uint256s), so no viem generics. EIP712Domain must be included for v4.
     const typedData = {
       domain: {
         name: challenge.domain.name,
@@ -174,7 +172,6 @@ function ShopClientInner({
       let res = await post()
       let data = await res.json().catch(() => ({}))
 
-      // Sponsored burn needs the buyer's EIP-712 RedeemAuthorization — sign and retry once.
       if (res.ok && data.mode === 'sign' && data.challenge) {
         setItemState(item.id, { status: 'busy' })
         const signature = await signRedeemAuth(data.challenge as RedeemChallenge)
@@ -219,23 +216,26 @@ function ShopClientInner({
     }
   }
 
-  async function orderFood(item: ShopItem) {
+  async function buyTokenBundle(item: ShopItem) {
+    if (!signedIn) {
+      window.location.href = '/auth/signin?callbackUrl=/shop'
+      return
+    }
     setItemState(item.id, { status: 'busy' })
     try {
-      const res = await fetch('/api/shop/purchase', {
+      const res = await fetch('/api/stripe/checkout-tokens', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ itemId: item.id }),
+        body: JSON.stringify({ tier: item.stripeTier || '5' }),
       })
       const data = await res.json().catch(() => ({}))
-      if (res.ok && data.mode === 'bridge' && data.url) {
-        setItemState(item.id, { status: 'idle' })
-        window.open(data.url, '_blank', 'noopener')
+      if (res.ok && data.url) {
+        window.location.href = data.url
         return
       }
       setItemState(item.id, {
         status: 'error',
-        message: data.error || 'Could not open the kitchen.',
+        message: data.error || 'Could not initiate Stripe checkout.',
       })
     } catch {
       setItemState(item.id, { status: 'error', message: 'Network error. Try again.' })
@@ -256,10 +256,11 @@ function ShopClientInner({
       {/* Pay-with legend */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-zinc-500">
         <span className="inline-flex items-center gap-1.5">
-          <Flame className="w-3.5 h-3.5 text-amber-500" /> ESMS — on-chain burn
+          <Flame className="w-3.5 h-3.5 text-amber-500" /> ESMS — on-chain burn settlement for
+          digital items &amp; boosts
         </span>
         <span className="text-zinc-700">·</span>
-        <span>USDC &amp; Card — top up tokens or pay in the kitchen</span>
+        <span>Stripe / Card / USDC — direct ESMS token bundle top-ups</span>
       </div>
 
       {/* Tabs */}
@@ -295,7 +296,7 @@ function ShopClientInner({
             signedIn={signedIn}
             hasWallet={hasWallet}
             onchainConfigured={onchainConfigured}
-            onBuy={() => (item.kind === 'food' ? orderFood(item) : buyDigital(item))}
+            onBuy={() => (item.kind === 'tokens' ? buyTokenBundle(item) : buyDigital(item))}
           />
         ))}
       </div>
@@ -346,7 +347,7 @@ function WalletStrip({
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <h2 className="text-sm font-semibold text-zinc-300 flex items-center gap-2">
           <Wallet className="w-4 h-4 text-amber-500" />
-          On-chain ESMS
+          On-chain ESMS Balances
         </h2>
         {!signedIn ? (
           <Link
@@ -437,13 +438,12 @@ function ItemCard({
   onchainConfigured: boolean
   onBuy: () => void
 }) {
-  const isFood = item.kind === 'food'
+  const isToken = item.kind === 'tokens'
   const busy = state.status === 'busy'
   const total = item.esms.spirit + item.esms.essence + item.esms.matter + item.esms.substance
 
-  // Why a digital burn might be blocked (only checked client-side for messaging).
   const digitalBlocked =
-    !isFood && (!signedIn || !hasWallet || !onchainConfigured || (owned && !item.repeatable))
+    !isToken && (!signedIn || !hasWallet || !onchainConfigured || (owned && !item.repeatable))
 
   return (
     <div
@@ -459,16 +459,16 @@ function ItemCard({
         <div className="min-w-0">
           <h3 className="text-base font-semibold text-zinc-100 leading-tight">{item.title}</h3>
           <p className="text-xs text-zinc-400 mt-1 leading-relaxed">{item.blurb}</p>
-          {isFood && item.partner && (
-            <p className="text-[11px] text-zinc-500 mt-1.5">{item.partner}</p>
-          )}
         </div>
       </div>
 
       {/* Price */}
       <div className="flex items-center justify-between gap-2 mt-auto">
-        {isFood ? (
-          <span className="text-sm font-semibold text-zinc-200">{usd(item.usdCents)}</span>
+        {isToken ? (
+          <div className="space-y-1">
+            <span className="text-lg font-bold text-amber-400">{usd(item.usdCents)}</span>
+            <p className="text-[11px] text-zinc-500">Includes {total} total ESMS tokens</p>
+          </div>
         ) : (
           <div className="space-y-1.5">
             <EsmsChips item={item} />
@@ -491,17 +491,13 @@ function ItemCard({
         <button
           onClick={onBuy}
           disabled={busy || digitalBlocked}
-          className={`w-full py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-all ${
-            isFood
-              ? 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black'
-              : 'bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black'
-          } disabled:opacity-50 disabled:cursor-not-allowed`}
+          className="w-full py-2.5 rounded-lg text-sm font-semibold flex items-center justify-center gap-2 transition-all bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-400 hover:to-amber-500 text-black disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {busy ? (
             <Loader2 className="w-4 h-4 animate-spin" />
-          ) : isFood ? (
+          ) : isToken ? (
             <>
-              <ExternalLink className="w-4 h-4" /> Order in kitchen
+              <CreditCard className="w-4 h-4" /> Acquire Token Bundle
             </>
           ) : (
             <>

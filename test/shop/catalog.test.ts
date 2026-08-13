@@ -1,11 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import {
-  SHOP_CATALOG,
-  getShopItem,
-  catalogByKind,
-  foodHandoffUrl,
-  kitchenBaseUrl,
-} from '@/lib/shop/catalog'
+import { SHOP_CATALOG, getShopItem, catalogByKind } from '@/lib/shop/catalog'
 import { totalEsms } from '@/lib/shop/pricing'
 
 describe('shop/catalog', () => {
@@ -24,11 +18,10 @@ describe('shop/catalog', () => {
     }
   })
 
-  it('digital items are priced in ESMS; food items are not', () => {
+  it('digital and pentacles items are priced in ESMS; token items specify stripe tier', () => {
     for (const item of SHOP_CATALOG) {
-      if (item.kind === 'food') {
-        expect(totalEsms(item.esms)).toBe(0)
-        expect(item.kitchenPath).toBeTruthy()
+      if (item.kind === 'tokens') {
+        expect(item.stripeTier).toBeTruthy()
       } else {
         expect(totalEsms(item.esms)).toBeGreaterThan(0)
       }
@@ -36,23 +29,16 @@ describe('shop/catalog', () => {
   })
 
   it('getShopItem resolves by id and returns undefined for unknown', () => {
-    expect(getShopItem('unlock-philosophers-stone')?.kind).toBe('apothecary')
+    expect(getShopItem('unlock-philosophers-stone')?.kind).toBe('pentacles')
     expect(getShopItem('does-not-exist')).toBeUndefined()
   })
 
   it('catalogByKind groups every item exactly once', () => {
     const grouped = catalogByKind()
-    const count = grouped.apothecary.length + grouped.recipe.length + grouped.food.length
+    const count = grouped.tokens.length + grouped.apothecary.length + grouped.pentacles.length
     expect(count).toBe(SHOP_CATALOG.length)
+    expect(grouped.tokens.every(i => i.kind === 'tokens')).toBe(true)
     expect(grouped.apothecary.every(i => i.kind === 'apothecary')).toBe(true)
-    expect(grouped.food.every(i => i.kind === 'food')).toBe(true)
-  })
-
-  it('foodHandoffUrl joins the kitchen base with the item path (no double slash)', () => {
-    const food = SHOP_CATALOG.find(i => i.kind === 'food')!
-    const url = foodHandoffUrl(food)
-    expect(url.startsWith(kitchenBaseUrl().replace(/\/$/, ''))).toBe(true)
-    expect(url).toContain(food.kitchenPath!)
-    expect(url).not.toMatch(/[^:]\/\//) // no accidental `//` outside the scheme
+    expect(grouped.pentacles.every(i => i.kind === 'pentacles')).toBe(true)
   })
 })

@@ -2,7 +2,7 @@ import { NextResponse } from 'next/server'
 import type { Address, Hex } from 'viem'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { getShopItem, foodHandoffUrl } from '@/lib/shop/catalog'
+import { getShopItem } from '@/lib/shop/catalog'
 import { shopOrderId, isValidNonce } from '@/lib/shop/orders'
 import { grantPurchase, hasUnlock } from '@/lib/shop/entitlement'
 import { canAffordOnchain, costToAmountStrings, onchainShortfall } from '@/lib/shop/pricing'
@@ -26,7 +26,7 @@ const TX_PATTERN = /^0x[0-9a-f]{64}$/i
 /**
  * POST /api/shop/purchase  { itemId, payWith?, nonce?, txHash? }
  *
- * Digital items (apothecary, recipe) settle with a real on-chain ESMS burn:
+ * Digital items (apothecary, pentacles) settle with a real on-chain ESMS burn:
  *  - the soulbound ESMS the buyer claimed to chain IS the spendable pool, so a
  *    burn is the spend — no second off-chain debit.
  *  - a client-supplied `txHash` (the buyer's own wallet signed redeem) is
@@ -34,9 +34,6 @@ const TX_PATTERN = /^0x[0-9a-f]{64}$/i
  *    sponsors the burn via redeemFor (gas-paid, user needs no native balance).
  *  - the bytes32 orderId guards both the on-chain burn and the entitlement, so a
  *    retry never double-burns or double-grants.
- *
- * Food items hand off to the alchm.kitchen restaurant route (which owns ESMS
- * off-chain / USDC / Card settlement and restaurant payout).
  */
 export async function POST(request: Request) {
   const session = await auth()
@@ -59,11 +56,6 @@ export async function POST(request: Request) {
 
   const item = typeof body.itemId === 'string' ? getShopItem(body.itemId) : undefined
   if (!item) return NextResponse.json({ error: 'Unknown item' }, { status: 404 })
-
-  // ── Food → bridge to the kitchen restaurant payment flow ──────────────────
-  if (item.kind === 'food') {
-    return NextResponse.json({ mode: 'bridge', url: foodHandoffUrl(item), itemId: item.id })
-  }
 
   // ── Digital items: ESMS is the native rail; USDC/Card top up first ────────
   const payWith = body.payWith === 'usdc' || body.payWith === 'card' ? body.payWith : 'esms'

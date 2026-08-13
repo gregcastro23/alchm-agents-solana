@@ -1,25 +1,17 @@
 /**
- * Token-economy shop catalog.
+ * Token-economy shop catalog for Agents & Pentacles Infrastructure.
  *
- * Three sections wire the ESMS economy to spendable goods:
- *  - apothecary  digital alchemical items / agent boosts (AlchmAgentsETH-native
- *                entitlements, settled by an on-chain ESMS burn)
- *  - recipe      premium cosmic recipes (same on-chain ESMS settlement)
- *  - food        real food orders that bridge to the alchm.kitchen restaurant
- *                payment route (ESMS off-chain ledger / USDC / Card)
+ * Three core sections wire the ESMS token economy:
+ *  - tokens      direct ESMS token top-up packages (Spirit, Essence, Matter, Substance)
+ *  - apothecary  digital alchemical items / agent boosts (settled by on-chain ESMS burn)
+ *  - pentacles   star vessel upgrades, sigils, and pentacles infrastructure
  *
- * Digital items (apothecary, recipe) are priced in whole ESMS units split across
- * the four axes; the buyer burns that basket on-chain via EsmsToken.redeem(For).
- * Food items carry a USD price and hand off to the kitchen, which owns restaurant
- * settlement and payout.
- *
- * Icons are Material Symbols names that the app already preloads (see
- * app/layout.tsx) — do not introduce un-loaded glyphs.
+ * Icons are Material Symbols names preloaded in app/layout.tsx.
  */
 
 import type { EsmsCost } from './pricing'
 
-export type ShopItemKind = 'apothecary' | 'recipe' | 'food'
+export type ShopItemKind = 'tokens' | 'apothecary' | 'pentacles'
 export type ElementKey = 'spirit' | 'essence' | 'matter' | 'substance'
 
 export interface ShopItem {
@@ -32,16 +24,14 @@ export interface ShopItem {
   icon: string
   /** Dominant ESMS axis, used for accent theming. */
   accent: ElementKey
-  /** Whole-ESMS basket the buyer burns on-chain (digital items only). */
+  /** Whole-ESMS basket the buyer burns on-chain (digital items). */
   esms: EsmsCost
-  /** USD reference / fiat price in cents (drives the USDC & Card rails). */
+  /** USD reference / fiat price in cents (drives token top-ups & Card/USDC rails). */
   usdCents: number
   /** Consumable (repeatable) vs one-time unlock. Unlocks show an "Owned" state. */
   repeatable: boolean
-  /** Food only: kitchen path to hand off to (joined onto the kitchen base URL). */
-  kitchenPath?: string
-  /** Food only: human label for the partner/cuisine. */
-  partner?: string
+  /** Optional Stripe checkout tier code ('5' | '10' | '25' | '50') for token items. */
+  stripeTier?: '5' | '10' | '25' | '50'
 }
 
 const basket = (spirit: number, essence: number, matter: number, substance: number): EsmsCost => ({
@@ -52,7 +42,58 @@ const basket = (spirit: number, essence: number, matter: number, substance: numb
 })
 
 export const SHOP_CATALOG: ShopItem[] = [
-  // ── Apothecary — digital alchemical items & agent boosts ──────────────────
+  // ── Tokens & Bundles — Direct ESMS Token Packages ───────────────────────────
+  {
+    id: 'token-starter-bundle',
+    kind: 'tokens',
+    title: 'Cosmic Starter Bundle',
+    blurb: '100 Cosmic ESMS Tokens (25 Spirit, 25 Essence, 25 Matter, 25 Substance).',
+    icon: 'toll',
+    accent: 'spirit',
+    esms: basket(25, 25, 25, 25),
+    usdCents: 500,
+    repeatable: true,
+    stripeTier: '5',
+  },
+  {
+    id: 'token-alchemist-bundle',
+    kind: 'tokens',
+    title: "Alchemist's Quadrant",
+    blurb: '240 Cosmic ESMS Tokens (60 Spirit, 60 Essence, 60 Matter, 60 Substance).',
+    icon: 'auto_awesome',
+    accent: 'essence',
+    esms: basket(60, 60, 60, 60),
+    usdCents: 1000,
+    repeatable: true,
+    stripeTier: '10',
+  },
+  {
+    id: 'token-magnum-opus',
+    kind: 'tokens',
+    title: 'Magnum Opus Catalyst',
+    blurb: '700 Cosmic ESMS Tokens (175 Spirit, 175 Essence, 175 Matter, 175 Substance).',
+    icon: 'diamond',
+    accent: 'substance',
+    esms: basket(175, 175, 175, 175),
+    usdCents: 2500,
+    repeatable: true,
+    stripeTier: '25',
+  },
+  {
+    id: 'token-cosmic-sovereign',
+    kind: 'tokens',
+    title: 'Sovereign Council Reservoir',
+    blurb:
+      '1600 Cosmic ESMS Tokens (400 Spirit, 400 Essence, 400 Matter, 400 Substance). Premium Tier.',
+    icon: 'stars',
+    accent: 'matter',
+    esms: basket(400, 400, 400, 400),
+    usdCents: 5000,
+    repeatable: true,
+    stripeTier: '50',
+  },
+
+  // ── Apothecary — Digital Alchemical Items & Agent Boosts ─────────────────────
   {
     id: 'elixir-mercury-retrograde',
     kind: 'apothecary',
@@ -77,8 +118,21 @@ export const SHOP_CATALOG: ShopItem[] = [
     repeatable: true,
   },
   {
-    id: 'unlock-philosophers-stone',
+    id: 'catalyst-consciousness',
     kind: 'apothecary',
+    title: 'Consciousness Catalyst',
+    blurb: 'Temporarily boosts Council Agent synergy rating +25% during multi-agent debates.',
+    icon: 'psychology',
+    accent: 'substance',
+    esms: basket(6, 6, 4, 8),
+    usdCents: 450,
+    repeatable: true,
+  },
+
+  // ── Pentacles & Sigils — Star Vessel & Agent Infrastructure ──────────────────
+  {
+    id: 'unlock-philosophers-stone',
+    kind: 'pentacles',
     title: "Philosopher's Stone Sigil",
     blurb: 'Permanent cosmetic sigil for your agent vessel — the mark of a completed Magnum Opus.',
     icon: 'diamond',
@@ -87,72 +141,28 @@ export const SHOP_CATALOG: ShopItem[] = [
     usdCents: 1100,
     repeatable: false,
   },
-
-  // ── Recipes — premium cosmic recipes ──────────────────────────────────────
   {
-    id: 'recipe-saturn-slow-braise',
-    kind: 'recipe',
-    title: 'Saturn Slow-Braise',
+    id: 'star-vessel-ignition',
+    kind: 'pentacles',
+    title: 'Star Vessel Resonance Key',
     blurb:
-      'An Earth-dominant recipe tuned to Saturn hours — grounding, patient, deeply nourishing.',
-    icon: 'menu_book',
-    accent: 'matter',
-    esms: basket(2, 3, 9, 4),
-    usdCents: 360,
+      'Unlocks advanced synastry pairing slots for Pentacles Star Agents & custom vessel forging.',
+    icon: 'hub',
+    accent: 'spirit',
+    esms: basket(15, 10, 10, 15),
+    usdCents: 1500,
     repeatable: false,
   },
   {
-    id: 'recipe-venus-honey-cordial',
-    kind: 'recipe',
-    title: 'Venus Honey Cordial',
-    blurb: 'A Water-dominant cordial for Venus hours — harmonizing, sweet, made for sharing.',
-    icon: 'water_drop',
-    accent: 'essence',
-    esms: basket(3, 10, 2, 3),
-    usdCents: 360,
-    repeatable: false,
-  },
-  {
-    id: 'recipe-codex-monthly',
-    kind: 'recipe',
-    title: 'Lunar Codex (this moon)',
-    blurb:
-      'The full premium recipe codex aligned to the current lunar month. Regenerates each cycle.',
-    icon: 'auto_stories',
-    accent: 'spirit',
-    esms: basket(8, 8, 8, 8),
-    usdCents: 900,
+    id: 'elemental-reservoir-expansion',
+    kind: 'pentacles',
+    title: 'Elemental Reservoir Expansion',
+    blurb: 'Expands maximum off-chain ESMS storage capacity across all four elemental axes.',
+    icon: 'inventory_2',
+    accent: 'substance',
+    esms: basket(10, 10, 10, 10),
+    usdCents: 1200,
     repeatable: true,
-  },
-
-  // ── Food — real orders, bridged to the alchm.kitchen restaurant route ─────
-  {
-    id: 'food-elemental-tasting',
-    kind: 'food',
-    title: 'Elemental Tasting Menu',
-    blurb:
-      'A four-course menu mapped to Fire/Water/Earth/Air. Pay with ESMS, USDC, or card in the kitchen.',
-    icon: 'local_fire_department',
-    accent: 'spirit',
-    esms: basket(0, 0, 0, 0),
-    usdCents: 4200,
-    repeatable: true,
-    partner: 'Alchm Kitchen partners',
-    kitchenPath: '/restaurants?cuisine=Tasting%20Menu&from=agents-shop',
-  },
-  {
-    id: 'food-planetary-bowl',
-    kind: 'food',
-    title: 'Planetary Hour Bowl',
-    blurb:
-      'A grounding grain bowl tuned to your current planetary hour, from a connected partner kitchen.',
-    icon: 'landscape',
-    accent: 'matter',
-    esms: basket(0, 0, 0, 0),
-    usdCents: 1800,
-    repeatable: true,
-    partner: 'Alchm Kitchen partners',
-    kitchenPath: '/restaurants?cuisine=Bowls&from=agents-shop',
   },
 ]
 
@@ -162,23 +172,8 @@ export function getShopItem(id: string): ShopItem | undefined {
 
 export function catalogByKind(): Record<ShopItemKind, ShopItem[]> {
   return {
+    tokens: SHOP_CATALOG.filter(i => i.kind === 'tokens'),
     apothecary: SHOP_CATALOG.filter(i => i.kind === 'apothecary'),
-    recipe: SHOP_CATALOG.filter(i => i.kind === 'recipe'),
-    food: SHOP_CATALOG.filter(i => i.kind === 'food'),
+    pentacles: SHOP_CATALOG.filter(i => i.kind === 'pentacles'),
   }
-}
-
-/** Base URL of the alchm.kitchen deployment food orders hand off to. */
-export function kitchenBaseUrl(): string {
-  return (
-    process.env.NEXT_PUBLIC_ALCHM_KITCHEN_URL ||
-    process.env.ALCHM_KITCHEN_SYNC_URL ||
-    'https://alchm.kitchen'
-  )
-}
-
-/** Absolute kitchen URL for a food item's hand-off. */
-export function foodHandoffUrl(item: ShopItem): string {
-  const path = item.kitchenPath || '/restaurants'
-  return `${kitchenBaseUrl().replace(/\/$/, '')}${path}`
 }

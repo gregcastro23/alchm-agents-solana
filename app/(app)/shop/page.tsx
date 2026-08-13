@@ -1,7 +1,7 @@
 import type { Address } from 'viem'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import { catalogByKind, kitchenBaseUrl } from '@/lib/shop/catalog'
+import { catalogByKind } from '@/lib/shop/catalog'
 import { listUnlocks } from '@/lib/shop/entitlement'
 import { esmsOnchainConfigured, readEsmsBalances } from '@/lib/esms-chain/contract'
 import ShopClient from '@/components/shop/ShopClient'
@@ -11,7 +11,7 @@ export const dynamic = 'force-dynamic'
 export const metadata = {
   title: 'ESMS Bazaar · Alchm',
   description:
-    'Spend your Spirit, Essence, Matter and Substance on alchemical goods, recipes and food.',
+    'Acquire ESMS token bundles and spend Spirit, Essence, Matter, and Substance on agent boosts, sigils, and pentacles infrastructure.',
 }
 
 export default async function ShopPage() {
@@ -20,7 +20,6 @@ export default async function ShopPage() {
 
   const catalog = catalogByKind()
   const onchainConfigured = esmsOnchainConfigured()
-  const kitchenUrl = kitchenBaseUrl()
 
   let walletAddress: string | null = null
   let onchainBalances: {
@@ -62,8 +61,8 @@ export default async function ShopPage() {
           ESMS Bazaar
         </h1>
         <p className="text-zinc-400 max-w-2xl">
-          Spend your Spirit, Essence, Matter and Substance. Digital goods settle with a real
-          on-chain ESMS burn from your claimed balance; food orders hand off to the kitchen.
+          The official token marketplace for Alchm Agents and Pentacles infrastructure. Acquire ESMS
+          token bundles, unlock agent elixirs and yield boosts, or forge sigils for your vessels.
         </p>
       </div>
 
@@ -74,7 +73,6 @@ export default async function ShopPage() {
         walletAddress={walletAddress}
         onchainBalances={onchainBalances}
         onchainConfigured={onchainConfigured}
-        kitchenUrl={kitchenUrl}
       />
     </div>
   )
