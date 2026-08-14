@@ -137,43 +137,49 @@ global.IntersectionObserver = vi.fn().mockImplementation(() => ({
 }))
 
 // Mock matchMedia for responsive components
-Object.defineProperty(window, 'matchMedia', {
-  writable: true,
-  value: vi.fn().mockImplementation(query => ({
-    matches: false,
-    media: query,
-    onchange: null,
-    addListener: vi.fn(),
-    removeListener: vi.fn(),
-    addEventListener: vi.fn(),
-    removeEventListener: vi.fn(),
-    dispatchEvent: vi.fn(),
-  })),
-})
+if (typeof window !== 'undefined') {
+  Object.defineProperty(window, 'matchMedia', {
+    writable: true,
+    value: vi.fn().mockImplementation(query => ({
+      matches: false,
+      media: query,
+      onchange: null,
+      addListener: vi.fn(),
+      removeListener: vi.fn(),
+      addEventListener: vi.fn(),
+      removeEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+    })),
+  })
+}
 
 // Mock HTMLElement methods for D3 SVG manipulation
-Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
-  value: vi.fn(() => ({
-    width: 800,
-    height: 600,
-    top: 0,
-    left: 0,
-    bottom: 600,
-    right: 800,
-    x: 0,
-    y: 0,
-  })),
-})
+if (typeof HTMLElement !== 'undefined') {
+  Object.defineProperty(HTMLElement.prototype, 'getBoundingClientRect', {
+    value: vi.fn(() => ({
+      width: 800,
+      height: 600,
+      top: 0,
+      left: 0,
+      bottom: 600,
+      right: 800,
+      x: 0,
+      y: 0,
+    })),
+  })
+}
 
 // Mock SVG methods for D3 testing
-Object.defineProperty(SVGElement.prototype, 'getBBox', {
-  value: vi.fn(() => ({
-    x: 0,
-    y: 0,
-    width: 100,
-    height: 20,
-  })),
-})
+if (typeof SVGElement !== 'undefined') {
+  Object.defineProperty(SVGElement.prototype, 'getBBox', {
+    value: vi.fn(() => ({
+      x: 0,
+      y: 0,
+      width: 100,
+      height: 20,
+    })),
+  })
+}
 
 // Mock requestAnimationFrame
 global.requestAnimationFrame = vi.fn(cb => setTimeout(cb, 0))

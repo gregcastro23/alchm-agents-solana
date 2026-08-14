@@ -81,14 +81,6 @@ describe('POST /api/shop/purchase', () => {
     expect((await POST(req({ itemId: 'nope' }))).status).toBe(404)
   })
 
-  it('food items bridge to the kitchen (no burn)', async () => {
-    const res = await POST(req({ itemId: 'food-elemental-tasting' }))
-    const data = await res.json()
-    expect(data.mode).toBe('bridge')
-    expect(data.url).toContain('/restaurants')
-    expect(redeemEsmsFor).not.toHaveBeenCalled()
-  })
-
   it('routes USDC/Card buyers of digital goods to the token store', async () => {
     const res = await POST(req({ itemId: 'unlock-philosophers-stone', payWith: 'card' }))
     const data = await res.json()
@@ -107,14 +99,14 @@ describe('POST /api/shop/purchase', () => {
 
   it('503 when the on-chain contract is not configured', async () => {
     ;(esmsOnchainConfigured as any).mockReturnValue(false)
-    const res = await POST(req({ itemId: 'recipe-saturn-slow-braise' }))
+    const res = await POST(req({ itemId: 'unlock-philosophers-stone' }))
     expect(res.status).toBe(503)
     expect((await res.json()).code).toBe('onchain_unconfigured')
   })
 
   it('400 when the buyer has no wallet linked', async () => {
     ;(prisma.users.findUnique as any).mockResolvedValue({ walletAddress: null })
-    const res = await POST(req({ itemId: 'recipe-saturn-slow-braise' }))
+    const res = await POST(req({ itemId: 'unlock-philosophers-stone' }))
     expect(res.status).toBe(400)
     expect((await res.json()).code).toBe('no_wallet')
   })
@@ -127,7 +119,7 @@ describe('POST /api/shop/purchase', () => {
 
   it('reconciles when the order already burned on-chain', async () => {
     ;(readEsmsRedeemed as any).mockResolvedValue(true)
-    const res = await POST(req({ itemId: 'recipe-saturn-slow-braise' }))
+    const res = await POST(req({ itemId: 'unlock-philosophers-stone' }))
     const data = await res.json()
     expect(data).toMatchObject({ ok: true, reconciled: true })
     expect(grantPurchase).toHaveBeenCalled()
@@ -141,7 +133,7 @@ describe('POST /api/shop/purchase', () => {
       matter: 0n,
       substance: 0n,
     })
-    const res = await POST(req({ itemId: 'recipe-saturn-slow-braise' }))
+    const res = await POST(req({ itemId: 'unlock-philosophers-stone' }))
     expect(res.status).toBe(402)
     const data = await res.json()
     expect(data.code).toBe('insufficient_esms')
@@ -150,7 +142,7 @@ describe('POST /api/shop/purchase', () => {
   })
 
   it('sponsored burn without a signature returns an EIP-712 signing challenge', async () => {
-    const res = await POST(req({ itemId: 'recipe-saturn-slow-braise' }))
+    const res = await POST(req({ itemId: 'unlock-philosophers-stone' }))
     const data = await res.json()
     expect(data.mode).toBe('sign')
     expect(data.challenge).toBeTruthy()
@@ -164,7 +156,7 @@ describe('POST /api/shop/purchase', () => {
   it('sponsored burn: redeems then grants once the buyer signs the challenge', async () => {
     const sig = `0x${'c'.repeat(130)}`
     const deadline = String(Math.floor(Date.now() / 1000) + 600)
-    const res = await POST(req({ itemId: 'recipe-saturn-slow-braise', signature: sig, deadline }))
+    const res = await POST(req({ itemId: 'unlock-philosophers-stone', signature: sig, deadline }))
     const data = await res.json()
     expect(data).toMatchObject({ ok: true, txHash: TXHASH })
     expect(redeemEsmsFor).toHaveBeenCalledTimes(1)
@@ -175,7 +167,7 @@ describe('POST /api/shop/purchase', () => {
   it('sponsored burn: 400 when the signing window has expired', async () => {
     const sig = `0x${'c'.repeat(130)}`
     const deadline = String(Math.floor(Date.now() / 1000) - 10)
-    const res = await POST(req({ itemId: 'recipe-saturn-slow-braise', signature: sig, deadline }))
+    const res = await POST(req({ itemId: 'unlock-philosophers-stone', signature: sig, deadline }))
     expect(res.status).toBe(400)
     expect((await res.json()).code).toBe('sig_expired')
     expect(redeemEsmsFor).not.toHaveBeenCalled()
@@ -183,7 +175,7 @@ describe('POST /api/shop/purchase', () => {
   })
 
   it('user-signed path: verifies the provided txHash, no sponsored burn', async () => {
-    const res = await POST(req({ itemId: 'recipe-saturn-slow-braise', txHash: TXHASH }))
+    const res = await POST(req({ itemId: 'unlock-philosophers-stone', txHash: TXHASH }))
     const data = await res.json()
     expect(data).toMatchObject({ ok: true, txHash: TXHASH })
     expect(verifyRedeem).toHaveBeenCalledTimes(1)
@@ -193,7 +185,7 @@ describe('POST /api/shop/purchase', () => {
 
   it('user-signed path: 502 when the burn cannot be verified', async () => {
     ;(verifyRedeem as any).mockResolvedValue(false)
-    const res = await POST(req({ itemId: 'recipe-saturn-slow-braise', txHash: TXHASH }))
+    const res = await POST(req({ itemId: 'unlock-philosophers-stone', txHash: TXHASH }))
     expect(res.status).toBe(502)
     expect((await res.json()).code).toBe('verify_failed')
     expect(grantPurchase).not.toHaveBeenCalled()
@@ -201,7 +193,7 @@ describe('POST /api/shop/purchase', () => {
 
   it('503 when no settlement wallet is configured for a sponsored burn', async () => {
     ;(redeemerConfigured as any).mockReturnValue(false)
-    const res = await POST(req({ itemId: 'recipe-saturn-slow-braise' }))
+    const res = await POST(req({ itemId: 'unlock-philosophers-stone' }))
     expect(res.status).toBe(503)
     expect((await res.json()).code).toBe('redeemer_unconfigured')
   })

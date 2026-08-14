@@ -1,3 +1,4 @@
+/** @vitest-environment node */
 import { describe, it, expect } from 'vitest'
 import { buildAgentContext } from '@/lib/agents/persona/build-agent-context'
 import { STAR_AGENTS, SIRIUS_STAR_AGENT } from '@/lib/agents/star-agents'

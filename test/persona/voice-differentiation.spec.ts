@@ -1,3 +1,4 @@
+/** @vitest-environment node */
 import { beforeEach, describe, expect, it } from 'vitest'
 import { buildAgentContext, clearAgentContextCache } from '@/lib/agents/persona/build-agent-context'
 

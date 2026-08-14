@@ -10,12 +10,17 @@ vi.mock('@/lib/db', () => ({
 vi.mock('@/lib/alchm-debit-sync', () => ({ syncDebitToAlchm: vi.fn() }))
 vi.mock('@/lib/esms-chain/minter', () => ({ mintEsmsClaim: vi.fn() }))
 vi.mock('@/lib/esms-chain/contract', () => ({ readEsmsClaimed: vi.fn() }))
+vi.mock('@/lib/solana/solana-minter', () => ({
+  mintEsmsClaimSolana: vi.fn(),
+  isSolanaConfigured: vi.fn(() => true),
+}))
 
 import { POST } from '@/app/api/esms/claim/route'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { syncDebitToAlchm } from '@/lib/alchm-debit-sync'
 import { mintEsmsClaim } from '@/lib/esms-chain/minter'
+import { mintEsmsClaimSolana } from '@/lib/solana/solana-minter'
 import { readEsmsClaimed } from '@/lib/esms-chain/contract'
 
 const req = (body: unknown) =>
@@ -33,6 +38,8 @@ beforeEach(() => {
   ;(prisma.esms_claims.update as any).mockResolvedValue({})
   ;(prisma.esms_claims.findUnique as any).mockResolvedValue(null)
   ;(readEsmsClaimed as any).mockResolvedValue(false)
+  ;(mintEsmsClaim as any).mockResolvedValue('0xhash')
+  ;(mintEsmsClaimSolana as any).mockResolvedValue('0xhash')
 })
 
 describe('POST /api/esms/claim', () => {
@@ -60,7 +67,7 @@ describe('POST /api/esms/claim', () => {
     ;(prisma.users.findUnique as any).mockResolvedValue({ walletAddress: '0xabc' })
     ;(syncDebitToAlchm as any).mockResolvedValue({ ok: false, reason: 'insufficient_funds' })
     expect((await POST(req({ amounts: { spirit: 5 } }))).status).toBe(402)
-    expect(mintEsmsClaim).not.toHaveBeenCalled()
+    expect(mintEsmsClaimSolana).not.toHaveBeenCalled()
   })
 
   it('debits BEFORE minting and returns txHash on success', async () => {
@@ -71,7 +78,7 @@ describe('POST /api/esms/claim', () => {
       order.push('debit')
       return { ok: true }
     })
-    ;(mintEsmsClaim as any).mockImplementation(async () => {
+    ;(mintEsmsClaimSolana as any).mockImplementation(async () => {
       order.push('mint')
       return '0xhash'
     })
@@ -85,7 +92,7 @@ describe('POST /api/esms/claim', () => {
     authed()
     ;(prisma.users.findUnique as any).mockResolvedValue({ walletAddress: '0xabc' })
     ;(syncDebitToAlchm as any).mockResolvedValue({ ok: true })
-    ;(mintEsmsClaim as any).mockRejectedValue(new Error('rpc down'))
+    ;(mintEsmsClaimSolana as any).mockRejectedValue(new Error('rpc down'))
     const res = await POST(req({ amounts: { spirit: 2 } }))
     expect(res.status).toBe(502)
     expect((await res.json()).retryable).toBe(true)
@@ -95,9 +102,9 @@ describe('POST /api/esms/claim', () => {
     authed()
     ;(prisma.users.findUnique as any).mockResolvedValue({ walletAddress: '0xabc' })
     ;(syncDebitToAlchm as any).mockResolvedValue({ ok: true, reason: 'already_applied' })
-    ;(mintEsmsClaim as any).mockResolvedValue('0xhash')
+    ;(mintEsmsClaimSolana as any).mockResolvedValue('0xhash')
     expect((await POST(req({ amounts: { spirit: 2 } }))).status).toBe(200)
-    expect(mintEsmsClaim).toHaveBeenCalledTimes(1)
+    expect(mintEsmsClaimSolana).toHaveBeenCalledTimes(1)
   })
 
   it('retries a debited claim without debiting again', async () => {
@@ -147,7 +154,7 @@ describe('POST /api/esms/claim', () => {
     authed()
     ;(prisma.users.findUnique as any).mockResolvedValue({ walletAddress: '0xabc' })
     ;(syncDebitToAlchm as any).mockResolvedValue({ ok: true })
-    ;(mintEsmsClaim as any).mockRejectedValue(new Error('already processed'))
+    ;(mintEsmsClaimSolana as any).mockRejectedValue(new Error('already processed'))
     ;(readEsmsClaimed as any).mockResolvedValue(true)
 
     const res = await POST(req({ amounts: { spirit: 2 } }))

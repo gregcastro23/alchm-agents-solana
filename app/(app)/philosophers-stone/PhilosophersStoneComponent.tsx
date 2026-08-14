@@ -50,7 +50,6 @@ import PlanetaryPositionIndicator from '@/components/dashboards/PlanetaryPositio
 import {
   MONICA_AS_CRAFTED_AGENT,
   DEMO_AGENTS,
-  getFeaturedAgent,
   getMonicaCreationStory,
 } from '@/lib/demo-agents-data'
 import {
@@ -203,15 +202,11 @@ function PhilosophersStoneInner() {
     energy: 0,
   })
   const [tarotRecommendations, setTarotRecommendations] = useState<any>(null)
-  // @ts-ignore
-  const [featuredAgent, setFeaturedAgent] = useState(getFeaturedAgent())
   const [planetaryPositions, setPlanetaryPositions] = useState<any>(null)
   const [selectedTab, setSelectedTab] = useState('crafting')
 
   // Agent creation state
-  // @ts-ignore
   const [agentName, setAgentName] = useState('')
-  // @ts-ignore
   const [agentPurpose, setAgentPurpose] = useState('')
   const [isCreatingAgent, setIsCreatingAgent] = useState(false)
   const [showCreationWizard, setShowCreationWizard] = useState(false)
@@ -226,7 +221,6 @@ function PhilosophersStoneInner() {
   const [showSuccessNotification, setShowSuccessNotification] = useState(false)
   const [birthChart, setBirthChart] = useState<any | null>(null)
   const [momentChart, setMomentChart] = useState<any | null>(null)
-  // @ts-ignore
   const [additionalCharts, setAdditionalCharts] = useState<any[]>([])
   const [creationMode, setCreationMode] = useState<'selfMoment' | 'momentOnly' | 'multiChart'>(
     'selfMoment'

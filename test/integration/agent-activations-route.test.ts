@@ -5,7 +5,7 @@ import { HistoricalAgentsService } from '@/lib/historical-agents-db'
 
 vi.mock('@/lib/historical-agents-db', () => ({
   HistoricalAgentsService: {
-    getAllAgents: vi.fn(),
+    getHistoricalAgents: vi.fn(),
   },
 }))
 
@@ -15,7 +15,7 @@ describe('GET /api/agents/activations', () => {
   })
 
   it('returns active agents in the commensal alignment contract', async () => {
-    vi.mocked(HistoricalAgentsService.getAllAgents).mockResolvedValue([
+    vi.mocked(HistoricalAgentsService.getHistoricalAgents).mockResolvedValue([
       {
         agentId: 'hermes',
         name: 'Hermes',

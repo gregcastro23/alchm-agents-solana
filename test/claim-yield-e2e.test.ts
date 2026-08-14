@@ -3,7 +3,7 @@ import { POST as claimYieldPOST } from '@/app/api/economy/claim-yield/route'
 import { GET as feedGET } from '@/app/api/feed/route'
 import { prisma } from '@/lib/db'
 
-describe('Claim Yield E2E Test', () => {
+describe.skipIf(!process.env.DATABASE_URL)('Claim Yield E2E Test', () => {
   it('should claim planetary yield and verify db event', async () => {
     const historicalAgentId = 'socrates'
     const planetaryAgentId = 'planetary-mars-gemini-22'
