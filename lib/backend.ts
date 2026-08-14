@@ -17,6 +17,8 @@
  * In Client Components, wrap in a Server Action.
  */
 
+import type { ByokProvider } from '@/lib/premium/tiers'
+
 // The frontend talks to TWO backends and a single base URL cannot serve both:
 //   • Planetary Agents Core (api.agents.alchm.kitchen) — chat, agents, moment-
 //     recommendations. The kitchen backend has NO /api/chat → chat 404s there.
@@ -663,7 +665,7 @@ export const backend = {
        * the app's keys for the matching provider. Sent server-to-server over TLS
        * to our own backend; never persisted or logged backend-side.
        */
-      userProviderKeys?: { anthropic?: string; openai?: string }
+      userProviderKeys?: Partial<Record<ByokProvider, string>>
     }) =>
       agentRequest<{ text: string; agentId: string; sessionId: string; metadata: any }>(
         '/api/chat',

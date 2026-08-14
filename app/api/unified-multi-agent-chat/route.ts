@@ -220,12 +220,9 @@ export async function POST(request: NextRequest) {
           { status: 402 }
         )
       }
-      const debitResult = await EconomyService.debitDynamic(
-        userId,
-        ORACLE_CHAMBER_COST,
-        'oracle_chamber',
-        'The Oracle Chamber — 20-Turn Deep Consciousness Session'
-      )
+      const debitResult = await EconomyService.debitDynamic(userId, ORACLE_CHAMBER_COST, {
+        idempotencyKey: `oracle:${userId}:${sessionId}`,
+      })
       if (!debitResult.ok) {
         return NextResponse.json(
           {
@@ -246,12 +243,9 @@ export async function POST(request: NextRequest) {
           { status: 402 }
         )
       }
-      const debitResult = await EconomyService.debitDynamic(
-        userId,
-        FLASH_EPIPHANY_COST,
-        'flash_epiphany',
-        'Flash Epiphany — Deep Reasoning Turn'
-      )
+      const debitResult = await EconomyService.debitDynamic(userId, FLASH_EPIPHANY_COST, {
+        idempotencyKey: `epiphany:${userId}:${sessionId}`,
+      })
       if (!debitResult.ok) {
         return NextResponse.json(
           {

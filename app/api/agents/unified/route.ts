@@ -4,6 +4,7 @@ import { backend, getAlchemicalQuantitiesLegacy } from '@/lib/backend'
 import { buildAgentContext } from '@/lib/agents/persona/build-agent-context'
 import { consciousnessPersistence } from '@/lib/consciousness-persistence'
 import { calculateAgentChatPricing } from '@/lib/economy/chat-pricing'
+import type { ByokProvider } from '@/lib/premium/tiers'
 import { createHash } from 'node:crypto'
 
 interface UnifiedAgentRequest {
@@ -268,10 +269,10 @@ export async function POST(request: NextRequest): Promise<NextResponse<UnifiedAg
         )
 
         // BYOK: forward the user's own provider keys so premium calls bill them.
-        let userProviderKeys: { anthropic?: string; openai?: string } | undefined
+        let userProviderKeys: Partial<Record<ByokProvider, string>> | undefined
         if (userId && entitlements.byokProviders.length > 0) {
           const { getDecryptedKey } = await import('@/lib/byok/store')
-          const keys: { anthropic?: string; openai?: string } = {}
+          const keys: Partial<Record<ByokProvider, string>> = {}
           for (const provider of entitlements.byokProviders) {
             const decrypted = await getDecryptedKey(userId, provider)
             if (decrypted) keys[provider] = decrypted
