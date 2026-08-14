@@ -90,6 +90,19 @@ export const QWEN = {
 export type QwenModelId = (typeof QWEN)[keyof typeof QWEN]
 
 // ============================================================================
+// DEEPSEEK MODELS (Ultra-Cost-Effective High-Intelligence Tier)
+// ============================================================================
+
+export const DEEPSEEK = {
+  V3: 'deepseek/deepseek-chat',
+  R1: 'deepseek/deepseek-r1',
+  OPENROUTER_V3: 'deepseek/deepseek-chat',
+  OPENROUTER_R1: 'deepseek/deepseek-r1',
+} as const
+
+export type DeepSeekModelId = (typeof DEEPSEEK)[keyof typeof DEEPSEEK]
+
+// ============================================================================
 // EMBEDDING MODELS
 // ============================================================================
 
@@ -357,4 +370,38 @@ export function resolveQwenModel(tier: 'powerful' | 'default' | 'fast' = 'defaul
       break
   }
   return resolveOpenRouterModel(modelId)
+}
+
+/**
+ * Resolve an Oracle Chamber LanguageModel (Tier 2 High Intelligence · 20 ESMS).
+ * Prioritizes DeepSeek-V3 via OpenRouter, falling back to Gemini 2.5 Flash.
+ */
+export function resolveOracleModel(): LanguageModel {
+  const customModel = process.env.ORACLE_TIER_MODEL
+  if (customModel) {
+    if (customModel.startsWith('gemini')) return resolveGoogleModel('powerful')
+    if (customModel.startsWith('gpt-')) return resolveOpenAIModel('default')
+    return resolveOpenRouterModel(customModel)
+  }
+  // Default to DeepSeek-V3 via OpenRouter or Gemini 2.5 Flash
+  if (process.env.OPENROUTER_API_KEY) {
+    return resolveOpenRouterModel(DEEPSEEK.V3)
+  }
+  return resolveGoogleModel('powerful')
+}
+
+/**
+ * Resolve a Flash Epiphany LanguageModel (Single-Turn Deep Reasoning · 8 ESMS).
+ * Prioritizes DeepSeek-R1 via OpenRouter, falling back to powerful Gemini 2.5 Flash.
+ */
+export function resolveEpiphanyModel(): LanguageModel {
+  const customModel = process.env.EPIPHANY_TIER_MODEL
+  if (customModel) {
+    if (customModel.startsWith('gemini')) return resolveGoogleModel('powerful')
+    return resolveOpenRouterModel(customModel)
+  }
+  if (process.env.OPENROUTER_API_KEY) {
+    return resolveOpenRouterModel(DEEPSEEK.R1)
+  }
+  return resolveGoogleModel('powerful')
 }

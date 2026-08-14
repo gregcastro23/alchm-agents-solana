@@ -3,7 +3,7 @@
 import { useEffect, useState } from 'react'
 import { Button } from '@/components/ui/button'
 
-type ProviderId = 'openai' | 'anthropic'
+type ProviderId = 'openai' | 'anthropic' | 'openrouter' | 'google'
 type ProviderKey = { provider: ProviderId; last4: string; validatedAt: string | null }
 
 const PROVIDERS: {
@@ -23,6 +23,18 @@ const PROVIDERS: {
     label: 'Anthropic (Claude)',
     placeholder: 'sk-ant-...',
     help: 'Create a key at console.anthropic.com → API keys.',
+  },
+  {
+    id: 'openrouter',
+    label: 'OpenRouter',
+    placeholder: 'sk-or-v1-...',
+    help: 'Create a key at openrouter.ai/keys (100+ models).',
+  },
+  {
+    id: 'google',
+    label: 'Google AI Studio (Gemini)',
+    placeholder: 'AIzaSy...',
+    help: 'Create a free key at aistudio.google.com/apikey.',
   },
 ]
 

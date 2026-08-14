@@ -15,7 +15,7 @@
 
 export type PaTier = 'free' | 'alchemist' | 'master'
 export type ChatModelTier = 'free' | 'cheap_fast' | 'primary' | 'reflective'
-export type ByokProvider = 'openai' | 'anthropic'
+export type ByokProvider = 'openai' | 'anthropic' | 'openrouter' | 'google'
 
 /** Ascending capability/cost order. */
 export const CHAT_TIER_ORDER: ChatModelTier[] = ['free', 'cheap_fast', 'primary', 'reflective']

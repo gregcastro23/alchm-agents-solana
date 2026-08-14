@@ -51,8 +51,43 @@ export const UNIFIED_CHAT_BASE_COST: EsmsCost = {
   Substance: 0.2,
 }
 
+/**
+ * The Oracle Chamber — High-Consciousness AI consultation session (20 ESMS).
+ * Unlocks Tier 2 reasoning (DeepSeek-V3 / Gemini 2.5 Flash) with full 360° RAG & memory.
+ */
+export const ORACLE_CHAMBER_COST: EsmsCost = {
+  Spirit: 5,
+  Essence: 5,
+  Matter: 5,
+  Substance: 5,
+}
+
+/**
+ * Flash Epiphany — Single-turn deep reasoning alchemical epiphany (8 ESMS).
+ * Powered by DeepSeek-R1 / DeepSeek-V3 extended reasoning.
+ */
+export const FLASH_EPIPHANY_COST: EsmsCost = {
+  Spirit: 2,
+  Essence: 2,
+  Matter: 2,
+  Substance: 2,
+}
+
+/**
+ * Council Conclave — Multi-agent live deliberation and debate (35 ESMS).
+ */
+export const COUNCIL_CONCLAVE_COST: EsmsCost = {
+  Spirit: 10,
+  Essence: 10,
+  Matter: 5,
+  Substance: 10,
+}
+
 export const AGENT_OPERATION_COSTS: Record<string, Partial<Record<TokenType, number>>> = {
   unified_chat: UNIFIED_CHAT_BASE_COST,
+  oracle_chamber: ORACLE_CHAMBER_COST,
+  flash_epiphany: FLASH_EPIPHANY_COST,
+  council_conclave: COUNCIL_CONCLAVE_COST,
   report_generation: { Spirit: 10, Substance: 5 },
   // The Forge — birthing a vessel into the shared roster (45 ESMS total,
   // just under ev_reset; signed-in forging debits this, anonymous forging

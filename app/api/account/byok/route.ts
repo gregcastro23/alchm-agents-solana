@@ -5,7 +5,7 @@ import type { ByokProvider } from '@/lib/premium/tiers'
 
 export const dynamic = 'force-dynamic'
 
-const VALID_PROVIDERS: ByokProvider[] = ['openai', 'anthropic']
+const VALID_PROVIDERS: ByokProvider[] = ['openai', 'anthropic', 'openrouter', 'google']
 
 function isProvider(v: unknown): v is ByokProvider {
   return typeof v === 'string' && (VALID_PROVIDERS as string[]).includes(v)
@@ -34,7 +34,10 @@ export async function POST(request: NextRequest) {
   }
 
   if (!isProvider(body.provider)) {
-    return NextResponse.json({ error: 'provider must be "openai" or "anthropic"' }, { status: 400 })
+    return NextResponse.json(
+      { error: `provider must be one of: ${VALID_PROVIDERS.join(', ')}` },
+      { status: 400 }
+    )
   }
   if (typeof body.apiKey !== 'string' || !body.apiKey.trim()) {
     return NextResponse.json({ error: 'apiKey is required' }, { status: 400 })
@@ -48,7 +51,7 @@ export async function POST(request: NextRequest) {
   return NextResponse.json({ key: result.summary })
 }
 
-/** DELETE ?provider=openai|anthropic — disconnect a key. */
+/** DELETE ?provider=openai|anthropic|openrouter|google — disconnect a key. */
 export async function DELETE(request: NextRequest) {
   const session = await auth()
   const userId = session?.user?.id

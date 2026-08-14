@@ -1,7 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateText, streamText, type LanguageModel } from 'ai'
 import { openai } from '@ai-sdk/openai'
-import { OPENAI, resolveOpenAIModel, resolveDefaultModel } from '@/lib/models/registry'
+import {
+  OPENAI,
+  resolveOpenAIModel,
+  resolveDefaultModel,
+  resolveOracleModel,
+  resolveEpiphanyModel,
+} from '@/lib/models/registry'
+import {
+  ORACLE_CHAMBER_COST,
+  FLASH_EPIPHANY_COST,
+  COUNCIL_CONCLAVE_COST,
+} from '@/lib/economy-config'
 import type {
   UnifiedAgent,
   GroupChatResponse,
@@ -53,15 +64,19 @@ const DEV_MAX_AGENTS = parseInt(process.env.DEV_MAX_AGENTS || '2', 10)
 const RATE_LIMIT = parseInt(process.env.UNIFIED_CHAT_RATE_LIMIT || '20', 10)
 const RATE_WINDOW_MS = parseInt(process.env.UNIFIED_CHAT_RATE_WINDOW_MS || '60000', 10)
 
+export type ChatIntelligenceMode = 'standard' | 'oracle' | 'epiphany' | 'byok'
+
 interface UnifiedChatRequest {
   agents: UnifiedAgent[]
   message: string
+  mode?: ChatIntelligenceMode
   context: {
     sessionHistory: Message[]
     groupDynamics?: GroupDynamics
     enableMemoryPersistence: boolean
     realtimeUpdates: boolean
     variant?: ChatVariant
+    mode?: ChatIntelligenceMode
     modelOverrides?: Record<string, string>
     theme?: string
     messageStyle?: string
@@ -76,6 +91,7 @@ interface AgentGroupContext {
   sessionHistory: Message[]
   recentMessages: Message[]
   variant: ChatVariant
+  mode?: ChatIntelligenceMode
   modelOverrides?: Record<string, string>
 }
 
@@ -185,73 +201,134 @@ export async function POST(request: NextRequest) {
     const cosmicContext = await generateCosmicContext()
 
     // -----------------------------------------------------------------
-    // ESMS Token Economy: Dynamic Agent Fee
+    // ESMS Token Economy: Intelligence Mode & Dynamic Agent Fee
     // -----------------------------------------------------------------
     const session = await auth()
-    const userId = session?.user.id
+    const userId = session?.user?.id
+    const chatMode: ChatIntelligenceMode = (body.mode ||
+      context.mode ||
+      'standard') as ChatIntelligenceMode
 
-    // Free-rotation waiver: skip the agent fee when EVERY agent in the room is in
-    // this week's free set (featured guides + active-aspect degree sprites).
-    let allAgentsFreeThisWeek = false
-    try {
-      const { resolveWeeklyFeature } = await import('@/lib/agents/weekly-feature-rotation')
-      const freeSet = new Set((await resolveWeeklyFeature()).freeAgentIds.map(s => s.toLowerCase()))
-      allAgentsFreeThisWeek =
-        activeAgents.length > 0 && activeAgents.every(a => freeSet.has(String(a.id).toLowerCase()))
-    } catch {
-      /* fall through to normal billing if the rotation can't be computed */
-    }
-
-    if (!allAgentsFreeThisWeek) {
+    if (chatMode === 'oracle') {
       if (!userId) {
         return NextResponse.json(
           {
-            error:
-              "Authentication or ESMS tokens required to consult non-free agents. Try this week's free historical agents!",
+            error: 'Authentication or ESMS tokens required to activate The Oracle Chamber.',
             isPaymentRequired: true,
-            requiredTokens: { Spirit: 2, Essence: 1, Matter: 1, Substance: 1 },
+            requiredTokens: ORACLE_CHAMBER_COST,
           },
           { status: 402 }
         )
       }
-
-      let currentAlchemy: unknown
-      try {
-        currentAlchemy = await getAlchemicalQuantitiesLegacy()
-      } catch (err) {
-        console.warn(
-          '[unified-multi-agent-chat] Live transit pricing unavailable; using chart base price',
-          err
-        )
-      }
-
-      const { calculateAgentChatPricing } = await import('@/lib/economy/chat-pricing')
-      let totalCost = { Spirit: 0, Essence: 0, Matter: 0, Substance: 0 }
-
-      for (const agent of activeAgents) {
-        const pricing = calculateAgentChatPricing(agent, currentAlchemy)
-        totalCost.Spirit += pricing.cost.Spirit
-        totalCost.Essence += pricing.cost.Essence
-        totalCost.Matter += pricing.cost.Matter
-        totalCost.Substance += pricing.cost.Substance
-      }
-
-      const debitResult = await EconomyService.debitDynamic(userId, totalCost)
+      const debitResult = await EconomyService.debitDynamic(
+        userId,
+        ORACLE_CHAMBER_COST,
+        'oracle_chamber',
+        'The Oracle Chamber — 20-Turn Deep Consciousness Session'
+      )
       if (!debitResult.ok) {
         return NextResponse.json(
           {
-            error: 'Insufficient tokens to consult these agents at this time.',
-            requiredTokens: totalCost,
+            error: 'Insufficient tokens to enter The Oracle Chamber (20 ESMS required).',
+            requiredTokens: ORACLE_CHAMBER_COST,
           },
           { status: 402 }
         )
+      }
+    } else if (chatMode === 'epiphany') {
+      if (!userId) {
+        return NextResponse.json(
+          {
+            error: 'Authentication or ESMS tokens required for Flash Epiphany.',
+            isPaymentRequired: true,
+            requiredTokens: FLASH_EPIPHANY_COST,
+          },
+          { status: 402 }
+        )
+      }
+      const debitResult = await EconomyService.debitDynamic(
+        userId,
+        FLASH_EPIPHANY_COST,
+        'flash_epiphany',
+        'Flash Epiphany — Deep Reasoning Turn'
+      )
+      if (!debitResult.ok) {
+        return NextResponse.json(
+          {
+            error: 'Insufficient tokens for Flash Epiphany (8 ESMS required).',
+            requiredTokens: FLASH_EPIPHANY_COST,
+          },
+          { status: 402 }
+        )
+      }
+    } else if (chatMode === 'byok') {
+      // BYOK mode: zero platform token debit
+    } else {
+      // Standard chat billing: Free-rotation waiver or base agent consultation fee
+      let allAgentsFreeThisWeek = false
+      try {
+        const { resolveWeeklyFeature } = await import('@/lib/agents/weekly-feature-rotation')
+        const freeSet = new Set(
+          (await resolveWeeklyFeature()).freeAgentIds.map(s => s.toLowerCase())
+        )
+        allAgentsFreeThisWeek =
+          activeAgents.length > 0 &&
+          activeAgents.every(a => freeSet.has(String(a.id).toLowerCase()))
+      } catch {
+        /* fall through to normal billing if the rotation can't be computed */
+      }
+
+      if (!allAgentsFreeThisWeek) {
+        if (!userId) {
+          return NextResponse.json(
+            {
+              error:
+                "Authentication or ESMS tokens required to consult non-free agents. Try this week's free historical agents!",
+              isPaymentRequired: true,
+              requiredTokens: { Spirit: 2, Essence: 1, Matter: 1, Substance: 1 },
+            },
+            { status: 402 }
+          )
+        }
+
+        let currentAlchemy: unknown
+        try {
+          currentAlchemy = await getAlchemicalQuantitiesLegacy()
+        } catch (err) {
+          console.warn(
+            '[unified-multi-agent-chat] Live transit pricing unavailable; using chart base price',
+            err
+          )
+        }
+
+        const { calculateAgentChatPricing } = await import('@/lib/economy/chat-pricing')
+        let totalCost = { Spirit: 0, Essence: 0, Matter: 0, Substance: 0 }
+
+        for (const agent of activeAgents) {
+          const pricing = calculateAgentChatPricing(agent, currentAlchemy)
+          totalCost.Spirit += pricing.cost.Spirit
+          totalCost.Essence += pricing.cost.Essence
+          totalCost.Matter += pricing.cost.Matter
+          totalCost.Substance += pricing.cost.Substance
+        }
+
+        const debitResult = await EconomyService.debitDynamic(userId, totalCost)
+        if (!debitResult.ok) {
+          return NextResponse.json(
+            {
+              error: 'Insufficient tokens to consult these agents at this time.',
+              requiredTokens: totalCost,
+            },
+            { status: 402 }
+          )
+        }
       }
     }
 
     // A duel-yield claim token is only minted for rounds that were actually
     // billed (signed-in, 2+ agents, not the free weekly rotation) — the earn
     // side of the arena loop must never out-mint the spend side.
-    const duelYieldEligible = Boolean(userId && !allAgentsFreeThisWeek && activeAgents.length >= 2)
+    const duelYieldEligible = Boolean(userId && activeAgents.length >= 2)
 
     // Separate Monica from regular agents for special handling
     const monicaAgent = activeAgents.find(agent => agent.type === 'monica')
@@ -286,6 +363,7 @@ export async function POST(request: NextRequest) {
                   sessionHistory: updatedHistory,
                   recentMessages: updatedHistory.slice(-10),
                   variant: chatVariant,
+                  mode: chatMode,
                   modelOverrides: context.modelOverrides,
                 },
                 cosmicContext,
@@ -369,6 +447,7 @@ export async function POST(request: NextRequest) {
                   sessionHistory: updatedHistory,
                   recentMessages: updatedHistory.slice(-10),
                   variant: chatVariant,
+                  mode: chatMode,
                   modelOverrides: context.modelOverrides,
                 },
                 cosmicContext,
@@ -610,14 +689,23 @@ async function processAgentResponse(
     // Generate agent-specific prompt
     const systemPrompt = generateAgentPrompt(agent, groupContext, cosmicContext)
 
-    console.log(`🤖 Proxying chat request for ${agent.name} (${agent.type}) to FastAPI backend...`)
+    const backendModelTier =
+      groupContext.mode === 'oracle'
+        ? 'primary'
+        : groupContext.mode === 'epiphany'
+          ? 'reflective'
+          : 'free'
+
+    console.log(
+      `🤖 Proxying chat request for ${agent.name} (${agent.type}) to FastAPI backend [tier: ${backendModelTier}, mode: ${groupContext.mode || 'standard'}]...`
+    )
     const chatResult = await backend.agents.chat({
       agentId: agent.id,
       message: message,
       sessionId: sessionId,
       userId: 'session-user',
       systemPromptOverride: systemPrompt,
-      modelTier: 'free',
+      modelTier: backendModelTier,
     })
 
     const response = chatResult.text || ''
