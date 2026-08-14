@@ -33,6 +33,11 @@ import {
   Network,
   FileSearch,
   Trophy,
+  Coins,
+  Orbit,
+  Radio,
+  Route,
+  Wrench,
   type LucideIcon,
 } from 'lucide-react'
 import { PerformanceDashboard } from '@/components/admin/performance-dashboard'
@@ -49,6 +54,18 @@ import RagKnowledgePanel from '@/components/admin/panels/RagKnowledgePanel'
 import GroupChatSessionsPanel from '@/components/admin/panels/GroupChatSessionsPanel'
 import ScrabbleLeaguePanel from '@/components/admin/panels/ScrabbleLeaguePanel'
 import Web3TelemetryPanel from '@/components/admin/panels/Web3TelemetryPanel'
+import SystemPulsePanel, { type PulsePayload } from '@/components/admin/panels/SystemPulsePanel'
+import TokenEconomyPanel, { type EconomyPayload } from '@/components/admin/panels/TokenEconomyPanel'
+import PlanetaryAgentsPanel, {
+  type PlanetaryPayload,
+} from '@/components/admin/panels/PlanetaryAgentsPanel'
+import CodebaseHealthPanel, {
+  type CodebaseHealthPayload,
+} from '@/components/admin/panels/CodebaseHealthPanel'
+import OnboardingFunnelPanel, {
+  type OnboardingPayload,
+} from '@/components/admin/panels/OnboardingFunnelPanel'
+import UserAdministrationPanel from '@/components/admin/panels/UserAdministrationPanel'
 
 import type {
   AdminDashboardData,
@@ -60,6 +77,11 @@ import type {
 
 type AdminTab =
   | 'overview'
+  | 'pulse'
+  | 'economy'
+  | 'planetary'
+  | 'codebase'
+  | 'onboarding'
   | 'users'
   | 'agents'
   | 'chats'
@@ -107,23 +129,70 @@ interface AdminLevelingSummary {
   }>
 }
 
-const tabs: Array<{ id: AdminTab; label: string; icon: LucideIcon }> = [
-  { id: 'overview', label: 'Overview', icon: LayoutDashboard },
-  { id: 'users', label: 'Users', icon: Users },
-  { id: 'agents', label: 'Agents', icon: Bot },
-  { id: 'chats', label: 'Chat Status', icon: TerminalSquare },
-  { id: 'mcp', label: 'MCP Invocations', icon: Cpu },
-  { id: 'web3', label: 'Web3 Integration', icon: ShieldCheck },
-  { id: 'groupChats', label: 'Council Convenings', icon: Network },
-  { id: 'jing', label: 'Jing Arena', icon: Swords },
-  { id: 'scrabble', label: 'Scrabble League', icon: Trophy },
-  { id: 'leveling', label: 'Cosmic Leveling', icon: Gauge },
-  { id: 'rag', label: 'RAG / Knowledge', icon: FileSearch },
-  { id: 'infrastructure', label: 'Infrastructure', icon: Server },
-  { id: 'deployments', label: 'Deployments', icon: GitBranch },
-  { id: 'jobs', label: 'Jobs', icon: Workflow },
-  { id: 'desktop', label: 'Desktop Companion', icon: Monitor },
+/**
+ * Nav is grouped rather than a flat list: at twenty tabs a flat rail gives the
+ * operator no way to tell a health surface from a game leaderboard, and the
+ * things you reach for during an incident end up buried among the things you
+ * browse on a quiet afternoon.
+ */
+const tabGroups: Array<{
+  group: string
+  tabs: Array<{ id: AdminTab; label: string; icon: LucideIcon }>
+}> = [
+  {
+    group: 'Command',
+    tabs: [
+      { id: 'overview', label: 'Overview', icon: LayoutDashboard },
+      { id: 'pulse', label: 'System Pulse', icon: Radio },
+      { id: 'codebase', label: 'Codebase Health', icon: Wrench },
+    ],
+  },
+  {
+    group: 'Economy & Sky',
+    tabs: [
+      { id: 'economy', label: 'Token Economy', icon: Coins },
+      { id: 'planetary', label: 'Planetary Layer', icon: Orbit },
+      { id: 'web3', label: 'Web3 Integration', icon: ShieldCheck },
+    ],
+  },
+  {
+    group: 'People',
+    tabs: [
+      { id: 'users', label: 'User Admin', icon: UserCog },
+      { id: 'onboarding', label: 'Onboarding', icon: Route },
+    ],
+  },
+  {
+    group: 'Agents',
+    tabs: [
+      { id: 'agents', label: 'Roster', icon: Bot },
+      { id: 'chats', label: 'Chat Status', icon: TerminalSquare },
+      { id: 'groupChats', label: 'Council Convenings', icon: Network },
+      { id: 'leveling', label: 'Cosmic Leveling', icon: Gauge },
+      { id: 'rag', label: 'RAG / Knowledge', icon: FileSearch },
+    ],
+  },
+  {
+    group: 'Arenas',
+    tabs: [
+      { id: 'jing', label: 'Jing Arena', icon: Swords },
+      { id: 'scrabble', label: 'Scrabble League', icon: Trophy },
+    ],
+  },
+  {
+    group: 'Platform',
+    tabs: [
+      { id: 'mcp', label: 'MCP Invocations', icon: Cpu },
+      { id: 'infrastructure', label: 'Infrastructure', icon: Server },
+      { id: 'deployments', label: 'Deployments', icon: GitBranch },
+      { id: 'jobs', label: 'Jobs', icon: Workflow },
+      { id: 'desktop', label: 'Desktop Companion', icon: Monitor },
+    ],
+  },
 ]
+
+/** Alerts carry `tab:<id>` hrefs; only ids that exist are navigable. */
+const KNOWN_TABS = new Set<string>(tabGroups.flatMap(group => group.tabs.map(tab => tab.id)))
 
 function formatNumber(value: number) {
   return new Intl.NumberFormat('en-US', {
@@ -239,6 +308,36 @@ function Panel({
   )
 }
 
+/**
+ * Uniform fetch state for the subsystem panels. `error` is kept distinct from
+ * an empty `data` so a panel can tell "nothing to report" apart from "we could
+ * not find out" — the two must never render the same way.
+ */
+type SubsystemState<T> = { data: T | null; loading: boolean; error: string | null }
+
+const idleSubsystem = { data: null, loading: false, error: null } as const
+
+async function loadSubsystem<T>(
+  path: string,
+  set: (updater: (prev: SubsystemState<T>) => SubsystemState<T>) => void
+) {
+  set(prev => ({ ...prev, loading: true }))
+  try {
+    const response = await fetch(path, { cache: 'no-store' })
+    const payload = await response.json().catch(() => null)
+    if (!response.ok || !payload?.success) {
+      throw new Error(payload?.error || `${path} returned ${response.status}`)
+    }
+    set(() => ({ data: payload as T, loading: false, error: null }))
+  } catch (error) {
+    set(prev => ({
+      ...prev,
+      loading: false,
+      error: error instanceof Error ? error.message : `Failed to load ${path}`,
+    }))
+  }
+}
+
 function EmptyState({ label }: { label: string }) {
   return (
     <div className="rounded-xl border border-dashed border-zinc-800 bg-zinc-950/40 p-8 text-center text-xs text-zinc-500">
@@ -299,6 +398,35 @@ export function AdminOperatorConsole({ initialUser, authSource }: AdminOperatorC
   const [levelingLoading, setLevelingLoading] = useState(false)
   const [scrabble, setScrabble] = useState<any | null>(null)
   const [scrabbleLoading, setScrabbleLoading] = useState(false)
+
+  // ── Subsystem panels ────────────────────────────────────────────────────
+  // Each is fetched on first visit and refreshed on demand; the digest is
+  // fetched eagerly because the header badge and overview both depend on it.
+  const [pulse, setPulse] = useState<SubsystemState<PulsePayload>>(idleSubsystem)
+  const [economy, setEconomy] = useState<SubsystemState<EconomyPayload>>(idleSubsystem)
+  const [planetary, setPlanetary] = useState<SubsystemState<PlanetaryPayload>>(idleSubsystem)
+  const [codebase, setCodebase] = useState<SubsystemState<CodebaseHealthPayload>>(idleSubsystem)
+  const [onboarding, setOnboarding] = useState<SubsystemState<OnboardingPayload>>(idleSubsystem)
+
+  const fetchPulse = useCallback(() => loadSubsystem('/api/admin/alerts', setPulse), [])
+  const fetchEconomy = useCallback(() => loadSubsystem('/api/admin/economy', setEconomy), [])
+  const fetchPlanetary = useCallback(() => loadSubsystem('/api/admin/planetary', setPlanetary), [])
+  const fetchCodebase = useCallback(
+    () => loadSubsystem('/api/admin/codebase-health', setCodebase),
+    []
+  )
+  const fetchOnboarding = useCallback(
+    () => loadSubsystem('/api/admin/onboarding', setOnboarding),
+    []
+  )
+
+  /**
+   * Alerts link to the tab that owns the finding. Anything that is not a known
+   * tab id is ignored rather than silently switching to a blank pane.
+   */
+  const navigateToTab = useCallback((tab: string) => {
+    if (KNOWN_TABS.has(tab)) setActiveTab(tab as AdminTab)
+  }, [])
 
   const fetchDashboard = useCallback(async () => {
     setRefreshing(true)
@@ -389,6 +517,38 @@ export function AdminOperatorConsole({ initialUser, authSource }: AdminOperatorC
     }
   }, [activeTab, fetchScrabble, scrabble, scrabbleLoading])
 
+  // The digest drives the header badge and the overview, so it loads with the
+  // console rather than waiting for its tab. It fans out to the other admin
+  // routes server-side, so it is the one eager fetch worth making.
+  useEffect(() => {
+    fetchPulse()
+    const interval = window.setInterval(fetchPulse, 120000)
+    return () => window.clearInterval(interval)
+  }, [fetchPulse])
+
+  useEffect(() => {
+    const lazy: Partial<Record<AdminTab, { state: SubsystemState<unknown>; load: () => void }>> = {
+      economy: { state: economy, load: fetchEconomy },
+      planetary: { state: planetary, load: fetchPlanetary },
+      codebase: { state: codebase, load: fetchCodebase },
+      onboarding: { state: onboarding, load: fetchOnboarding },
+    }
+    const entry = lazy[activeTab]
+    if (entry && !entry.state.data && !entry.state.loading && !entry.state.error) {
+      entry.load()
+    }
+  }, [
+    activeTab,
+    economy,
+    planetary,
+    codebase,
+    onboarding,
+    fetchEconomy,
+    fetchPlanetary,
+    fetchCodebase,
+    fetchOnboarding,
+  ])
+
   const totalAgents = data
     ? data.agents.historical + data.agents.planetary + data.agents.created
     : 0
@@ -412,6 +572,27 @@ export function AdminOperatorConsole({ initialUser, authSource }: AdminOperatorC
   const productionUrl = data?.system.vercelDeployment.url?.startsWith('http')
     ? data.system.vercelDeployment.url
     : 'https://agents.alchm.kitchen'
+
+  /**
+   * Alert counts per tab, so the nav shows where the problems are without the
+   * operator having to open every panel. An alert's `tab:` href is the owner;
+   * alerts with no tab (or a tab that no longer exists) fall through to the
+   * pulse tab, which always shows the complete list.
+   */
+  const { alertCountsByTab, criticalTabs } = useMemo(() => {
+    const counts: Partial<Record<AdminTab, number>> = {}
+    const critical = new Set<AdminTab>()
+    for (const alert of pulse.data?.alerts ?? []) {
+      const target = alert.href?.startsWith('tab:') ? alert.href.slice(4) : null
+      const tab: AdminTab = target && KNOWN_TABS.has(target) ? (target as AdminTab) : 'pulse'
+      counts[tab] = (counts[tab] ?? 0) + 1
+      if (alert.severity === 'critical') critical.add(tab)
+    }
+    // The pulse tab is the digest, so it always carries the full count.
+    counts.pulse = pulse.data?.alerts.length ?? 0
+    if ((pulse.data?.counts.critical ?? 0) > 0) critical.add('pulse')
+    return { alertCountsByTab: counts, criticalTabs: critical }
+  }, [pulse.data])
 
   if (authError) {
     return (
@@ -444,6 +625,33 @@ export function AdminOperatorConsole({ initialUser, authSource }: AdminOperatorC
               />
               <span className="h-1.5 w-1.5 rounded-full bg-white/20 shrink-0" />
               <StatusBadge status="healthy" label={authSource.replace(/-/g, ' ')} />
+              {pulse.data && (
+                <>
+                  <span className="h-1.5 w-1.5 rounded-full bg-white/20 shrink-0" />
+                  <button type="button" onClick={() => setActiveTab('pulse')}>
+                    <StatusBadge
+                      status={
+                        pulse.data.posture === 'error'
+                          ? 'error'
+                          : pulse.data.posture === 'warn'
+                            ? 'warn'
+                            : 'healthy'
+                      }
+                      label={
+                        pulse.data.alerts.length === 0
+                          ? 'no open alerts'
+                          : `${pulse.data.counts.critical} critical · ${pulse.data.counts.warning} warn`
+                      }
+                    />
+                  </button>
+                </>
+              )}
+              {pulse.error && (
+                <>
+                  <span className="h-1.5 w-1.5 rounded-full bg-white/20 shrink-0" />
+                  <StatusBadge status="unknown" label="digest unavailable" />
+                </>
+              )}
             </div>
             <h1 className="text-4xl font-black tracking-tight text-zinc-50 uppercase tracking-widest bg-gradient-to-r from-zinc-50 via-zinc-200 to-zinc-400 bg-clip-text text-transparent">
               Operator Console
@@ -482,29 +690,54 @@ export function AdminOperatorConsole({ initialUser, authSource }: AdminOperatorC
         <div className="grid gap-6 lg:grid-cols-[245px_minmax(0,1fr)]">
           {/* Glassmorphic Navigation Bar */}
           <nav className="h-fit rounded-2xl border border-white/5 bg-zinc-900/20 p-2 backdrop-blur-md lg:sticky lg:top-4 select-none">
-            {tabs.map(tab => (
-              <button
-                key={tab.id}
-                type="button"
-                onClick={() => setActiveTab(tab.id)}
-                className={cn(
-                  'mb-1 flex w-full items-center justify-between gap-2 rounded-xl px-3.5 py-3 text-left text-xs font-bold uppercase tracking-wider transition-all duration-300',
-                  activeTab === tab.id
-                    ? 'bg-zinc-100 text-zinc-950 shadow-[0_0_20px_rgba(255,255,255,0.1)] scale-[1.02]'
-                    : 'text-zinc-450 hover:bg-white/[0.04] hover:text-zinc-100'
-                )}
-              >
-                <span className="flex items-center gap-2.5">
-                  <tab.icon className="h-4.5 w-4.5 shrink-0" />
-                  {tab.label}
-                </span>
-                <ChevronRight
-                  className={cn(
-                    'h-4 w-4 shrink-0 transition-transform duration-300',
-                    activeTab === tab.id ? 'translate-x-0.5' : 'text-zinc-600'
-                  )}
-                />
-              </button>
+            {tabGroups.map(group => (
+              <div key={group.group} className="mb-2 last:mb-0">
+                <p className="px-3.5 pb-1 pt-2 text-[9px] font-black uppercase tracking-[0.2em] text-zinc-600">
+                  {group.group}
+                </p>
+                {group.tabs.map(tab => {
+                  const count = alertCountsByTab[tab.id] ?? 0
+                  const critical = criticalTabs.has(tab.id)
+                  return (
+                    <button
+                      key={tab.id}
+                      type="button"
+                      onClick={() => setActiveTab(tab.id)}
+                      className={cn(
+                        'mb-1 flex w-full items-center justify-between gap-2 rounded-xl px-3.5 py-2.5 text-left text-xs font-bold uppercase tracking-wider transition-all duration-300',
+                        activeTab === tab.id
+                          ? 'bg-zinc-100 text-zinc-950 shadow-[0_0_20px_rgba(255,255,255,0.1)] scale-[1.02]'
+                          : 'text-zinc-450 hover:bg-white/[0.04] hover:text-zinc-100'
+                      )}
+                    >
+                      <span className="flex min-w-0 items-center gap-2.5">
+                        <tab.icon className="h-4 w-4 shrink-0" />
+                        <span className="truncate">{tab.label}</span>
+                      </span>
+                      {count > 0 ? (
+                        <span
+                          className={cn(
+                            'shrink-0 rounded-full px-1.5 py-0.5 text-[9px] font-black tabular-nums',
+                            critical
+                              ? 'bg-rose-500/20 text-rose-300'
+                              : 'bg-amber-500/20 text-amber-300',
+                            activeTab === tab.id && 'bg-zinc-900/10 text-zinc-800'
+                          )}
+                        >
+                          {count}
+                        </span>
+                      ) : (
+                        <ChevronRight
+                          className={cn(
+                            'h-4 w-4 shrink-0 transition-transform duration-300',
+                            activeTab === tab.id ? 'translate-x-0.5' : 'text-zinc-600'
+                          )}
+                        />
+                      )}
+                    </button>
+                  )
+                })}
+              </div>
             ))}
           </nav>
 
@@ -526,6 +759,16 @@ export function AdminOperatorConsole({ initialUser, authSource }: AdminOperatorC
                   <div className="space-y-6">
                     {/* Alchemical Harmony Metaphysical header card */}
                     <CosmicTelemetryPanel data={data} />
+
+                    {/* What is wrong right now, before anything else */}
+                    <SystemPulsePanel
+                      data={pulse.data}
+                      loading={pulse.loading}
+                      error={pulse.error}
+                      onRetry={fetchPulse}
+                      onNavigate={navigateToTab}
+                      compact
+                    />
 
                     <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
                       <MetricPanel
@@ -624,61 +867,8 @@ export function AdminOperatorConsole({ initialUser, authSource }: AdminOperatorC
                   </div>
                 )}
 
-                {/* 2. USERS REGISTRY PANEL */}
-                {activeTab === 'users' && (
-                  <Panel title="Shared Users Registry" icon={UserCog}>
-                    {data.users.recent.length === 0 ? (
-                      <EmptyState label="No users registered in this system" />
-                    ) : (
-                      <div className="overflow-x-auto">
-                        <table className="w-full min-w-[720px] text-xs">
-                          <thead className="text-[10px] uppercase tracking-wider text-zinc-500 border-b border-zinc-800 font-extrabold">
-                            <tr>
-                              <th className="px-4 py-3 text-left font-semibold">User Entity</th>
-                              <th className="px-4 py-3 text-left font-semibold">Access Role</th>
-                              <th className="px-4 py-3 text-left font-semibold">
-                                Verification Timestamp
-                              </th>
-                              <th className="px-4 py-3 text-left font-semibold">Identity UUID</th>
-                            </tr>
-                          </thead>
-                          <tbody className="divide-y divide-zinc-850">
-                            {data.users.recent.map((user: any) => (
-                              <tr key={user.id} className="hover:bg-white/[0.02] transition-colors">
-                                <td className="px-4 py-3.5">
-                                  <div className="font-bold text-zinc-200">
-                                    {user.name || 'Unnamed Alchemist'}
-                                  </div>
-                                  <div className="text-[10px] text-zinc-500 font-mono mt-0.5">
-                                    {user.email}
-                                  </div>
-                                </td>
-                                <td className="px-4 py-3.5">
-                                  <span
-                                    className={cn(
-                                      'rounded-md px-2 py-0.5 text-[10px] font-mono font-bold uppercase border',
-                                      user.role === 'admin'
-                                        ? 'border-emerald-500/20 bg-emerald-500/10 text-emerald-300'
-                                        : 'border-zinc-800 bg-zinc-900 text-zinc-450'
-                                    )}
-                                  >
-                                    {user.role}
-                                  </span>
-                                </td>
-                                <td className="px-4 py-3.5 text-zinc-450 font-bold font-mono">
-                                  {formatDate(user.createdAt)}
-                                </td>
-                                <td className="px-4 py-3.5 font-mono text-[10px] text-zinc-555 select-text">
-                                  {user.id}
-                                </td>
-                              </tr>
-                            ))}
-                          </tbody>
-                        </table>
-                      </div>
-                    )}
-                  </Panel>
-                )}
+                {/* 2. USER ADMINISTRATION PANEL */}
+                {activeTab === 'users' && <UserAdministrationPanel onNavigate={navigateToTab} />}
 
                 {/* 3. AGENTS METRICS PANEL */}
                 {activeTab === 'agents' && (
@@ -795,6 +985,61 @@ export function AdminOperatorConsole({ initialUser, authSource }: AdminOperatorC
                       </div>
                     )}
                   </Panel>
+                )}
+
+                {/* SYSTEM PULSE — unified problem digest */}
+                {activeTab === 'pulse' && (
+                  <SystemPulsePanel
+                    data={pulse.data}
+                    loading={pulse.loading}
+                    error={pulse.error}
+                    onRetry={fetchPulse}
+                    onNavigate={navigateToTab}
+                  />
+                )}
+
+                {/* TOKEN ECONOMY PANEL */}
+                {activeTab === 'economy' && (
+                  <TokenEconomyPanel
+                    data={economy.data}
+                    loading={economy.loading}
+                    error={economy.error}
+                    onRetry={fetchEconomy}
+                    onNavigate={navigateToTab}
+                  />
+                )}
+
+                {/* PLANETARY INTEGRATION PANEL */}
+                {activeTab === 'planetary' && (
+                  <PlanetaryAgentsPanel
+                    data={planetary.data}
+                    loading={planetary.loading}
+                    error={planetary.error}
+                    onRetry={fetchPlanetary}
+                    onNavigate={navigateToTab}
+                  />
+                )}
+
+                {/* CODEBASE HEALTH PANEL */}
+                {activeTab === 'codebase' && (
+                  <CodebaseHealthPanel
+                    data={codebase.data}
+                    loading={codebase.loading}
+                    error={codebase.error}
+                    onRetry={fetchCodebase}
+                    onNavigate={navigateToTab}
+                  />
+                )}
+
+                {/* ONBOARDING FUNNEL PANEL */}
+                {activeTab === 'onboarding' && (
+                  <OnboardingFunnelPanel
+                    data={onboarding.data}
+                    loading={onboarding.loading}
+                    error={onboarding.error}
+                    onRetry={fetchOnboarding}
+                    onNavigate={navigateToTab}
+                  />
                 )}
 
                 {/* 5. MCP INVOCATIONS PANEL */}

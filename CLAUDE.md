@@ -238,6 +238,30 @@ The chat endpoint returns `metadata.cache.{read, write}` token counts so prompt-
 
 **Admin Chats Telemetry Board:** Recent conversations are logged to the shared `"AgentConversation"` PostgreSQL table. The Admin Dashboard `/admin` (rendered via `AdminOperatorConsole.tsx`) retrieves these logs in real-time under the **Chat Status** tab, displaying the agent name, user prompt preview, agent response preview, model/provider, latency, and success/failure indicators. Clicking on any row displays a premium glassmorphic modal with full, scrollable prompt/response data, relative and exact timestamps, and DB keys.
 
+### Operator Console (`/admin`)
+
+`AdminOperatorConsole.tsx` renders ~20 tabs in six nav groups. Each subsystem tab is backed by one admin-gated route that **owns the judgement about its own numbers**: routes return their payload _and_ an `AdminAlert[]`, and `/api/admin/alerts` fans out over HTTP (forwarding the caller's cookies) and merges those arrays into one ranked digest. Never re-derive "is this bad?" in the UI — add the rule to the route that owns the number.
+
+| Route                        | Panel                     | Covers                                                                                               |
+| ---------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------- |
+| `/api/admin/alerts`          | `SystemPulsePanel`        | Merged digest, DB liveness, provider chain, fail-closed secrets                                      |
+| `/api/admin/economy`         | `TokenEconomyPanel`       | ESMS supply/flow, faucet vs sink, **claim reconciliation**, subscriptions, Solana rail, sink pricing |
+| `/api/admin/planetary`       | `PlanetaryAgentsPanel`    | Measured ephemeris provenance, sprite roster, transit jobs, activation engine, cron liveness         |
+| `/api/admin/codebase-health` | `CodebaseHealthPanel`     | Repo gates, natal-chart provenance debt, route test coverage, type escapes, unfinished-work markers  |
+| `/api/admin/onboarding`      | `OnboardingFunnelPanel`   | Signup → profile → chart → balance → chat → wallet funnel, per-user completion                       |
+| `/api/admin/users[/:id]`     | `UserAdministrationPanel` | Searchable directory with holdings; PATCH `role`/`verified`/`isAgentic` only                         |
+
+Load-bearing conventions in this surface:
+
+- **A degraded read must never look like a healthy empty one.** Every route reads each section in isolation (`section()` helper); a section that throws yields `null`, lands in `degraded[]`, and raises an alert. Panels render that distinctly from "no rows".
+- **Ephemeris provenance is measured, not assumed.** `/api/admin/planetary` asks the Swiss backend; on failure it reports what the _approximation_ would serve, stamped `vsop87-approximation`, and raises a critical alert. It never labels approximated output as Swiss.
+- **Cron liveness is inferred**, because no run-log table exists — each job is matched to the DB side effect that proves it ran, and the panel says so rather than implying a real heartbeat.
+- **Serialisation:** `lib/admin/serialize.ts`. Prisma `Decimal` → `Number` (safe at `Decimal(12,4)`); Solana `BigInt` slots → **string**, never `Number`.
+- **Mutations are narrow and audited.** Only `role`, `verified`, `isAgentic` are writable; balances are ledger-backed and deliberately not editable. Writes go to `admin_audit_log` best-effort, and the response reports whether the audit landed — an unaudited change never _looks_ audited. ⚠️ The table needs `bunx prisma db push` per environment; until then mutations apply un-recorded and the panel says so.
+- **Codebase health is a build-time manifest**, `lib/admin/codebase-health-manifest.json`, regenerated with `bun run generate:codebase-health` (add `:full` for a `tsc` census). It is imported statically because Vercel ships a bundle, not the repo — an `fs` scan at request time would report a clean codebase precisely where it matters. The manifest reports its own age; a skipped census is reported as **unknown**, not zero.
+
+Tests: `test/admin/operator-console-routes.test.ts`. Lint: `lib/admin/**` and `app/api/admin/**` are un-ignored in `eslint.config.js` — note that un-ignoring requires the **full ancestor directory chain** plus the subtree, or the negation is silently inert (several older entries in that list are inert for exactly this reason).
+
 ### RAG (Retrieval-Augmented Generation)
 
 Agent knowledge is stored in ChromaDB (optional, Docker: `docker run -p 8000:8000 chromadb/chroma`). Ingestion pipeline at `lib/llamaindex/ingestion-pipeline.ts`. The semantic search endpoint is `app/api/agents/semantic-search/route.ts`. RAG analytics are tracked in `RAGQuery`/`RAGSource`/`RAGFeedback` Prisma tables.

@@ -56,6 +56,24 @@ const IGNORED_PATTERNS = [
   '!lib/runes/natal-sigil-runes.ts',
   '!lib/runes/pattern-to-rune-converter.ts',
 
+  // Operator console — written clean, kept clean. These are the surfaces an
+  // operator relies on during an incident, so they are held to the lint rules
+  // rather than inheriting the legacy blanket ignore on lib/ and app/.
+  //
+  // NOTE ON FORM: every ancestor directory has to be un-ignored, and then the
+  // subtree. `lib/**/*` and `app/**/*` ignore intermediate DIRECTORIES as well
+  // as files, and ESLint cannot re-include a file that sits inside an ignored
+  // directory — so a lone `!lib/admin/alerts.ts`, or even a lone
+  // `!app/api/admin/**`, is silently inert. That is why the older
+  // `!lib/runes/...` and `!app/api/admin/system-stats/route.ts` entries above,
+  // written without the ancestor chain, have never actually taken effect. Both
+  // trees below were verified to lint clean when they were added.
+  '!lib/admin/',
+  '!lib/admin/**',
+  '!app/api/',
+  '!app/api/admin/',
+  '!app/api/admin/**',
+
   '**/*.json',
   '**/*.md',
   '**/*.log',

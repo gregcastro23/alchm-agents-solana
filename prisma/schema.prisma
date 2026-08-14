@@ -1776,3 +1776,32 @@ model SolanaServiceHeartbeat {
   @@index([heartbeatAt])
   @@map("solana_service_heartbeat")
 }
+
+/// Append-only record of every mutating action taken from the operator console.
+///
+/// Admin mutations (role changes, verification flips, agentic toggles) had no
+/// trail at all before this — the only way to learn that someone had been made
+/// an admin was to notice the role had changed. Writes are best-effort: a
+/// mutation is never failed because this table is absent in an environment that
+/// has not been `db push`ed yet, but the route reports the miss to the caller so
+/// an untracked change is never silently presented as tracked.
+model admin_audit_log {
+  id          String   @id @default(cuid())
+  actorId     String?  @map("actor_id")
+  actorEmail  String?  @map("actor_email")
+  /// Which requireAdmin branch authorised the actor (session-role, db-role, …).
+  actorSource String   @map("actor_source")
+  action      String
+  targetType  String   @map("target_type")
+  targetId    String   @map("target_id")
+  /// Field values immediately before and after, for exactly the fields changed.
+  before      Json?
+  after       Json?
+  note        String?
+  createdAt   DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([createdAt(sort: Desc)])
+  @@index([targetType, targetId])
+  @@index([actorId])
+  @@map("admin_audit_log")
+}

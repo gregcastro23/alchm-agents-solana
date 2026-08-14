@@ -1,0 +1,352 @@
+{
+  "generatedAt": "2026-08-14T23:03:46.937Z",
+  "commit": "4516fc4",
+  "branch": "main",
+  "scanDurationMs": 13578,
+  "scannedRoots": [
+    "app",
+    "lib",
+    "components",
+    "hooks",
+    "backend",
+    "scripts",
+    "test",
+    "desktop-shell",
+    "pa-rust-backend/src"
+  ],
+  "totals": {
+    "files": 1496,
+    "lines": 392608,
+    "markers": 16,
+    "markerDensityPerKLoc": 0.04
+  },
+  "byKind": {
+    "not-implemented": 2,
+    "ts-expect": 1,
+    "todo": 2,
+    "fixme": 1,
+    "hack": 1,
+    "xxx": 1,
+    "skipped-test": 8
+  },
+  "byArea": [
+    {
+      "area": "test",
+      "count": 8
+    },
+    {
+      "area": "scripts",
+      "count": 7
+    },
+    {
+      "area": "backend",
+      "count": 1
+    }
+  ],
+  "hotspots": [
+    {
+      "file": "test/chat-system/unit/consciousness-laboratory-chat.test.tsx",
+      "count": 7
+    },
+    {
+      "file": "scripts/generate-codebase-health.ts",
+      "count": 6
+    },
+    {
+      "file": "backend/a2a_server.py",
+      "count": 1
+    },
+    {
+      "file": "scripts/legacy-fixes/fix-final.cjs",
+      "count": 1
+    },
+    {
+      "file": "test/solana/esms-persona.spec.ts",
+      "count": 1
+    }
+  ],
+  "markerCap": 500,
+  "markers": [
+    {
+      "kind": "not-implemented",
+      "file": "backend/a2a_server.py",
+      "line": 193,
+      "text": "raise NotImplementedError(\"cancellation is not supported\")"
+    },
+    {
+      "kind": "ts-expect",
+      "file": "scripts/legacy-fixes/fix-final.cjs",
+      "line": 9,
+      "text": "/\\{\\/\\* @ts-ignore \\*\\/\\}\\n                  <DynamicAgentCreationWizard/g,"
+    },
+    {
+      "kind": "todo",
+      "file": "scripts/generate-codebase-health.ts",
+      "line": 71,
+      "text": "{ kind: 'todo', re: /(?:\\/\\/|#|\\/\\*|\\*)\\s*TODO\\b[:\\s]?(.*)/ },"
+    },
+    {
+      "kind": "fixme",
+      "file": "scripts/generate-codebase-health.ts",
+      "line": 72,
+      "text": "{ kind: 'fixme', re: /(?:\\/\\/|#|\\/\\*|\\*)\\s*FIXME\\b[:\\s]?(.*)/ },"
+    },
+    {
+      "kind": "hack",
+      "file": "scripts/generate-codebase-health.ts",
+      "line": 73,
+      "text": "{ kind: 'hack', re: /(?:\\/\\/|#|\\/\\*|\\*)\\s*HACK\\b[:\\s]?(.*)/ },"
+    },
+    {
+      "kind": "xxx",
+      "file": "scripts/generate-codebase-health.ts",
+      "line": 74,
+      "text": "{ kind: 'xxx', re: /(?:\\/\\/|#|\\/\\*|\\*)\\s*XXX\\b[:\\s]?(.*)/ },"
+    },
+    {
+      "kind": "not-implemented",
+      "file": "scripts/generate-codebase-health.ts",
+      "line": 75,
+      "text": "{ kind: 'not-implemented', re: /\\b(?:NotImplementedError|not\\s+implemented\\s+yet|throw new Error\\(['\"]Not implemented)/i },"
+    },
+    {
+      "kind": "todo",
+      "file": "scripts/generate-codebase-health.ts",
+      "line": 120,
+      "text": "// `// TODO: @ts-ignore this` is not double-counted."
+    },
+    {
+      "kind": "skipped-test",
+      "file": "test/chat-system/unit/consciousness-laboratory-chat.test.tsx",
+      "line": 263,
+      "text": "it.skip('displays advanced settings when enabled', () => {"
+    },
+    {
+      "kind": "skipped-test",
+      "file": "test/chat-system/unit/consciousness-laboratory-chat.test.tsx",
+      "line": 290,
+      "text": "it.skip('shows live consciousness metrics when experiment is running', async () => {"
+    },
+    {
+      "kind": "skipped-test",
+      "file": "test/chat-system/unit/consciousness-laboratory-chat.test.tsx",
+      "line": 305,
+      "text": "it.skip('handles metrics recording settings', () => {"
+    },
+    {
+      "kind": "skipped-test",
+      "file": "test/chat-system/unit/consciousness-laboratory-chat.test.tsx",
+      "line": 417,
+      "text": "it.skip('handles experiment completion with metrics', async () => {"
+    },
+    {
+      "kind": "skipped-test",
+      "file": "test/chat-system/unit/consciousness-laboratory-chat.test.tsx",
+      "line": 449,
+      "text": "it.skip('enables consciousness tracking persistence', () => {"
+    },
+    {
+      "kind": "skipped-test",
+      "file": "test/chat-system/unit/consciousness-laboratory-chat.test.tsx",
+      "line": 461,
+      "text": "it.skip('enables synergy analysis', () => {"
+    },
+    {
+      "kind": "skipped-test",
+      "file": "test/chat-system/unit/consciousness-laboratory-chat.test.tsx",
+      "line": 473,
+      "text": "it.skip('enables emergent pattern detection', () => {"
+    },
+    {
+      "kind": "skipped-test",
+      "file": "test/solana/esms-persona.spec.ts",
+      "line": 53,
+      "text": "describe.skip(name, () => {"
+    }
+  ],
+  "truncated": 0,
+  "natalProvenance": {
+    "counts": {
+      "authored": 48,
+      "computed": 12,
+      "placeholder": 12
+    },
+    "placeholders": [
+      "alexander-the-great",
+      "archimedes",
+      "aristotle",
+      "cicero",
+      "cleopatra",
+      "donatello",
+      "geoffrey-chaucer",
+      "herodotus",
+      "homer",
+      "julius-caesar",
+      "plato",
+      "raphael"
+    ],
+    "total": 72,
+    "available": true
+  },
+  "typeEscapes": {
+    "any": 2030,
+    "nonNullAssertions": 66,
+    "worstFiles": [
+      {
+        "file": "lib/historical-agents-db.ts",
+        "count": 81
+      },
+      {
+        "file": "components/temporal/temporal-client.tsx",
+        "count": 38
+      },
+      {
+        "file": "test/esms/claim-route.test.ts",
+        "count": 31
+      },
+      {
+        "file": "lib/consciousness/memory-persistence.ts",
+        "count": 27
+      },
+      {
+        "file": "lib/performance/optimization-engine.ts",
+        "count": 27
+      },
+      {
+        "file": "lib/services/enhanced-recommendation-service.ts",
+        "count": 27
+      },
+      {
+        "file": "lib/personalized-ai/validation-monitoring.ts",
+        "count": 23
+      },
+      {
+        "file": "lib/services/transit-notification-service.ts",
+        "count": 23
+      },
+      {
+        "file": "test/shop/purchase-route.test.ts",
+        "count": 23
+      },
+      {
+        "file": "app/api/consciousness-survey/route.ts",
+        "count": 22
+      },
+      {
+        "file": "backend/src/services/alchm-client.ts",
+        "count": 22
+      },
+      {
+        "file": "lib/runes/sign-vector-runes.ts",
+        "count": 21
+      },
+      {
+        "file": "app/api/admin/system-stats/route.ts",
+        "count": 20
+      },
+      {
+        "file": "lib/celestial-energy-calculator.ts",
+        "count": 20
+      },
+      {
+        "file": "test/scrabble-league.test.ts",
+        "count": 19
+      }
+    ]
+  },
+  "routeCoverage": {
+    "totalRoutes": 193,
+    "untestedCount": 141,
+    "coveragePct": 26.9,
+    "untested": [
+      "app/api/account/privy/route.ts",
+      "app/api/admin/alchm-mcp-errors/route.ts",
+      "app/api/admin/alerts/route.ts",
+      "app/api/admin/codebase-health/route.ts",
+      "app/api/admin/economy/route.ts",
+      "app/api/admin/leveling-summary/route.ts",
+      "app/api/admin/mcp-status/route.ts",
+      "app/api/admin/mcp-summary/route.ts",
+      "app/api/admin/onboarding/route.ts",
+      "app/api/admin/planetary/route.ts",
+      "app/api/admin/scrabble-standings/route.ts",
+      "app/api/admin/users/[userId]/route.ts",
+      "app/api/admin/users/route.ts",
+      "app/api/agent-attachments/route.ts",
+      "app/api/agent-dashboard/route.ts",
+      "app/api/agent-evolution/route.ts",
+      "app/api/agent-recommendations/route.ts",
+      "app/api/agent/delete-chat-history/route.ts",
+      "app/api/agents/[slug]/actions/route.ts",
+      "app/api/agents/[slug]/artifacts/route.ts",
+      "app/api/agents/[slug]/interactions/route.ts",
+      "app/api/agents/[slug]/leveling/route.ts",
+      "app/api/agents/[slug]/wallet/route.ts",
+      "app/api/agents/[slug]/wallet/transfer/route.ts",
+      "app/api/agents/council-voice/route.ts",
+      "app/api/agents/diet-profiles/route.ts",
+      "app/api/agents/gallery/route.ts",
+      "app/api/agents/jing/route.ts",
+      "app/api/agents/leveling/route.ts",
+      "app/api/agents/mentors/route.ts",
+      "app/api/agents/post-image/route.ts",
+      "app/api/agents/profile/[id]/route.ts",
+      "app/api/agents/register-subname/route.ts",
+      "app/api/agents/scrabble-arena/route.ts",
+      "app/api/agents/scrabble-standings/route.ts",
+      "app/api/agents/semantic-search/route.ts",
+      "app/api/agents/train/route.ts",
+      "app/api/agents/weekly-attunement/claim/route.ts",
+      "app/api/agents/weekly-feature/route.ts",
+      "app/api/agents/word-duel/route.ts",
+      "app/api/ai-gateway/health/route.ts",
+      "app/api/ai-gateway/route.ts",
+      "app/api/alchemize/route.ts",
+      "app/api/alchm-kinetics/route.ts",
+      "app/api/alchm-quantities/route.ts",
+      "app/api/astrologize/bulk/route.ts",
+      "app/api/astrologize/route.ts",
+      "app/api/auth/change-password/route.ts",
+      "app/api/auth/register/route.ts",
+      "app/api/chart-interpreter/route.ts",
+      "app/api/consciousness-crafting/create-agent/route.ts",
+      "app/api/consciousness-survey/route.ts",
+      "app/api/consciousness/current/route.ts",
+      "app/api/consciousness/timeline/route.ts",
+      "app/api/context-card/generate/route.ts",
+      "app/api/context-card/unlock/route.ts",
+      "app/api/cron/agents/announce-weekly-feature/route.ts",
+      "app/api/cron/agents/claim-yield/route.ts",
+      "app/api/cron/agents/refresh-reservoirs/route.ts",
+      "app/api/cron/agents/tick/route.ts"
+    ],
+    "untestedTruncated": 81
+  },
+  "gates": [
+    {
+      "id": "no-stray-kalchm",
+      "label": "Kalchm/Monica single-definition gate",
+      "command": "bun run check:no-stray-kalchm",
+      "passing": true,
+      "durationMs": 6978,
+      "output": null
+    },
+    {
+      "id": "no-fabricated-monica",
+      "label": "No fabricated Monica fallback",
+      "command": "bun run check:no-fabricated-monica",
+      "passing": true,
+      "durationMs": 6250,
+      "output": null
+    }
+  ],
+  "typeErrors": {
+    "ran": false,
+    "total": 0,
+    "byFile": []
+  },
+  "passes": {
+    "typecheck": false,
+    "gates": true
+  }
+}
