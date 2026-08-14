@@ -15,6 +15,7 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { Button } from '@/components/ui/button'
+import { LocationSearch, type LocationData } from '@/components/onboarding/LocationSearch'
 
 export default function ElementalChartPage() {
   const [birthInfo, setBirthInfo] = useState({
@@ -111,27 +112,22 @@ export default function ElementalChartPage() {
                     />
                   </div>
                 </div>
-                <div className="grid grid-cols-2 gap-4">
-                  <div className="space-y-2">
-                    <Label htmlFor="latitude">Latitude</Label>
-                    <Input
-                      id="latitude"
-                      type="number"
-                      step="0.0001"
-                      value={birthInfo.location.latitude}
-                      onChange={e => handleBirthInfoChange('latitude', e.target.value)}
-                    />
-                  </div>
-                  <div className="space-y-2">
-                    <Label htmlFor="longitude">Longitude</Label>
-                    <Input
-                      id="longitude"
-                      type="number"
-                      step="0.0001"
-                      value={birthInfo.location.longitude}
-                      onChange={e => handleBirthInfoChange('longitude', e.target.value)}
-                    />
-                  </div>
+                <div>
+                  <LocationSearch
+                    label="Birth Location"
+                    defaultLatitude={birthInfo.location.latitude}
+                    defaultLongitude={birthInfo.location.longitude}
+                    onLocationSelect={(loc: LocationData) => {
+                      setBirthInfo(prev => ({
+                        ...prev,
+                        location: {
+                          latitude: loc.latitude,
+                          longitude: loc.longitude,
+                        },
+                      }))
+                    }}
+                    placeholder="Search birth city (e.g. Chicago, IL, London, Tokyo)..."
+                  />
                 </div>
               </div>
             </CardContent>

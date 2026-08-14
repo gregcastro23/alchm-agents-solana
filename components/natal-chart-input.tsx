@@ -13,6 +13,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select'
+import { LocationSearch, type LocationData } from '@/components/onboarding/LocationSearch'
 
 export interface NatalChartData {
   chartName: string
@@ -52,43 +53,23 @@ export function NatalChartInput({
       timezone: 'UTC',
     },
   })
-
-  const [locationSearch, setLocationSearch] = useState('')
-  const [isSearching, setIsSearching] = useState(false)
-  const [locationResults, setLocationResults] = useState<any[]>([])
   const [errors, setErrors] = useState<Record<string, string>>({})
 
-  const handleLocationSearch = async () => {
-    if (!locationSearch.trim()) return
-
-    setIsSearching(true)
-    try {
-      // Use OpenStreetMap Nominatim for geocoding
-      const response = await fetch(
-        `https://nominatim.openstreetmap.org/search?format=json&q=${encodeURIComponent(locationSearch)}&limit=5`
-      )
-      const data = await response.json()
-      setLocationResults(data)
-    } catch (error) {
-      console.error('Location search failed:', error)
-      setErrors({ ...errors, location: 'Location search failed. Please try again.' })
-    } finally {
-      setIsSearching(false)
-    }
-  }
-
-  const handleLocationSelect = (location: any) => {
+  const handleLocationSelect = (location: LocationData) => {
     setFormData({
       ...formData,
       birthLocation: {
-        name: location.display_name,
-        lat: parseFloat(location.lat),
-        lon: parseFloat(location.lon),
-        timezone: 'UTC', // Default to UTC, would need timezone API for accuracy
+        name: location.displayName,
+        lat: location.latitude,
+        lon: location.longitude,
+        timezone: location.timezone || 'UTC',
       },
     })
-    setLocationResults([])
-    setLocationSearch(location.display_name)
+    setErrors(prev => {
+      const next = { ...prev }
+      delete next.location
+      return next
+    })
   }
 
   const validateForm = (): boolean => {
@@ -220,52 +201,16 @@ export function NatalChartInput({
 
           {/* Birth Location */}
           <div className="space-y-2">
-            <Label htmlFor="location">Birth Location *</Label>
-            <div className="flex gap-2">
-              <Input
-                id="location"
-                placeholder="Search for city..."
-                value={locationSearch}
-                onChange={e => setLocationSearch(e.target.value)}
-                onKeyDown={e => e.key === 'Enter' && (e.preventDefault(), handleLocationSearch())}
-                disabled={isLoading}
-                className="flex-1"
-              />
-              <Button
-                type="button"
-                onClick={handleLocationSearch}
-                disabled={isLoading || isSearching}
-              >
-                {isSearching ? 'Searching...' : 'Search'}
-              </Button>
-            </div>
-
-            {/* Location Search Results */}
-            {locationResults.length > 0 && (
-              <div className="border rounded-md p-2 space-y-1 max-h-48 overflow-y-auto">
-                {locationResults.map((location, index) => (
-                  <button
-                    key={index}
-                    type="button"
-                    onClick={() => handleLocationSelect(location)}
-                    className="w-full text-left px-3 py-2 hover:bg-muted rounded-sm text-sm"
-                  >
-                    {location.display_name}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Selected Location Display */}
-            {formData.birthLocation.name && (
-              <div className="text-sm p-3 bg-muted rounded-md">
-                <p className="font-medium">{formData.birthLocation.name}</p>
-                <p className="text-muted-foreground">
-                  {formData.birthLocation.lat.toFixed(4)}°, {formData.birthLocation.lon.toFixed(4)}°
-                </p>
-              </div>
-            )}
-
+            <LocationSearch
+              label="Birth Location"
+              defaultValue={formData.birthLocation.name}
+              defaultLatitude={formData.birthLocation.lat || undefined}
+              defaultLongitude={formData.birthLocation.lon || undefined}
+              onLocationSelect={handleLocationSelect}
+              placeholder="Search for birth city (e.g. Chicago, IL, London, Tokyo)..."
+              disabled={isLoading}
+              required
+            />
             {errors.location && <p className="text-sm text-red-500">{errors.location}</p>}
           </div>
 

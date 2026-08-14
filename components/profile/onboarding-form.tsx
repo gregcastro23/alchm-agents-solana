@@ -6,12 +6,14 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { LocationSearch, type LocationData } from '@/components/onboarding/LocationSearch'
 
 type BirthInfoForm = {
   date: string // YYYY-MM-DD
   time: string // HH:MM
-  latitude: string
-  longitude: string
+  latitude: number | null
+  longitude: number | null
+  locationName: string
   name?: string
 }
 
@@ -23,13 +25,23 @@ export default function ProfileOnboardingForm() {
   const [form, setForm] = useState<BirthInfoForm>({
     date: '',
     time: '12:00', // Default to noon
-    latitude: '40.7128', // NYC coordinates as default
-    longitude: '-74.0060',
+    latitude: null,
+    longitude: null,
+    locationName: '',
     name: '',
   })
 
-  const onChange = (key: keyof BirthInfoForm) => (e: React.ChangeEvent<HTMLInputElement>) =>
+  const onChange = (key: 'date' | 'time' | 'name') => (e: React.ChangeEvent<HTMLInputElement>) =>
     setForm(f => ({ ...f, [key]: e.target.value }))
+
+  const onLocationSelect = (location: LocationData) => {
+    setForm(f => ({
+      ...f,
+      latitude: location.latitude,
+      longitude: location.longitude,
+      locationName: location.displayName,
+    }))
+  }
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault()
@@ -64,23 +76,26 @@ export default function ProfileOnboardingForm() {
         throw new Error('Please provide a valid birth time')
       }
 
-      // Validate coordinates
-      const lat = parseFloat(form.latitude || '0')
-      const lng = parseFloat(form.longitude || '0')
+      // Validate coordinates auto-derived from location
+      if (form.latitude === null || form.longitude === null) {
+        throw new Error('Please search and select your birth city/location')
+      }
+
+      const lat = form.latitude
+      const lng = form.longitude
       if (isNaN(lat) || isNaN(lng) || lat < -90 || lat > 90 || lng < -180 || lng > 180) {
-        throw new Error(
-          'Please provide valid coordinates (latitude: -90 to 90, longitude: -180 to 180)'
-        )
+        throw new Error('Please select a valid birth location with coordinates')
       }
 
       const birthInfo = {
         year: y,
-        month: m - 1, // zero-based month [[memory:3826859]]
+        month: m - 1, // zero-based month
         day: d,
         hour: hh,
         minute: mm,
         latitude: lat,
         longitude: lng,
+        locationName: form.locationName || 'Unknown Location',
         name: form.name || 'Explorer',
       }
 
@@ -107,10 +122,12 @@ export default function ProfileOnboardingForm() {
   }
 
   return (
-    <Card>
+    <Card className="border border-purple-500/30 bg-black/60 backdrop-blur-md">
       <CardHeader>
-        <CardTitle>Complete your Alchm profile</CardTitle>
-        <p className="text-sm text-muted-foreground">
+        <CardTitle className="text-xl font-bold text-zinc-100">
+          Complete your Alchm profile
+        </CardTitle>
+        <p className="text-sm text-zinc-400">
           Your birth details help us create your personalized alchemical chart and consciousness
           vector.
         </p>
@@ -118,19 +135,24 @@ export default function ProfileOnboardingForm() {
       <CardContent>
         <form onSubmit={onSubmit} className="space-y-4">
           <div>
-            <Label htmlFor="name">Display Name</Label>
+            <Label htmlFor="name" className="text-purple-200">
+              Display Name
+            </Label>
             <Input
               id="name"
               value={form.name}
               onChange={onChange('name')}
               placeholder="Your name"
               disabled={loading}
+              className="bg-black/40 border-purple-500/30 text-zinc-100 placeholder:text-zinc-500"
             />
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             <div>
-              <Label htmlFor="date">Birth Date *</Label>
+              <Label htmlFor="date" className="text-purple-200">
+                Birth Date *
+              </Label>
               <Input
                 id="date"
                 type="date"
@@ -140,10 +162,13 @@ export default function ProfileOnboardingForm() {
                 disabled={loading}
                 max={new Date().toISOString().split('T')[0]}
                 min="1900-01-01"
+                className="bg-black/40 border-purple-500/30 text-zinc-100"
               />
             </div>
             <div>
-              <Label htmlFor="time">Birth Time *</Label>
+              <Label htmlFor="time" className="text-purple-200">
+                Birth Time *
+              </Label>
               <Input
                 id="time"
                 type="time"
@@ -151,51 +176,45 @@ export default function ProfileOnboardingForm() {
                 onChange={onChange('time')}
                 required
                 disabled={loading}
+                className="bg-black/40 border-purple-500/30 text-zinc-100"
               />
-              <p className="text-xs text-muted-foreground mt-1">
+              <p className="text-xs text-zinc-400 mt-1">
                 If unknown, noon (12:00) is used as default
               </p>
             </div>
           </div>
 
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <Label htmlFor="latitude">Latitude</Label>
-              <Input
-                id="latitude"
-                value={form.latitude}
-                onChange={onChange('latitude')}
-                placeholder="40.7128 (NYC)"
-                disabled={loading}
-              />
-              <p className="text-xs text-muted-foreground mt-1">Range: -90 to 90</p>
-            </div>
-            <div>
-              <Label htmlFor="longitude">Longitude</Label>
-              <Input
-                id="longitude"
-                value={form.longitude}
-                onChange={onChange('longitude')}
-                placeholder="-74.0060 (NYC)"
-                disabled={loading}
-              />
-              <p className="text-xs text-muted-foreground mt-1">Range: -180 to 180</p>
-            </div>
+          {/* Seamless Birth Location Search with Auto-Geocoding */}
+          <div>
+            <LocationSearch
+              onLocationSelect={onLocationSelect}
+              defaultValue={form.locationName}
+              defaultLatitude={form.latitude ?? undefined}
+              defaultLongitude={form.longitude ?? undefined}
+              placeholder="Search birth city (e.g. Chicago, IL, London, Tokyo)..."
+              label="Birth Location (City & State / Country)"
+              disabled={loading}
+              required
+            />
           </div>
 
           {error && (
-            <div className="p-3 text-sm text-red-600 bg-red-50 border border-red-200 rounded-md">
+            <div className="p-3 text-sm text-red-400 bg-red-950/40 border border-red-500/30 rounded-md">
               {error}
             </div>
           )}
 
           {success && (
-            <div className="p-3 text-sm text-green-600 bg-green-50 border border-green-200 rounded-md">
+            <div className="p-3 text-sm text-emerald-400 bg-emerald-950/40 border border-emerald-500/30 rounded-md">
               ✓ Profile saved successfully! Redirecting...
             </div>
           )}
 
-          <Button type="submit" disabled={loading || success} className="w-full">
+          <Button
+            type="submit"
+            disabled={loading || success}
+            className="w-full bg-purple-600 hover:bg-purple-500 text-white font-medium"
+          >
             {loading ? 'Saving…' : success ? 'Saved!' : 'Save and Continue'}
           </Button>
         </form>

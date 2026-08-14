@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
+import { LocationSearch, type LocationData } from '@/components/onboarding/LocationSearch'
 
 export type RelationChart = {
   name: string
@@ -12,6 +13,7 @@ export type RelationChart = {
   birthTime?: string
   latitude?: string
   longitude?: string
+  locationName?: string
 }
 
 type Props = {
@@ -26,6 +28,7 @@ export function RelationSelector({ onAddRelation, relations, onRemoveRelation }:
   const [birthTime, setBirthTime] = useState('')
   const [latitude, setLatitude] = useState('')
   const [longitude, setLongitude] = useState('')
+  const [locationName, setLocationName] = useState('')
 
   const handleAdd = () => {
     if (name && birthDate) {
@@ -35,12 +38,14 @@ export function RelationSelector({ onAddRelation, relations, onRemoveRelation }:
         birthTime: birthTime || undefined,
         latitude: latitude || undefined,
         longitude: longitude || undefined,
+        locationName: locationName || undefined,
       })
       setName('')
       setBirthDate('')
       setBirthTime('')
       setLatitude('')
       setLongitude('')
+      setLocationName('')
     }
   }
 
@@ -50,7 +55,7 @@ export function RelationSelector({ onAddRelation, relations, onRemoveRelation }:
         <CardTitle>Add Chart to Field</CardTitle>
       </CardHeader>
       <CardContent className="space-y-4">
-        <div className="grid grid-cols-2 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
           <div>
             <Label htmlFor="name">Name</Label>
             <Input
@@ -79,21 +84,19 @@ export function RelationSelector({ onAddRelation, relations, onRemoveRelation }:
             />
           </div>
           <div>
-            <Label htmlFor="latitude">Latitude (optional)</Label>
-            <Input
-              id="latitude"
-              value={latitude}
-              onChange={e => setLatitude(e.target.value)}
-              placeholder="e.g., 34.0522"
-            />
-          </div>
-          <div>
-            <Label htmlFor="longitude">Longitude (optional)</Label>
-            <Input
-              id="longitude"
-              value={longitude}
-              onChange={e => setLongitude(e.target.value)}
-              placeholder="e.g., -118.2437"
+            <LocationSearch
+              label="Birth Location (optional)"
+              defaultValue={locationName}
+              defaultLatitude={latitude ? parseFloat(latitude) : undefined}
+              defaultLongitude={longitude ? parseFloat(longitude) : undefined}
+              onLocationSelect={(loc: LocationData) => {
+                setLatitude(String(loc.latitude))
+                setLongitude(String(loc.longitude))
+                setLocationName(loc.displayName)
+              }}
+              placeholder="Search birth city (e.g. Chicago, IL)..."
+              required={false}
+              compact
             />
           </div>
         </div>
@@ -108,7 +111,8 @@ export function RelationSelector({ onAddRelation, relations, onRemoveRelation }:
               <div key={i} className="flex items-center justify-between p-2 border rounded">
                 <span className="text-sm">
                   {rel.name} ({rel.birthDate}
-                  {rel.birthTime ? ` ${rel.birthTime}` : ''})
+                  {rel.birthTime ? ` ${rel.birthTime}` : ''}
+                  {rel.locationName ? ` · ${rel.locationName}` : ''})
                 </span>
                 <Button variant="ghost" size="sm" onClick={() => onRemoveRelation(i)}>
                   Remove

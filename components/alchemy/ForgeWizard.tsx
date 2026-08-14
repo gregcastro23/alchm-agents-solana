@@ -6,6 +6,7 @@ import Link from 'next/link'
 import { AlchemicalButton } from './AlchemicalButton'
 import { RitualInput } from './RitualInput'
 import { StatChip, type SacredStat } from './StatChip'
+import { LocationSearch, type LocationData } from '@/components/onboarding/LocationSearch'
 import { useOccultStore, type CommunionTier } from '@/lib/store/occult-store'
 import { cn } from '@/lib/utils'
 
@@ -55,6 +56,7 @@ export function ForgeWizard() {
   const [time, setTime] = useState('12:00')
   const [latitude, setLatitude] = useState('40.7128')
   const [longitude, setLongitude] = useState('-74.0060')
+  const [locationName, setLocationName] = useState('New York, NY, USA')
   // Attunement
   const [stats, setStats] = useState<Record<SacredStat, number>>({
     power: 60,
@@ -274,34 +276,20 @@ export function ForgeWizard() {
                   onChange={e => setTime(e.target.value)}
                 />
               </label>
-              <label className="flex flex-col gap-2">
-                <span className="font-label-mono text-[11px] uppercase tracking-widest text-st-primary/70">
-                  Latitude
-                </span>
-                <input
-                  type="number"
-                  step="0.0001"
-                  min={-90}
-                  max={90}
-                  className="input-ritual px-4 py-3 font-label-mono text-label-mono"
-                  value={latitude}
-                  onChange={e => setLatitude(e.target.value)}
+              <div className="md:col-span-2 flex flex-col gap-2">
+                <LocationSearch
+                  label="Spatial Anchor (City & State / Country)"
+                  defaultValue={locationName}
+                  defaultLatitude={latitude ? parseFloat(latitude) : undefined}
+                  defaultLongitude={longitude ? parseFloat(longitude) : undefined}
+                  onLocationSelect={(loc: LocationData) => {
+                    setLatitude(String(loc.latitude))
+                    setLongitude(String(loc.longitude))
+                    setLocationName(loc.displayName)
+                  }}
+                  placeholder="Search vessel inception city (e.g. Paris, Tokyo, New York)..."
                 />
-              </label>
-              <label className="flex flex-col gap-2">
-                <span className="font-label-mono text-[11px] uppercase tracking-widest text-st-primary/70">
-                  Longitude
-                </span>
-                <input
-                  type="number"
-                  step="0.0001"
-                  min={-180}
-                  max={180}
-                  className="input-ritual px-4 py-3 font-label-mono text-label-mono"
-                  value={longitude}
-                  onChange={e => setLongitude(e.target.value)}
-                />
-              </label>
+              </div>
             </div>
           </div>
         )}
