@@ -1,16 +1,16 @@
 #!/usr/bin/env bun
 /**
- * Alchm Agents — Solana Token-2022 ESMS Elemental Mints Deployer
+ * Alchm Agents — Solana Token-2022 ESMS Elemental Mints Deployer & Verifier
  *
- * Programmatically creates and initializes the 4 Elemental Token-2022 Mints:
- * 1. Spirit (Fire)    -> Symbol: SPIRIT    (Decimals: 4)
- * 2. Essence (Water)  -> Symbol: ESSENCE   (Decimals: 4)
- * 3. Matter (Earth)   -> Symbol: MATTER    (Decimals: 4)
- * 4. Substance (Air)  -> Symbol: SUBSTANCE (Decimals: 4)
+ * Programmatically initializes or verifies the 4 deterministic Elemental Token-2022 PDA Mints:
+ * 1. Spirit (Fire)    -> Symbol: SPIRIT    (Decimals: 4) -> PDA: K5kwwomtWYydxJacA7bC5yUEW9TtEuVqBKBoqAWLmhQ
+ * 2. Essence (Water)  -> Symbol: ESSENCE   (Decimals: 4) -> PDA: 3FcpToU7bj4sLD687uecbesEjzjxBfqYn2EcBXJKPaCf
+ * 3. Matter (Earth)   -> Symbol: MATTER    (Decimals: 4) -> PDA: 7naJZozLrknDF3dguAdEWn7Z4MviUkXitjhaAt57Vkb4
+ * 4. Substance (Air)  -> Symbol: SUBSTANCE (Decimals: 4) -> PDA: 6RY6ZG1eJQ2uEvpyA6XK74WyF1MpTYbw97hdhELqDUsa
  *
  * Configures Token-2022 Extensions:
  * - NonTransferable (Soulbound per AAE architecture)
- * - MetadataPointer (Self-referential or Metaplex metadata)
+ * - MetadataPointer (Self-referential metadata pointer to PDA)
  * - PermanentDelegate (Program Authority PDA for sponsored redemption)
  *
  * Usage:
@@ -18,24 +18,15 @@
  *   bun run scripts/deploy-esms-spl-tokens.ts --dry-run
  */
 
+import { AnchorProvider, Program, Wallet } from '@coral-xyz/anchor'
 import {
-  ExtensionType,
   TOKEN_2022_PROGRAM_ID,
-  createInitializeMetadataPointerInstruction,
-  createInitializeMint2Instruction,
-  createInitializeNonTransferableMintInstruction,
-  createInitializePermanentDelegateInstruction,
-  getMintLen,
+  getMint,
+  getMetadataPointerState,
+  getPermanentDelegate,
+  getNonTransferable,
 } from '@solana/spl-token'
-import {
-  Connection,
-  Keypair,
-  PublicKey,
-  SystemProgram,
-  Transaction,
-  clusterApiUrl,
-  sendAndConfirmTransaction,
-} from '@solana/web3.js'
+import { Connection, Keypair, PublicKey, SystemProgram, clusterApiUrl } from '@solana/web3.js'
 import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
@@ -45,6 +36,8 @@ import {
   getEsmsMintAddresses,
   getProgramConfigAddress,
 } from '../lib/solana/esms'
+import AAE_SOLANA_IDL from '../lib/solana/idl/aae_solana.json'
+import type { AaeSolana } from '../lib/solana/idl/aae_solana'
 
 interface TokenConfig {
   axis: 'Spirit' | 'Essence' | 'Matter' | 'Substance'
@@ -117,7 +110,7 @@ async function main() {
     (cluster === 'mainnet-beta' ? clusterApiUrl('mainnet-beta') : clusterApiUrl('devnet'))
 
   console.log(`\n===============================================================`)
-  console.log(`🌌 ALCHM AGENTS — SOLANA TOKEN-2022 ELEMENTAL MINTS DEPLOYER`)
+  console.log(`🌌 ALCHM AGENTS — SOLANA TOKEN-2022 ESMS MINTS INITIALIZER`)
   console.log(`===============================================================`)
   console.log(`Cluster:           ${cluster}`)
   console.log(`RPC Endpoint:      ${rpcUrl}`)
@@ -128,7 +121,7 @@ async function main() {
   )
 
   const payer = await resolveKeypair()
-  console.log(`Deployer Wallet:   ${payer.publicKey.toBase58()}`)
+  console.log(`Admin Wallet:      ${payer.publicKey.toBase58()}`)
 
   const programConfigPda = getProgramConfigAddress(AAE_SOLANA_PROGRAM_ID)
   console.log(`Program Config PDA:${programConfigPda.toBase58()}\n`)
@@ -152,91 +145,95 @@ async function main() {
     explorerUrl: string
   }> = []
 
+  const provider = new AnchorProvider(connection, new Wallet(payer), {
+    commitment: 'confirmed',
+    preflightCommitment: 'confirmed',
+  })
+  const program = new Program<AaeSolana>(AAE_SOLANA_IDL as unknown as AaeSolana, provider)
+
   for (let i = 0; i < ELEMENTAL_TOKENS.length; i++) {
     const config = ELEMENTAL_TOKENS[i]
-    console.log(`▶ Initializing ${config.name} (${config.symbol}) [${config.element}]...`)
-
-    // Extensions: NonTransferable + MetadataPointer + PermanentDelegate
-    const extensions = [
-      ExtensionType.NonTransferable,
-      ExtensionType.MetadataPointer,
-      ExtensionType.PermanentDelegate,
-    ]
-    const mintLen = getMintLen(extensions)
+    const pda = pdaMints[i]
+    console.log(
+      `▶ Verifying ${config.name} (${config.symbol}) [${config.element}] at ${pda.toBase58()}...`
+    )
 
     if (isDryRun) {
-      const mockMint = Keypair.generate()
       results.push({
         axis: config.axis,
         symbol: config.symbol,
         name: config.name,
-        mintAddress: pdaMints[i].toBase58(),
-        status: 'Simulated (Dry-Run)',
-        explorerUrl: `https://explorer.solana.com/address/${pdaMints[i].toBase58()}?cluster=${cluster}`,
+        mintAddress: pda.toBase58(),
+        status: 'Deterministic PDA Verified (Dry-Run)',
+        explorerUrl: `https://explorer.solana.com/address/${pda.toBase58()}?cluster=${cluster}`,
       })
-      console.log(`  ✓ Simulation OK (Rent space: ${mintLen} bytes)`)
+      console.log(`  ✓ PDA Derivation OK (4 Decimals)`)
       continue
     }
 
     try {
-      const mintKeypair = Keypair.generate()
-      const rent = await connection.getMinimumBalanceForRentExemption(mintLen)
+      const accountInfo = await connection.getAccountInfo(pda, 'confirmed')
 
-      const tx = new Transaction().add(
-        SystemProgram.createAccount({
-          fromPubkey: payer.publicKey,
-          newAccountPubkey: mintKeypair.publicKey,
-          space: mintLen,
-          lamports: rent,
-          programId: TOKEN_2022_PROGRAM_ID,
-        }),
-        createInitializeNonTransferableMintInstruction(
-          mintKeypair.publicKey,
-          TOKEN_2022_PROGRAM_ID
-        ),
-        createInitializePermanentDelegateInstruction(
-          mintKeypair.publicKey,
-          programConfigPda,
-          TOKEN_2022_PROGRAM_ID
-        ),
-        createInitializeMetadataPointerInstruction(
-          mintKeypair.publicKey,
-          payer.publicKey, // authority
-          mintKeypair.publicKey, // metadata address pointer
-          TOKEN_2022_PROGRAM_ID
-        ),
-        createInitializeMint2Instruction(
-          mintKeypair.publicKey,
-          config.decimals,
-          payer.publicKey, // mint authority
-          payer.publicKey, // freeze authority
-          TOKEN_2022_PROGRAM_ID
+      if (accountInfo) {
+        const mintData = await getMint(connection, pda, 'confirmed', TOKEN_2022_PROGRAM_ID)
+        const isNonTransferable = Boolean(getNonTransferable(mintData))
+        const permanentDelegate = getPermanentDelegate(mintData)
+        const metadataPointer = getMetadataPointerState(mintData)
+
+        results.push({
+          axis: config.axis,
+          symbol: config.symbol,
+          name: config.name,
+          mintAddress: pda.toBase58(),
+          status: 'Initialized on-chain (Token-2022)',
+          explorerUrl: `https://explorer.solana.com/address/${pda.toBase58()}?cluster=${cluster}`,
+        })
+        console.log(`  ✓ Mint Already Initialized: ${pda.toBase58()}`)
+        console.log(`    - Non-Transferable: ${isNonTransferable}`)
+        console.log(`    - Permanent Delegate: ${permanentDelegate?.delegate.toBase58() ?? 'None'}`)
+        console.log(
+          `    - Metadata Pointer: ${metadataPointer?.metadataAddress?.toBase58() ?? 'None'}\n`
         )
-      )
+      } else {
+        console.log(`  ℹ Mint not yet initialized. Initializing via AAE Anchor program...`)
+        const mintAccounts = {
+          spiritMint: pdaMints[0],
+          essenceMint: pdaMints[1],
+          matterMint: pdaMints[2],
+          substanceMint: pdaMints[3],
+        }
 
-      const sig = await sendAndConfirmTransaction(connection, tx, [payer, mintKeypair], {
-        commitment: 'confirmed',
-      })
+        const tx = await program.methods
+          .initializeEsmsMints()
+          .accounts({
+            programConfig: programConfigPda,
+            admin: payer.publicKey,
+            ...mintAccounts,
+            tokenProgram: TOKEN_2022_PROGRAM_ID,
+            systemProgram: SystemProgram.programId,
+          })
+          .rpc()
 
-      results.push({
-        axis: config.axis,
-        symbol: config.symbol,
-        name: config.name,
-        mintAddress: mintKeypair.publicKey.toBase58(),
-        status: `Success (${sig.slice(0, 8)}...)`,
-        explorerUrl: `https://explorer.solana.com/address/${mintKeypair.publicKey.toBase58()}?cluster=${cluster}`,
-      })
-      console.log(`  ✓ Mint Created: ${mintKeypair.publicKey.toBase58()}`)
-      console.log(`  ✓ Tx Signature: ${sig}\n`)
+        results.push({
+          axis: config.axis,
+          symbol: config.symbol,
+          name: config.name,
+          mintAddress: pda.toBase58(),
+          status: `Initialized in Tx (${tx.slice(0, 8)}...)`,
+          explorerUrl: `https://explorer.solana.com/address/${pda.toBase58()}?cluster=${cluster}`,
+        })
+        console.log(`  ✓ Successfully Initialized PDA Mint: ${pda.toBase58()}`)
+        console.log(`  ✓ Tx Signature: ${tx}\n`)
+      }
     } catch (err) {
-      console.error(`  ✗ Error creating ${config.name}:`, err)
+      console.error(`  ✗ Error checking/initializing ${config.name}:`, err)
       results.push({
         axis: config.axis,
         symbol: config.symbol,
         name: config.name,
-        mintAddress: 'FAILED',
+        mintAddress: pda.toBase58(),
         status: `Error: ${err instanceof Error ? err.message : String(err)}`,
-        explorerUrl: '',
+        explorerUrl: `https://explorer.solana.com/address/${pda.toBase58()}?cluster=${cluster}`,
       })
     }
   }
@@ -249,12 +246,19 @@ async function main() {
       Axis: r.axis,
       Symbol: r.symbol,
       Name: r.name,
-      'Mint Address': r.mintAddress,
+      'Mint Address (PDA)': r.mintAddress,
       Status: r.status,
     }))
   )
+
+  console.log(`\n📋 Environment Variables for WhatToEatNext & AlchmAgents:`)
+  console.log(`NEXT_PUBLIC_ESMS_SPL_MINT_SPIRIT=${pdaMints[0].toBase58()}`)
+  console.log(`NEXT_PUBLIC_ESMS_SPL_MINT_ESSENCE=${pdaMints[1].toBase58()}`)
+  console.log(`NEXT_PUBLIC_ESMS_SPL_MINT_MATTER=${pdaMints[2].toBase58()}`)
+  console.log(`NEXT_PUBLIC_ESMS_SPL_MINT_SUBSTANCE=${pdaMints[3].toBase58()}`)
+
   console.log(`\n💡 Crucial Solana DEX & Wallet Integration Rules:`)
-  console.log(`1. On Solana, DEX aggregators (Jupiter, Raydium) index by Mint Address.`)
+  console.log(`1. On Solana, DEX aggregators (Jupiter, Raydium) index strictly by Mint Address.`)
   console.log(`2. Using distinct symbols (SPIRIT, ESSENCE, MATTER, SUBSTANCE) prevents`)
   console.log(`   Phantom & Solflare automated multi-token collision fraud warnings.`)
   console.log(`3. 4 Decimals preserve exact parity with off-chain Decimal(12,4) balances.\n`)

@@ -28,6 +28,14 @@ export function getEsmsMintAddresses(programId = AAE_SOLANA_PROGRAM_ID): PublicK
   )
 }
 
+/** Pinned deterministic Devnet ESMS PDA mint addresses derived from AAE_SOLANA_PROGRAM_ID */
+export const ESMS_DEVNET_MINTS = {
+  Spirit: new PublicKey('K5kwwomtWYydxJacA7bC5yUEW9TtEuVqBKBoqAWLmhQ'),
+  Essence: new PublicKey('3FcpToU7bj4sLD687uecbesEjzjxBfqYn2EcBXJKPaCf'),
+  Matter: new PublicKey('7naJZozLrknDF3dguAdEWn7Z4MviUkXitjhaAt57Vkb4'),
+  Substance: new PublicKey('6RY6ZG1eJQ2uEvpyA6XK74WyF1MpTYbw97hdhELqDUsa'),
+} as const
+
 export function getReceiptAddress(
   kind: 'claim' | 'order',
   id: Uint8Array,
