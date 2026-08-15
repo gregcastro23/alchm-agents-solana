@@ -449,8 +449,24 @@
 .metric-pulse {
   animation: metric-pulse 2s infinite;
 }
+@keyframes marquee-continuous {
+  0% {
+    transform: translateX(0%);
+  }
+  100% {
+    transform: translateX(-50%);
+  }
+}
 .ticker-animation {
   animation: ticker 20s linear infinite;
+}
+.ticker-continuous {
+  display: flex;
+  width: max-content;
+  animation: marquee-continuous 30s linear infinite;
+}
+.ticker-continuous:hover {
+  animation-play-state: paused;
 }
 .dot-typing {
   display: inline-block;

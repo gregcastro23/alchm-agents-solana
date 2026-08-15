@@ -47,6 +47,7 @@ import {
 import { ALCHM_DESKTOP_DOWNLOAD_LABEL, openDesktopAppDownload } from '@/lib/desktop-download'
 import { startGoogleSignIn, signOutLocal } from '@/lib/auth-client'
 import { WorldIdButton } from '@/components/world/WorldIdButton'
+import { LivePriceIndexTicker } from '@/components/economy/LivePriceIndexTicker'
 
 // ============================================================================
 // STATIC CONFIG
@@ -630,6 +631,9 @@ export default function LandingPage() {
       </div>
 
       <main className="relative z-10 pt-32 pb-24 px-6 md:px-16 max-w-[1440px] mx-auto space-y-24">
+        {/* Solana Live Price Index Marquee Ticker */}
+        <LivePriceIndexTicker variant="ribbon" className="-mx-6 md:-mx-16 -mt-12 mb-8 shadow-xl" />
+
         {/* ============================ HERO ============================ */}
         <section className="grid grid-cols-12 gap-8 items-center">
           <div className="col-span-12 lg:col-span-7 flex flex-col justify-center">
@@ -1187,6 +1191,9 @@ export default function LandingPage() {
               </button>
             </div>
           </div>
+
+          {/* Instantaneous Elemental Price Index & Solana Matrix */}
+          <LivePriceIndexTicker variant="matrix" className="mt-8" />
         </section>
 
         {/* ======================= ON-CHAIN PROOF ======================= */}
