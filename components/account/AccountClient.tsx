@@ -62,70 +62,52 @@ export function AccountClient({ tier, hasActiveSub, premiumViaKitchen, email, na
         <h1 className="text-2xl font-bold">Account</h1>
         <p className="mt-1 text-sm text-white/50">{name || email}</p>
 
-        {/* Subscription */}
+        {/* Account & Token Economy */}
         <section className="mt-6 rounded-xl border border-white/10 bg-white/5 p-5">
           <div className="flex items-center justify-between">
             <div>
-              <div className="text-xs uppercase tracking-wide text-white/40">Plan</div>
-              <div className="text-lg font-semibold capitalize">
-                {tier === 'master' ? 'Master (full access)' : tier}
+              <div className="text-xs uppercase tracking-wide text-amber-300/70">
+                Account Status
+              </div>
+              <div className="text-lg font-semibold text-white">
+                {tier === 'master' ? 'Administrator (Full Access)' : 'Active Account Holder'}
               </div>
             </div>
-            <span
-              className={
-                isPremium
-                  ? 'rounded-full bg-purple-600/30 px-3 py-1 text-xs text-purple-200'
-                  : 'rounded-full bg-white/10 px-3 py-1 text-xs text-white/60'
-              }
-            >
-              {isPremium ? 'Premium' : 'Free'}
+            <span className="rounded-full bg-amber-500/20 border border-amber-500/30 px-3 py-1 text-xs text-amber-300">
+              {tier === 'master' ? 'Admin' : 'Token Enabled'}
             </span>
           </div>
 
-          {!isPremium ? (
-            <div className="mt-4">
-              <p className="text-sm text-white/60">
-                Upgrade to Alchemist to unlock premium models — Claude Sonnet/Opus and GPT-5.x —
-                across agent chat.
-              </p>
-              <div className="mt-3 flex flex-wrap items-center gap-2">
-                <Button disabled={busy} onClick={() => startCheckout('monthly')}>
-                  Upgrade — Monthly
+          <div className="mt-4 space-y-3">
+            <p className="text-sm text-white/70">
+              Your account is active and connected to the ESMS Token Economy. You can hold balances
+              across Spirit, Essence, Matter, and Substance, claim daily cosmic yield, and spend
+              tokens at the Bazaar.
+            </p>
+            <div className="flex flex-wrap items-center gap-2 pt-2">
+              <Link href="/economy">
+                <Button className="bg-gradient-to-r from-amber-500 to-yellow-500 text-zinc-950 font-semibold hover:from-amber-400 hover:to-yellow-400 text-xs">
+                  ESMS Treasury (/economy)
                 </Button>
-                <Button variant="outline" disabled={busy} onClick={() => startCheckout('yearly')}>
-                  Yearly
+              </Link>
+              <Link href="/shop">
+                <Button
+                  variant="outline"
+                  className="border-amber-500/30 text-amber-300 hover:bg-amber-500/10 text-xs"
+                >
+                  ESMS Bazaar (/shop)
                 </Button>
-                <Link href="/pricing" className="self-center text-xs text-white/50 underline">
-                  Compare plans
-                </Link>
-              </div>
+              </Link>
             </div>
-          ) : (
-            <div className="mt-4">
-              {hasActiveSub ? (
-                <Button variant="outline" disabled={busy} onClick={openPortal}>
-                  Manage billing
-                </Button>
-              ) : premiumViaKitchen ? (
-                <p className="text-sm text-white/60">
-                  Premium via your alchm.kitchen subscription.{' '}
-                  <a href="https://alchm.kitchen/account" className="text-purple-300 underline">
-                    Manage on alchm.kitchen →
-                  </a>
-                </p>
-              ) : (
-                <p className="text-sm text-white/60">Full access granted by your role.</p>
-              )}
-            </div>
-          )}
+          </div>
         </section>
 
         {/* BYOK */}
         <section className="mt-6 rounded-xl border border-white/10 bg-white/5 p-5">
           <h2 className="text-lg font-semibold">Connect your own AI keys</h2>
           <p className="mt-1 text-sm text-white/60">
-            Bring your own OpenAI or Anthropic API key to run premium models on your own account.
-            Optional — a subscription also unlocks premium models.
+            Bring your own OpenAI, Anthropic, or Google API keys to run custom models directly on
+            your account, or power alchemical actions via your ESMS token balance.
           </p>
           <div className="mt-4">
             <ByokPanel />

@@ -84,7 +84,7 @@ export const SHOP_CATALOG: ShopItem[] = [
     kind: 'tokens',
     title: 'Sovereign Council Reservoir',
     blurb:
-      '1600 Cosmic ESMS Tokens (400 Spirit, 400 Essence, 400 Matter, 400 Substance). Premium Tier.',
+      '1600 Cosmic ESMS Tokens (400 Spirit, 400 Essence, 400 Matter, 400 Substance). Grand Sovereign Allocation.',
     icon: 'stars',
     accent: 'matter',
     esms: basket(400, 400, 400, 400),

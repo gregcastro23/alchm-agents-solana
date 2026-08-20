@@ -1473,30 +1473,56 @@ async def multi_agent_chat(request: schemas.MultiAgentChatRequest, db: Session =
     response_model_exclude_none=True,
 )
 async def generate_cosmic_recipe(request: schemas.CosmicRecipeRequest):
+    # 1. Early cache check (returns <2ms on identical request)
+    early_key = recipe_generation.stable_cache_key(request, catalog_context=None)
+    cached = recipe_generation.get_cached_recipe(early_key)
+    if cached:
+        print(f"cosmic_recipe_early_cache_hit recipeId={cached.id}", flush=True)
+        return cached
+
+    # 2. Resolve model tier with fast default
     recipe_tier = _resolve_tier(
-        request.modelTier or os.getenv("COSMIC_RECIPE_MODEL_TIER", "primary")
+        request.modelTier or os.getenv("COSMIC_RECIPE_MODEL_TIER", "cheap_fast")
     )
     anthropic_model = ANTHROPIC_TIER_MODEL.get(recipe_tier)
     catalog_context = None
     catalog_error = None
+
+    # 3. Bounded MCP catalog lookup (strict 1.5s timeout to prevent latency regressions)
     if _env_enabled("COSMIC_RECIPE_USE_MCP_CATALOG", True) and alchm_mcp.is_enabled():
+        mcp_timeout = float(os.getenv("COSMIC_RECIPE_MCP_TIMEOUT_SECONDS", "1.5"))
         try:
-            catalog_context = await alchm_mcp.generate_cosmic_recipe(
-                prompt=request.prompt,
-                cuisine=request.cuisine,
-                dietary=_dietary_from_context({"dietary": request.dietary}, request.dietPreference),
-                dominant_element=request.dominantElement,
+            catalog_context = await asyncio.wait_for(
+                alchm_mcp.generate_cosmic_recipe(
+                    prompt=request.prompt,
+                    cuisine=request.cuisine,
+                    dietary=_dietary_from_context({"dietary": request.dietary}, request.dietPreference),
+                    dominant_element=request.dominantElement,
+                ),
+                timeout=mcp_timeout,
             )
         except Exception as exc:
             catalog_error = str(exc)[:240]
             print(f"cosmic_recipe_mcp_catalog_unavailable error={catalog_error}", flush=True)
 
+    if catalog_context:
+        mcp_key = recipe_generation.stable_cache_key(request, catalog_context=catalog_context)
+        mcp_cached = recipe_generation.get_cached_recipe(mcp_key)
+        if mcp_cached:
+            print(f"cosmic_recipe_mcp_cache_hit recipeId={mcp_cached.id}", flush=True)
+            return mcp_cached
+
+    # 4. Generate recipe via provider chain
     recipe = await recipe_generation.generate_cosmic_recipe(
         request=request,
         tier=recipe_tier,
         anthropic_model=anthropic_model,
         catalog_context=catalog_context,
     )
+
+    # Seed early key so repeat queries without MCP also hit
+    recipe_generation.set_cached_recipe(early_key, recipe)
+
     emitting_agent = getattr(request, "agentId", None) or "alchemical-chef"
     emit_feed_event(
         emitting_agent,

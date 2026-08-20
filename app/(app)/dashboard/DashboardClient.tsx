@@ -156,48 +156,72 @@ export function DashboardClient({ user }: DashboardClientProps) {
 
       {/* Main Dashboard */}
       <div className="container relative z-10 mx-auto px-4 py-8 space-y-8">
-        {/* Subscription Status */}
-        <Card className="bg-black/40 backdrop-blur-md border-purple-500/30 text-white shadow-[0_0_30px_rgba(139,92,246,0.1)]">
+        {/* Account & Token Economy Status */}
+        <Card className="bg-black/40 backdrop-blur-md border-amber-500/30 text-white shadow-[0_0_30px_rgba(245,158,11,0.1)]">
           <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-xl font-bold">
-              <Crown className="h-6 w-6 text-yellow-400" />
-              Consciousness Tier: {user.tier.charAt(0).toUpperCase() + user.tier.slice(1)}
+            <CardTitle className="flex items-center gap-2 text-xl font-bold text-amber-200">
+              <Crown className="h-6 w-6 text-amber-400" />
+              Account Status: {user.tier === 'master' ? 'Administrator' : 'Active Account Holder'}
             </CardTitle>
-            <CardDescription className="text-purple-200/60">
-              Your current consciousness evolution access level
+            <CardDescription className="text-amber-200/60">
+              Connected to the ESMS Token Economy & Treasury
             </CardDescription>
           </CardHeader>
           <CardContent>
             <div className="space-y-4">
               <div className="flex flex-wrap gap-2">
-                {getTierFeatures(user.tier).map(feature => (
-                  <Badge key={feature} variant="secondary">
-                    {feature}
-                  </Badge>
-                ))}
+                <Badge
+                  variant="secondary"
+                  className="bg-amber-500/20 text-amber-300 border-amber-500/30"
+                >
+                  360+ Agents Unlocked
+                </Badge>
+                <Badge
+                  variant="secondary"
+                  className="bg-amber-500/20 text-amber-300 border-amber-500/30"
+                >
+                  ESMS Treasury Active
+                </Badge>
+                <Badge
+                  variant="secondary"
+                  className="bg-amber-500/20 text-amber-300 border-amber-500/30"
+                >
+                  Daily Cosmic Yield
+                </Badge>
+                <Badge
+                  variant="secondary"
+                  className="bg-amber-500/20 text-amber-300 border-amber-500/30"
+                >
+                  Bazaar & Apothecary Access
+                </Badge>
               </div>
 
-              {user.tier === 'free' && (
-                <div className="p-4 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/20 dark:to-blue-950/20 rounded-lg border border-purple-200 dark:border-purple-800">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h4 className="font-medium text-purple-900 dark:text-purple-100">
-                        Unlock Full Consciousness Evolution
-                      </h4>
-                      <p className="text-sm text-purple-700 dark:text-purple-300">
-                        Access all 40 consciousness masters and unlimited evolution tracking
-                      </p>
-                    </div>
+              <div className="p-4 bg-gradient-to-r from-amber-950/30 to-purple-950/30 rounded-lg border border-amber-500/20">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <h4 className="font-medium text-amber-100">Manage Your Cosmic ESMS Balances</h4>
+                    <p className="text-sm text-zinc-300">
+                      Claim daily token yields, review transaction history, or spend at the Bazaar.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-2">
                     <Button
-                      className="bg-purple-600 hover:bg-purple-700"
-                      onClick={() => router.push('/upgrade')}
+                      className="bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-400 hover:to-yellow-400 text-zinc-950 font-semibold"
+                      onClick={() => router.push('/economy')}
                     >
-                      <Star className="h-4 w-4 mr-1" />
-                      Upgrade
+                      <Sparkles className="h-4 w-4 mr-1" />
+                      Treasury
+                    </Button>
+                    <Button
+                      variant="outline"
+                      className="border-amber-500/30 text-amber-300 hover:bg-amber-500/10"
+                      onClick={() => router.push('/shop')}
+                    >
+                      Bazaar
                     </Button>
                   </div>
                 </div>
-              )}
+              </div>
             </div>
           </CardContent>
         </Card>

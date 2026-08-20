@@ -138,9 +138,9 @@ const tourCards = [
   },
   {
     icon: Crown,
-    title: 'Account & Premium',
+    title: 'Account & Treasury',
     description:
-      'Manage your subscription, unlock premium models (Claude Sonnet/Opus, GPT-5.x), and connect your own OpenAI or Anthropic key.',
+      'Manage your ESMS Token Treasury, claim daily yields, spend at the Bazaar, and connect direct AI keys.',
     href: '/account',
     cta: 'Manage Account',
   },

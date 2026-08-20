@@ -25,13 +25,7 @@ export async function POST(req: Request) {
     let normalizedTier: 'base' | 'premium' = 'base'
     if (tier === 'premium') {
       const paTier = await getPaTier(session.user.id)
-      if (paTier === 'free') {
-        return NextResponse.json(
-          { error: 'Premium unlock requires an active subscription' },
-          { status: 403 }
-        )
-      }
-      normalizedTier = 'premium'
+      normalizedTier = paTier === 'free' ? 'base' : 'premium'
     }
 
     // Clamp the expiry server-side; the caller may shorten it but never extend it.

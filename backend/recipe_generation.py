@@ -18,7 +18,7 @@ import schemas
 
 COSMIC_RECIPE_AGENT_ID = "alchemical-chef"
 COSMIC_RECIPE_CACHE_TTL_SECONDS = float(os.getenv("COSMIC_RECIPE_CACHE_TTL_SECONDS", "60"))
-COSMIC_RECIPE_MAX_TOKENS = int(os.getenv("COSMIC_RECIPE_MAX_TOKENS", "4096"))
+COSMIC_RECIPE_MAX_TOKENS = int(os.getenv("COSMIC_RECIPE_MAX_TOKENS", "2048"))
 
 _CACHE: Dict[str, Tuple[float, schemas.CosmicRecipeResponse]] = {}
 _CACHE_LOCK = threading.Lock()
@@ -29,22 +29,31 @@ def clear_recipe_cache() -> None:
         _CACHE.clear()
 
 
-def _stable_cache_key(
+def stable_cache_key(
     request: schemas.CosmicRecipeRequest,
     catalog_context: Optional[Dict[str, Any]] = None,
 ) -> str:
     payload = request.model_dump(
         mode="json",
         exclude_none=True,
-        exclude={"userId", "modelTier"},
+        exclude={"userId", "modelTier", "agentId"},
     )
+    # Exclude extra keys if any
+    payload.pop("tier", None)
     if catalog_context:
         payload["catalogContext"] = catalog_context
     raw = json.dumps(payload, sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 
-def _get_cached_recipe(cache_key: str) -> Optional[schemas.CosmicRecipeResponse]:
+def _stable_cache_key(
+    request: schemas.CosmicRecipeRequest,
+    catalog_context: Optional[Dict[str, Any]] = None,
+) -> str:
+    return stable_cache_key(request, catalog_context)
+
+
+def get_cached_recipe(cache_key: str) -> Optional[schemas.CosmicRecipeResponse]:
     now = time.time()
     with _CACHE_LOCK:
         cached = _CACHE.get(cache_key)
@@ -57,7 +66,11 @@ def _get_cached_recipe(cache_key: str) -> Optional[schemas.CosmicRecipeResponse]
         return recipe.model_copy(deep=True)
 
 
-def _set_cached_recipe(cache_key: str, recipe: schemas.CosmicRecipeResponse) -> None:
+def _get_cached_recipe(cache_key: str) -> Optional[schemas.CosmicRecipeResponse]:
+    return get_cached_recipe(cache_key)
+
+
+def set_cached_recipe(cache_key: str, recipe: schemas.CosmicRecipeResponse) -> None:
     if COSMIC_RECIPE_CACHE_TTL_SECONDS <= 0:
         return
     with _CACHE_LOCK:
@@ -65,6 +78,10 @@ def _set_cached_recipe(cache_key: str, recipe: schemas.CosmicRecipeResponse) -> 
             time.time() + COSMIC_RECIPE_CACHE_TTL_SECONDS,
             recipe.model_copy(deep=True),
         )
+
+
+def _set_cached_recipe(cache_key: str, recipe: schemas.CosmicRecipeResponse) -> None:
+    set_cached_recipe(cache_key, recipe)
 
 
 def _compact_recipe_schema() -> str:
@@ -176,22 +193,33 @@ async def generate_cosmic_recipe(
     anthropic_model: Optional[str],
     catalog_context: Optional[Dict[str, Any]] = None,
 ) -> schemas.CosmicRecipeResponse:
-    cache_key = _stable_cache_key(request, catalog_context)
-    cached = _get_cached_recipe(cache_key)
+    t_start = time.perf_counter()
+    cache_key = stable_cache_key(request, catalog_context)
+    cached = get_cached_recipe(cache_key)
     if cached:
+        t_total_ms = (time.perf_counter() - t_start) * 1000.0
+        print(
+            f"recipe_waterfall hit=cache tier={tier} total_ms={t_total_ms:.1f} recipeId={cached.id}",
+            flush=True,
+        )
         return cached
 
+    t_chain_start = time.perf_counter()
     chain = providers.build_chain(tier, anthropic_model)
     persona_block = _build_persona_block(request)
     schema = _json_object_schema()
+    t_prompt_compile_ms = (time.perf_counter() - t_chain_start) * 1000.0
+
     last_error = "model did not return a valid recipe"
 
     for attempt in range(2):
+        t_att_start = time.perf_counter()
         user_message = _build_recipe_prompt(
             request,
             catalog_context=catalog_context,
             validation_feedback=last_error if attempt > 0 else None,
         )
+        t_llm_start = time.perf_counter()
         result = await providers.run_chain(
             chain=chain,
             persona_block=persona_block,
@@ -205,22 +233,42 @@ async def generate_cosmic_recipe(
             temperature=0.35,
             structured_schema=schema,
         )
+        t_llm_ms = (time.perf_counter() - t_llm_start) * 1000.0
 
         if result is None:
             last_error = "all configured recipe providers were unavailable"
             break
 
+        t_val_start = time.perf_counter()
         try:
             recipe = _parse_recipe(result.text)
-            _set_cached_recipe(cache_key, recipe)
+            set_cached_recipe(cache_key, recipe)
+            t_val_ms = (time.perf_counter() - t_val_start) * 1000.0
+            t_total_ms = (time.perf_counter() - t_start) * 1000.0
+            print(
+                f"recipe_waterfall hit=miss tier={tier} attempt={attempt + 1} "
+                f"provider={result.provider} model={result.model} "
+                f"prompt_compile_ms={t_prompt_compile_ms:.1f} llm_ms={t_llm_ms:.1f} "
+                f"validate_ms={t_val_ms:.1f} total_ms={t_total_ms:.1f} "
+                f"in_tok={result.input_tokens or 0} out_tok={result.output_tokens or 0} "
+                f"recipeId={recipe.id}",
+                flush=True,
+            )
             return recipe
         except Exception as exc:
+            t_val_ms = (time.perf_counter() - t_val_start) * 1000.0
             last_error = _summarize_validation_error(exc, result.text or "")
             print(
-                f"recipe_validation_failed attempt={attempt + 1} tier={tier} error={last_error[:400]}",
+                f"recipe_validation_failed attempt={attempt + 1} tier={tier} "
+                f"validate_ms={t_val_ms:.1f} error={last_error[:400]}",
                 flush=True,
             )
 
+    t_total_ms = (time.perf_counter() - t_start) * 1000.0
+    print(
+        f"recipe_waterfall hit=error tier={tier} total_ms={t_total_ms:.1f} error={last_error[:200]}",
+        flush=True,
+    )
     raise HTTPException(
         status_code=502,
         detail={

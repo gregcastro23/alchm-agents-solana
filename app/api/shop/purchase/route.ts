@@ -63,7 +63,7 @@ export async function POST(request: Request) {
     // Digital goods are priced in ESMS — route fiat buyers to the token store.
     return NextResponse.json({
       mode: 'topup',
-      url: `/upgrade?reason=shop&item=${encodeURIComponent(item.id)}`,
+      url: `/shop?highlight=${encodeURIComponent(item.id)}`,
       itemId: item.id,
     })
   }

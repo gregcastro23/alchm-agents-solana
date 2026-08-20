@@ -401,6 +401,113 @@ async def test_generate_recipe_retries_then_returns_valid_payload(monkeypatch):
     assert "Previous output failed validation" in calls[1]["user_message"]
 
 
+@pytest.mark.asyncio
+async def test_generate_recipe_early_cache_hit(monkeypatch):
+    recipe_generation.clear_recipe_cache()
+    calls = []
+
+    async def fake_run_chain(**kwargs):
+        calls.append(kwargs)
+        return providers.CallResult(
+            text=json.dumps(_sample_cosmic_recipe()),
+            provider="groq",
+            model="fake-model",
+        )
+
+    monkeypatch.setattr(providers, "run_chain", fake_run_chain)
+
+    payload = {
+        "prompt": "restorative fire broth",
+        "dominantElement": "Fire",
+        "cuisine": "Mediterranean",
+        "tier": "free",
+        "userId": "user-123",
+    }
+
+    # First call: cache miss -> calls LLM chain once
+    res1 = client.post("/api/generate-recipe", json=payload)
+    assert res1.status_code == 200
+    assert len(calls) == 1
+
+    # Second call with same parameters but different userId: cache hit -> 0 extra LLM calls
+    payload2 = dict(payload)
+    payload2["userId"] = "user-456"
+    res2 = client.post("/api/generate-recipe", json=payload2)
+    assert res2.status_code == 200
+    assert len(calls) == 1
+    assert res2.json()["id"] == res1.json()["id"]
+
+
+@pytest.mark.asyncio
+async def test_generate_recipe_tier_free_alias(monkeypatch):
+    recipe_generation.clear_recipe_cache()
+    captured_tier = []
+
+    async def fake_run_chain(**kwargs):
+        captured_tier.append(kwargs.get("tier"))
+        return providers.CallResult(
+            text=json.dumps(_sample_cosmic_recipe()),
+            provider="groq",
+            model="fake-model",
+        )
+
+    monkeypatch.setattr(providers, "run_chain", fake_run_chain)
+
+    # WTEN sends "tier": "free"
+    response = client.post(
+        "/api/generate-recipe",
+        json={
+            "prompt": "astrological nourishment",
+            "tier": "free",
+            "dominantElement": "Water",
+        },
+    )
+
+    assert response.status_code == 200
+    assert len(captured_tier) == 1
+    # Must resolve to "free" tier rather than falling back to "primary"
+    assert captured_tier[0] == "free"
+
+
+@pytest.mark.asyncio
+async def test_generate_recipe_coerces_messy_llm_output(monkeypatch):
+    recipe_generation.clear_recipe_cache()
+    calls = []
+
+    # Messy LLM output with string numbers, alias category "Main Course", and difficulty "easy"
+    messy_recipe = _sample_cosmic_recipe()
+    messy_recipe["yields"] = "4 servings"
+    messy_recipe["total_time"] = "35 minutes"
+    messy_recipe["category"] = "Main Course"
+    messy_recipe["difficulty"] = "easy"
+    messy_recipe["steps"][0]["time_minutes"] = "12 min"
+
+    async def fake_run_chain(**kwargs):
+        calls.append(kwargs)
+        return providers.CallResult(
+            text=json.dumps(messy_recipe),
+            provider="groq",
+            model="fake-model",
+        )
+
+    monkeypatch.setattr(providers, "run_chain", fake_run_chain)
+
+    response = client.post(
+        "/api/generate-recipe",
+        json={"prompt": "quick lunch", "dominantElement": "Earth"},
+    )
+
+    assert response.status_code == 200
+    data = response.json()
+    # Must coerce on Attempt 1 without triggering a retry loop
+    assert len(calls) == 1
+    assert data["yields"] == 4.0
+    assert data["total_time"] == 35.0
+    assert data["category"] == "Dinner"
+    assert data["difficulty"] == "beginner"
+    assert data["steps"][0]["time_minutes"] == 12.0
+
+
 def test_philosophers_stone_positions_get():
     response = client.get("/api/philosophers-stone/positions?year=2026&month=5&day=21&hour=8&minute=0")
     assert response.status_code == 200

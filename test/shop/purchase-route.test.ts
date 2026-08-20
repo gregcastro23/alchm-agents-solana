@@ -85,7 +85,7 @@ describe('POST /api/shop/purchase', () => {
     const res = await POST(req({ itemId: 'unlock-philosophers-stone', payWith: 'card' }))
     const data = await res.json()
     expect(data.mode).toBe('topup')
-    expect(data.url).toContain('/upgrade')
+    expect(data.url).toContain('/shop')
     expect(redeemEsmsFor).not.toHaveBeenCalled()
   })
 
