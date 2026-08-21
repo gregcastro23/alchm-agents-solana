@@ -213,7 +213,6 @@ async def generate_cosmic_recipe(
     last_error = "model did not return a valid recipe"
 
     for attempt in range(2):
-        t_att_start = time.perf_counter()
         user_message = _build_recipe_prompt(
             request,
             catalog_context=catalog_context,
