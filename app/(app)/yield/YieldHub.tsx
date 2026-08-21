@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import {
   Sparkles,
   Droplets,
@@ -244,12 +245,26 @@ export default function YieldHub({ user }: { user: YieldUser | null }) {
             <Sparkles className="w-3.5 h-3.5" /> Alchm Yield Hub
           </div>
           <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-zinc-100 via-purple-200 to-amber-200">
-            Claim your cosmic yield
+            Claim your ESMS yield
           </h1>
           <p className="text-sm text-zinc-400 max-w-2xl leading-relaxed">
             One sign-in covers Alchm Agents and Alchm Kitchen. Claim each site&apos;s daily yield
             here, then optionally hand the same session off to the Alchm Desktop companion.
           </p>
+          <div className="flex flex-wrap gap-3 pt-1">
+            <Link
+              href="/economy"
+              className="rounded-lg border border-purple-500/30 bg-purple-500/10 px-3 py-2 text-xs font-semibold text-purple-200 hover:bg-purple-500/15"
+            >
+              Open ESMS Treasury
+            </Link>
+            <Link
+              href="/shop?tab=tokens"
+              className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-500/15"
+            >
+              Buy ESMS Tokens
+            </Link>
+          </div>
           {cameFromDesktop && (
             <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-purple-200">
               <Link2 className="w-3.5 h-3.5" />

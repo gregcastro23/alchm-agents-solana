@@ -92,13 +92,13 @@ export function TokenHUD() {
       const amount = (token: TokenType) =>
         distribution[token] ?? distribution[lowercaseToken[token]] ?? basePerAxis
       toast({
-        title: 'Cosmic Yield Claimed!',
+        title: 'ESMS Yield Claimed!',
         description: `Received ${amount('Spirit')} Spirit, ${amount('Essence')} Essence, ${amount('Matter')} Matter, ${amount('Substance')} Substance. ${data.isPremium ? '(2.0x Premium Multiplier applied!)' : ''}`,
       })
     } catch (error) {
       toast({
         title: 'Error',
-        description: 'Failed to claim cosmic yield.',
+        description: 'Failed to claim ESMS yield.',
         variant: 'destructive',
       })
     } finally {

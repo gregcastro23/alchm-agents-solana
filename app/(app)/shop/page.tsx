@@ -4,6 +4,12 @@ import { prisma } from '@/lib/db'
 import { catalogByKind } from '@/lib/shop/catalog'
 import { listUnlocks } from '@/lib/shop/entitlement'
 import { esmsOnchainConfigured, readEsmsBalances } from '@/lib/esms-chain/contract'
+import {
+  normalizePurchaseStatus,
+  normalizeShopTab,
+  normalizeTokenCount,
+  type SearchParamValue,
+} from '@/lib/shop/navigation'
 import ShopClient from '@/components/shop/ShopClient'
 
 export const dynamic = 'force-dynamic'
@@ -14,7 +20,16 @@ export const metadata = {
     'Acquire ESMS token bundles and spend Spirit, Essence, Matter, and Substance on agent boosts, sigils, and pentacles infrastructure.',
 }
 
-export default async function ShopPage() {
+export default async function ShopPage({
+  searchParams,
+}: {
+  searchParams: Promise<{
+    tab?: SearchParamValue
+    purchase?: SearchParamValue
+    tokens?: SearchParamValue
+  }>
+}) {
+  const params = await searchParams
   const session = await auth()
   const userId = session?.user?.id
 
@@ -67,6 +82,9 @@ export default async function ShopPage() {
       </div>
 
       <ShopClient
+        initialTab={normalizeShopTab(params.tab)}
+        purchaseStatus={normalizePurchaseStatus(params.purchase)}
+        tokensPurchased={normalizeTokenCount(params.tokens)}
         signedIn={Boolean(userId)}
         catalog={catalog}
         owned={owned}

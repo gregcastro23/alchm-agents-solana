@@ -98,11 +98,6 @@ const navigationGroups = [
         label: 'Consultations',
         description: '1-on-1 agent consultations.',
       },
-      {
-        href: '/astrological-agents',
-        label: 'Astrological Agents',
-        description: 'Agents based on astrological archetypes.',
-      },
       { href: '/gallery', label: 'Gallery', description: 'Browse all available AI agents.' },
       {
         href: '/attunement-circle',

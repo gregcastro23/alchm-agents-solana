@@ -9,7 +9,8 @@
  * Icons are Material Symbols names preloaded in app/layout.tsx.
  */
 
-import type { EsmsCost } from './pricing'
+import type { EsmsCost } from '@/lib/shop/pricing'
+import { TOKEN_BUNDLES } from '@/lib/shop/token-bundles'
 
 export type ShopItemKind = 'tokens' | 'apothecary' | 'pentacles'
 export type ElementKey = 'spirit' | 'essence' | 'matter' | 'substance'
@@ -41,57 +42,22 @@ const basket = (spirit: number, essence: number, matter: number, substance: numb
   substance,
 })
 
+const TOKEN_CATALOG: ShopItem[] = TOKEN_BUNDLES.map(bundle => ({
+  id: bundle.id,
+  kind: 'tokens',
+  title: bundle.name,
+  blurb: `${bundle.tokens} ESMS Tokens (${bundle.perAxis} Spirit, ${bundle.perAxis} Essence, ${bundle.perAxis} Matter, ${bundle.perAxis} Substance).`,
+  icon: bundle.icon,
+  accent: bundle.accent,
+  esms: basket(bundle.perAxis, bundle.perAxis, bundle.perAxis, bundle.perAxis),
+  usdCents: bundle.usdCents,
+  repeatable: true,
+  stripeTier: bundle.stripeTier,
+}))
+
 export const SHOP_CATALOG: ShopItem[] = [
   // ── Tokens & Bundles — Direct ESMS Token Packages ───────────────────────────
-  {
-    id: 'token-starter-bundle',
-    kind: 'tokens',
-    title: 'Cosmic Starter Bundle',
-    blurb: '100 Cosmic ESMS Tokens (25 Spirit, 25 Essence, 25 Matter, 25 Substance).',
-    icon: 'toll',
-    accent: 'spirit',
-    esms: basket(25, 25, 25, 25),
-    usdCents: 500,
-    repeatable: true,
-    stripeTier: '5',
-  },
-  {
-    id: 'token-alchemist-bundle',
-    kind: 'tokens',
-    title: "Alchemist's Quadrant",
-    blurb: '240 Cosmic ESMS Tokens (60 Spirit, 60 Essence, 60 Matter, 60 Substance).',
-    icon: 'auto_awesome',
-    accent: 'essence',
-    esms: basket(60, 60, 60, 60),
-    usdCents: 1000,
-    repeatable: true,
-    stripeTier: '10',
-  },
-  {
-    id: 'token-magnum-opus',
-    kind: 'tokens',
-    title: 'Magnum Opus Catalyst',
-    blurb: '700 Cosmic ESMS Tokens (175 Spirit, 175 Essence, 175 Matter, 175 Substance).',
-    icon: 'diamond',
-    accent: 'substance',
-    esms: basket(175, 175, 175, 175),
-    usdCents: 2500,
-    repeatable: true,
-    stripeTier: '25',
-  },
-  {
-    id: 'token-cosmic-sovereign',
-    kind: 'tokens',
-    title: 'Sovereign Council Reservoir',
-    blurb:
-      '1600 Cosmic ESMS Tokens (400 Spirit, 400 Essence, 400 Matter, 400 Substance). Grand Sovereign Allocation.',
-    icon: 'stars',
-    accent: 'matter',
-    esms: basket(400, 400, 400, 400),
-    usdCents: 5000,
-    repeatable: true,
-    stripeTier: '50',
-  },
+  ...TOKEN_CATALOG,
 
   // ── Apothecary — Digital Alchemical Items & Agent Boosts ─────────────────────
   {

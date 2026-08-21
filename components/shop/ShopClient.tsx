@@ -1,7 +1,8 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, type KeyboardEvent } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { PrivyProvider, useWallets } from '@privy-io/react-auth'
 import { base } from 'viem/chains'
 import {
@@ -17,6 +18,7 @@ import {
   CreditCard,
 } from 'lucide-react'
 import type { ShopItem, ShopItemKind, ElementKey } from '@/lib/shop/catalog'
+import type { ShopPurchaseStatus } from '@/lib/shop/navigation'
 
 const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID || 'cmi9t84qs00acl80dam2j8195'
 
@@ -47,6 +49,9 @@ interface Balances {
 }
 
 interface ShopClientProps {
+  initialTab: ShopItemKind
+  purchaseStatus: ShopPurchaseStatus | null
+  tokensPurchased: string | null
   signedIn: boolean
   catalog: Record<ShopItemKind, ShopItem[]>
   owned: string[]
@@ -89,6 +94,9 @@ function usd(cents: number): string {
 }
 
 function ShopClientInner({
+  initialTab,
+  purchaseStatus,
+  tokensPurchased,
   signedIn,
   catalog,
   owned,
@@ -96,8 +104,9 @@ function ShopClientInner({
   onchainBalances,
   onchainConfigured,
 }: ShopClientProps) {
+  const router = useRouter()
   const { wallets } = useWallets()
-  const [tab, setTab] = useState<ShopItemKind>('tokens')
+  const [tab, setTab] = useState<ShopItemKind>(initialTab)
   const [balances, setBalances] = useState<Balances | null>(onchainBalances)
   const [ownedSet, setOwnedSet] = useState<Set<string>>(new Set(owned))
   const [states, setStates] = useState<Record<string, PurchaseState>>({})
@@ -106,6 +115,40 @@ function ShopClientInner({
   const hasWallet = Boolean(walletAddress)
 
   const setItemState = (id: string, s: PurchaseState) => setStates(prev => ({ ...prev, [id]: s }))
+
+  const selectShopTab = (nextTab: ShopItemKind) => {
+    setTab(nextTab)
+    router.replace(`/shop?tab=${nextTab}`, { scroll: false })
+  }
+
+  const handleTabKeyDown = (event: KeyboardEvent<HTMLButtonElement>, currentTab: ShopItemKind) => {
+    const currentIndex = TABS.findIndex(item => item.key === currentTab)
+    let nextIndex: number
+
+    switch (event.key) {
+      case 'ArrowRight':
+        nextIndex = (currentIndex + 1) % TABS.length
+        break
+      case 'ArrowLeft':
+        nextIndex = (currentIndex - 1 + TABS.length) % TABS.length
+        break
+      case 'Home':
+        nextIndex = 0
+        break
+      case 'End':
+        nextIndex = TABS.length - 1
+        break
+      default:
+        return
+    }
+
+    event.preventDefault()
+    const nextTab = TABS[nextIndex]?.key
+    if (!nextTab) return
+
+    selectShopTab(nextTab)
+    requestAnimationFrame(() => document.getElementById(`shop-tab-${nextTab}`)?.focus())
+  }
 
   async function refresh() {
     try {
@@ -253,6 +296,36 @@ function ShopClientInner({
         onchainConfigured={onchainConfigured}
       />
 
+      {purchaseStatus === 'success' && (
+        <div
+          role="status"
+          className="flex items-start gap-3 rounded-xl border border-emerald-500/30 bg-emerald-500/10 p-4 text-emerald-200"
+        >
+          <Check className="mt-0.5 h-5 w-5 shrink-0" />
+          <div>
+            <h2 className="text-sm font-semibold">ESMS tokens acquired</h2>
+            <p className="mt-1 text-xs text-emerald-200/75">
+              {tokensPurchased
+                ? `${tokensPurchased} ESMS Tokens are being synchronized to your Treasury.`
+                : 'Your ESMS Tokens are being synchronized to your Treasury.'}
+            </p>
+          </div>
+        </div>
+      )}
+
+      {purchaseStatus === 'cancelled' && (
+        <div
+          role="status"
+          className="flex items-start gap-3 rounded-xl border border-white/10 bg-white/5 p-4 text-zinc-300"
+        >
+          <AlertTriangle className="mt-0.5 h-5 w-5 shrink-0 text-amber-400" />
+          <div>
+            <h2 className="text-sm font-semibold">Purchase cancelled</h2>
+            <p className="mt-1 text-xs text-zinc-500">No charge was made.</p>
+          </div>
+        </div>
+      )}
+
       {/* Pay-with legend */}
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-zinc-500">
         <span className="inline-flex items-center gap-1.5">
@@ -264,13 +337,24 @@ function ShopClientInner({
       </div>
 
       {/* Tabs */}
-      <div className="flex gap-2 border-b border-border">
+      <div
+        className="flex gap-2 border-b border-border"
+        role="tablist"
+        aria-label="Bazaar sections"
+      >
         {TABS.map(({ key, label, icon: Icon }) => {
           const active = tab === key
           return (
             <button
+              id={`shop-tab-${key}`}
+              type="button"
+              role="tab"
+              aria-selected={active}
+              aria-controls="shop-items"
+              tabIndex={active ? 0 : -1}
               key={key}
-              onClick={() => setTab(key)}
+              onClick={() => selectShopTab(key)}
+              onKeyDown={event => handleTabKeyDown(event, key)}
               className={`flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 -mb-px transition-colors ${
                 active
                   ? 'border-amber-500 text-amber-400'
@@ -286,7 +370,12 @@ function ShopClientInner({
       </div>
 
       {/* Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+      <div
+        id="shop-items"
+        role="tabpanel"
+        aria-labelledby={`shop-tab-${tab}`}
+        className="grid grid-cols-1 sm:grid-cols-2 gap-4"
+      >
         {items.map(item => (
           <ItemCard
             key={item.id}

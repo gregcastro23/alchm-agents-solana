@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { Sparkles, Coins, Zap, ShieldCheck, ArrowRight, UserCheck, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { TOKEN_BUNDLES } from '@/lib/shop/token-bundles'
 
 const VISITOR_CAPABILITIES = [
   'Unlimited base chat with 360+ planetary and historical agents',
@@ -15,38 +16,11 @@ const VISITOR_CAPABILITIES = [
 const ACCOUNT_HOLDER_CAPABILITIES = [
   'Everything available to visitors',
   'Personal ESMS Token Treasury (Spirit, Essence, Matter, Substance)',
-  'Daily cosmic token yield claims and streak multipliers',
+  'Daily ESMS yield claims and streak multipliers',
   'Spend ESMS at the Bazaar (/shop) on agent elixirs and sigil forging',
   'High-intelligence AI model infusions (Claude Opus, Sonnet, DeepSeek)',
   'Connect your own direct AI keys (BYOK OpenAI / Anthropic / Google)',
   'Full memory persistence and personalized attunements',
-]
-
-const TOKEN_BUNDLES = [
-  {
-    name: 'Initiate Box',
-    tokens: '100 ESMS',
-    price: '$5',
-    desc: 'Balanced 25/25/25/25 elemental starter allocation',
-  },
-  {
-    name: 'Adept Sphere',
-    tokens: '240 ESMS',
-    price: '$10',
-    desc: '20% bonus tokens for active vessel attunements',
-  },
-  {
-    name: 'Alchemist Chest',
-    tokens: '700 ESMS',
-    price: '$25',
-    desc: '40% bonus tokens for council debates & multi-agent chats',
-  },
-  {
-    name: 'Sovereign Vault',
-    tokens: '1,600 ESMS',
-    price: '$50',
-    desc: '60% bonus tokens for magnum opus sigil forging & boosts',
-  },
 ]
 
 export default function PricingPage() {
@@ -160,7 +134,7 @@ export default function PricingPage() {
             <div>
               <h2 className="text-2xl font-bold text-white">ESMS Token Packages</h2>
               <p className="text-sm text-zinc-400">
-                Acquire extra Cosmic Tokens to fund advanced alchemical boosts, apothecary elixirs,
+                Acquire extra ESMS Tokens to fund advanced alchemical boosts, apothecary elixirs,
                 and sigils.
               </p>
             </div>
@@ -181,9 +155,17 @@ export default function PricingPage() {
                 className="rounded-xl border border-white/10 bg-black/30 p-4 space-y-2"
               >
                 <div className="text-sm font-semibold text-amber-300">{bundle.name}</div>
-                <div className="text-2xl font-bold text-white">{bundle.tokens}</div>
-                <div className="text-xs text-zinc-400">{bundle.desc}</div>
-                <div className="pt-2 text-lg font-semibold text-emerald-400">{bundle.price}</div>
+                <div className="text-2xl font-bold text-white">
+                  {bundle.tokens.toLocaleString('en-US')} ESMS
+                </div>
+                <div className="text-xs text-zinc-400">
+                  {bundle.bonusPercent
+                    ? `${bundle.bonusPercent}% bonus tokens for advanced alchemical actions`
+                    : `Balanced ${bundle.perAxis}/${bundle.perAxis}/${bundle.perAxis}/${bundle.perAxis} elemental starter allocation`}
+                </div>
+                <div className="pt-2 text-lg font-semibold text-emerald-400">
+                  ${(bundle.usdCents / 100).toFixed(0)}
+                </div>
               </div>
             ))}
           </div>

@@ -48,6 +48,7 @@ import { ALCHM_DESKTOP_DOWNLOAD_LABEL, openDesktopAppDownload } from '@/lib/desk
 import { startGoogleSignIn, signOutLocal } from '@/lib/auth-client'
 import { WorldIdButton } from '@/components/world/WorldIdButton'
 import { LivePriceIndexTicker } from '@/components/economy/LivePriceIndexTicker'
+import { PILLARS } from '@/components/navigation/pillars'
 
 // ============================================================================
 // STATIC CONFIG
@@ -63,12 +64,7 @@ const SACRED_7 = [
   { key: 'vitality', emoji: '💚', label: 'Vitality', color: '#4ade80' },
 ] as const
 
-const NAV_LINKS = [
-  { label: 'Agents', href: '/gallery' },
-  { label: "Philosopher's Stone", href: '/philosophers-stone' },
-  { label: 'Arena', href: '/arena' },
-  { label: 'Economy', href: '/economy' },
-]
+const NAV_LINKS = PILLARS.map(({ label, href }) => ({ label, href }))
 
 // Curated historical minds — verified agent ids (→ /gallery/chat/{id}).
 const HISTORICAL = [

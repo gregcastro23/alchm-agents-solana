@@ -424,7 +424,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<UnifiedAg
               name: id.charAt(0).toUpperCase() + id.slice(1),
               element: 'Spirit',
               text: () =>
-                `As ${id}, I advise aligning your USDC collateral according to cosmic yield principles.`,
+                `As ${id}, I advise aligning your USDC collateral according to ESMS yield principles.`,
             }
             return {
               agentId: id,

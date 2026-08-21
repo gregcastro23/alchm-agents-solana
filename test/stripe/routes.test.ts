@@ -251,7 +251,7 @@ describe('POST /api/stripe/webhook', () => {
       'user-123',
       { spirit: 25, essence: 25, matter: 25, substance: 25 },
       'token_purchase',
-      'Cosmic Token Purchase (Stripe)',
+      'ESMS Token Purchase (Stripe)',
       'cs_test_123'
     )
   })

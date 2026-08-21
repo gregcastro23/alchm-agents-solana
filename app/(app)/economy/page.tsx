@@ -27,7 +27,8 @@ export default async function EconomyPage() {
           ESMS Treasury
         </h1>
         <p className="text-zinc-400">
-          Manage your alchemical reserves, claim cosmic yield, and track your streak multipliers.
+          Manage your alchemical reserves, claim daily ESMS yield, and track your streak
+          multipliers.
         </p>
       </div>
 

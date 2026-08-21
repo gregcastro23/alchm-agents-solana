@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
             userIdHint,
             { spirit, essence, matter, substance },
             'token_purchase',
-            'Cosmic Token Purchase (Stripe)',
+            'ESMS Token Purchase (Stripe)',
             s.id
           )
         }

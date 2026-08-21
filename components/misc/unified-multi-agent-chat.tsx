@@ -718,7 +718,7 @@ export function UnifiedMultiAgentChat({
                           const res = await fetch('/api/economy/yield', { method: 'POST' })
                           const claimData = await res.json()
                           if (res.ok) {
-                            toast.success('Cosmic yield successfully claimed!', {
+                            toast.success('ESMS yield successfully claimed!', {
                               description: `Spirit: ${claimData.balances.spirit}, Essence: ${claimData.balances.essence}, Matter: ${claimData.balances.matter}, Substance: ${claimData.balances.substance}`,
                             })
                             // Refresh page or trigger context reload if needed
@@ -735,7 +735,7 @@ export function UnifiedMultiAgentChat({
                       }}
                       className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black font-semibold border-none shadow-[0_0_15px_rgba(245,158,11,0.2)]"
                     >
-                      Claim Cosmic Yield
+                      Claim ESMS Yield
                     </Button>
                     <a
                       href="/#free-agents"

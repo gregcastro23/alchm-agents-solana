@@ -66,7 +66,7 @@ describe('POST /api/stripe/checkout-tokens', () => {
             price_data: expect.objectContaining({
               unit_amount: 1000,
               product_data: expect.objectContaining({
-                name: '240 Cosmic ESMS Tokens',
+                name: 'Adept Sphere — 240 ESMS Tokens',
               }),
             }),
           }),
@@ -76,7 +76,18 @@ describe('POST /api/stripe/checkout-tokens', () => {
           type: 'token_purchase',
           tokenCount: '240',
         }),
+        success_url: 'http://localhost/shop?tab=tokens&purchase=success&tokens=240',
+        cancel_url: 'http://localhost/shop?tab=tokens&purchase=cancelled',
       })
     )
+  })
+
+  it('rejects unknown bundle tiers instead of silently charging for the starter bundle', async () => {
+    ;(auth as any).mockResolvedValue({ user: { id: 'user-123', email: 'test@example.com' } })
+
+    const res = await checkoutTokensPost(mockReq({ tier: '999' }))
+
+    expect(res.status).toBe(400)
+    expect(mockStripeCreate).not.toHaveBeenCalled()
   })
 })

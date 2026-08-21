@@ -379,7 +379,7 @@ export default function TransitGroupChatClient({ sessionId, agents, transit }: P
                             const res = await fetch('/api/economy/yield', { method: 'POST' })
                             const claimData = await res.json()
                             if (res.ok) {
-                              toast.success('Cosmic yield claimed!')
+                              toast.success('ESMS yield claimed!')
                               window.location.reload()
                             } else {
                               toast.error(claimData.message || 'Already claimed today.')
@@ -390,7 +390,7 @@ export default function TransitGroupChatClient({ sessionId, agents, transit }: P
                         }}
                         className="w-full bg-gradient-to-r from-amber-500 to-amber-600 font-semibold text-black hover:from-amber-600 hover:to-amber-700"
                       >
-                        Claim Cosmic Yield
+                        Claim ESMS Yield
                       </Button>
                       <a
                         href="/#free-agents"

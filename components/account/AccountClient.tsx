@@ -81,7 +81,7 @@ export function AccountClient({ tier, hasActiveSub, premiumViaKitchen, email, na
           <div className="mt-4 space-y-3">
             <p className="text-sm text-white/70">
               Your account is active and connected to the ESMS Token Economy. You can hold balances
-              across Spirit, Essence, Matter, and Substance, claim daily cosmic yield, and spend
+              across Spirit, Essence, Matter, and Substance, claim daily ESMS yield, and spend
               tokens at the Bazaar.
             </p>
             <div className="flex flex-wrap items-center gap-2 pt-2">

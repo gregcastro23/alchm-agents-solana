@@ -2,7 +2,15 @@
 
 import { useState } from 'react'
 import Link from 'next/link'
-import { Sparkles, Activity, ShieldAlert, Target, Flame, ShoppingBag } from 'lucide-react'
+import {
+  Sparkles,
+  Activity,
+  ShieldAlert,
+  Target,
+  Flame,
+  ShoppingBag,
+  RefreshCw,
+} from 'lucide-react'
 
 interface TokenBalances {
   spirit: number
@@ -52,7 +60,7 @@ export default function EconomyDashboard({
           setBalances(data.balances)
         }
         setHasClaimedYield(true)
-        setClaimStatus({ type: 'success', message: 'Cosmic yield claimed successfully!' })
+        setClaimStatus({ type: 'success', message: 'Daily ESMS yield claimed successfully!' })
       } else if (response.status === 409 || data.error === 'Cooldown active') {
         setHasClaimedYield(true)
         setClaimStatus({ type: 'error', message: 'You have already claimed your yield today.' })
@@ -136,34 +144,55 @@ export default function EconomyDashboard({
         </div>
       </div>
 
-      {/* Spend CTA → ESMS Bazaar */}
-      <Link
-        href="/shop"
-        className="group flex items-center justify-between gap-4 bg-surface border border-border hover:border-amber-500/40 p-5 rounded-xl transition-colors"
-      >
-        <div className="flex items-center gap-4">
-          <div className="p-2.5 bg-amber-500/10 rounded-full">
-            <ShoppingBag className="w-5 h-5 text-amber-400" />
+      <div className="grid gap-4 md:grid-cols-2">
+        <Link
+          href="/shop"
+          className="group flex items-center justify-between gap-4 bg-surface border border-border hover:border-amber-500/40 p-5 rounded-xl transition-colors"
+        >
+          <div className="flex items-center gap-4">
+            <div className="p-2.5 bg-amber-500/10 rounded-full">
+              <ShoppingBag className="w-5 h-5 text-amber-400" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-zinc-200">Spend in the ESMS Bazaar</h3>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                Use your reserves for alchemical goods, boosts, and sigils.
+              </p>
+            </div>
           </div>
-          <div>
-            <h3 className="font-semibold text-zinc-200">Spend in the ESMS Bazaar</h3>
-            <p className="text-xs text-zinc-500 mt-0.5">
-              Burn your reserves on alchemical goods, premium recipes, and real food.
-            </p>
+          <span className="text-amber-400 text-sm font-medium opacity-70 group-hover:opacity-100 transition-opacity">
+            Open →
+          </span>
+        </Link>
+
+        <Link
+          href="/yield"
+          className="group flex items-center justify-between gap-4 bg-surface border border-border hover:border-purple-500/40 p-5 rounded-xl transition-colors"
+        >
+          <div className="flex items-center gap-4">
+            <div className="p-2.5 bg-purple-500/10 rounded-full">
+              <RefreshCw className="w-5 h-5 text-purple-300" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-zinc-200">Open the Cross-Site Yield Hub</h3>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                Review both Agents and Kitchen claim states in one place.
+              </p>
+            </div>
           </div>
-        </div>
-        <span className="text-amber-400 text-sm font-medium opacity-70 group-hover:opacity-100 transition-opacity">
-          Open →
-        </span>
-      </Link>
+          <span className="text-purple-300 text-sm font-medium opacity-70 group-hover:opacity-100 transition-opacity">
+            Open →
+          </span>
+        </Link>
+      </div>
 
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
-        {/* Cosmic Yield Panel */}
+        {/* Daily ESMS Yield Panel */}
         <div className="bg-surface border border-border p-6 rounded-xl space-y-6 flex flex-col relative overflow-hidden">
           <div className="absolute top-0 right-0 w-32 h-32 bg-amber-500/10 rounded-bl-full -z-10 blur-2xl" />
 
           <div className="space-y-2">
-            <h3 className="text-lg font-semibold text-zinc-200">Daily Cosmic Yield</h3>
+            <h3 className="text-lg font-semibold text-zinc-200">Daily ESMS Yield</h3>
             <p className="text-sm text-zinc-400">
               Agentic users generate a passive yield of ESMS tokens based on planetary alignments.
             </p>
@@ -203,7 +232,7 @@ export default function EconomyDashboard({
               ) : (
                 <>
                   <Sparkles className="w-5 h-5" />
-                  Claim Cosmic Yield
+                  Claim ESMS Yield
                 </>
               )}
             </button>
