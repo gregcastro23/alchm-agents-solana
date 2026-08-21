@@ -1,145 +1,104 @@
 'use client'
 
-import { useEffect, useState, useCallback, useMemo } from 'react'
-import type {
-  ElementalPriceIndexResponse,
-  ElementalQuote,
-  ElementAxisKey,
-} from '@/app/api/economy/price-index/route'
-
-export type CurrencyMode = 'USD' | 'SOL'
+import { useCallback, useEffect, useMemo, useState } from 'react'
+import {
+  ESMS_TOKEN_NAMES,
+  type CanonicalPriceIndexPayload,
+  type CanonicalTokenIndexQuote,
+  type EsmsTokenName,
+} from '@/lib/economy/price-index-contract'
 
 export interface UseElementalPriceIndexOptions {
   refreshIntervalMs?: number
   enabled?: boolean
 }
 
-// Fallback initial data to avoid hydration flickers
-const INITIAL_FALLBACK: ElementalPriceIndexResponse = {
-  success: true,
-  updatedAt: new Date().toISOString(),
-  solanaCluster: 'devnet',
-  programId: '5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD',
-  tokenProgramId: 'TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb',
-  solUsdPrice: 185.5,
-  compositeIndex: {
-    valueUsd: 1.0,
-    change24h: 1.25,
-    dominantElement: 'fire',
-    celestialSeason: 'Solar Alignment',
+export interface EsmsTokenIndexView extends CanonicalTokenIndexQuote {
+  axis: EsmsTokenName
+  symbol: string
+  name: string
+  decimals: 4
+  mintAddress: string
+  contributingPlanets: string
+  description: string
+  change1hPct: number
+}
+
+const TOKEN_IDENTITY: Record<
+  EsmsTokenName,
+  Omit<
+    EsmsTokenIndexView,
+    'axis' | 'token' | 'index' | 'change24hPct' | 'weight' | 'sparkline' | 'change1hPct'
+  >
+> = {
+  Spirit: {
+    symbol: 'SPIRIT',
+    name: 'Alchm Spirit',
+    decimals: 4,
+    mintAddress: 'K5kwwomtWYydxJacA7bC5yUEW9TtEuVqBKBoqAWLmhQ',
+    contributingPlanets: '☉ Sun · ☿ Mercury · ♃ Jupiter · ♄ Saturn',
+    description: 'Agency and generative force in the canonical ESMS projection.',
   },
-  elements: {
-    Spirit: {
-      axis: 'Spirit',
-      symbol: 'SPIRIT',
-      name: 'Alchm Spirit',
-      element: 'fire',
-      archetype: 'Solar Agency & Martial Impetus',
-      rulingPlanets: '☉ Sun / ♂ Mars',
-      decimals: 4,
-      mintAddress: '8wJ1SpiritMint11111111111111111111111111111',
-      mintAuthority: '5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD',
-      tokenStandard: 'Token-2022 (Perm-Burn / Non-Transferable)',
-      priceUsd: 1.12,
-      priceSol: 0.006038,
-      change24h: 3.42,
-      velocity1h: 0.85,
-      harmonicResonance: 0.34,
-      dominantAspect: 'Sun in Leo · Mars in Aries',
-      sparkline: [1.02, 1.04, 1.06, 1.05, 1.08, 1.1, 1.12],
-      supply: { circulating: 240000, max: 'Soulbound Elastic' },
-    },
-    Essence: {
-      axis: 'Essence',
-      symbol: 'ESSENCE',
-      name: 'Alchm Essence',
-      element: 'water',
-      archetype: 'Lunar Receptivity & Neptunian Resonance',
-      rulingPlanets: '☽ Moon / ♆ Neptune',
-      decimals: 4,
-      mintAddress: '8wJ2EssenceMint1111111111111111111111111111',
-      mintAuthority: '5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD',
-      tokenStandard: 'Token-2022 (Perm-Burn / Non-Transferable)',
-      priceUsd: 0.96,
-      priceSol: 0.005175,
-      change24h: -1.15,
-      velocity1h: -0.22,
-      harmonicResonance: -0.11,
-      dominantAspect: 'Moon in Cancer · Neptune in Pisces',
-      sparkline: [0.99, 0.98, 0.97, 0.96, 0.95, 0.96, 0.96],
-      supply: { circulating: 240000, max: 'Soulbound Elastic' },
-    },
-    Matter: {
-      axis: 'Matter',
-      symbol: 'MATTER',
-      name: 'Alchm Matter',
-      element: 'earth',
-      archetype: 'Saturnian Structure & Plutonic Integration',
-      rulingPlanets: '♄ Saturn / ♇ Pluto',
-      decimals: 4,
-      mintAddress: '8wJ3MatterMint11111111111111111111111111111',
-      mintAuthority: '5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD',
-      tokenStandard: 'Token-2022 (Perm-Burn / Non-Transferable)',
-      priceUsd: 1.05,
-      priceSol: 0.00566,
-      change24h: 2.1,
-      velocity1h: 0.45,
-      harmonicResonance: 0.15,
-      dominantAspect: 'Saturn in Capricorn · Pluto in Aquarius',
-      sparkline: [1.01, 1.02, 1.03, 1.04, 1.04, 1.05, 1.05],
-      supply: { circulating: 240000, max: 'Soulbound Elastic' },
-    },
-    Substance: {
-      axis: 'Substance',
-      symbol: 'SUBSTANCE',
-      name: 'Alchm Substance',
-      element: 'air',
-      archetype: 'Mercurial Velocity & Uranian Surprisal',
-      rulingPlanets: '☿ Mercury / ♅ Uranus',
-      decimals: 4,
-      mintAddress: '8wJ4SubstanceMint111111111111111111111111111',
-      mintAuthority: '5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD',
-      tokenStandard: 'Token-2022 (Perm-Burn / Non-Transferable)',
-      priceUsd: 0.88,
-      priceSol: 0.004744,
-      change24h: -2.3,
-      velocity1h: -0.5,
-      harmonicResonance: -0.35,
-      dominantAspect: 'Mercury in Gemini · Uranus in Taurus',
-      sparkline: [0.92, 0.91, 0.9, 0.89, 0.88, 0.87, 0.88],
-      supply: { circulating: 240000, max: 'Soulbound Elastic' },
-    },
+  Essence: {
+    symbol: 'ESSENCE',
+    name: 'Alchm Essence',
+    decimals: 4,
+    mintAddress: '3FcpToU7bj4sLD687uecbesEjzjxBfqYn2EcBXJKPaCf',
+    contributingPlanets: '☽ Moon · ♀ Venus · ♂ Mars · ♃ Jupiter · ♅ Uranus · ♆ Neptune · ♇ Pluto',
+    description: 'Receptivity and generative potential in the canonical ESMS projection.',
+  },
+  Matter: {
+    symbol: 'MATTER',
+    name: 'Alchm Matter',
+    decimals: 4,
+    mintAddress: '7naJZozLrknDF3dguAdEWn7Z4MviUkXitjhaAt57Vkb4',
+    contributingPlanets: '☽ Moon · ♀ Venus · ♂ Mars · ♄ Saturn · ♅ Uranus · ♇ Pluto',
+    description: 'Structure and embodiment in the canonical ESMS projection.',
+  },
+  Substance: {
+    symbol: 'SUBSTANCE',
+    name: 'Alchm Substance',
+    decimals: 4,
+    mintAddress: '6RY6ZG1eJQ2uEvpyA6XK74WyF1MpTYbw97hdhELqDUsa',
+    contributingPlanets: '☿ Mercury · ♆ Neptune',
+    description: 'Transmission and binding in the canonical ESMS projection.',
   },
 }
 
-export function useElementalPriceIndex(options: UseElementalPriceIndexOptions = {}) {
-  const { refreshIntervalMs = 20000, enabled = true } = options
+function oneHourChange(sparkline: number[]): number {
+  const current = sparkline.at(-1)
+  const previous = sparkline.at(-2)
+  if (current === undefined || previous === undefined || previous === 0) return 0
+  return (current / previous - 1) * 100
+}
 
-  const [data, setData] = useState<ElementalPriceIndexResponse>(INITIAL_FALLBACK)
-  const [loading, setLoading] = useState<boolean>(true)
+export function useElementalPriceIndex(options: UseElementalPriceIndexOptions = {}) {
+  const { refreshIntervalMs = 20_000, enabled = true } = options
+
+  const [data, setData] = useState<CanonicalPriceIndexPayload | null>(null)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState<string | null>(null)
-  const [currency, setCurrency] = useState<CurrencyMode>('USD')
-  const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date())
+  const [lastRefreshed, setLastRefreshed] = useState<Date | null>(null)
 
   const fetchIndex = useCallback(async () => {
     try {
-      const res = await fetch('/api/economy/price-index', {
-        headers: { 'Cache-Control': 'no-cache' },
+      const response = await fetch('/api/economy/price-index', {
+        headers: { Accept: 'application/json' },
+        cache: 'no-store',
       })
-      if (!res.ok) {
-        throw new Error(`Failed to fetch price index: ${res.statusText}`)
+      if (!response.ok) {
+        throw new Error(`Price oracle unavailable (HTTP ${response.status})`)
       }
-      const json = (await res.json()) as ElementalPriceIndexResponse
-      if (json.success) {
-        setData(json)
-        setError(null)
-        setLastRefreshed(new Date())
-      } else {
-        throw new Error('Unsuccessful price index response')
+      const payload = (await response.json()) as CanonicalPriceIndexPayload
+      if (payload.success !== true || payload.live !== true || !Array.isArray(payload.tokens)) {
+        throw new Error('Price oracle returned an invalid contract')
       }
+      setData(payload)
+      setError(null)
+      setLastRefreshed(new Date(payload.generatedAt))
     } catch (err) {
-      console.warn('useElementalPriceIndex error:', err)
-      setError(err instanceof Error ? err.message : 'Unknown error')
+      setData(null)
+      setError(err instanceof Error ? err.message : 'Price oracle unavailable')
     } finally {
       setLoading(false)
     }
@@ -147,19 +106,14 @@ export function useElementalPriceIndex(options: UseElementalPriceIndexOptions = 
 
   useEffect(() => {
     if (!enabled) return
-    fetchIndex()
-    const interval = setInterval(fetchIndex, refreshIntervalMs)
-    return () => clearInterval(interval)
+    void fetchIndex()
+    const interval = window.setInterval(() => void fetchIndex(), refreshIntervalMs)
+    return () => window.clearInterval(interval)
   }, [enabled, fetchIndex, refreshIntervalMs])
 
-  const formatPrice = useCallback(
-    (quote: ElementalQuote, mode: CurrencyMode = currency): string => {
-      if (mode === 'USD') {
-        return `$${quote.priceUsd.toFixed(quote.priceUsd < 1 ? 4 : 2)}`
-      }
-      return `${quote.priceSol.toFixed(5)} SOL`
-    },
-    [currency]
+  const formatIndex = useCallback(
+    (quote: Pick<CanonicalTokenIndexQuote, 'index'>): string => quote.index.toFixed(4),
+    []
   )
 
   const formatChange = useCallback((change: number): { text: string; isPositive: boolean } => {
@@ -170,22 +124,30 @@ export function useElementalPriceIndex(options: UseElementalPriceIndexOptions = 
     }
   }, [])
 
-  const quotesList = useMemo(() => {
-    if (!data?.elements) return []
-    return (['Spirit', 'Essence', 'Matter', 'Substance'] as ElementAxisKey[])
-      .map(axis => data.elements[axis])
-      .filter(Boolean)
+  const quotesList = useMemo<EsmsTokenIndexView[]>(() => {
+    if (!data) return []
+    const quotes = new Map(data.tokens.map(quote => [quote.token, quote]))
+    return ESMS_TOKEN_NAMES.flatMap(axis => {
+      const quote = quotes.get(axis)
+      if (!quote) return []
+      return [
+        {
+          ...quote,
+          ...TOKEN_IDENTITY[axis],
+          axis,
+          change1hPct: oneHourChange(quote.sparkline),
+        },
+      ]
+    })
   }, [data])
 
   return {
     data,
     loading,
     error,
-    currency,
-    setCurrency,
     lastRefreshed,
     refresh: fetchIndex,
-    formatPrice,
+    formatIndex,
     formatChange,
     quotesList,
   }

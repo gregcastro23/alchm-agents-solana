@@ -14,20 +14,18 @@ import {
   Sparkles,
   RefreshCw,
   Coins,
-  ShieldCheck,
-  Zap,
 } from 'lucide-react'
-import { useElementalPriceIndex, type CurrencyMode } from '@/hooks/useElementalPriceIndex'
-import type { ElementalQuote, ElementAxisKey } from '@/app/api/economy/price-index/route'
+import { useElementalPriceIndex } from '@/hooks/useElementalPriceIndex'
+import type { EsmsTokenName } from '@/lib/economy/price-index-contract'
 
 interface LivePriceIndexTickerProps {
   variant?: 'ribbon' | 'matrix' | 'compact'
   className?: string
-  onElementClick?: (axis: ElementAxisKey) => void
+  onElementClick?: (axis: EsmsTokenName) => void
 }
 
-const ELEMENT_VISUALS: Record<
-  ElementAxisKey,
+const TOKEN_VISUALS: Record<
+  EsmsTokenName,
   {
     icon: typeof Flame
     border: string
@@ -136,20 +134,10 @@ export function LivePriceIndexTicker({
   className = '',
   onElementClick,
 }: LivePriceIndexTickerProps) {
-  const {
-    data,
-    loading,
-    currency,
-    setCurrency,
-    lastRefreshed,
-    refresh,
-    formatPrice,
-    formatChange,
-    quotesList,
-  } = useElementalPriceIndex({ refreshIntervalMs: 15000 })
+  const { data, loading, error, lastRefreshed, refresh, formatIndex, formatChange, quotesList } =
+    useElementalPriceIndex({ refreshIntervalMs: 15000 })
 
   const [copiedMint, setCopiedMint] = useState<string | null>(null)
-  const [selectedAxis, setSelectedAxis] = useState<ElementAxisKey | null>(null)
 
   const copyToClipboard = (text: string, axis: string) => {
     if (typeof navigator !== 'undefined') {
@@ -176,7 +164,7 @@ export function LivePriceIndexTicker({
           <div className="shrink-0 flex items-center gap-2 pl-4 pr-3 border-r border-[#23262B] z-20 bg-[#050506]">
             <span className="led-dot led-green animate-pulse" />
             <span className="font-mono-label text-[9px] uppercase tracking-widest text-[#b8fc4b] font-bold">
-              SOLANA INDEX
+              ESMS INDEX
             </span>
           </div>
 
@@ -184,59 +172,63 @@ export function LivePriceIndexTicker({
           <div className="overflow-hidden flex-1 group">
             <div className="ticker-continuous items-center gap-8 whitespace-nowrap cursor-pointer">
               {/* Render duplicated sets for seamless continuous marquee loop */}
-              {[...quotesList, ...quotesList, ...quotesList, ...quotesList].map((quote, idx) => {
-                const vis = ELEMENT_VISUALS[quote.axis]
-                const Icon = vis.icon
-                const change = formatChange(quote.change24h)
+              {quotesList.length === 0 ? (
+                <span className="px-4 font-mono-label text-[10px] text-[#8c947c]">
+                  {loading ? 'SYNCING CANONICAL ESMS ORACLE…' : (error ?? 'PRICE ORACLE OFFLINE')}
+                </span>
+              ) : (
+                [...quotesList, ...quotesList, ...quotesList, ...quotesList].map((quote, idx) => {
+                  const vis = TOKEN_VISUALS[quote.axis]
+                  const Icon = vis.icon
+                  const change = formatChange(quote.change24hPct)
 
-                return (
-                  <div
-                    key={`${quote.axis}-${idx}`}
-                    onClick={() => {
-                      setSelectedAxis(quote.axis)
-                      if (onElementClick) onElementClick(quote.axis)
-                    }}
-                    className="inline-flex items-center gap-2.5 px-3 py-1 rounded-full bg-[#0e1014] border border-[#23262B] hover:border-[#8c947c]/60 transition-colors"
-                  >
-                    <Icon className={`w-3.5 h-3.5 ${vis.text}`} />
-                    <span className="font-mono-label text-[10px] font-bold text-[#e0e4d2]">
-                      {quote.symbol}
-                    </span>
-                    <span className="font-mono-label text-[11px] text-[#e0e4d2] font-semibold">
-                      {formatPrice(quote, currency)}
-                    </span>
-                    <span
-                      className={`font-mono-label text-[9px] px-1.5 py-0.2 rounded font-bold flex items-center gap-0.5 ${
-                        change.isPositive
-                          ? 'text-[#b8fc4b] bg-[#b8fc4b]/10'
-                          : 'text-[#ff7b72] bg-[#ff7b72]/10'
-                      }`}
+                  return (
+                    <div
+                      key={`${quote.axis}-${idx}`}
+                      onClick={() => {
+                        if (onElementClick) onElementClick(quote.axis)
+                      }}
+                      className="inline-flex items-center gap-2.5 px-3 py-1 rounded-full bg-[#0e1014] border border-[#23262B] hover:border-[#8c947c]/60 transition-colors"
                     >
-                      {change.isPositive ? (
-                        <TrendingUp className="w-2.5 h-2.5 inline" />
-                      ) : (
-                        <TrendingDown className="w-2.5 h-2.5 inline" />
-                      )}
-                      {change.text}
-                    </span>
-                    <span className="text-[9px] font-mono-label text-[#8c947c] hidden sm:inline">
-                      [{quote.dominantAspect.split('·')[0].trim()}]
-                    </span>
-                  </div>
-                )
-              })}
+                      <Icon className={`w-3.5 h-3.5 ${vis.text}`} />
+                      <span className="font-mono-label text-[10px] font-bold text-[#e0e4d2]">
+                        {quote.symbol}
+                      </span>
+                      <span className="font-mono-label text-[11px] text-[#e0e4d2] font-semibold">
+                        {formatIndex(quote)} IDX
+                      </span>
+                      <span
+                        className={`font-mono-label text-[9px] px-1.5 py-0.2 rounded font-bold flex items-center gap-0.5 ${
+                          change.isPositive
+                            ? 'text-[#b8fc4b] bg-[#b8fc4b]/10'
+                            : 'text-[#ff7b72] bg-[#ff7b72]/10'
+                        }`}
+                      >
+                        {change.isPositive ? (
+                          <TrendingUp className="w-2.5 h-2.5 inline" />
+                        ) : (
+                          <TrendingDown className="w-2.5 h-2.5 inline" />
+                        )}
+                        {change.text}
+                      </span>
+                      <span className="text-[9px] font-mono-label text-[#8c947c] hidden sm:inline">
+                        [SKY {Math.round(quote.weight * 100)}%]
+                      </span>
+                    </div>
+                  )
+                })
+              )}
             </div>
           </div>
 
           {/* Right Controls */}
           <div className="shrink-0 flex items-center gap-2 pr-4 pl-3 border-l border-[#23262B] z-20 bg-[#050506]">
-            <button
-              onClick={() => setCurrency(currency === 'USD' ? 'SOL' : 'USD')}
-              className="font-mono-label text-[9px] px-2 py-0.5 rounded border border-[#424936] text-[#c2cab0] hover:text-[#b8fc4b] hover:border-[#b8fc4b] transition-colors"
-              title="Toggle USD / SOL"
+            <span
+              className="font-mono-label text-[9px] px-2 py-0.5 rounded border border-[#424936] text-[#c2cab0]"
+              title="Dimensionless ESMS index points — not a USD or SOL market quote"
             >
-              {currency}
-            </button>
+              IDX
+            </span>
             <button
               onClick={() => refresh()}
               disabled={loading}
@@ -265,43 +257,27 @@ export function LivePriceIndexTicker({
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-headline-sm text-lg text-[#e0e4d2]">
-                Instantaneous Elemental Price Index
+                Canonical ESMS Price Index
               </h3>
               <span className="font-mono-label text-[9px] uppercase px-2 py-0.5 rounded border border-[#b8fc4b]/40 text-[#b8fc4b] bg-[#b8fc4b]/10">
                 Solana Token-2022
               </span>
             </div>
             <p className="font-body-md text-xs text-[#8c947c] mt-0.5">
-              Live celestial market index modulated by Dignity Waveharmonics $\Psi_a(t)$ and
-              real-time transits.
+              One astronomical index shared with alchm.kitchen. Index points are dimensionless; the
+              separate mint and redeem rails are the only USD values.
             </p>
           </div>
         </div>
 
         <div className="flex items-center gap-3 self-end sm:self-center">
-          {/* Currency Toggle */}
-          <div className="flex rounded-md border border-[#424936] p-0.5 bg-[#050506]">
-            <button
-              onClick={() => setCurrency('USD')}
-              className={`px-3 py-1 font-mono-label text-[10px] rounded transition-all ${
-                currency === 'USD'
-                  ? 'bg-[#b8fc4b] text-[#223600] font-bold shadow'
-                  : 'text-[#8c947c] hover:text-[#e0e4d2]'
-              }`}
-            >
-              USD ($)
-            </button>
-            <button
-              onClick={() => setCurrency('SOL')}
-              className={`px-3 py-1 font-mono-label text-[10px] rounded transition-all ${
-                currency === 'SOL'
-                  ? 'bg-[#b8fc4b] text-[#223600] font-bold shadow'
-                  : 'text-[#8c947c] hover:text-[#e0e4d2]'
-              }`}
-            >
-              SOL (◎)
-            </button>
-          </div>
+          <span className="font-mono-label text-[9px] text-[#8c947c]">
+            {error
+              ? 'ORACLE OFFLINE'
+              : lastRefreshed
+                ? `SYNC ${lastRefreshed.toISOString().slice(11, 19)} UTC`
+                : 'SYNCING…'}
+          </span>
 
           <button
             onClick={() => refresh()}
@@ -314,12 +290,19 @@ export function LivePriceIndexTicker({
         </div>
       </div>
 
-      {/* 4 Elemental Grid Cards */}
+      {/* Four ESMS quantity cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
+        {quotesList.length === 0 && (
+          <div className="sm:col-span-2 lg:col-span-4 glass-panel rounded-xl p-6 border border-[#424936] font-mono-label text-xs text-[#8c947c]">
+            {loading
+              ? 'Synchronizing the canonical ESMS oracle…'
+              : (error ?? 'Price oracle offline')}
+          </div>
+        )}
         {quotesList.map(quote => {
-          const vis = ELEMENT_VISUALS[quote.axis]
+          const vis = TOKEN_VISUALS[quote.axis]
           const Icon = vis.icon
-          const change = formatChange(quote.change24h)
+          const change = formatChange(quote.change24hPct)
           const isCopied = copiedMint === quote.axis
           const shortMint = `${quote.mintAddress.slice(0, 4)}...${quote.mintAddress.slice(-4)}`
 
@@ -351,7 +334,7 @@ export function LivePriceIndexTicker({
                         </span>
                       </div>
                       <span className="font-mono-label text-[9px] text-[#8c947c]">
-                        {quote.rulingPlanets}
+                        {quote.contributingPlanets}
                       </span>
                     </div>
                   </div>
@@ -375,10 +358,10 @@ export function LivePriceIndexTicker({
                 {/* Price Display */}
                 <div className="my-4">
                   <div className="font-mono-label text-[10px] text-[#8c947c] uppercase tracking-wider mb-0.5">
-                    Instantaneous Price
+                    Neutral Cost Index
                   </div>
                   <div className="font-headline-lg text-2xl md:text-3xl font-bold text-[#e0e4d2] tracking-tight">
-                    {formatPrice(quote, currency)}
+                    {formatIndex(quote)} <span className="text-sm text-[#8c947c]">IDX</span>
                   </div>
                   <div className="flex items-center gap-2 mt-1">
                     <span className="font-mono-label text-[10px] text-[#8c947c]">
@@ -386,11 +369,11 @@ export function LivePriceIndexTicker({
                     </span>
                     <span
                       className={`font-mono-label text-[10px] font-semibold ${
-                        quote.velocity1h >= 0 ? 'text-[#b8fc4b]' : 'text-[#ff7b72]'
+                        quote.change1hPct >= 0 ? 'text-[#b8fc4b]' : 'text-[#ff7b72]'
                       }`}
                     >
-                      {quote.velocity1h >= 0 ? '+' : ''}
-                      {quote.velocity1h.toFixed(2)}%
+                      {quote.change1hPct >= 0 ? '+' : ''}
+                      {quote.change1hPct.toFixed(2)}%
                     </span>
                   </div>
                 </div>
@@ -399,11 +382,10 @@ export function LivePriceIndexTicker({
                 <div className="my-3 py-2 border-y border-[#23262B] flex items-center justify-between">
                   <div className="space-y-1">
                     <span className="font-mono-label text-[9px] text-[#8c947c] block uppercase">
-                      24h Sky Harmonic
+                      Quantized Sky Share
                     </span>
                     <span className="font-mono-label text-[11px] font-bold text-[#e0e4d2]">
-                      $\Psi = {quote.harmonicResonance > 0 ? '+' : ''}
-                      {quote.harmonicResonance.toFixed(2)}$
+                      {(quote.weight * 100).toFixed(2)}%
                     </span>
                   </div>
                   <SparklineSvg
@@ -415,14 +397,14 @@ export function LivePriceIndexTicker({
                   />
                 </div>
 
-                {/* Astrological Aspect */}
+                {/* Oracle basis */}
                 <div className="mb-4 bg-[#050506]/50 rounded p-2.5 border border-[#23262B]">
                   <div className="flex items-center gap-1.5 text-[10px] font-mono-label text-[#c2cab0]">
                     <Sparkles className={`w-3 h-3 ${vis.text}`} />
-                    <span className="truncate">{quote.dominantAspect}</span>
+                    <span className="truncate">{data?.basis.model ?? 'Canonical ESMS oracle'}</span>
                   </div>
                   <div className="font-body-md text-[10px] text-[#8c947c] mt-1 leading-snug">
-                    {quote.archetype}
+                    {quote.description}
                   </div>
                 </div>
               </div>
