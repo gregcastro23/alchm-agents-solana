@@ -24,7 +24,7 @@ def purge_guest_chat_history(retention_days: int = 30) -> dict:
         # Find guest chat conversations older than retention_days
         guest_query = db.query(models.AgentConversation).filter(
             or_(
-                models.AgentConversation.userId == None,
+                models.AgentConversation.userId.is_(None),
                 models.AgentConversation.userId == "",
                 models.AgentConversation.userId.like("guest_%")
             ),
