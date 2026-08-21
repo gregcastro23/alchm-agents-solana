@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { Card } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/components/ui/use-toast'
@@ -8,7 +9,7 @@ import { useSession } from 'next-auth/react'
 import { DAILY_ESMS_YIELD, type TokenType } from '@/lib/economy-config'
 import { usePathname } from 'next/navigation'
 import { Sparkles, Zap, Box, Droplets } from 'lucide-react'
-import { TokenBalances } from '@/lib/services/economyService'
+import type { TokenBalances } from '@/lib/services/economyService'
 
 export function TokenHUD() {
   const { data: session, status } = useSession()
@@ -71,8 +72,9 @@ export function TokenHUD() {
 
       if (!res.ok) {
         toast({
-          title: 'Yield Not Ready',
-          description: data.error || 'You have already claimed your daily yield.',
+          title: 'Daily ESMS Yield Not Ready',
+          description:
+            data.error || 'Daily ESMS yield already harvested. Available again tomorrow.',
           variant: 'destructive',
         })
         return
@@ -92,13 +94,13 @@ export function TokenHUD() {
       const amount = (token: TokenType) =>
         distribution[token] ?? distribution[lowercaseToken[token]] ?? basePerAxis
       toast({
-        title: 'ESMS Yield Claimed!',
-        description: `Received ${amount('Spirit')} Spirit, ${amount('Essence')} Essence, ${amount('Matter')} Matter, ${amount('Substance')} Substance. ${data.isPremium ? '(2.0x Premium Multiplier applied!)' : ''}`,
+        title: 'Yield Harvested',
+        description: `Received ${amount('Spirit')} Spirit, ${amount('Essence')} Essence, ${amount('Matter')} Matter, ${amount('Substance')} Substance.${data.isPremium ? ' A 2.0× yield multiplier was applied.' : ''}`,
       })
     } catch (error) {
       toast({
-        title: 'Error',
-        description: 'Failed to claim ESMS yield.',
+        title: 'Daily ESMS Yield Error',
+        description: 'Failed to claim Daily ESMS Yield.',
         variant: 'destructive',
       })
     } finally {
@@ -113,10 +115,20 @@ export function TokenHUD() {
   if (!balances || status !== 'authenticated') return null
 
   return (
-    <Card className="fixed bottom-4 right-4 z-50 p-3 shadow-lg bg-black/80 backdrop-blur-md border border-zinc-800 text-white rounded-xl">
+    <Card
+      className="fixed bottom-4 right-4 z-50 p-3 shadow-lg bg-black/80 backdrop-blur-md border border-zinc-800 text-white rounded-xl"
+      role="region"
+      aria-label="ESMS Treasury"
+    >
       <div className="flex flex-col gap-3">
         <div className="flex items-center justify-between border-b border-zinc-800 pb-2 mb-1">
-          <h4 className="text-sm font-semibold tracking-wider text-zinc-300">ALCHEMICAL VAULT</h4>
+          <Link
+            href="/economy"
+            className="text-sm font-semibold tracking-wider text-zinc-300 hover:text-white"
+            title="Open the ESMS Treasury"
+          >
+            ESMS TREASURY
+          </Link>
           <Button
             size="sm"
             variant="ghost"
@@ -125,42 +137,73 @@ export function TokenHUD() {
             disabled={claiming || balances.canClaimAgentsYield === false}
           >
             {claiming
-              ? 'Claiming...'
+              ? 'Claiming…'
               : balances.canClaimAgentsYield === false
-                ? 'Yield Claimed'
-                : 'Claim Yield'}
+                ? 'Yield Harvested'
+                : 'Claim Daily Yield'}
           </Button>
         </div>
-        <div className="flex gap-4 px-2">
-          <div className="flex flex-col items-center group">
+        <div className="flex gap-4 px-2" role="group" aria-label="ESMS Token balances">
+          <div
+            className="flex flex-col items-center group"
+            title={`Spirit (Sp) ESMS Token balance: ${balances.spirit}`}
+            aria-label={`Spirit (Sp) ESMS Token balance: ${balances.spirit}`}
+          >
             <div className="flex items-center gap-1.5 text-yellow-400 mb-1">
-              <Sparkles size={14} className="group-hover:animate-pulse" />
-              <span className="text-xs uppercase font-medium">Spirit</span>
+              <Sparkles size={14} className="group-hover:animate-pulse" aria-hidden="true" />
+              <span className="text-xs uppercase font-medium">Spirit (Sp)</span>
             </div>
             <span className="font-mono text-sm">{balances.spirit}</span>
           </div>
-          <div className="flex flex-col items-center group">
+          <div
+            className="flex flex-col items-center group"
+            title={`Essence (Es) ESMS Token balance: ${balances.essence}`}
+            aria-label={`Essence (Es) ESMS Token balance: ${balances.essence}`}
+          >
             <div className="flex items-center gap-1.5 text-blue-400 mb-1">
-              <Droplets size={14} className="group-hover:animate-bounce" />
-              <span className="text-xs uppercase font-medium">Essence</span>
+              <Droplets size={14} className="group-hover:animate-bounce" aria-hidden="true" />
+              <span className="text-xs uppercase font-medium">Essence (Es)</span>
             </div>
             <span className="font-mono text-sm">{balances.essence}</span>
           </div>
-          <div className="flex flex-col items-center group">
+          <div
+            className="flex flex-col items-center group"
+            title={`Matter (Ma) ESMS Token balance: ${balances.matter}`}
+            aria-label={`Matter (Ma) ESMS Token balance: ${balances.matter}`}
+          >
             <div className="flex items-center gap-1.5 text-orange-400 mb-1">
-              <Box size={14} className="group-hover:rotate-12 transition-transform" />
-              <span className="text-xs uppercase font-medium">Matter</span>
+              <Box
+                size={14}
+                className="group-hover:rotate-12 transition-transform"
+                aria-hidden="true"
+              />
+              <span className="text-xs uppercase font-medium">Matter (Ma)</span>
             </div>
             <span className="font-mono text-sm">{balances.matter}</span>
           </div>
-          <div className="flex flex-col items-center group">
+          <div
+            className="flex flex-col items-center group"
+            title={`Substance (Su) ESMS Token balance: ${balances.substance}`}
+            aria-label={`Substance (Su) ESMS Token balance: ${balances.substance}`}
+          >
             <div className="flex items-center gap-1.5 text-green-400 mb-1">
-              <Zap size={14} className="group-hover:scale-110 transition-transform" />
-              <span className="text-xs uppercase font-medium">Substance</span>
+              <Zap
+                size={14}
+                className="group-hover:scale-110 transition-transform"
+                aria-hidden="true"
+              />
+              <span className="text-xs uppercase font-medium">Substance (Su)</span>
             </div>
             <span className="font-mono text-sm">{balances.substance}</span>
           </div>
         </div>
+        <Link
+          href="/shop?tab=tokens"
+          className="text-center text-[11px] font-medium text-indigo-300 hover:text-indigo-200"
+          title="Acquire ESMS Bundles in the ESMS Bazaar"
+        >
+          Acquire ESMS Bundles
+        </Link>
       </div>
     </Card>
   )

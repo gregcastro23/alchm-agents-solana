@@ -64,8 +64,18 @@ const navigationGroups = [
       { href: '/elemental-chart', label: 'Elemental Chart', description: 'Balance of elements.' },
       {
         href: '/yield',
-        label: 'ESMS Staking Yield',
-        description: 'Claim and monitor planetary yield rewards.',
+        label: 'Cross-Site ESMS Yield',
+        description: 'Claim Daily ESMS Yield from linked Alchm sites.',
+      },
+      {
+        href: '/economy',
+        label: 'ESMS Treasury',
+        description: 'Review Spirit, Essence, Matter, and Substance reserves.',
+      },
+      {
+        href: '/shop?tab=tokens',
+        label: 'Acquire ESMS Bundles',
+        description: 'Open the ESMS Bazaar and acquire ESMS Token bundles.',
       },
     ],
   },
@@ -167,10 +177,10 @@ const navigationGroups = [
 ]
 
 const ESMS_COMPACT = [
-  { key: 'spirit', label: 'Sp' },
-  { key: 'essence', label: 'Es' },
-  { key: 'matter', label: 'Ma' },
-  { key: 'substance', label: 'Su' },
+  { key: 'spirit', label: 'Sp', name: 'Spirit' },
+  { key: 'essence', label: 'Es', name: 'Essence' },
+  { key: 'matter', label: 'Ma', name: 'Matter' },
+  { key: 'substance', label: 'Su', name: 'Substance' },
 ] as const
 
 const ListItem = React.forwardRef<React.ElementRef<'a'>, React.ComponentPropsWithoutRef<'a'>>(
@@ -263,9 +273,19 @@ export function Navigation() {
 
           {/* Desktop Right */}
           <div className="nav-right">
-            <div className="hidden 2xl:grid grid-cols-4 gap-1 rounded-lg border border-white/10 bg-black/20 px-2 py-1">
-              {ESMS_COMPACT.map(({ key, label }) => (
-                <span key={key} className="font-mono text-[9px] text-zinc-400" title={key}>
+            <div
+              className="hidden 2xl:grid grid-cols-4 gap-1 rounded-lg border border-white/10 bg-black/20 px-2 py-1"
+              role="group"
+              title="ESMS Reserves (EVM / Solana Devnet)"
+              aria-label="ESMS Reserves (EVM / Solana Devnet)"
+            >
+              {ESMS_COMPACT.map(({ key, label, name }) => (
+                <span
+                  key={key}
+                  className="font-mono text-[9px] text-zinc-400"
+                  title={`${name} (${label}) ESMS reserve — Base Sepolia: ${evmBalances?.[key] ?? 'unavailable'}; Solana Devnet: ${solanaBalances?.[key] ?? 'unavailable'}`}
+                  aria-label={`${name} (${label}) ESMS reserve. Base Sepolia: ${evmBalances?.[key] ?? 'unavailable'}. Solana Devnet: ${solanaBalances?.[key] ?? 'unavailable'}.`}
+                >
                   {label} <b className="text-zinc-200">{evmBalances?.[key] ?? '—'}</b>
                   <span className="text-violet-400">/</span>
                   <b className="text-violet-200">{solanaBalances?.[key] ?? '—'}</b>
@@ -344,12 +364,22 @@ export function Navigation() {
                 <div className="nav-mobile-links">
                   {group.links.map(link => {
                     const isActive = pathname === link.href || pathname?.startsWith(`${link.href}/`)
+                    const isEsmsLink =
+                      link.href === '/yield' ||
+                      link.href === '/economy' ||
+                      link.href === '/shop?tab=tokens'
                     return (
                       <Link
                         key={link.href}
                         href={link.href}
                         className={cn('nav-mobile-link', isActive && 'nav-mobile-link-active')}
                         onClick={() => setMobileMenuOpen(false)}
+                        title={
+                          isEsmsLink
+                            ? `ESMS Reserves (EVM / Solana Devnet) — ${link.description}`
+                            : link.description
+                        }
+                        aria-label={`${link.label}. ${link.description}`}
                       >
                         {link.label}
                       </Link>

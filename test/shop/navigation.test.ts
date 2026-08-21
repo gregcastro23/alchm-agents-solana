@@ -23,7 +23,7 @@ describe('shop/navigation', () => {
     expect(normalizeTokenCount('701')).toBeNull()
   })
 
-  it('builds canonical token-store return links', () => {
+  it('builds canonical ESMS Bazaar return links', () => {
     expect(buildTokenShopHref()).toBe('/shop?tab=tokens')
     expect(buildTokenShopHref({ purchase: 'success', tokens: '1600' })).toBe(
       '/shop?tab=tokens&purchase=success&tokens=1600'

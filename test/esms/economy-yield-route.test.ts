@@ -1,14 +1,15 @@
+import { mock } from 'bun:test'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-const { mockAuth, mockClaimProfileYield } = vi.hoisted(() => ({
-  mockAuth: vi.fn(),
-  mockClaimProfileYield: vi.fn(),
-}))
+mock.module('server-only', () => ({}))
+
+const mockAuth = vi.fn()
+const mockClaimProfileYield = vi.fn()
 
 vi.mock('@/lib/auth', () => ({ auth: mockAuth }))
 vi.mock('@/lib/profile-yield', () => ({ claimProfileYield: mockClaimProfileYield }))
 
-import { POST } from '@/app/api/economy/yield/route'
+const { POST } = await import('@/app/api/economy/yield/route')
 
 describe('POST /api/economy/yield', () => {
   beforeEach(() => {

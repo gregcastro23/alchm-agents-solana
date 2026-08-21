@@ -79,7 +79,7 @@ const HISTORICAL = [
 ]
 
 const ARENA_MODES = [
-  { name: 'Word Duel', desc: 'Trade verbal strikes for elemental yield', icon: Swords },
+  { name: 'Word Duel', desc: 'Trade verbal strikes for elemental ESMS yield', icon: Swords },
   { name: 'Scrabble Arena', desc: 'Tile-by-tile transmutation battles', icon: Trophy },
   { name: 'Synastry Pairing', desc: 'Chart-matched agent alliances', icon: Sparkles },
 ]
@@ -183,10 +183,38 @@ const ELEMENT_STYLE: Record<string, { text: string; bg: string; border: string }
 }
 
 const ECONOMY_ELEMENTS = [
-  { key: 'spirit', label: 'Spirit', sub: 'Flame', Icon: Flame, ...ELEMENT_STYLE.fire },
-  { key: 'essence', label: 'Essence', sub: 'Drop', Icon: Droplets, ...ELEMENT_STYLE.water },
-  { key: 'matter', label: 'Matter', sub: 'Mountain', Icon: Mountain, ...ELEMENT_STYLE.earth },
-  { key: 'substance', label: 'Substance', sub: 'Wind', Icon: Wind, ...ELEMENT_STYLE.air },
+  {
+    key: 'spirit',
+    label: 'Spirit',
+    abbreviation: 'Sp',
+    sub: 'Flame',
+    Icon: Flame,
+    ...ELEMENT_STYLE.fire,
+  },
+  {
+    key: 'essence',
+    label: 'Essence',
+    abbreviation: 'Es',
+    sub: 'Drop',
+    Icon: Droplets,
+    ...ELEMENT_STYLE.water,
+  },
+  {
+    key: 'matter',
+    label: 'Matter',
+    abbreviation: 'Ma',
+    sub: 'Mountain',
+    Icon: Mountain,
+    ...ELEMENT_STYLE.earth,
+  },
+  {
+    key: 'substance',
+    label: 'Substance',
+    abbreviation: 'Su',
+    sub: 'Wind',
+    Icon: Wind,
+    ...ELEMENT_STYLE.air,
+  },
 ] as const
 
 const capitalize = (s: string) => (s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s)
@@ -240,6 +268,24 @@ type JingDuel = {
   stance?: string | null
   boostElement?: string | null
 }
+
+const ESMS_BOOST_LABEL: Record<string, 'Spirit' | 'Essence' | 'Matter' | 'Substance'> = {
+  spirit: 'Spirit',
+  sp: 'Spirit',
+  fire: 'Spirit',
+  essence: 'Essence',
+  es: 'Essence',
+  water: 'Essence',
+  matter: 'Matter',
+  ma: 'Matter',
+  earth: 'Matter',
+  substance: 'Substance',
+  su: 'Substance',
+  air: 'Substance',
+}
+
+const normalizeEsmsBoost = (value?: string | null) =>
+  value ? (ESMS_BOOST_LABEL[value.trim().toLowerCase()] ?? null) : null
 
 // ============================================================================
 // COMPONENT
@@ -464,6 +510,7 @@ export default function LandingPage() {
   }, [planetaryData])
 
   const featuredDuel = duels[0]
+  const featuredBoost = normalizeEsmsBoost(featuredDuel?.boostElement)
 
   return (
     <div className="landing-page bg-[#050506] text-[#e0e4d2] min-h-screen relative selection:bg-[#b8fc4b] selection:text-black">
@@ -1049,7 +1096,7 @@ export default function LandingPage() {
           <SectionHead
             eyebrow="Jing Arena"
             title="Duel with words, wager with stars"
-            subtitle="Head-to-head word duels and tile battles between agents and players — winners earn elemental yield."
+            subtitle="Head-to-head word duels and tile battles between agents and players — winners earn elemental ESMS yield."
             accent="#f472b6"
           />
           <div className="grid grid-cols-12 gap-6">
@@ -1070,9 +1117,26 @@ export default function LandingPage() {
                 />
                 <div className="flex flex-col items-center">
                   <span className="font-headline-md text-xl text-[#f472b6]">VS</span>
-                  <span className="font-mono-label text-[9px] text-[#8c947c] mt-1 uppercase">
-                    {featuredDuel?.boostElement || 'ESMS pot'}
+                  <span
+                    className="font-mono-label text-[9px] text-[#8c947c] mt-1 uppercase"
+                    title={
+                      featuredBoost
+                        ? `ESMS Pot with ${featuredBoost} elemental boost`
+                        : 'ESMS Pot; no ESMS elemental boost reported'
+                    }
+                    aria-label={
+                      featuredBoost
+                        ? `ESMS Pot with ${featuredBoost} elemental boost`
+                        : 'ESMS Pot; no ESMS elemental boost reported'
+                    }
+                  >
+                    ESMS Pot
                   </span>
+                  {featuredBoost && (
+                    <span className="font-mono-label text-[8px] text-[#f472b6] uppercase">
+                      {featuredBoost} boost
+                    </span>
+                  )}
                 </div>
                 <DuelSide
                   name={featuredDuel?.targetId ? prettyId(featuredDuel.targetId) : 'Sun Tzu'}
@@ -1112,7 +1176,7 @@ export default function LandingPage() {
           <SectionHead
             eyebrow="Elemental economy"
             title="Four elements, one balance"
-            subtitle="Earn Spirit, Essence, Matter, and Substance through play and daily yield — spendable across Alchm Agents and the Kitchen app."
+            subtitle="Earn Spirit, Essence, Matter, and Substance ESMS Tokens through play and Daily ESMS Yield — redeem via ESMS across Alchm Agents and Alchm Kitchen."
             accent="#b8fc4b"
           />
           <div className="grid grid-cols-12 gap-6">
@@ -1123,10 +1187,13 @@ export default function LandingPage() {
                   <div
                     key={el.key}
                     className={`rounded-lg p-4 border ${el.border} ${el.bg} flex flex-col items-center text-center gap-1.5`}
+                    role="group"
+                    title={`${el.label} (${el.abbreviation}) ESMS Token balance: ${status === 'authenticated' && balances ? Math.floor((balances as any)[el.key]) : 'unavailable'}`}
+                    aria-label={`${el.label} (${el.abbreviation}) ESMS Token balance: ${status === 'authenticated' && balances ? Math.floor((balances as any)[el.key]) : 'unavailable'}`}
                   >
-                    <el.Icon className={`w-5 h-5 ${el.text}`} />
+                    <el.Icon className={`w-5 h-5 ${el.text}`} aria-hidden="true" />
                     <span className="font-mono-label text-[9px] text-[#8c947c] uppercase">
-                      {el.label}
+                      {el.label} ({el.abbreviation})
                     </span>
                     <span className="font-headline-sm text-lg text-[#e0e4d2]">
                       {status === 'authenticated' && balances
@@ -1175,7 +1242,7 @@ export default function LandingPage() {
                   </span>
                 </div>
                 <p className="font-body-md text-sm text-[#c2cab0] leading-relaxed">
-                  Stake USDC on celestial stars to earn elemental yield, gated by live star
+                  Stake USDC on celestial stars to earn elemental ESMS yield, gated by live star
                   visibility — on Circle Arc. The full vault experience lives in the Pentacles app.
                 </p>
               </div>

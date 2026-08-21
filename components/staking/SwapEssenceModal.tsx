@@ -207,11 +207,18 @@ export default function SwapEssenceModal({
   if (!isOpen) return null
 
   return (
-    <div style={overlayStyle}>
-      <div style={modalStyle}>
+    <div style={overlayStyle} role="presentation">
+      <div
+        style={modalStyle}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="swap-esms-title"
+        aria-describedby="swap-esms-description"
+      >
         {/* Close Button */}
         <button
           onClick={onClose}
+          aria-label="Close ESMS Token swap"
           style={{
             position: 'absolute',
             top: 14,
@@ -228,6 +235,7 @@ export default function SwapEssenceModal({
         </button>
 
         <h2
+          id="swap-esms-title"
           style={{
             fontSize: 20,
             fontWeight: 800,
@@ -236,8 +244,14 @@ export default function SwapEssenceModal({
             textAlign: 'center',
           }}
         >
-          Swap Essence
+          Swap ESMS Tokens
         </h2>
+        <p
+          id="swap-esms-description"
+          style={{ margin: '-8px 20px 0', color: '#9aa0d8', fontSize: 12, textAlign: 'center' }}
+        >
+          Exchange Spirit, Essence, Matter, or Substance through an active celestial pool.
+        </p>
 
         {/* FROM Field */}
         <div style={inputContainerStyle}>
@@ -250,13 +264,16 @@ export default function SwapEssenceModal({
             }}
           >
             <span>From</span>
-            <span>Balance: {balanceMap[fromId].toFixed(4)}</span>
+            <span>ESMS Balance: {balanceMap[fromId].toFixed(4)}</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {/* Custom Dropdown for FROM */}
             <div ref={fromRef} style={{ position: 'relative', flexShrink: 0 }}>
               <button
                 onClick={() => setFromDropdownOpen(!fromDropdownOpen)}
+                aria-label={`Select ESMS Token to swap from. Current token: ${ESMS_LABEL[fromId]}`}
+                aria-haspopup="listbox"
+                aria-expanded={fromDropdownOpen}
                 style={{
                   background: 'rgba(255,255,255,0.05)',
                   border: '1px solid rgba(122,128,200,0.3)',
@@ -285,6 +302,8 @@ export default function SwapEssenceModal({
 
               {fromDropdownOpen && (
                 <div
+                  role="listbox"
+                  aria-label="ESMS Tokens available to swap from"
                   style={{
                     position: 'absolute',
                     top: '100%',
@@ -305,6 +324,9 @@ export default function SwapEssenceModal({
                     .map(id => (
                       <button
                         key={id}
+                        role="option"
+                        aria-selected={fromId === id}
+                        aria-label={`Swap from ${ESMS_LABEL[id]} ESMS Tokens`}
                         onClick={() => {
                           setFromId(id)
                           setFromDropdownOpen(false)
@@ -342,6 +364,7 @@ export default function SwapEssenceModal({
               value={fromAmt}
               onChange={e => setFromAmt(e.target.value)}
               inputMode="decimal"
+              aria-label={`Amount of ${ESMS_LABEL[fromId]} ESMS Tokens to swap`}
               placeholder="0.0"
               style={{
                 flex: 1,
@@ -357,6 +380,7 @@ export default function SwapEssenceModal({
             />
             <button
               onClick={handleMax}
+              aria-label={`Use maximum ${ESMS_LABEL[fromId]} ESMS Token balance`}
               style={{
                 background: 'rgba(122, 128, 200, 0.2)',
                 color: '#ffd76a',
@@ -377,6 +401,7 @@ export default function SwapEssenceModal({
         <div style={{ display: 'flex', justifyContent: 'center', margin: '-10px 0' }}>
           <button
             onClick={handleSwitchDirection}
+            aria-label="Reverse ESMS Token swap direction"
             style={{
               background: 'rgba(122, 128, 200, 0.18)',
               border: '1px solid rgba(122,128,200,0.3)',
@@ -409,13 +434,16 @@ export default function SwapEssenceModal({
             }}
           >
             <span>To</span>
-            <span>Balance: {balanceMap[toId].toFixed(4)}</span>
+            <span>ESMS Balance: {balanceMap[toId].toFixed(4)}</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
             {/* Custom Dropdown for TO */}
             <div ref={toRef} style={{ position: 'relative', flexShrink: 0 }}>
               <button
                 onClick={() => setToDropdownOpen(!toDropdownOpen)}
+                aria-label={`Select ESMS Token to receive. Current token: ${ESMS_LABEL[toId]}`}
+                aria-haspopup="listbox"
+                aria-expanded={toDropdownOpen}
                 style={{
                   background: 'rgba(255,255,255,0.05)',
                   border: '1px solid rgba(122,128,200,0.3)',
@@ -444,6 +472,8 @@ export default function SwapEssenceModal({
 
               {toDropdownOpen && (
                 <div
+                  role="listbox"
+                  aria-label="ESMS Tokens available to receive"
                   style={{
                     position: 'absolute',
                     top: '100%',
@@ -464,6 +494,9 @@ export default function SwapEssenceModal({
                     .map(id => (
                       <button
                         key={id}
+                        role="option"
+                        aria-selected={toId === id}
+                        aria-label={`Receive ${ESMS_LABEL[id]} ESMS Tokens`}
                         onClick={() => {
                           setToId(id)
                           setToDropdownOpen(false)
@@ -498,6 +531,9 @@ export default function SwapEssenceModal({
             </div>
 
             <div
+              role="status"
+              aria-label={`Estimated ${ESMS_LABEL[toId]} ESMS Tokens received`}
+              aria-live="polite"
               style={{
                 flex: 1,
                 color: toAmt > 0 ? '#fff' : '#6b72a8',
@@ -515,6 +551,8 @@ export default function SwapEssenceModal({
 
         {/* Pool Context Strip */}
         <div
+          role="region"
+          aria-label={`${ESMS_LABEL[fromId]} to ${ESMS_LABEL[toId]} ESMS Pool status`}
           style={{
             background: 'rgba(0, 0, 0, 0.2)',
             border: '1px solid rgba(122, 128, 200, 0.18)',
@@ -528,7 +566,7 @@ export default function SwapEssenceModal({
         >
           <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
             <span style={{ fontWeight: 600 }}>
-              Pool:{' '}
+              ESMS Pool:{' '}
               <span style={{ color: ELEMENT_COLOR[elementMap[fromId]] }}>{ESMS_LABEL[fromId]}</span>
               {' ↔ '}
               <span style={{ color: ELEMENT_COLOR[elementMap[toId]] }}>{ESMS_LABEL[toId]}</span>
@@ -547,7 +585,7 @@ export default function SwapEssenceModal({
                   boxShadow: '0 0 8px rgba(95, 208, 138, 0.2)',
                 }}
               >
-                ● Pool Open
+                ● ESMS Pool Open
               </span>
             ) : (
               <span
@@ -562,7 +600,7 @@ export default function SwapEssenceModal({
                   textTransform: 'uppercase',
                 }}
               >
-                ○ Pool Closed
+                ○ ESMS Pool Closed
               </span>
             )}
           </div>
@@ -580,7 +618,8 @@ export default function SwapEssenceModal({
               </div>
               {poolReserves && (
                 <div style={{ color: '#9aa0d8', fontSize: 11, fontVariantNumeric: 'tabular-nums' }}>
-                  Reserves: {poolReserves.reserveA.toFixed(2)} / {poolReserves.reserveB.toFixed(2)}
+                  ESMS Pool Reserves: {poolReserves.reserveA.toFixed(2)} /{' '}
+                  {poolReserves.reserveB.toFixed(2)}
                 </div>
               )}
             </>
@@ -605,7 +644,7 @@ export default function SwapEssenceModal({
             }}
           >
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>Exchange Rate</span>
+              <span>ESMS Exchange Rate</span>
               <span>
                 1 {ESMS_LABEL[fromId]} ≈ {(toAmt / Number(fromAmt)).toFixed(4)} {ESMS_LABEL[toId]}
               </span>
@@ -615,7 +654,7 @@ export default function SwapEssenceModal({
               <span>1%</span>
             </div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-              <span>Minimum Received</span>
+              <span>Minimum ESMS Received</span>
               <span>
                 {(toAmt * 0.99).toFixed(4)} {ESMS_LABEL[toId]}
               </span>
@@ -627,6 +666,7 @@ export default function SwapEssenceModal({
         <button
           disabled={busy || !isPoolOpen || !isInputValid}
           onClick={handleSwap}
+          aria-label={`Swap ${ESMS_LABEL[fromId]} for ${ESMS_LABEL[toId]} ESMS Tokens`}
           style={{
             background: !isPoolOpen
               ? 'rgba(122, 128, 200, 0.08)'
@@ -648,14 +688,14 @@ export default function SwapEssenceModal({
           }}
         >
           {busy
-            ? message || 'Transmuting...'
+            ? message || 'Swapping ESMS Tokens…'
             : !isPoolOpen
               ? 'Celestial Pool Closed'
               : !fromAmt
                 ? 'Enter an Amount'
                 : !isInputValid
-                  ? 'Insufficient Balance'
-                  : 'Swap Essence'}
+                  ? 'Insufficient ESMS Balance'
+                  : 'Swap ESMS Tokens'}
         </button>
 
         {/* Transaction Messages */}
@@ -676,9 +716,10 @@ export default function SwapEssenceModal({
                   href={explorer}
                   target="_blank"
                   rel="noreferrer"
+                  aria-label="View ESMS Token swap transaction in the configured explorer"
                   style={{ color: '#7fb0ff', textDecoration: 'underline' }}
                 >
-                  view transaction on explorer ↗
+                  View transaction on explorer ↗
                 </a>
               </div>
             )}

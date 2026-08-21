@@ -310,7 +310,7 @@ export function UnifiedMultiAgentChat({
         const errorMsg: Message = {
           id: `msg-error-${Date.now()}`,
           role: 'agent',
-          content: errorData.error || 'Insufficient tokens to consult these agents at this time.',
+          content: 'Insufficient ESMS Tokens to consult these agents at this time.',
           timestamp: new Date(),
           agentName: 'System',
           agentColor: '#f59e0b',
@@ -678,11 +678,11 @@ export function UnifiedMultiAgentChat({
               {(message.metadata as any)?.isPaymentRequired ? (
                 <div className="bg-black/60 backdrop-blur-md border border-amber-500/30 rounded-lg p-4 space-y-3">
                   <div className="flex items-center gap-2 text-amber-400 font-semibold">
-                    <Sparkles className="w-5 h-5 animate-pulse" />
-                    <span>Insufficient Cosmic Energy</span>
+                    <Sparkles className="w-5 h-5 animate-pulse" aria-hidden="true" />
+                    <span>Insufficient ESMS Reserves</span>
                   </div>
                   <p className="text-sm text-gray-300">
-                    To summon this council right now, you need additional alchemical elements:
+                    This consultation requires additional ESMS Tokens:
                   </p>
 
                   <div className="grid grid-cols-2 gap-2 mt-2">
@@ -702,9 +702,12 @@ export function UnifiedMultiAgentChat({
                           <div
                             key={token}
                             className={`flex items-center justify-between px-3 py-2 border rounded-md ${colorClass}`}
+                            role="group"
+                            title={`${token} ESMS Tokens required: ${String(amount)}`}
+                            aria-label={`${token} ESMS Tokens required: ${String(amount)}`}
                           >
                             <span className="text-xs font-semibold">{token}</span>
-                            <span className="text-sm font-bold">{amount as any}</span>
+                            <span className="text-sm font-bold">{String(amount)}</span>
                           </div>
                         )
                       }
@@ -718,24 +721,25 @@ export function UnifiedMultiAgentChat({
                           const res = await fetch('/api/economy/yield', { method: 'POST' })
                           const claimData = await res.json()
                           if (res.ok) {
-                            toast.success('ESMS yield successfully claimed!', {
+                            toast.success('Yield Harvested', {
                               description: `Spirit: ${claimData.balances.spirit}, Essence: ${claimData.balances.essence}, Matter: ${claimData.balances.matter}, Substance: ${claimData.balances.substance}`,
                             })
                             // Refresh page or trigger context reload if needed
                             window.location.reload()
                           } else {
                             toast.error(
-                              claimData.message ||
-                                'Already claimed today! Get premium multipliers for larger payouts.'
+                              res.status === 409
+                                ? 'Daily ESMS yield already harvested. Available again tomorrow.'
+                                : claimData.error || 'Unable to claim Daily ESMS Yield.'
                             )
                           }
                         } catch (err) {
-                          toast.error('Failed to claim yield. Try again later.')
+                          toast.error('Failed to claim Daily ESMS Yield. Try again later.')
                         }
                       }}
                       className="w-full bg-gradient-to-r from-amber-500 to-amber-600 hover:from-amber-600 hover:to-amber-700 text-black font-semibold border-none shadow-[0_0_15px_rgba(245,158,11,0.2)]"
                     >
-                      Claim ESMS Yield
+                      Claim Daily Yield
                     </Button>
                     <a
                       href="/#free-agents"
@@ -744,10 +748,11 @@ export function UnifiedMultiAgentChat({
                       🎁 Try Free Agents of the Week
                     </a>
                     <a
-                      href="/dashboard"
+                      href="/shop?tab=tokens"
                       className="w-full text-center px-4 py-2 border border-purple-500/30 rounded-md bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 hover:text-white transition-colors text-xs font-semibold"
+                      title="Acquire ESMS Tokens for consultations; BYOK keys can be configured in Account Settings"
                     >
-                      Get Premium 2.0x Multiplier
+                      Acquire ESMS Bundles
                     </a>
                   </div>
                 </div>

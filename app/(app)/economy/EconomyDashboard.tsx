@@ -42,7 +42,7 @@ export default function EconomyDashboard({
 
   const handleClaimYield = async () => {
     if (!userId) {
-      setClaimStatus({ type: 'error', message: 'You must be logged in to claim yield.' })
+      setClaimStatus({ type: 'error', message: 'Sign in to Claim Daily ESMS Yield.' })
       return
     }
 
@@ -60,12 +60,15 @@ export default function EconomyDashboard({
           setBalances(data.balances)
         }
         setHasClaimedYield(true)
-        setClaimStatus({ type: 'success', message: 'Daily ESMS yield claimed successfully!' })
+        setClaimStatus({ type: 'success', message: 'Yield Harvested successfully.' })
       } else if (response.status === 409 || data.error === 'Cooldown active') {
         setHasClaimedYield(true)
-        setClaimStatus({ type: 'error', message: 'You have already claimed your yield today.' })
+        setClaimStatus({
+          type: 'error',
+          message: 'Daily ESMS yield already harvested. Available again tomorrow.',
+        })
       } else {
-        throw new Error(data.error || 'Failed to claim yield')
+        throw new Error(data.error || 'Failed to claim Daily ESMS Yield')
       }
     } catch (err: any) {
       console.error('Error claiming yield:', err)
@@ -88,24 +91,28 @@ export default function EconomyDashboard({
   const tokenStats = [
     {
       label: 'Spirit',
+      abbreviation: 'Sp',
       val: balances.spirit,
       bg: 'bg-alchemical-spirit',
       border: 'border-alchemical-spirit',
     },
     {
       label: 'Essence',
+      abbreviation: 'Es',
       val: balances.essence,
       bg: 'bg-alchemical-essence',
       border: 'border-alchemical-essence',
     },
     {
       label: 'Matter',
+      abbreviation: 'Ma',
       val: balances.matter,
       bg: 'bg-alchemical-matter',
       border: 'border-alchemical-matter',
     },
     {
       label: 'Substance',
+      abbreviation: 'Su',
       val: balances.substance,
       bg: 'bg-alchemical-substance',
       border: 'border-alchemical-substance',
@@ -119,11 +126,11 @@ export default function EconomyDashboard({
         <div className="flex items-center justify-between border-b border-border pb-4">
           <h2 className="text-xl font-semibold text-zinc-200 flex items-center gap-2">
             <Activity className="w-5 h-5 text-amber-500" />
-            Current Balances
+            ESMS Treasury Reserves
           </h2>
           {!userId && (
             <span className="text-xs px-2 py-1 bg-red-950/40 text-red-400 border border-red-900/50 rounded-full">
-              Guest Mode (Read Only)
+              ESMS Treasury — Guest Preview
             </span>
           )}
         </div>
@@ -133,9 +140,14 @@ export default function EconomyDashboard({
             <div
               key={stat.label}
               className={`p-4 rounded-lg bg-background border ${stat.border}/30 relative overflow-hidden flex flex-col items-center justify-center space-y-2`}
+              role="group"
+              title={`${stat.label} (${stat.abbreviation}) ESMS Token balance: ${Math.floor(stat.val)}`}
+              aria-label={`${stat.label} (${stat.abbreviation}) ESMS Token balance: ${Math.floor(stat.val)}`}
             >
               <div className={`absolute top-0 left-0 w-full h-1 ${stat.bg} opacity-50`} />
-              <span className="text-sm font-medium text-zinc-400">{stat.label}</span>
+              <span className="text-sm font-medium text-zinc-400">
+                {stat.label} ({stat.abbreviation})
+              </span>
               <span className="text-3xl font-bold text-white tracking-tight">
                 {Math.floor(stat.val)}
               </span>
@@ -146,7 +158,7 @@ export default function EconomyDashboard({
 
       <div className="grid gap-4 md:grid-cols-2">
         <Link
-          href="/shop"
+          href="/shop?tab=tokens"
           className="group flex items-center justify-between gap-4 bg-surface border border-border hover:border-amber-500/40 p-5 rounded-xl transition-colors"
         >
           <div className="flex items-center gap-4">
@@ -154,9 +166,9 @@ export default function EconomyDashboard({
               <ShoppingBag className="w-5 h-5 text-amber-400" />
             </div>
             <div>
-              <h3 className="font-semibold text-zinc-200">Spend in the ESMS Bazaar</h3>
+              <h3 className="font-semibold text-zinc-200">Redeem via the ESMS Bazaar</h3>
               <p className="text-xs text-zinc-500 mt-0.5">
-                Use your reserves for alchemical goods, boosts, and sigils.
+                Burn ESMS to redeem alchemical goods, boosts, and sigils.
               </p>
             </div>
           </div>
@@ -176,7 +188,7 @@ export default function EconomyDashboard({
             <div>
               <h3 className="font-semibold text-zinc-200">Open the Cross-Site Yield Hub</h3>
               <p className="text-xs text-zinc-500 mt-0.5">
-                Review both Agents and Kitchen claim states in one place.
+                Review both Agents and Kitchen harvest states in one place.
               </p>
             </div>
           </div>
@@ -194,7 +206,8 @@ export default function EconomyDashboard({
           <div className="space-y-2">
             <h3 className="text-lg font-semibold text-zinc-200">Daily ESMS Yield</h3>
             <p className="text-sm text-zinc-400">
-              Agentic users generate a passive yield of ESMS tokens based on planetary alignments.
+              Harvest today&apos;s available Alchm Agents Daily ESMS Yield into your shared
+              Treasury.
             </p>
           </div>
 
@@ -228,11 +241,11 @@ export default function EconomyDashboard({
               {isClaiming ? (
                 <Activity className="w-5 h-5 animate-spin" />
               ) : hasClaimedYield ? (
-                <>Yield Claimed (Available Tomorrow)</>
+                <>Yield Harvested Today</>
               ) : (
                 <>
                   <Sparkles className="w-5 h-5" />
-                  Claim ESMS Yield
+                  Claim Daily Yield
                 </>
               )}
             </button>
@@ -264,10 +277,10 @@ export default function EconomyDashboard({
                 <Flame className="w-5 h-5 text-orange-400" />
               </div>
               <div>
-                <h4 className="font-medium text-zinc-300">Streak Multipliers</h4>
+                <h4 className="font-medium text-zinc-300">Daily Yield Streak</h4>
                 <p className="text-xs text-zinc-500 mt-1">
-                  Claim your yield for 7 consecutive days to permanently upgrade your base earn
-                  rate.
+                  Consecutive Daily ESMS Yield claims build the streak recorded by the yield
+                  service. Any multiplier is applied when you claim.
                 </p>
               </div>
             </div>
