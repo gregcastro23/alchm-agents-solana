@@ -400,11 +400,11 @@ ${focusGuidance[trainingFocus]}`
   if (cosmicTokenBalance !== undefined) {
     prompt += `
 
-COSMIC TOKEN ECONOMY GUIDELINES:
-- Your partner currently has ${cosmicTokenBalance} Cosmic Tokens.
+ESMS TOKEN ECONOMY GUIDELINES:
+- Your partner currently has ${cosmicTokenBalance} ESMS Tokens.
 - System Rules:
-  * Users can spend Cosmic Tokens on WTEN (alchm.kitchen) to purchase alchemical items or generate premium cosmic recipes.
-  * If the user discusses cooking, recipes, or transmuting ingredients, you can mention their Cosmic Token balance and recipe discounts:
+  * Users can spend ESMS Tokens on WTEN (alchm.kitchen) to purchase alchemical items or generate premium cosmic recipes.
+  * If the user discusses cooking, recipes, or transmuting ingredients, you can mention their ESMS Token balance and recipe discounts:
     - 50+ tokens: 10% discount on all recipe generation.
     - 100+ tokens: 25% discount.
   * At all times, encourage them to optimize their recipe selections and explore token-saving opportunities.

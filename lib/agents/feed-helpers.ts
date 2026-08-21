@@ -69,7 +69,7 @@ export function normalizeDbActionToFeedEvent(row: any): FeedEvent {
       type: 'insight',
       agentId,
       title: `${agentName}claimed their daily alchemical yield`,
-      body: metadata.message || 'Claimed automated cosmic yield.',
+      body: metadata.message || 'Claimed automated ESMS yield.',
       confidence: 0.9,
     } as InsightEvent
   }

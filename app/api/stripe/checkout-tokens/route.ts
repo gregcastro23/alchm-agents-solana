@@ -3,6 +3,8 @@ import type Stripe from 'stripe'
 import { auth } from '@/lib/auth'
 import { getStripe } from '@/lib/stripe/client'
 import { prisma } from '@/lib/db'
+import { buildTokenShopHref } from '@/lib/shop/navigation'
+import { getTokenBundle } from '@/lib/shop/token-bundles'
 
 export const dynamic = 'force-dynamic'
 
@@ -12,30 +14,16 @@ export async function POST(request: NextRequest) {
   const email = session?.user?.email || undefined
   if (!userId) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
 
-  let body: { tier?: '5' | '10' | '25' | '50' }
+  let body: { tier?: unknown }
   try {
     body = await request.json()
   } catch {
     body = {}
   }
 
-  const tier = body.tier || '5'
-  let priceInCents = 500
-  let tokenCount = 100
-  let description = '100 Cosmic ESMS Tokens'
-
-  if (tier === '10') {
-    priceInCents = 1000
-    tokenCount = 240
-    description = '240 Cosmic ESMS Tokens'
-  } else if (tier === '25') {
-    priceInCents = 2500
-    tokenCount = 700
-    description = '700 Cosmic ESMS Tokens'
-  } else if (tier === '50') {
-    priceInCents = 5000
-    tokenCount = 1600
-    description = '1600 Cosmic ESMS Tokens (Premium Bundle)'
+  const bundle = getTokenBundle(body.tier ?? '5')
+  if (!bundle) {
+    return NextResponse.json({ error: 'Unknown ESMS token bundle' }, { status: 400 })
   }
 
   const stripe = getStripe()
@@ -49,7 +37,7 @@ export async function POST(request: NextRequest) {
 
   // Calculate the amount of each token (spirit, essence, matter, substance)
   // Split evenly by 4
-  const perType = tokenCount / 4
+  const perType = bundle.perAxis
 
   const params: Stripe.Checkout.SessionCreateParams = {
     mode: 'payment',
@@ -58,21 +46,21 @@ export async function POST(request: NextRequest) {
         price_data: {
           currency: 'usd',
           product_data: {
-            name: description,
-            description: `Receive ${perType} Spirit, ${perType} Essence, ${perType} Matter, and ${perType} Substance tokens (total: ${tokenCount}).`,
+            name: `${bundle.name} — ${bundle.tokens} ESMS Tokens`,
+            description: `Receive ${perType} Spirit, ${perType} Essence, ${perType} Matter, and ${perType} Substance ESMS tokens (total: ${bundle.tokens}).`,
           },
-          unit_amount: priceInCents,
+          unit_amount: bundle.usdCents,
         },
         quantity: 1,
       },
     ],
-    success_url: `${origin}/upgrade?purchase=success&tokens=${tokenCount}`,
-    cancel_url: `${origin}/upgrade?purchase=cancelled`,
+    success_url: `${origin}${buildTokenShopHref({ purchase: 'success', tokens: String(bundle.tokens) })}`,
+    cancel_url: `${origin}${buildTokenShopHref({ purchase: 'cancelled' })}`,
     client_reference_id: userId,
     metadata: {
       userId,
       type: 'token_purchase',
-      tokenCount: String(tokenCount),
+      tokenCount: String(bundle.tokens),
       spirit: String(perType),
       essence: String(perType),
       matter: String(perType),

@@ -331,7 +331,7 @@ export class AgentActionService {
               metadataPayload: {
                 agentName,
                 agentProfile: agentProfilePayload ?? undefined,
-                message: 'Claimed automated cosmic yield.',
+                message: 'Claimed automated ESMS yield.',
               },
             },
           ])
@@ -402,7 +402,7 @@ export class AgentActionService {
             tokenType: token,
             amount: new Prisma.Decimal(amt),
             sourceType: 'agents_daily_yield',
-            description: 'Automated Cosmic Yield (Agentic)',
+            description: 'Automated ESMS Yield (Agentic)',
             idempotencyKey: `agentic:daily:${userId}:${dateStr}:${token}`,
             createdAt: new Date(),
           },

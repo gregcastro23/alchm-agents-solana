@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { Sparkles, Coins, Zap, ShieldCheck, ArrowRight, UserCheck, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
+import { TOKEN_BUNDLES } from '@/lib/shop/token-bundles'
 
 const VISITOR_CAPABILITIES = [
   'Unlimited base chat with 360+ planetary and historical agents',
@@ -15,38 +16,11 @@ const VISITOR_CAPABILITIES = [
 const ACCOUNT_HOLDER_CAPABILITIES = [
   'Everything available to visitors',
   'Personal ESMS Token Treasury (Spirit, Essence, Matter, Substance)',
-  'Daily cosmic token yield claims and streak multipliers',
-  'Spend ESMS at the Bazaar (/shop) on agent elixirs and sigil forging',
-  'High-intelligence AI model infusions (Claude Opus, Sonnet, DeepSeek)',
+  'Claim Daily ESMS Yield and track the resulting yield streak',
+  'Burn ESMS at the Bazaar (/shop) to redeem agent elixirs and sigil forging',
+  'Redeem model infusions via ESMS Tokens (Claude Opus, Sonnet, DeepSeek)',
   'Connect your own direct AI keys (BYOK OpenAI / Anthropic / Google)',
   'Full memory persistence and personalized attunements',
-]
-
-const TOKEN_BUNDLES = [
-  {
-    name: 'Initiate Box',
-    tokens: '100 ESMS',
-    price: '$5',
-    desc: 'Balanced 25/25/25/25 elemental starter allocation',
-  },
-  {
-    name: 'Adept Sphere',
-    tokens: '240 ESMS',
-    price: '$10',
-    desc: '20% bonus tokens for active vessel attunements',
-  },
-  {
-    name: 'Alchemist Chest',
-    tokens: '700 ESMS',
-    price: '$25',
-    desc: '40% bonus tokens for council debates & multi-agent chats',
-  },
-  {
-    name: 'Sovereign Vault',
-    tokens: '1,600 ESMS',
-    price: '$50',
-    desc: '60% bonus tokens for magnum opus sigil forging & boosts',
-  },
 ]
 
 export default function PricingPage() {
@@ -56,15 +30,16 @@ export default function PricingPage() {
         {/* Header */}
         <div className="text-center space-y-3">
           <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full border border-amber-500/30 bg-amber-500/10 text-xs font-medium text-amber-300">
-            <Coins size={14} />
-            <span>Alchm Token Economy</span>
+            <Coins size={14} aria-hidden="true" />
+            <span>ESMS Token Economy</span>
           </div>
           <h1 className="text-4xl md:text-5xl font-bold bg-gradient-to-r from-amber-200 via-yellow-100 to-amber-400 bg-clip-text text-transparent">
-            Access Model & Token Economy
+            Access Model & ESMS Token Economy
           </h1>
           <p className="text-zinc-400 max-w-2xl mx-auto text-sm md:text-base">
-            Planetary Agents is open for visitors to explore freely. Account holders hold and spend
-            ESMS tokens to fuel alchemical actions, claim daily yield, and boost consciousness.
+            Planetary Agents is open for visitors to explore freely. Account holders maintain ESMS
+            Tokens, burn them to redeem alchemical actions, Claim Daily ESMS Yield, and boost
+            consciousness.
           </p>
         </div>
 
@@ -110,7 +85,7 @@ export default function PricingPage() {
           {/* Account Holder Access */}
           <div className="relative rounded-2xl border border-amber-500/40 bg-gradient-to-b from-amber-500/10 via-purple-950/20 to-amber-500/5 p-8 flex flex-col justify-between shadow-[0_0_30px_rgba(245,158,11,0.1)]">
             <div className="absolute -top-3 right-6 rounded-full bg-gradient-to-r from-amber-500 to-yellow-500 px-3 py-1 text-xs font-semibold text-zinc-950">
-              Token Enabled
+              ESMS Enabled
             </div>
             <div>
               <div className="flex items-center gap-2 text-xs font-semibold uppercase tracking-wider text-amber-300">
@@ -119,11 +94,11 @@ export default function PricingPage() {
               </div>
               <div className="mt-3 text-3xl font-bold text-white">
                 Free Account{' '}
-                <span className="text-sm font-normal text-amber-200/60">+ Daily Yield</span>
+                <span className="text-sm font-normal text-amber-200/60">+ Daily ESMS Yield</span>
               </div>
               <p className="mt-2 text-xs text-zinc-300">
-                Sign in to activate your ESMS Treasury, hold 4-element balances, and spend tokens
-                across both sites.
+                Sign in to activate your ESMS Treasury, hold Spirit, Essence, Matter, and Substance
+                balances, and redeem via ESMS across both sites.
               </p>
 
               <ul className="mt-6 space-y-3 text-sm text-zinc-200">
@@ -142,7 +117,7 @@ export default function PricingPage() {
                   Open Your ESMS Treasury
                 </Button>
               </Link>
-              <Link href="/shop">
+              <Link href="/shop?tab=tokens">
                 <Button
                   variant="ghost"
                   className="w-full text-xs text-amber-300 hover:text-amber-200 hover:bg-amber-500/10"
@@ -158,13 +133,13 @@ export default function PricingPage() {
         <div className="rounded-2xl border border-white/10 bg-white/5 p-8 space-y-6">
           <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
             <div>
-              <h2 className="text-2xl font-bold text-white">ESMS Token Packages</h2>
+              <h2 className="text-2xl font-bold text-white">Acquire ESMS Bundles</h2>
               <p className="text-sm text-zinc-400">
-                Acquire extra Cosmic Tokens to fund advanced alchemical boosts, apothecary elixirs,
+                Acquire extra ESMS Tokens to fund advanced alchemical boosts, apothecary elixirs,
                 and sigils.
               </p>
             </div>
-            <Link href="/shop">
+            <Link href="/shop?tab=tokens">
               <Button
                 variant="outline"
                 className="border-amber-500/30 text-amber-300 hover:bg-amber-500/10"
@@ -181,9 +156,17 @@ export default function PricingPage() {
                 className="rounded-xl border border-white/10 bg-black/30 p-4 space-y-2"
               >
                 <div className="text-sm font-semibold text-amber-300">{bundle.name}</div>
-                <div className="text-2xl font-bold text-white">{bundle.tokens}</div>
-                <div className="text-xs text-zinc-400">{bundle.desc}</div>
-                <div className="pt-2 text-lg font-semibold text-emerald-400">{bundle.price}</div>
+                <div className="text-2xl font-bold text-white">
+                  {bundle.tokens.toLocaleString('en-US')} ESMS Tokens
+                </div>
+                <div className="text-xs text-zinc-400">
+                  {bundle.bonusPercent
+                    ? `${bundle.bonusPercent}% bonus ESMS Tokens for advanced alchemical actions`
+                    : `${bundle.perAxis} each of Spirit, Essence, Matter, and Substance`}
+                </div>
+                <div className="pt-2 text-lg font-semibold text-emerald-400">
+                  ${(bundle.usdCents / 100).toFixed(0)}
+                </div>
               </div>
             ))}
           </div>

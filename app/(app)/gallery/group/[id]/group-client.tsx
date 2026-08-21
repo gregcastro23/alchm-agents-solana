@@ -103,8 +103,7 @@ export default function TransitGroupChatClient({ sessionId, agents, transit }: P
             {
               id: nextId('agent'),
               role: 'agent',
-              content:
-                data.error || 'Insufficient cosmic energy to convene this council right now.',
+              content: 'Insufficient ESMS Tokens to convene this council right now.',
               agentName: 'The Council',
               timestamp: new Date(),
               isPaymentRequired: true,
@@ -354,8 +353,8 @@ export default function TransitGroupChatClient({ sessionId, agents, transit }: P
                   {message.isPaymentRequired ? (
                     <div className="space-y-3 rounded-lg border border-amber-500/30 bg-black/60 p-4 text-left backdrop-blur-md">
                       <div className="flex items-center gap-2 font-semibold text-amber-400">
-                        <Sparkles className="h-5 w-5 animate-pulse" />
-                        <span>Insufficient Cosmic Energy</span>
+                        <Sparkles className="h-5 w-5 animate-pulse" aria-hidden="true" />
+                        <span>Insufficient ESMS Reserves</span>
                       </div>
                       <p className="text-sm text-gray-300">{message.content}</p>
                       {message.requiredTokens && (
@@ -365,9 +364,12 @@ export default function TransitGroupChatClient({ sessionId, agents, transit }: P
                               <div
                                 key={token}
                                 className="flex items-center justify-between rounded-md border border-white/10 bg-white/5 px-3 py-2"
+                                role="group"
+                                title={`${token} ESMS Tokens required: ${String(amount)}`}
+                                aria-label={`${token} ESMS Tokens required: ${String(amount)}`}
                               >
                                 <span className="text-xs font-semibold">{token}</span>
-                                <span className="text-sm font-bold">{amount}</span>
+                                <span className="text-sm font-bold">{String(amount)}</span>
                               </div>
                             ) : null
                           )}
@@ -379,24 +381,35 @@ export default function TransitGroupChatClient({ sessionId, agents, transit }: P
                             const res = await fetch('/api/economy/yield', { method: 'POST' })
                             const claimData = await res.json()
                             if (res.ok) {
-                              toast.success('Cosmic yield claimed!')
+                              toast.success('Yield Harvested')
                               window.location.reload()
                             } else {
-                              toast.error(claimData.message || 'Already claimed today.')
+                              toast.error(
+                                res.status === 409
+                                  ? 'Daily ESMS yield already harvested. Available again tomorrow.'
+                                  : claimData.error || 'Unable to claim Daily ESMS Yield.'
+                              )
                             }
                           } catch {
-                            toast.error('Failed to claim yield. Try again later.')
+                            toast.error('Failed to claim Daily ESMS Yield. Try again later.')
                           }
                         }}
                         className="w-full bg-gradient-to-r from-amber-500 to-amber-600 font-semibold text-black hover:from-amber-600 hover:to-amber-700"
                       >
-                        Claim Cosmic Yield
+                        Claim Daily Yield
                       </Button>
                       <a
                         href="/#free-agents"
                         className="w-full block text-center px-4 py-2 border border-emerald-500/30 rounded-md bg-emerald-500/10 text-emerald-300 hover:bg-emerald-500/20 hover:text-white transition-colors text-xs font-semibold"
                       >
                         🎁 Try Free Agents of the Week
+                      </a>
+                      <a
+                        href="/shop?tab=tokens"
+                        className="w-full block text-center px-4 py-2 border border-purple-500/30 rounded-md bg-purple-500/10 text-purple-300 hover:bg-purple-500/20 hover:text-white transition-colors text-xs font-semibold"
+                        title="Acquire ESMS Tokens for consultations; BYOK keys can be configured in Account Settings"
+                      >
+                        Acquire ESMS Bundles
                       </a>
                     </div>
                   ) : (

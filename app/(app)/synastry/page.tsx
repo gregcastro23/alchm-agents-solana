@@ -1,4 +1,4 @@
-import { redirect } from 'next/navigation'
+import { permanentRedirect } from 'next/navigation'
 
 export const dynamic = 'force-dynamic'
 
@@ -11,8 +11,8 @@ export default async function SynastryIndexPage({
   const rawAgent = (Array.isArray(params.agent) ? params.agent[0] : params.agent)?.trim()
 
   if (rawAgent) {
-    redirect(`/synastry/${encodeURIComponent(rawAgent)}`)
+    return permanentRedirect(`/synastry/${encodeURIComponent(rawAgent)}`)
   }
 
-  redirect('/gallery')
+  return permanentRedirect('/arena')
 }

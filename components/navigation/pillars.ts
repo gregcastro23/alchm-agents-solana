@@ -18,7 +18,7 @@ export const PILLARS: Pillar[] = [
   { href: '/forge', label: 'Cosmic Tools', shortLabel: 'Tools', icon: 'construction' },
   { href: '/vault', label: 'Entities', shortLabel: 'Entities', icon: 'group_work' },
   { href: '/arena', label: 'Mystic Arts', shortLabel: 'Arts', icon: 'auto_stories' },
-  { href: '/labs', label: 'Labs', shortLabel: 'Labs', icon: 'science' },
+  { href: '/labs', label: 'Labs & Economy', shortLabel: 'Labs', icon: 'science' },
 ]
 
 export function isPillarActive(pathname: string | null, pillar: Pillar): boolean {

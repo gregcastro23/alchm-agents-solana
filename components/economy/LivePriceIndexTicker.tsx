@@ -109,7 +109,7 @@ function SparklineSvg({
   const areaPoints = `0,${height} ${points} ${width},${height}`
 
   return (
-    <svg width={width} height={height} className="overflow-visible">
+    <svg width={width} height={height} className="overflow-visible" aria-hidden="true">
       <defs>
         <linearGradient id={`grad-${stroke.replace('#', '')}`} x1="0" y1="0" x2="0" y2="1">
           <stop offset="0%" stopColor={stroke} stopOpacity="0.3" />
@@ -154,6 +154,8 @@ export function LivePriceIndexTicker({
     return (
       <div
         className={`w-full relative overflow-hidden bg-[#050506]/95 border-y border-[#23262B] backdrop-blur-md z-20 py-2 ${className}`}
+        role="region"
+        aria-label="Live ESMS Token index on Solana Devnet"
       >
         {/* Ambient edge fade gradients */}
         <div className="absolute inset-y-0 left-0 w-12 bg-gradient-to-r from-[#050506] to-transparent z-10 pointer-events-none" />
@@ -162,9 +164,9 @@ export function LivePriceIndexTicker({
         <div className="flex items-center">
           {/* Static Left Badge */}
           <div className="shrink-0 flex items-center gap-2 pl-4 pr-3 border-r border-[#23262B] z-20 bg-[#050506]">
-            <span className="led-dot led-green animate-pulse" />
+            <span className="led-dot led-green animate-pulse" aria-hidden="true" />
             <span className="font-mono-label text-[9px] uppercase tracking-widest text-[#b8fc4b] font-bold">
-              ESMS INDEX
+              ESMS DEVNET INDEX
             </span>
           </div>
 
@@ -181,16 +183,38 @@ export function LivePriceIndexTicker({
                   const vis = TOKEN_VISUALS[quote.axis]
                   const Icon = vis.icon
                   const change = formatChange(quote.change24hPct)
+                  const isPrimaryQuote = idx < quotesList.length
 
                   return (
                     <div
                       key={`${quote.axis}-${idx}`}
-                      onClick={() => {
-                        if (onElementClick) onElementClick(quote.axis)
+                      onClick={() => onElementClick?.(quote.axis)}
+                      onKeyDown={event => {
+                        if (
+                          isPrimaryQuote &&
+                          onElementClick &&
+                          (event.key === 'Enter' || event.key === ' ')
+                        ) {
+                          event.preventDefault()
+                          onElementClick(quote.axis)
+                        }
                       }}
+                      role={isPrimaryQuote ? (onElementClick ? 'button' : 'group') : undefined}
+                      tabIndex={isPrimaryQuote && onElementClick ? 0 : undefined}
+                      aria-hidden={!isPrimaryQuote}
+                      aria-label={
+                        isPrimaryQuote
+                          ? `${quote.name} (${quote.symbol}) ESMS Token index: ${formatIndex(quote)} IDX on Solana Devnet`
+                          : undefined
+                      }
+                      title={
+                        isPrimaryQuote
+                          ? `${quote.name} (${quote.symbol}) ESMS Token index on Solana Devnet`
+                          : undefined
+                      }
                       className="inline-flex items-center gap-2.5 px-3 py-1 rounded-full bg-[#0e1014] border border-[#23262B] hover:border-[#8c947c]/60 transition-colors"
                     >
-                      <Icon className={`w-3.5 h-3.5 ${vis.text}`} />
+                      <Icon className={`w-3.5 h-3.5 ${vis.text}`} aria-hidden="true" />
                       <span className="font-mono-label text-[10px] font-bold text-[#e0e4d2]">
                         {quote.symbol}
                       </span>
@@ -205,9 +229,9 @@ export function LivePriceIndexTicker({
                         }`}
                       >
                         {change.isPositive ? (
-                          <TrendingUp className="w-2.5 h-2.5 inline" />
+                          <TrendingUp className="w-2.5 h-2.5 inline" aria-hidden="true" />
                         ) : (
-                          <TrendingDown className="w-2.5 h-2.5 inline" />
+                          <TrendingDown className="w-2.5 h-2.5 inline" aria-hidden="true" />
                         )}
                         {change.text}
                       </span>
@@ -233,9 +257,13 @@ export function LivePriceIndexTicker({
               onClick={() => refresh()}
               disabled={loading}
               className="text-[#8c947c] hover:text-[#b8fc4b] transition-colors"
-              title="Refresh Quotes"
+              title="Refresh live ESMS Token index"
+              aria-label="Refresh live ESMS Token index"
             >
-              <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
+              <RefreshCw
+                className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`}
+                aria-hidden="true"
+              />
             </button>
           </div>
         </div>
@@ -252,7 +280,7 @@ export function LivePriceIndexTicker({
       <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4 glass-panel p-5 rounded-xl border-[#23262B]">
         <div className="flex items-center gap-3">
           <div className="p-2.5 bg-[#b8fc4b]/10 rounded-lg border border-[#b8fc4b]/30">
-            <Coins className="w-6 h-6 text-[#b8fc4b]" />
+            <Coins className="w-6 h-6 text-[#b8fc4b]" aria-hidden="true" />
           </div>
           <div>
             <div className="flex items-center gap-2">
@@ -260,12 +288,12 @@ export function LivePriceIndexTicker({
                 Canonical ESMS Price Index
               </h3>
               <span className="font-mono-label text-[9px] uppercase px-2 py-0.5 rounded border border-[#b8fc4b]/40 text-[#b8fc4b] bg-[#b8fc4b]/10">
-                Solana Token-2022
+                Solana Devnet · Token-2022
               </span>
             </div>
             <p className="font-body-md text-xs text-[#8c947c] mt-0.5">
-              One astronomical index shared with alchm.kitchen. Index points are dimensionless; the
-              separate mint and redeem rails are the only USD values.
+              Live Solana Devnet index shared with alchm.kitchen. Index points are dimensionless;
+              the separate mint and redeem rails are the only USD values.
             </p>
           </div>
         </div>
@@ -282,6 +310,8 @@ export function LivePriceIndexTicker({
           <button
             onClick={() => refresh()}
             disabled={loading}
+            title="Refresh live ESMS Token index"
+            aria-label="Refresh live ESMS Token index"
             className="flex items-center gap-1.5 px-3 py-1.5 font-mono-label text-[10px] tracking-wider rounded border border-[#424936] text-[#c2cab0] hover:border-[#b8fc4b] hover:text-[#b8fc4b] transition-all"
           >
             <RefreshCw className={`w-3 h-3 ${loading ? 'animate-spin' : ''}`} />
@@ -310,6 +340,9 @@ export function LivePriceIndexTicker({
             <div
               key={quote.axis}
               className={`glass-panel rounded-xl p-5 border transition-all duration-300 relative overflow-hidden flex flex-col justify-between ${vis.border} ${vis.glow} ${vis.bg}`}
+              role="group"
+              title={`${quote.name} (${quote.symbol}) ESMS Token index on Solana Devnet`}
+              aria-label={`${quote.name} (${quote.symbol}) ESMS Token index: ${formatIndex(quote)} IDX on Solana Devnet`}
             >
               {/* Subtle top indicator bar */}
               <div
@@ -322,7 +355,7 @@ export function LivePriceIndexTicker({
                 <div className="flex items-start justify-between gap-2 mb-3">
                   <div className="flex items-center gap-2.5">
                     <div className={`p-2 rounded-lg border ${vis.badgeBg}`}>
-                      <Icon className={`w-5 h-5 ${vis.text}`} />
+                      <Icon className={`w-5 h-5 ${vis.text}`} aria-hidden="true" />
                     </div>
                     <div>
                       <div className="flex items-center gap-1.5">
@@ -347,9 +380,9 @@ export function LivePriceIndexTicker({
                     }`}
                   >
                     {change.isPositive ? (
-                      <TrendingUp className="w-3 h-3 inline" />
+                      <TrendingUp className="w-3 h-3 inline" aria-hidden="true" />
                     ) : (
-                      <TrendingDown className="w-3 h-3 inline" />
+                      <TrendingDown className="w-3 h-3 inline" aria-hidden="true" />
                     )}
                     {change.text}
                   </span>
@@ -400,7 +433,7 @@ export function LivePriceIndexTicker({
                 {/* Oracle basis */}
                 <div className="mb-4 bg-[#050506]/50 rounded p-2.5 border border-[#23262B]">
                   <div className="flex items-center gap-1.5 text-[10px] font-mono-label text-[#c2cab0]">
-                    <Sparkles className={`w-3 h-3 ${vis.text}`} />
+                    <Sparkles className={`w-3 h-3 ${vis.text}`} aria-hidden="true" />
                     <span className="truncate">{data?.basis.model ?? 'Canonical ESMS oracle'}</span>
                   </div>
                   <div className="font-body-md text-[10px] text-[#8c947c] mt-1 leading-snug">
@@ -413,13 +446,14 @@ export function LivePriceIndexTicker({
               <div className="pt-3 border-t border-[#23262B] space-y-2">
                 <div className="flex items-center justify-between">
                   <span className="font-mono-label text-[9px] text-[#8c947c] uppercase">
-                    Mint PDA (SPL-2022)
+                    Solana Devnet Mint (Token-2022)
                   </span>
                   <div className="flex items-center gap-1.5">
                     <button
                       onClick={() => copyToClipboard(quote.mintAddress, quote.axis)}
                       className="flex items-center gap-1 font-mono-label text-[9px] px-2 py-0.5 rounded bg-[#1d2116] border border-[#424936] text-[#c2cab0] hover:text-[#b8fc4b] hover:border-[#b8fc4b] transition-colors"
-                      title="Copy Mint Address"
+                      title={`Copy ${quote.name} Solana Devnet mint address`}
+                      aria-label={`Copy ${quote.name} Solana Devnet mint address`}
                     >
                       {isCopied ? (
                         <>
@@ -438,7 +472,8 @@ export function LivePriceIndexTicker({
                       target="_blank"
                       rel="noopener noreferrer"
                       className="text-[#8c947c] hover:text-[#7bd1fa] transition-colors p-0.5"
-                      title="View on Solana Explorer"
+                      title={`View ${quote.name} on Solana Devnet Explorer`}
+                      aria-label={`View ${quote.name} on Solana Devnet Explorer`}
                     >
                       <ExternalLink className="w-3 h-3" />
                     </a>

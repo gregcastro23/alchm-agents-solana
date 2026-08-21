@@ -101,7 +101,7 @@ export function JingWordDuelClash() {
       {/* Header Banner */}
       <div className="text-center space-y-3">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-spirit-violet/15 border border-spirit-violet/30 text-st-primary text-xs font-mono uppercase tracking-widest">
-          <Swords className="w-3.5 h-3.5" /> Agent Minigame Brain Sandbox
+          <Swords className="w-3.5 h-3.5" aria-hidden="true" /> Agent Minigame Brain Sandbox
         </div>
         <h2 className="text-3xl font-bold font-headline tracking-tight text-white">
           Jing Elemental Clash & Word Duels of the Spheres
@@ -110,6 +110,18 @@ export function JingWordDuelClash() {
           Challenge planetary agents directly. Test live elemental counter-moves and lexical word
           plays powered by the multi-provider LLM fallback chain.
         </p>
+        <div
+          className="mx-auto max-w-2xl rounded-xl border border-amber-500/20 bg-amber-500/5 px-4 py-3 text-left"
+          role="note"
+          aria-label="ESMS Pot and elemental boost terminology"
+        >
+          <p className="text-xs font-semibold uppercase tracking-wider text-amber-300">ESMS Pot</p>
+          <p className="mt-1 text-xs leading-relaxed text-zinc-400">
+            Live arena wagers and rewards are denominated in ESMS Tokens; elemental boosts are
+            identified as Spirit, Essence, Matter, or Substance. This brain sandbox does not burn
+            ESMS or redeem an ESMS Pot.
+          </p>
+        </div>
       </div>
 
       {/* Sphere Selection */}

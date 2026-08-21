@@ -26,14 +26,38 @@ type Props = {
 }
 
 const tokenMeta = [
-  { key: 'spirit', label: 'Spirit', icon: Flame, className: 'profile-token-spirit' },
-  { key: 'essence', label: 'Essence', icon: Droplets, className: 'profile-token-essence' },
-  { key: 'matter', label: 'Matter', icon: Box, className: 'profile-token-matter' },
-  { key: 'substance', label: 'Substance', icon: Zap, className: 'profile-token-substance' },
+  {
+    key: 'spirit',
+    label: 'Spirit',
+    abbreviation: 'Sp',
+    icon: Flame,
+    className: 'profile-token-spirit',
+  },
+  {
+    key: 'essence',
+    label: 'Essence',
+    abbreviation: 'Es',
+    icon: Droplets,
+    className: 'profile-token-essence',
+  },
+  {
+    key: 'matter',
+    label: 'Matter',
+    abbreviation: 'Ma',
+    icon: Box,
+    className: 'profile-token-matter',
+  },
+  {
+    key: 'substance',
+    label: 'Substance',
+    abbreviation: 'Su',
+    icon: Zap,
+    className: 'profile-token-substance',
+  },
 ] as const
 
 function formatDate(value: string | null): string {
-  if (!value) return 'Not claimed yet'
+  if (!value) return 'Not harvested yet'
   const date = new Date(value)
   if (Number.isNaN(date.getTime())) return value
 
@@ -77,12 +101,12 @@ export function ProfileYieldPanel({ initialWallet }: Props) {
       const data = await response.json().catch(() => ({}))
 
       if (!response.ok) {
-        throw new Error(data?.error || `Wallet failed (${response.status})`)
+        throw new Error(data?.error || `ESMS Treasury refresh failed (${response.status})`)
       }
 
       setWallet(data as ProfileYieldState)
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Unable to refresh profile wallet.')
+      setError(err instanceof Error ? err.message : 'Unable to refresh the ESMS Treasury.')
     } finally {
       setLoading(false)
       setRefreshing(false)
@@ -115,7 +139,7 @@ export function ProfileYieldPanel({ initialWallet }: Props) {
             {
               site,
               kind: 'cooldown',
-              text: data?.message || 'Daily yield has already been claimed.',
+              text: `Daily ESMS yield already harvested for ${site === 'agents' ? 'Alchm Agents' : 'Alchm Kitchen'}. Available again tomorrow.`,
             },
           ])
           await refreshWallet()
@@ -123,7 +147,7 @@ export function ProfileYieldPanel({ initialWallet }: Props) {
         }
 
         if (!response.ok) {
-          throw new Error(data?.error || `Claim failed (${response.status})`)
+          throw new Error(data?.error || `Daily ESMS Yield claim failed (${response.status})`)
         }
 
         if (data?.wallet) {
@@ -139,7 +163,7 @@ export function ProfileYieldPanel({ initialWallet }: Props) {
           {
             site,
             kind: 'success',
-            text: `Yield claimed: +${spirit.toFixed(2)} each token.`,
+            text: `Yield harvested: +${spirit.toFixed(2)} each of Spirit, Essence, Matter, and Substance.`,
           },
         ])
       } catch (err) {
@@ -148,7 +172,8 @@ export function ProfileYieldPanel({ initialWallet }: Props) {
           {
             site,
             kind: 'error',
-            text: err instanceof Error ? err.message : 'Claim failed unexpectedly.',
+            text:
+              err instanceof Error ? err.message : 'Daily ESMS Yield claim failed unexpectedly.',
           },
         ])
       } finally {
@@ -163,10 +188,10 @@ export function ProfileYieldPanel({ initialWallet }: Props) {
       <div className="profile-yield-header">
         <div>
           <div className="profile-yield-kicker">
-            <Wallet size={15} />
+            <Wallet size={15} aria-hidden="true" />
             Agents profile
           </div>
-          <h2 id="profile-yield-title">Shared ESMS Wallet</h2>
+          <h2 id="profile-yield-title">Shared ESMS Treasury</h2>
           <p>
             One Spirit, Essence, Matter, and Substance balance across agents.alchm.kitchen and
             alchm.kitchen.
@@ -177,7 +202,7 @@ export function ProfileYieldPanel({ initialWallet }: Props) {
           className="profile-yield-refresh"
           onClick={() => void refreshWallet()}
           disabled={refreshing || loading}
-          aria-label="Refresh profile wallet"
+          aria-label="Refresh the Shared ESMS Treasury"
         >
           <RefreshCw size={16} className={refreshing || loading ? 'spinning' : ''} />
         </button>
@@ -190,7 +215,7 @@ export function ProfileYieldPanel({ initialWallet }: Props) {
           <div className="profile-yield-total-value">
             {loading ? <Loader2 className="spinning" size={24} /> : totalBalance.toFixed(2)}
           </div>
-          <div className="profile-yield-total-label">Total ESMS</div>
+          <div className="profile-yield-total-label">Total ESMS Tokens</div>
         </div>
 
         <div className="profile-yield-token-grid">
@@ -199,9 +224,17 @@ export function ProfileYieldPanel({ initialWallet }: Props) {
             const value = wallet?.balances[token.key] ?? 0
 
             return (
-              <div key={token.key} className={`profile-yield-token ${token.className}`}>
-                <Icon size={17} />
-                <span>{token.label}</span>
+              <div
+                key={token.key}
+                className={`profile-yield-token ${token.className}`}
+                role="group"
+                title={`${token.label} (${token.abbreviation}) ESMS Token balance: ${loading ? 'loading' : value.toFixed(2)}`}
+                aria-label={`${token.label} (${token.abbreviation}) ESMS Token balance: ${loading ? 'loading' : value.toFixed(2)}`}
+              >
+                <Icon size={17} aria-hidden="true" />
+                <span>
+                  {token.label} ({token.abbreviation})
+                </span>
                 <strong>{loading ? '...' : value.toFixed(2)}</strong>
               </div>
             )
@@ -219,7 +252,9 @@ export function ProfileYieldPanel({ initialWallet }: Props) {
             <article key={account.site} className={`profile-site-card ${siteTone(account.site)}`}>
               <header>
                 <div>
-                  <h3>{account.label}</h3>
+                  <h3>
+                    {account.site === 'agents' ? 'Alchm Agents Treasury' : 'Alchm Kitchen Reserves'}
+                  </h3>
                   <a href={account.profileUrl} target="_blank" rel="noreferrer">
                     {account.site === 'agents'
                       ? 'agents.alchm.kitchen/profile'
@@ -228,14 +263,21 @@ export function ProfileYieldPanel({ initialWallet }: Props) {
                   </a>
                 </div>
                 <span className="profile-site-status">
-                  <CheckCircle2 size={13} />
-                  Linked
+                  <CheckCircle2 size={13} aria-hidden="true" />
+                  {account.status === 'linked' ? 'Active Sync' : 'Local Preview'}
                 </span>
               </header>
 
               <div className="profile-site-meta">
-                <span>Last claim</span>
+                <span>Last harvest</span>
                 <strong>{formatDate(account.lastDailyClaimAt)}</strong>
+              </div>
+              <div
+                className="profile-site-meta"
+                title="Consecutive Daily ESMS Yield claims; any multiplier is applied by the yield service at claim time."
+              >
+                <span>Daily yield streak</span>
+                <strong>{account.streak} days</strong>
               </div>
 
               <button
@@ -251,11 +293,11 @@ export function ProfileYieldPanel({ initialWallet }: Props) {
                   </>
                 ) : account.canClaimDaily ? (
                   <>
-                    <Sparkles size={15} />
-                    Claim daily yield
+                    <Sparkles size={15} aria-hidden="true" />
+                    Claim Daily Yield
                   </>
                 ) : (
-                  'Claimed today'
+                  'Yield Harvested Today'
                 )}
               </button>
 

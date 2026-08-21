@@ -1,5 +1,7 @@
+import { mock } from 'bun:test'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
+mock.module('server-only', () => ({}))
 vi.mock('@/lib/auth', () => ({ auth: vi.fn() }))
 vi.mock('@/lib/db', () => ({ prisma: { users: { findUnique: vi.fn() } } }))
 vi.mock('@/lib/shop/entitlement', () => ({
@@ -20,22 +22,14 @@ vi.mock('@/lib/esms-chain/redeemer', () => ({
   verifyRedeem: vi.fn(),
 }))
 
-import { POST } from '@/app/api/shop/purchase/route'
-import { auth } from '@/lib/auth'
-import { prisma } from '@/lib/db'
-import { hasUnlock, grantPurchase } from '@/lib/shop/entitlement'
-import {
-  buildRedeemAuthChallenge,
-  esmsOnchainConfigured,
-  readEsmsBalances,
-  readEsmsRedeemed,
-} from '@/lib/esms-chain/contract'
-import {
-  redeemEsmsFor,
-  redeemerConfigured,
-  toOnchainAmounts,
-  verifyRedeem,
-} from '@/lib/esms-chain/redeemer'
+const { POST } = await import('@/app/api/shop/purchase/route')
+const { auth } = await import('@/lib/auth')
+const { prisma } = await import('@/lib/db')
+const { hasUnlock, grantPurchase } = await import('@/lib/shop/entitlement')
+const { buildRedeemAuthChallenge, esmsOnchainConfigured, readEsmsBalances, readEsmsRedeemed } =
+  await import('@/lib/esms-chain/contract')
+const { redeemEsmsFor, redeemerConfigured, toOnchainAmounts, verifyRedeem } =
+  await import('@/lib/esms-chain/redeemer')
 
 const e18 = (n: number) => BigInt(n) * 10n ** 18n
 const FULL = { spirit: e18(100), essence: e18(100), matter: e18(100), substance: e18(100) }
@@ -81,7 +75,7 @@ describe('POST /api/shop/purchase', () => {
     expect((await POST(req({ itemId: 'nope' }))).status).toBe(404)
   })
 
-  it('routes USDC/Card buyers of digital goods to the token store', async () => {
+  it('routes USDC/Card buyers of digital goods to the ESMS Bazaar', async () => {
     const res = await POST(req({ itemId: 'unlock-philosophers-stone', payWith: 'card' }))
     const data = await res.json()
     expect(data.mode).toBe('topup')

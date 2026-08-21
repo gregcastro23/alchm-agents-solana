@@ -186,7 +186,7 @@ export function DashboardClient({ user }: DashboardClientProps) {
                   variant="secondary"
                   className="bg-amber-500/20 text-amber-300 border-amber-500/30"
                 >
-                  Daily Cosmic Yield
+                  Daily ESMS Yield
                 </Badge>
                 <Badge
                   variant="secondary"
@@ -199,7 +199,7 @@ export function DashboardClient({ user }: DashboardClientProps) {
               <div className="p-4 bg-gradient-to-r from-amber-950/30 to-purple-950/30 rounded-lg border border-amber-500/20">
                 <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                   <div>
-                    <h4 className="font-medium text-amber-100">Manage Your Cosmic ESMS Balances</h4>
+                    <h4 className="font-medium text-amber-100">Manage Your ESMS Balances</h4>
                     <p className="text-sm text-zinc-300">
                       Claim daily token yields, review transaction history, or spend at the Bazaar.
                     </p>

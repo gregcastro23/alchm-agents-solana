@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useSearchParams } from 'next/navigation'
+import Link from 'next/link'
 import {
   Sparkles,
   Droplets,
@@ -72,7 +73,8 @@ function formatRelative(value: string | null): string {
 function siteCopy(site: SiteKey) {
   if (site === 'agents') {
     return {
-      title: 'Alchm Agents',
+      title: 'Alchm Agents Treasury',
+      claimLabel: 'Alchm Agents',
       tagline: 'agents.alchm.kitchen',
       accent: 'from-indigo-500 to-violet-500',
       ring: 'ring-indigo-500/30',
@@ -80,7 +82,8 @@ function siteCopy(site: SiteKey) {
     }
   }
   return {
-    title: 'Alchm Kitchen',
+    title: 'Alchm Kitchen Reserves',
+    claimLabel: 'Alchm Kitchen',
     tagline: 'alchm.kitchen',
     accent: 'from-amber-500 to-orange-500',
     ring: 'ring-amber-500/30',
@@ -147,18 +150,18 @@ export default function YieldHub({ user }: { user: YieldUser | null }) {
             {
               site,
               kind: 'cooldown',
-              message: data.message || 'Already claimed today — comes back tomorrow.',
+              message: `Daily ESMS yield already harvested for ${siteCopy(site).claimLabel}. Available again tomorrow.`,
             },
           ])
         } else if (!res.ok) {
-          throw new Error(data.error || `Claim failed (${res.status})`)
+          throw new Error(data.error || `Daily ESMS Yield claim failed (${res.status})`)
         } else {
           setClaimStatuses(prev => [
             ...prev,
             {
               site,
               kind: 'success',
-              message: `+${Number(data.distribution?.spirit || 0).toFixed(2)} of each token landed.`,
+              message: `Yield harvested: +${Number(data.distribution?.spirit || 0).toFixed(2)} each of Spirit, Essence, Matter, and Substance.`,
             },
           ])
         }
@@ -168,7 +171,8 @@ export default function YieldHub({ user }: { user: YieldUser | null }) {
           {
             site,
             kind: 'error',
-            message: err instanceof Error ? err.message : 'Claim failed unexpectedly.',
+            message:
+              err instanceof Error ? err.message : 'Daily ESMS Yield claim failed unexpectedly.',
           },
         ])
       } finally {
@@ -241,15 +245,30 @@ export default function YieldHub({ user }: { user: YieldUser | null }) {
       <div className="mx-auto max-w-5xl px-6 py-10 space-y-8">
         <header className="space-y-3 border-b border-white/5 pb-6">
           <div className="flex items-center gap-2 text-xs uppercase tracking-[0.2em] text-purple-300">
-            <Sparkles className="w-3.5 h-3.5" /> Alchm Yield Hub
+            <Sparkles className="w-3.5 h-3.5" aria-hidden="true" /> Cross-Site ESMS Harvest Hub
           </div>
           <h1 className="text-4xl font-extrabold tracking-tight bg-clip-text text-transparent bg-gradient-to-r from-zinc-100 via-purple-200 to-amber-200">
-            Claim your cosmic yield
+            Claim Daily ESMS Yield
           </h1>
           <p className="text-sm text-zinc-400 max-w-2xl leading-relaxed">
-            One sign-in covers Alchm Agents and Alchm Kitchen. Claim each site&apos;s daily yield
-            here, then optionally hand the same session off to the Alchm Desktop companion.
+            One sign-in covers Alchm Agents and Alchm Kitchen. Harvest each site&apos;s Daily ESMS
+            Yield into its linked Treasury or reserves, then optionally hand the same session off to
+            the Alchm Desktop companion.
           </p>
+          <div className="flex flex-wrap gap-3 pt-1">
+            <Link
+              href="/economy"
+              className="rounded-lg border border-purple-500/30 bg-purple-500/10 px-3 py-2 text-xs font-semibold text-purple-200 hover:bg-purple-500/15"
+            >
+              Open ESMS Treasury
+            </Link>
+            <Link
+              href="/shop?tab=tokens"
+              className="rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-semibold text-amber-200 hover:bg-amber-500/15"
+            >
+              Acquire ESMS Bundles
+            </Link>
+          </div>
           {cameFromDesktop && (
             <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-purple-200">
               <Link2 className="w-3.5 h-3.5" />
@@ -261,7 +280,7 @@ export default function YieldHub({ user }: { user: YieldUser | null }) {
         {!signedIn ? (
           <section className="rounded-2xl border border-purple-500/20 bg-purple-500/5 p-8 text-center space-y-4">
             <ShieldCheck className="w-8 h-8 mx-auto text-purple-300" />
-            <h2 className="text-2xl font-bold">Sign in to claim yield</h2>
+            <h2 className="text-2xl font-bold">Sign in to Claim Daily ESMS Yield</h2>
             <p className="text-sm text-zinc-400 max-w-md mx-auto">
               The Planetary Agents and Alchm Kitchen accounts share a single Google login. Once
               signed in, both sites&apos; yields appear here.
@@ -342,7 +361,7 @@ export default function YieldHub({ user }: { user: YieldUser | null }) {
                             : 'border-zinc-700 bg-zinc-900 text-zinc-400'
                         }`}
                       >
-                        {account.status === 'linked' ? 'Linked' : 'Local'}
+                        {account.status === 'linked' ? 'Active Sync' : 'Local Preview'}
                       </span>
                     </header>
 
@@ -350,24 +369,28 @@ export default function YieldHub({ user }: { user: YieldUser | null }) {
                       {[
                         {
                           label: 'Spirit',
+                          abbreviation: 'Sp',
                           val: account.balances.spirit,
                           icon: Sparkles,
                           tone: 'text-yellow-300',
                         },
                         {
                           label: 'Essence',
+                          abbreviation: 'Es',
                           val: account.balances.essence,
                           icon: Droplets,
                           tone: 'text-blue-300',
                         },
                         {
                           label: 'Matter',
+                          abbreviation: 'Ma',
                           val: account.balances.matter,
                           icon: Box,
                           tone: 'text-orange-300',
                         },
                         {
                           label: 'Substance',
+                          abbreviation: 'Su',
                           val: account.balances.substance,
                           icon: Zap,
                           tone: 'text-emerald-300',
@@ -378,10 +401,16 @@ export default function YieldHub({ user }: { user: YieldUser | null }) {
                           <div
                             key={stat.label}
                             className="rounded-lg border border-white/5 bg-zinc-950/60 px-3 py-2 text-center"
+                            role="group"
+                            title={`${stat.label} (${stat.abbreviation}) ESMS Token balance: ${Number(stat.val || 0).toFixed(2)}`}
+                            aria-label={`${stat.label} (${stat.abbreviation}) ESMS Token balance: ${Number(stat.val || 0).toFixed(2)}`}
                           >
-                            <Icon className={`w-3.5 h-3.5 mx-auto mb-1 ${stat.tone}`} />
+                            <Icon
+                              className={`w-3.5 h-3.5 mx-auto mb-1 ${stat.tone}`}
+                              aria-hidden="true"
+                            />
                             <div className="text-[9px] uppercase tracking-wider text-zinc-500">
-                              {stat.label}
+                              {stat.label} ({stat.abbreviation})
                             </div>
                             <div className={`text-sm font-mono font-bold ${stat.tone}`}>
                               {Number(stat.val || 0).toFixed(2)}
@@ -392,8 +421,13 @@ export default function YieldHub({ user }: { user: YieldUser | null }) {
                     </div>
 
                     <div className="flex flex-wrap items-center justify-between gap-2 text-[11px] text-zinc-500 border-t border-white/5 pt-3">
-                      <span>Last claim: {formatRelative(account.lastDailyClaimAt)}</span>
-                      <span className="font-mono text-purple-300">Streak {account.streak}</span>
+                      <span>Last harvest: {formatRelative(account.lastDailyClaimAt)}</span>
+                      <span
+                        className="font-mono text-purple-300"
+                        title="Consecutive Daily ESMS Yield claims; any multiplier is applied by the yield service at claim time."
+                      >
+                        Daily yield streak: {account.streak} days
+                      </span>
                     </div>
 
                     <button
@@ -408,10 +442,10 @@ export default function YieldHub({ user }: { user: YieldUser | null }) {
                       {isClaiming
                         ? 'Claiming…'
                         : account.status !== 'linked'
-                          ? 'Link account to claim'
+                          ? 'Link Treasury to Claim Daily Yield'
                           : account.canClaimDaily
-                            ? `Claim ${copy.title} yield`
-                            : 'Yield already claimed today'}
+                            ? `Claim Daily Yield — ${copy.claimLabel}`
+                            : 'Yield Harvested Today'}
                     </button>
 
                     {status && (
@@ -441,7 +475,8 @@ export default function YieldHub({ user }: { user: YieldUser | null }) {
                   </h2>
                   <p className="text-xs text-zinc-400 max-w-md">
                     Sends a signed, 5-minute deep link to the installed Tauri companion so it can
-                    use this signed-in session for syncing balances and claiming yield offline.
+                    use this signed-in session for syncing reserves and claiming Daily ESMS Yield
+                    offline.
                   </p>
                 </div>
                 <button

@@ -12,10 +12,15 @@ import {
 } from '@/components/providers/SolanaWalletProvider'
 
 const ESMS_ROWS = [
-  { key: 'spirit', label: 'Spirit', className: 'text-alchemical-spirit' },
-  { key: 'essence', label: 'Essence', className: 'text-alchemical-essence' },
-  { key: 'matter', label: 'Matter', className: 'text-alchemical-matter' },
-  { key: 'substance', label: 'Substance', className: 'text-alchemical-substance' },
+  { key: 'spirit', label: 'Spirit', abbreviation: 'Sp', className: 'text-alchemical-spirit' },
+  { key: 'essence', label: 'Essence', abbreviation: 'Es', className: 'text-alchemical-essence' },
+  { key: 'matter', label: 'Matter', abbreviation: 'Ma', className: 'text-alchemical-matter' },
+  {
+    key: 'substance',
+    label: 'Substance',
+    abbreviation: 'Su',
+    className: 'text-alchemical-substance',
+  },
 ] as const
 
 const PILLAR_ICON_OVERRIDES: Record<string, string> = {
@@ -23,13 +28,6 @@ const PILLAR_ICON_OVERRIDES: Record<string, string> = {
   '/vault': 'inventory_2',
   '/arena': 'swords',
   '/labs': 'biotech',
-}
-
-// Real subscription tier rendered in lore voice — no invented progression.
-const TIER_RANKS: Record<string, string> = {
-  free: 'Rank: Initiate',
-  alchemist: 'Rank: Alchemist',
-  master: 'Rank: Master',
 }
 
 /**
@@ -56,9 +54,7 @@ export function SideNavBar() {
           {session?.user?.name ?? 'Digital Alchemist'}
         </h2>
         <p className="font-label-mono text-label-mono text-tertiary">
-          {session
-            ? (TIER_RANKS[(session.user as { tier?: string })?.tier ?? 'free'] ?? TIER_RANKS.free)
-            : 'Unattuned'}
+          {session ? 'ESMS Treasury Active' : 'Unattuned'}
         </p>
       </div>
 
@@ -109,26 +105,43 @@ export function SideNavBar() {
           <span className="material-symbols-outlined" aria-hidden>
             trending_up
           </span>
-          Yield Staking
+          Cross-Site ESMS Yield
         </Link>
       </nav>
 
       {/* ESMS balances */}
       <div className="px-6 mt-8">
         <div className="mb-3 flex items-center justify-between gap-2">
-          <h3 className="font-label-mono text-label-mono text-outline uppercase">ESMS Reserves</h3>
+          <Link
+            href="/economy"
+            className="font-label-mono text-label-mono text-outline uppercase hover:text-on-surface"
+            title="Open the ESMS Treasury"
+          >
+            ESMS Reserves
+          </Link>
           <DualChainNetworkBadge />
         </div>
-        <div className="glass-panel rounded-lg p-4 flex flex-col gap-2">
+        <div
+          className="glass-panel rounded-lg p-4 flex flex-col gap-2"
+          role="group"
+          title="ESMS Reserves (EVM / Solana Devnet)"
+          aria-label="ESMS Reserves (EVM / Solana Devnet)"
+        >
           <div className="grid grid-cols-[1fr_auto_auto] gap-2 font-label-mono text-[9px] uppercase text-outline">
-            <span>Coin</span>
+            <span>ESMS Token</span>
             <span title="Base Sepolia">EVM</span>
             <span title="Solana Devnet">SOL</span>
           </div>
           {ESMS_ROWS.map(row => (
-            <div key={row.key} className="grid grid-cols-[1fr_auto_auto] gap-2 items-center">
+            <div
+              key={row.key}
+              className="grid grid-cols-[1fr_auto_auto] gap-2 items-center"
+              role="group"
+              title={`${row.label} (${row.abbreviation}) ESMS reserve — Base Sepolia: ${evmBalances?.[row.key] ?? 'unavailable'}; Solana Devnet: ${solanaBalances?.[row.key] ?? 'unavailable'}`}
+              aria-label={`${row.label} (${row.abbreviation}) ESMS reserve. Base Sepolia: ${evmBalances?.[row.key] ?? 'unavailable'}. Solana Devnet: ${solanaBalances?.[row.key] ?? 'unavailable'}.`}
+            >
               <span className={`font-label-mono text-label-mono ${row.className}`}>
-                {row.label}
+                {row.label} ({row.abbreviation})
               </span>
               <span className="font-label-mono text-label-mono text-on-surface tabular-nums">
                 {evmBalances?.[row.key] ?? '—'}
@@ -140,6 +153,12 @@ export function SideNavBar() {
           ))}
           <div className="mt-2 border-t border-white/10 pt-2">
             <SolanaWalletConnectButton compact />
+            <Link
+              href="/shop?tab=tokens"
+              className="mt-2 block text-center font-label-mono text-[10px] text-spirit-violet hover:text-st-primary"
+            >
+              Acquire ESMS Bundles
+            </Link>
           </div>
         </div>
       </div>

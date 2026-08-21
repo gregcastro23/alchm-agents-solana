@@ -853,16 +853,16 @@ function createMonicaGuideAgent(): LocalAgent {
     domains: [
       'Desktop guidance',
       'Account management',
-      'Daily yield',
+      'Daily ESMS Yield',
       "Philosopher's Stone",
       'Agent chat',
     ],
     quote:
-      "I'm Monica, your Alchm Desktop guide. I can help you manage Agents and Kitchen accounts, claim daily yield, send web agents here, and create local Philosopher's Stone agents.",
+      "I'm Monica, your Alchm Desktop guide. I can help you manage Agents and Kitchen accounts, Claim Daily ESMS Yield, send web agents here, and create local Philosopher's Stone agents.",
     promptSeed: [
       'You are Monica, the built-in Alchm Desktop guide.',
       'Help users understand this companion app without presenting it as the full web app.',
-      "Guide account linking for Alchm Agents and Alchm Kitchen, daily yield claims, web catalog handoff, and local Philosopher's Stone agent creation.",
+      "Guide account linking for Alchm Agents and Alchm Kitchen, Daily ESMS Yield claims, web catalog handoff, and local Philosopher's Stone agent creation.",
       'Be warm, practical, concise, and clear when the official local model runtime is not installed.',
     ].join('\n'),
     addedAt: 'system',
@@ -4269,10 +4269,10 @@ function renderSiteAccountCard(account: SiteAccount) {
     account.status === 'checking'
       ? 'Syncing...'
       : account.status === 'offline' || account.status === 'needs-link'
-        ? '🔗 Link account to claim yield'
+        ? '🔗 Link Treasury to Claim Daily Yield'
         : account.canClaimDaily
-          ? '✨ Claim Daily Cosmic Yield'
-          : '✓ Cosmic Yield Claimed'
+          ? '✨ Claim Daily Yield'
+          : '✓ Yield Harvested Today'
   const disabled =
     !account.canClaimDaily || account.status === 'offline' || account.status === 'needs-link'
 
@@ -5912,7 +5912,7 @@ function buildMonicaGuideReply(userMessage: string, turnContext: AgentTurnContex
   if (hasAny(message, ['claim', 'yield', 'daily', 'balance', 'esms', 'account', 'kitchen'])) {
     return [
       navNotice + "I'm Monica, your desktop guide.",
-      'Use Account to sync Alchm Agents and Alchm Kitchen, then claim daily yield for each site from its account card.',
+      'Use Account to sync Alchm Agents and Alchm Kitchen, then Claim Daily ESMS Yield for each site from its Treasury card.',
       'The desktop app tracks those balances locally here, while full account management still belongs on the browser apps.',
     ].join(' ')
   }
@@ -5998,7 +5998,7 @@ function buildMonicaGuideReply(userMessage: string, turnContext: AgentTurnContex
 
   return [
     navNotice + "I'm Monica, your Alchm Desktop guide.",
-    `This companion manages Agents and Kitchen accounts, claims daily yield, shows the consensus astrology and Alchm physics dashboards, sends web agents into desktop chat, creates local Philosopher's Stone agents, and tracks the Scrabble Agent League. You currently have ${userAgentCount} user agent${userAgentCount === 1 ? '' : 's'} in the desktop roster.`,
+    `This companion manages Agents and Kitchen accounts, claims Daily ESMS Yield, shows the consensus astrology and Alchm physics dashboards, sends web agents into desktop chat, creates local Philosopher's Stone agents, and tracks the Scrabble Agent League. You currently have ${userAgentCount} user agent${userAgentCount === 1 ? '' : 's'} in the desktop roster.`,
     "Tell me whether you want help with Astrology, Physics, Account, Catalog, Philosopher's Stone, Scrabble League, or local chat runtime.",
   ].join(' ')
 }
@@ -6081,7 +6081,7 @@ async function refreshAccounts(options: { silent?: boolean } = {}) {
 
 async function claimDailyYield(site: SiteKey) {
   if (!invokeCommand) {
-    setNotice('Claim daily yield from the packaged desktop app or the web app.')
+    setNotice('Claim Daily ESMS Yield from the packaged desktop app or the web app.')
     return
   }
 
@@ -6099,7 +6099,7 @@ async function claimDailyYield(site: SiteKey) {
     } | null
 
     if (response.status === 409) {
-      setNotice(data?.message || 'Daily yield already claimed.')
+      setNotice('Daily ESMS yield already harvested. Available again tomorrow.')
       await refreshAccounts({ silent: true })
       return
     }
@@ -6111,15 +6111,15 @@ async function claimDailyYield(site: SiteKey) {
     for (const account of data?.accounts || []) state.siteAccounts[account.site] = account
 
     addLedger(
-      'Daily Yield Claimed',
-      `${state.siteAccounts[site].label} daily yield was claimed through the desktop companion.`,
+      'Yield Harvested',
+      `${state.siteAccounts[site].label} Daily ESMS Yield was harvested through the desktop companion.`,
       formatDistribution(data?.distribution)
     )
-    setNotice(`${state.siteAccounts[site].label} yield claimed.`)
+    setNotice(`${state.siteAccounts[site].label} Yield Harvested.`)
     saveState()
     render()
   } catch (error) {
-    setNotice(error instanceof Error ? error.message : 'Daily yield claim failed.')
+    setNotice(error instanceof Error ? error.message : 'Daily ESMS Yield claim failed.')
   }
 }
 
@@ -6368,7 +6368,7 @@ async function streamTextIntoMessage(message: ChatMessage, text: string) {
 
 function buildRuntimeNotice(agent: LocalAgent) {
   if (agent.source === 'app-guide') {
-    return "I'm Monica, your Alchm Desktop guide. I can help with account sync, daily yield, web catalog handoff, the Philosopher's Stone, and local runtime status."
+    return "I'm Monica, your Alchm Desktop guide. I can help with account sync, Daily ESMS Yield, web catalog handoff, the Philosopher's Stone, and local runtime status."
   }
 
   if (agent.source === 'philosophers-stone') {
@@ -6857,7 +6857,9 @@ async function bootTauriRuntime() {
 
   if (typeof maybeTauriWindow.__TAURI_INTERNALS__?.invoke !== 'function') {
     state.runtime.sidecar = 'offline'
-    markAccountsOffline('Open the packaged desktop app, or claim yield at /yield in the browser.')
+    markAccountsOffline(
+      'Open the packaged desktop app, or Claim Daily ESMS Yield at /yield in the browser.'
+    )
     render()
     return
   }

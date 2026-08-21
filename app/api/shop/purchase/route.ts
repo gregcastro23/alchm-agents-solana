@@ -60,7 +60,7 @@ export async function POST(request: Request) {
   // ── Digital items: ESMS is the native rail; USDC/Card top up first ────────
   const payWith = body.payWith === 'usdc' || body.payWith === 'card' ? body.payWith : 'esms'
   if (payWith !== 'esms') {
-    // Digital goods are priced in ESMS — route fiat buyers to the token store.
+    // Digital goods are priced in ESMS — route fiat buyers to the ESMS Bazaar.
     return NextResponse.json({
       mode: 'topup',
       url: `/shop?highlight=${encodeURIComponent(item.id)}`,

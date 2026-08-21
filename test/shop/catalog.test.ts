@@ -41,4 +41,24 @@ describe('shop/catalog', () => {
     expect(grouped.apothecary.every(i => i.kind === 'apothecary')).toBe(true)
     expect(grouped.pentacles.every(i => i.kind === 'pentacles')).toBe(true)
   })
+
+  it('uses the finalized ESMS bundle names and allocations', () => {
+    const bundles = catalogByKind().tokens
+
+    expect(
+      bundles.map(bundle => ({
+        name: bundle.title,
+        tier: bundle.stripeTier,
+        total: totalEsms(bundle.esms),
+        price: bundle.usdCents,
+      }))
+    ).toEqual([
+      { name: 'Initiate Box', tier: '5', total: 100, price: 500 },
+      { name: 'Adept Sphere', tier: '10', total: 240, price: 1000 },
+      { name: 'Alchemist Chest', tier: '25', total: 700, price: 2500 },
+      { name: 'Sovereign Vault', tier: '50', total: 1600, price: 5000 },
+    ])
+
+    expect(bundles.every(bundle => !bundle.blurb.includes('Cosmic'))).toBe(true)
+  })
 })

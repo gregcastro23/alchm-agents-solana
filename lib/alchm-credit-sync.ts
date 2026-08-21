@@ -3,7 +3,7 @@ import { TransactionSourceType } from './services/economyService'
 
 /**
  * Syncs a token credit to the alchm.kitchen platform.
- * Used for cosmic yield claims and other rewards.
+ * Used for ESMS yield claims and other rewards.
  */
 export async function syncCreditToAlchm(params: {
   userEmail: string
