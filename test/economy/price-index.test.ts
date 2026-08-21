@@ -1,63 +1,112 @@
 // @vitest-environment node
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { GET } from '@/app/api/economy/price-index/route'
-import {
-  AAE_SOLANA_PROGRAM_ID,
-  TOKEN_2022_PROGRAM_ID,
-  ESMS_DECIMALS,
-  getEsmsMintAddresses,
-} from '@/lib/solana/esms'
 
-describe('Elemental Live Price Index API & Solana Ticker', () => {
-  it('returns valid quote payload for all four elements', async () => {
+const CANONICAL_PAYLOAD = {
+  success: true,
+  live: true,
+  generatedAt: '2026-08-21T20:37:49.409Z',
+  bucketStartUtc: '2026-08-21T20:37:00.000Z',
+  aNumber: 5.6568,
+  multiplier: 0.97,
+  dominantElement: 'Fire',
+  sunSign: 'leo',
+  isDiurnal: true,
+  tokens: [
+    {
+      token: 'Spirit',
+      index: 0.9025,
+      change24hPct: -2.47,
+      weight: 0.5281,
+      sparkline: [0.9254, 0.9025],
+    },
+    {
+      token: 'Essence',
+      index: 0.934,
+      change24hPct: -2.7,
+      weight: 0.3981,
+      sparkline: [0.9599, 0.934],
+    },
+    {
+      token: 'Matter',
+      index: 1.0135,
+      change24hPct: -2.19,
+      weight: 0.0705,
+      sparkline: [1.0362, 1.0135],
+    },
+    {
+      token: 'Substance',
+      index: 1.0298,
+      change24hPct: -2.15,
+      weight: 0.0033,
+      sparkline: [1.0524, 1.0298],
+    },
+  ],
+  compositeIndex: 0.97,
+  composite24hPct: -2.37,
+  degraded: null,
+  basis: {
+    model: 'ADR-011 elemental-exchange-index v1',
+    engine: 'astronomy-engine (local)',
+    constants: 'imported from src/lib/economy/livePricing.ts',
+  },
+  railsUsd: {
+    mintPerTokenUsd: 0.025,
+    mintSource: 'mcp_top_up_5',
+    redeemPerTokenUsd: 0.01,
+    redeemSource: 'NEXT_PUBLIC_ESMS_RESTAURANT_CENTS_PER_TOKEN',
+  },
+  supply: {
+    live: true,
+    spirit: 12526.1519,
+    essence: 15820.0185,
+    matter: 25380.4355,
+    substance: 19952.9073,
+  },
+} as const
+
+afterEach(() => {
+  vi.unstubAllGlobals()
+  vi.unstubAllEnvs()
+})
+
+describe('canonical ESMS price-index adapter', () => {
+  it('serves the Kitchen oracle payload unchanged so both sites quote one index', async () => {
+    const fetchMock = vi.fn().mockResolvedValue(
+      new Response(JSON.stringify(CANONICAL_PAYLOAD), {
+        status: 200,
+        headers: { 'Content-Type': 'application/json' },
+      })
+    )
+    vi.stubGlobal('fetch', fetchMock)
+
     const response = await GET()
+
     expect(response.status).toBe(200)
-
-    const data = await response.json()
-    expect(data.success).toBe(true)
-    expect(data.solanaCluster).toBe('devnet')
-    expect(data.programId).toBe(AAE_SOLANA_PROGRAM_ID.toBase58())
-    expect(data.tokenProgramId).toBe(TOKEN_2022_PROGRAM_ID.toBase58())
-    expect(data.elements).toBeDefined()
-
-    const axes = ['Spirit', 'Essence', 'Matter', 'Substance'] as const
-    const pdaMints = getEsmsMintAddresses(AAE_SOLANA_PROGRAM_ID)
-
-    axes.forEach((axis, index) => {
-      const quote = data.elements[axis]
-      expect(quote).toBeDefined()
-      expect(quote.axis).toBe(axis)
-      expect(quote.decimals).toBe(ESMS_DECIMALS)
-      expect(quote.decimals).toBe(4)
-      expect(quote.priceUsd).toBeGreaterThan(0)
-      expect(quote.priceSol).toBeGreaterThan(0)
-      expect(quote.mintAddress).toBe(pdaMints[index].toBase58())
-      expect(Array.isArray(quote.sparkline)).toBe(true)
-      expect(quote.sparkline.length).toBeGreaterThan(10)
-      expect(typeof quote.dominantAspect).toBe('string')
-      expect(typeof quote.harmonicResonance).toBe('number')
-    })
+    await expect(response.json()).resolves.toEqual(CANONICAL_PAYLOAD)
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    expect(String(fetchMock.mock.calls[0]?.[0])).toBe(
+      'https://alchm.kitchen/api/economy/price-index'
+    )
   })
 
-  it('reflects correct astrological metadata & element associations', async () => {
+  it('fails closed without quotes when the canonical oracle is unavailable', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValue(
+          new Response(JSON.stringify({ success: false, live: false }), { status: 503 })
+        )
+    )
+
     const response = await GET()
-    const data = await response.json()
+    const body = await response.json()
 
-    expect(data.elements.Spirit.element).toBe('fire')
-    expect(data.elements.Spirit.symbol).toBe('SPIRIT')
-    expect(data.elements.Spirit.rulingPlanets).toContain('Sun')
-
-    expect(data.elements.Essence.element).toBe('water')
-    expect(data.elements.Essence.symbol).toBe('ESSENCE')
-    expect(data.elements.Essence.rulingPlanets).toContain('Moon')
-
-    expect(data.elements.Matter.element).toBe('earth')
-    expect(data.elements.Matter.symbol).toBe('MATTER')
-    expect(data.elements.Matter.rulingPlanets).toContain('Saturn')
-
-    expect(data.elements.Substance.element).toBe('air')
-    expect(data.elements.Substance.symbol).toBe('SUBSTANCE')
-    expect(data.elements.Substance.rulingPlanets).toContain('Mercury')
+    expect(response.status).toBe(503)
+    expect(body.success).toBe(false)
+    expect(body.live).toBe(false)
+    expect(body.tokens).toBeUndefined()
   })
 })
