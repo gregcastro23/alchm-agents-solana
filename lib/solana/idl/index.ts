@@ -1,6 +1,5 @@
-import idl from './aae_solana.json'
+import idl from './asol_program.json'
+import type { AsolProgram, AaeSolana } from './asol_program'
 
-import type { AaeSolana } from './aae_solana'
-
-export const IDL = idl as AaeSolana
-export type { AaeSolana } from './aae_solana'
+export const IDL = idl as unknown as AsolProgram
+export type { AsolProgram, AaeSolana } from './asol_program'

@@ -4,8 +4,8 @@ import { encodeAbiParameters, keccak256 } from 'viem'
 export const ESMS_DECIMALS = 4 as const
 export const MAX_LEDGER_ATOMS = 999_999_999_999n
 
-const PERSONA_DOMAIN = Buffer.from('AAE_PERSONA_V1', 'utf8')
-const EPOCH_DOMAIN = Buffer.from('AAE_EPOCH_V1', 'utf8')
+const PERSONA_DOMAIN = Buffer.from('ASOL_PERSONA_V1', 'utf8')
+const EPOCH_DOMAIN = Buffer.from('ASOL_EPOCH_V1', 'utf8')
 
 export function ledgerUnitsToAtoms(value: string): bigint {
   const match = /^(\d{1,8})(?:\.(\d{1,4}))?$/.exec(value)

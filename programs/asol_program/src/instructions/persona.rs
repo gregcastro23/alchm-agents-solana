@@ -2,7 +2,7 @@ use anchor_lang::prelude::*;
 
 use crate::{
     constants::{PERSONA_COMMITMENT_SEED, PROGRAM_AUTHORITY_SEED, STATE_VERSION},
-    errors::AaeError,
+    errors::AsolError,
     state::{PersonaCommitment, ProgramConfig},
 };
 
@@ -17,11 +17,11 @@ pub fn record(
         ctx.accounts
             .program_config
             .can_attest(&ctx.accounts.writer.key()),
-        AaeError::Unauthorized
+        AsolError::Unauthorized
     );
     require!(
         agent_id != [0_u8; 32] && target_persona_hash != [0_u8; 32] && epoch_hash != [0_u8; 32],
-        AaeError::ZeroCommitment
+        AsolError::ZeroCommitment
     );
 
     let commitment = &mut ctx.accounts.persona_commitment;
@@ -31,9 +31,9 @@ pub fn record(
         commitment
             .sequence
             .checked_add(1)
-            .ok_or(AaeError::ArithmeticOverflow)?
+            .ok_or(AsolError::ArithmeticOverflow)?
     };
-    require_eq!(sequence, expected_sequence, AaeError::InvalidSequence);
+    require_eq!(sequence, expected_sequence, AsolError::InvalidSequence);
 
     commitment.set_inner(PersonaCommitment {
         version: STATE_VERSION,

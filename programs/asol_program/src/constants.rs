@@ -17,7 +17,7 @@ pub const PERMISSIONED_BURN_BURN_CHECKED_TAG: u8 = 2;
 pub const ED25519_OFFSETS_SIZE: usize = 14;
 pub const ED25519_SIGNATURE_SIZE: usize = 64;
 pub const ED25519_PUBLIC_KEY_SIZE: usize = 32;
-pub const REDEEM_AUTHORIZATION_DOMAIN: &[u8] = b"AAE_ESMS_REDEEM_V1";
+pub const REDEEM_AUTHORIZATION_DOMAIN: &[u8] = b"ASOL_ESMS_REDEEM_V1";
 
 pub const ESMS_NAMES: [&str; ESMS_MINT_COUNT] = ["Spirit", "Essence", "Matter", "Substance"];
 pub const ESMS_SYMBOLS: [&str; ESMS_MINT_COUNT] = ["SPIRIT", "ESSENCE", "MATTER", "SUBSTANCE"];

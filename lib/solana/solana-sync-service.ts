@@ -7,8 +7,8 @@ import {
   type VersionedTransactionResponse,
 } from '@solana/web3.js'
 
-import { AAE_SOLANA_PROGRAM_ID } from '@/lib/solana/esms'
-import AAE_SOLANA_IDL from '@/lib/solana/idl/aae_solana.json'
+import { ASOL_SOLANA_PROGRAM_ID, AAE_SOLANA_PROGRAM_ID } from '@/lib/solana/esms'
+import ASOL_PROGRAM_IDL from '@/lib/solana/idl/asol_program.json'
 import {
   createResilientSolanaLogSubscription,
   resolveSolanaRpcUrls,
@@ -54,12 +54,14 @@ export interface PersonaCommitmentRecordedEvent extends SolanaEventBase {
   writer: string
 }
 
-export type AaeSolanaSyncEvent =
+export type AsolSolanaSyncEvent =
   | ClaimMintReceiptEvent
   | OrderReceiptEvent
   | PersonaCommitmentRecordedEvent
 
-const instructionCoder = new BorshInstructionCoder(AAE_SOLANA_IDL as Idl)
+export type AaeSolanaSyncEvent = AsolSolanaSyncEvent
+
+const instructionCoder = new BorshInstructionCoder(ASOL_PROGRAM_IDL as Idl)
 
 function bytesHex(value: unknown): string {
   return Buffer.from(value as Uint8Array).toString('hex')
@@ -73,18 +75,18 @@ function u64(value: unknown): bigint {
 
 function esmsAmounts(value: unknown): EsmsAmounts {
   if (!Array.isArray(value) || value.length !== 4) {
-    throw new Error('AAE ESMS instructions require exactly four amounts')
+    throw new Error('ASOL ESMS instructions require exactly four amounts')
   }
   return [u64(value[0]), u64(value[1]), u64(value[2]), u64(value[3])]
 }
 
-export function decodeAaeInstructionEvent(args: {
+export function decodeAsolInstructionEvent(args: {
   signature: string
   slot: bigint
   instruction: TransactionInstruction
-}): AaeSolanaSyncEvent | null {
+}): AsolSolanaSyncEvent | null {
   const { signature, slot, instruction } = args
-  if (!instruction.programId.equals(AAE_SOLANA_PROGRAM_ID)) return null
+  if (!instruction.programId.equals(ASOL_SOLANA_PROGRAM_ID)) return null
   const decoded = instructionCoder.decode(instruction.data)
   if (!decoded) return null
   const data = decoded.data as Record<string, unknown>
@@ -324,13 +326,13 @@ function transactionInstructions(
   })
 }
 
-export function decodeAaeTransactionEvents(args: {
+export function decodeAsolTransactionEvents(args: {
   signature: string
   slot: bigint
   transaction: VersionedTransactionResponse
-}): AaeSolanaSyncEvent[] {
+}): AsolSolanaSyncEvent[] {
   return transactionInstructions(args.transaction).flatMap(instruction => {
-    const event = decodeAaeInstructionEvent({
+    const event = decodeAsolInstructionEvent({
       signature: args.signature,
       slot: args.slot,
       instruction,
@@ -338,6 +340,9 @@ export function decodeAaeTransactionEvents(args: {
     return event ? [event] : []
   })
 }
+
+export const decodeAaeInstructionEvent = decodeAsolInstructionEvent
+export const decodeAaeTransactionEvents = decodeAsolTransactionEvents
 
 async function getFinalizedTransaction(
   connection: Connection,

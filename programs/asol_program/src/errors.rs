@@ -1,7 +1,7 @@
 use anchor_lang::prelude::*;
 
 #[error_code]
-pub enum AaeError {
+pub enum AsolError {
     #[msg("Unauthorized authority")]
     Unauthorized,
     #[msg("Claims are paused")]

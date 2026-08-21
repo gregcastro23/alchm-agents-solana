@@ -6,14 +6,18 @@ import { Keypair, PublicKey } from '@solana/web3.js'
 
 const EXPECTED_PROGRAM_ID = new PublicKey('5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD')
 const configuredPath =
-  process.env.AAE_SOLANA_PROGRAM_KEYPAIR ?? 'target/deploy/aae_solana-keypair.json'
+  process.env.ASOL_SOLANA_PROGRAM_KEYPAIR ??
+  process.env.AAE_SOLANA_PROGRAM_KEYPAIR ??
+  (existsSync(resolve(process.cwd(), 'target/deploy/asol_program-keypair.json'))
+    ? 'target/deploy/asol_program-keypair.json'
+    : 'target/deploy/aae_solana-keypair.json')
 const keypairPath = isAbsolute(configuredPath)
   ? configuredPath
   : resolve(process.cwd(), configuredPath)
 
 if (!existsSync(keypairPath)) {
   throw new Error(
-    `Missing stable Solana program keypair. Set AAE_SOLANA_PROGRAM_KEYPAIR or provision ${keypairPath}.`
+    `Missing stable Solana program keypair. Set ASOL_SOLANA_PROGRAM_KEYPAIR or provision ${keypairPath}.`
   )
 }
 
@@ -39,7 +43,7 @@ const result = spawnSync(
     '--provider.cluster',
     'devnet',
     '--program-name',
-    'aae_solana',
+    'asol_program',
     '--program-keypair',
     keypairPath,
   ],

@@ -14,23 +14,35 @@ import { privateKeyToAccount } from 'viem/accounts'
 import { baseSepolia } from 'viem/chains'
 import { Connection, PublicKey, Transaction } from '@solana/web3.js'
 
-import { AaeSolanaClient, type EsmsAmounts } from '@/lib/solana/aae-solana-client'
-import { AAE_BASE_SEPOLIA_ESMS_ADDRESS } from '@/lib/solana/base-sepolia-esms'
-import { AAE_SOLANA_PROGRAM_ID } from '@/lib/solana/esms'
+import {
+  AsolSolanaClient,
+  AaeSolanaClient,
+  type EsmsAmounts,
+} from '@/lib/solana/asol-solana-client'
+import {
+  ASOL_BASE_SEPOLIA_ESMS_ADDRESS,
+  AAE_BASE_SEPOLIA_ESMS_ADDRESS,
+} from '@/lib/solana/base-sepolia-esms'
+import { ASOL_SOLANA_PROGRAM_ID, AAE_SOLANA_PROGRAM_ID } from '@/lib/solana/esms'
 import {
   resolveSolanaRpcUrls,
   withSolanaRpcFailover,
   type SolanaServiceHealth,
 } from '@/lib/solana/rpc-failover'
 import {
+  decodeAsolTransactionEvents,
   decodeAaeTransactionEvents,
   solanaSlotToBigInt,
   startSolanaSyncService,
+  type AsolSolanaSyncEvent,
   type AaeSolanaSyncEvent,
   type SolanaSyncSubscription,
 } from '@/lib/solana/solana-sync-service'
 
-export { AAE_BASE_SEPOLIA_ESMS_ADDRESS } from '@/lib/solana/base-sepolia-esms'
+export {
+  ASOL_BASE_SEPOLIA_ESMS_ADDRESS,
+  AAE_BASE_SEPOLIA_ESMS_ADDRESS,
+} from '@/lib/solana/base-sepolia-esms'
 export const EVM_ATOMS_PER_SOLANA_ATOM = 100_000_000_000_000n
 const MAX_U64 = (1n << 64n) - 1n
 const EVM_HASH = /^0x[0-9a-f]{64}$/i
@@ -582,9 +594,9 @@ export function createSolanaDestinationMinter(args: {
     })
 }
 
-export function createAaeBridgeProcessor(args: {
+export function createAsolBridgeProcessor(args: {
   store: BridgeStore
-  solanaClient: AaeSolanaClient
+  solanaClient: AsolSolanaClient
   evmPublicClient: PublicClient
   evmWalletClient: WalletClient
   evmConfirmations?: number
@@ -621,6 +633,8 @@ export function createAaeBridgeProcessor(args: {
     }),
   })
 }
+
+export const createAaeBridgeProcessor = createAsolBridgeProcessor
 
 interface PrismaBridgeQueueClient {
   solanaBridgeTransfer: {

@@ -32,7 +32,7 @@ use crate::{
         PERMISSIONED_BURN_INSTRUCTION_TAG, PROGRAM_AUTHORITY_SEED, REDEEM_AUTHORIZATION_DOMAIN,
         REDEMPTION_MODE_SELF, REDEMPTION_MODE_SPONSORED, STATE_VERSION,
     },
-    errors::AaeError,
+    errors::AsolError,
     state::{ClaimReceipt, OrderReceipt, ProgramConfig},
 };
 
@@ -43,7 +43,7 @@ pub fn initialize_mints(ctx: Context<InitializeEsmsMints>) -> Result<()> {
     require_keys_eq!(
         ctx.accounts.admin.key(),
         ctx.accounts.program_config.admin,
-        AaeError::Unauthorized
+        AsolError::Unauthorized
     );
 
     let mints = [
@@ -80,14 +80,14 @@ pub fn claim_mint(
     amounts: [u64; ESMS_MINT_COUNT],
 ) -> Result<()> {
     let config = &ctx.accounts.program_config;
-    require!(!config.pause_claims, AaeError::ClaimsPaused);
+    require!(!config.pause_claims, AsolError::ClaimsPaused);
     require!(
         config.can_attest(&ctx.accounts.authority.key()),
-        AaeError::Unauthorized
+        AsolError::Unauthorized
     );
     require!(
         claim_id != [0; 32] && ledger_reference_hash != [0; 32],
-        AaeError::ZeroReceiptIdentifier
+        AsolError::ZeroReceiptIdentifier
     );
     validate_amounts(&amounts)?;
 
@@ -115,7 +115,7 @@ pub fn claim_mint(
         require_keys_eq!(
             *destinations[index].key,
             expected_ata,
-            AaeError::InvalidTokenAccount
+            AsolError::InvalidTokenAccount
         );
         associated_token::create_idempotent(CpiContext::new(
             ctx.accounts.associated_token_program.to_account_info(),
@@ -165,9 +165,9 @@ pub fn redeem(
 ) -> Result<()> {
     require!(
         !ctx.accounts.program_config.pause_redemptions,
-        AaeError::RedemptionsPaused
+        AsolError::RedemptionsPaused
     );
-    require!(order_id != [0; 32], AaeError::ZeroReceiptIdentifier);
+    require!(order_id != [0; 32], AsolError::ZeroReceiptIdentifier);
     validate_amounts(&amounts)?;
 
     let sources = redemption_sources(ctx.accounts);
@@ -200,18 +200,18 @@ pub fn redeem_for(
 ) -> Result<()> {
     require!(
         !ctx.accounts.program_config.pause_redemptions,
-        AaeError::RedemptionsPaused
+        AsolError::RedemptionsPaused
     );
-    require!(order_id != [0; 32], AaeError::ZeroReceiptIdentifier);
+    require!(order_id != [0; 32], AsolError::ZeroReceiptIdentifier);
     validate_amounts(&amounts)?;
     require!(
         Clock::get()?.unix_timestamp <= deadline,
-        AaeError::AuthorizationExpired
+        AsolError::AuthorizationExpired
     );
     require_keys_eq!(
         ctx.accounts.instructions.key(),
         anchor_lang::solana_program::sysvar::instructions::ID,
-        AaeError::InvalidInstructionsSysvar
+        AsolError::InvalidInstructionsSysvar
     );
 
     let expected_message = redeem_authorization_message(
@@ -263,13 +263,13 @@ fn initialize_or_validate_mint<'info>(
     require_keys_eq!(
         *token_program.key,
         spl_token_2022::ID,
-        AaeError::InvalidTokenProgram
+        AsolError::InvalidTokenProgram
     );
 
     if mint.owner == token_program.key && !mint.data_is_empty() {
         return validate_existing_mint(mint, config.key, mint_id as usize);
     }
-    require!(mint.data_is_empty(), AaeError::InvalidMint);
+    require!(mint.data_is_empty(), AsolError::InvalidMint);
 
     let space = esms_mint_fixed_account_len()?;
     let lamports = Rent::get()?.minimum_balance(esms_mint_account_len(mint_id as usize)?);
@@ -296,7 +296,7 @@ fn initialize_or_validate_mint<'info>(
         require_keys_eq!(
             *mint.owner,
             anchor_lang::system_program::ID,
-            AaeError::InvalidMint
+            AsolError::InvalidMint
         );
         let rent_top_up = lamports.saturating_sub(mint.lamports());
         if rent_top_up > 0 {
@@ -382,7 +382,7 @@ fn initialize_or_validate_mint<'info>(
 fn esms_mint_account_len(mint_id: usize) -> Result<usize> {
     esms_mint_fixed_account_len()?
         .checked_add(TLV_HEADER_LEN + esms_metadata_value_len(mint_id))
-        .ok_or_else(|| error!(AaeError::ArithmeticOverflow))
+        .ok_or_else(|| error!(AsolError::ArithmeticOverflow))
 }
 
 fn esms_mint_fixed_account_len() -> Result<usize> {
@@ -396,7 +396,7 @@ fn esms_mint_fixed_account_len() -> Result<usize> {
     let permissioned_burn_tlv = TLV_HEADER_LEN + ED25519_PUBLIC_KEY_SIZE;
     fixed
         .checked_add(permissioned_burn_tlv)
-        .ok_or_else(|| error!(AaeError::ArithmeticOverflow))
+        .ok_or_else(|| error!(AsolError::ArithmeticOverflow))
 }
 
 fn esms_metadata_value_len(mint_id: usize) -> usize {
@@ -421,19 +421,19 @@ fn initialize_permissioned_burn<'info>(
 }
 
 fn validate_existing_mint(mint: &AccountInfo, authority: &Pubkey, mint_id: usize) -> Result<()> {
-    require_keys_eq!(*mint.owner, spl_token_2022::ID, AaeError::InvalidMint);
+    require_keys_eq!(*mint.owner, spl_token_2022::ID, AsolError::InvalidMint);
     let data = mint.try_borrow_data()?;
     let state =
         spl_token_2022::extension::StateWithExtensions::<spl_token_2022::state::Mint>::unpack(
             &data,
         )
-        .map_err(|_| error!(AaeError::InvalidMint))?;
-    require!(state.base.is_initialized, AaeError::InvalidMint);
-    require_eq!(state.base.decimals, ESMS_DECIMALS, AaeError::InvalidMint);
+        .map_err(|_| error!(AsolError::InvalidMint))?;
+    require!(state.base.is_initialized, AsolError::InvalidMint);
+    require_eq!(state.base.decimals, ESMS_DECIMALS, AsolError::InvalidMint);
     require!(
         state.base.mint_authority == COption::Some(*authority)
             && state.base.freeze_authority == COption::None,
-        AaeError::InvalidMint
+        AsolError::InvalidMint
     );
 
     let mut has_non_transferable = false;
@@ -451,31 +451,31 @@ fn validate_existing_mint(mint: &AccountInfo, authority: &Pubkey, mint_id: usize
         let value_start = cursor + TLV_HEADER_LEN;
         let value_end = value_start
             .checked_add(extension_len)
-            .ok_or(AaeError::ArithmeticOverflow)?;
-        require!(value_end <= data.len(), AaeError::InvalidMintExtensions);
+            .ok_or(AsolError::ArithmeticOverflow)?;
+        require!(value_end <= data.len(), AsolError::InvalidMintExtensions);
         let value = &data[value_start..value_end];
         match extension_type {
             9 => {
-                require!(!has_non_transferable, AaeError::InvalidMintExtensions);
+                require!(!has_non_transferable, AsolError::InvalidMintExtensions);
                 has_non_transferable = extension_len == 0;
             }
             12 => {
-                require!(!has_permanent_delegate, AaeError::InvalidMintExtensions);
+                require!(!has_permanent_delegate, AsolError::InvalidMintExtensions);
                 has_permanent_delegate = extension_len == 32 && value == authority.as_ref();
             }
             18 => {
-                require!(!has_metadata_pointer, AaeError::InvalidMintExtensions);
+                require!(!has_metadata_pointer, AsolError::InvalidMintExtensions);
                 has_metadata_pointer = extension_len == 64
                     && &value[..32] == authority.as_ref()
                     && &value[32..] == mint.key.as_ref();
             }
             19 => {
-                require!(!has_metadata, AaeError::InvalidMintExtensions);
+                require!(!has_metadata, AsolError::InvalidMintExtensions);
                 let mut metadata_bytes = value;
                 let metadata = spl_token_metadata_interface::state::TokenMetadata::deserialize(
                     &mut metadata_bytes,
                 )
-                .map_err(|_| error!(AaeError::InvalidMintExtensions))?;
+                .map_err(|_| error!(AsolError::InvalidMintExtensions))?;
                 has_metadata = metadata.update_authority.0 == *authority
                     && metadata.mint == *mint.key
                     && metadata.name == ESMS_NAMES[mint_id]
@@ -485,10 +485,10 @@ fn validate_existing_mint(mint: &AccountInfo, authority: &Pubkey, mint_id: usize
                     && metadata_bytes.is_empty();
             }
             PERMISSIONED_BURN_EXTENSION_TYPE => {
-                require!(!has_permissioned_burn, AaeError::InvalidMintExtensions);
+                require!(!has_permissioned_burn, AsolError::InvalidMintExtensions);
                 has_permissioned_burn = extension_len == 32 && value == authority.as_ref();
             }
-            _ => return err!(AaeError::InvalidMintExtensions),
+            _ => return err!(AsolError::InvalidMintExtensions),
         }
         cursor = value_end;
     }
@@ -498,7 +498,7 @@ fn validate_existing_mint(mint: &AccountInfo, authority: &Pubkey, mint_id: usize
             && has_metadata_pointer
             && has_metadata
             && has_permissioned_burn,
-        AaeError::InvalidMintExtensions
+        AsolError::InvalidMintExtensions
     );
     Ok(())
 }
@@ -506,11 +506,11 @@ fn validate_existing_mint(mint: &AccountInfo, authority: &Pubkey, mint_id: usize
 fn validate_amounts(amounts: &[u64; ESMS_MINT_COUNT]) -> Result<()> {
     require!(
         amounts.iter().any(|amount| *amount != 0),
-        AaeError::EmptyAmounts
+        AsolError::EmptyAmounts
     );
     require!(
         amounts.iter().all(|amount| *amount <= MAX_LEDGER_ATOMS),
-        AaeError::AmountOutOfRange
+        AsolError::AmountOutOfRange
     );
     Ok(())
 }
@@ -609,20 +609,20 @@ fn verify_preceding_ed25519_instruction(
     expected_message: &[u8],
 ) -> Result<()> {
     let current_index = load_current_index_checked(instructions)
-        .map_err(|_| error!(AaeError::InvalidInstructionsSysvar))?;
-    require!(current_index > 0, AaeError::InvalidEd25519Authorization);
+        .map_err(|_| error!(AsolError::InvalidInstructionsSysvar))?;
+    require!(current_index > 0, AsolError::InvalidEd25519Authorization);
     let ed25519_instruction = load_instruction_at_checked(current_index as usize - 1, instructions)
-        .map_err(|_| error!(AaeError::InvalidEd25519Authorization))?;
+        .map_err(|_| error!(AsolError::InvalidEd25519Authorization))?;
     require_keys_eq!(
         ed25519_instruction.program_id,
         ed25519_program::ID,
-        AaeError::InvalidEd25519Authorization
+        AsolError::InvalidEd25519Authorization
     );
     let data = &ed25519_instruction.data;
-    require!(data.len() >= 16, AaeError::InvalidEd25519Authorization);
+    require!(data.len() >= 16, AsolError::InvalidEd25519Authorization);
     require!(
         data[0] == 1 && data[1] == 0,
-        AaeError::InvalidEd25519Authorization
+        AsolError::InvalidEd25519Authorization
     );
 
     let read_u16 = |offset: usize| u16::from_le_bytes([data[offset], data[offset + 1]]);
@@ -637,7 +637,7 @@ fn verify_preceding_ed25519_instruction(
         signature_instruction_index == u16::MAX
             && public_key_instruction_index == u16::MAX
             && message_instruction_index == u16::MAX,
-        AaeError::InvalidEd25519Authorization
+        AsolError::InvalidEd25519Authorization
     );
     require!(
         signature_offset
@@ -649,13 +649,13 @@ fn verify_preceding_ed25519_instruction(
             && message_offset
                 .checked_add(message_size)
                 .is_some_and(|end| end <= data.len()),
-        AaeError::InvalidEd25519Authorization
+        AsolError::InvalidEd25519Authorization
     );
     require!(
         &data[public_key_offset..public_key_offset + ED25519_PUBLIC_KEY_SIZE] == holder.as_ref()
             && message_size == expected_message.len()
             && &data[message_offset..message_offset + message_size] == expected_message,
-        AaeError::InvalidEd25519Authorization
+        AsolError::InvalidEd25519Authorization
     );
     Ok(())
 }

@@ -14,7 +14,7 @@ import bs58 from 'bs58'
 import { Connection, Keypair, PublicKey, Transaction } from '@solana/web3.js'
 import { parseUnits, type Hex } from 'viem'
 
-import { AaeSolanaClient, type EsmsAmounts } from '@/lib/solana/aae-solana-client'
+import { AsolSolanaClient, type EsmsAmounts } from '@/lib/solana/asol-solana-client'
 import { resolveSolanaRpcUrls, withSolanaRpcFailover } from '@/lib/solana/rpc-failover'
 
 export interface EsmsClaimAmounts {
@@ -75,7 +75,7 @@ export function computeLedgerReferenceHash(
   claimId: Hex | string,
   amounts: EsmsClaimAmounts
 ): Uint8Array {
-  const payload = `AAE_CLAIM_SOLANA_V1:${claimId}:${amounts.spirit}:${amounts.essence}:${amounts.matter}:${amounts.substance}`
+  const payload = `ASOL_CLAIM_SOLANA_V1:${claimId}:${amounts.spirit}:${amounts.essence}:${amounts.matter}:${amounts.substance}`
   return createHash('sha256').update(payload).digest()
 }
 
@@ -108,7 +108,7 @@ export async function mintEsmsClaimSolana(params: {
   return withSolanaRpcFailover({
     rpcUrls,
     operation: async connection => {
-      const client = new AaeSolanaClient({
+      const client = new AsolSolanaClient({
         connection,
         wallet: {
           publicKey: payer.publicKey,

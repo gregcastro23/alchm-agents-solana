@@ -2,8 +2,8 @@ use anchor_lang::prelude::*;
 
 use crate::{
     constants::{PROGRAM_AUTHORITY_SEED, STATE_VERSION},
-    errors::AaeError,
-    program::AaeSolana,
+    errors::AsolError,
+    program::AsolProgram,
     state::ProgramConfig,
 };
 
@@ -13,9 +13,9 @@ pub fn initialize(
     pauser: Pubkey,
     cluster_domain: [u8; 32],
 ) -> Result<()> {
-    require_keys_neq!(attestor, Pubkey::default(), AaeError::DefaultAuthority);
-    require_keys_neq!(pauser, Pubkey::default(), AaeError::DefaultAuthority);
-    require!(cluster_domain != [0_u8; 32], AaeError::InvalidClusterDomain);
+    require_keys_neq!(attestor, Pubkey::default(), AsolError::DefaultAuthority);
+    require_keys_neq!(pauser, Pubkey::default(), AsolError::DefaultAuthority);
+    require!(cluster_domain != [0_u8; 32], AsolError::InvalidClusterDomain);
 
     ctx.accounts.program_config.set_inner(ProgramConfig {
         version: STATE_VERSION,
@@ -39,7 +39,7 @@ pub fn set_pause_state(
         ctx.accounts
             .program_config
             .can_pause(&ctx.accounts.authority.key()),
-        AaeError::Unauthorized
+        AsolError::Unauthorized
     );
     ctx.accounts.program_config.pause_claims = pause_claims;
     ctx.accounts.program_config.pause_redemptions = pause_redemptions;
@@ -54,7 +54,7 @@ pub fn set_service_authorities(
     require_keys_eq!(
         ctx.accounts.authority.key(),
         ctx.accounts.program_config.admin,
-        AaeError::Unauthorized
+        AsolError::Unauthorized
     );
     ctx.accounts.program_config.attestor = attestor;
     ctx.accounts.program_config.pauser = pauser;
@@ -74,7 +74,7 @@ pub struct InitializeConfig<'info> {
     #[account(mut)]
     pub admin: Signer<'info>,
     #[account(constraint = program.programdata_address()? == Some(program_data.key()))]
-    pub program: Program<'info, AaeSolana>,
+    pub program: Program<'info, AsolProgram>,
     #[account(constraint = program_data.upgrade_authority_address == Some(admin.key()))]
     pub program_data: Account<'info, ProgramData>,
     pub system_program: Program<'info, System>,

@@ -31,13 +31,13 @@ import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { resolve } from 'node:path'
 import {
-  AAE_SOLANA_PROGRAM_ID,
+  ASOL_SOLANA_PROGRAM_ID,
   ESMS_DECIMALS,
   getEsmsMintAddresses,
   getProgramConfigAddress,
 } from '../lib/solana/esms'
-import AAE_SOLANA_IDL from '../lib/solana/idl/aae_solana.json'
-import type { AaeSolana } from '../lib/solana/idl/aae_solana'
+import ASOL_PROGRAM_IDL from '../lib/solana/idl/asol_program.json'
+import type { AsolProgram } from '../lib/solana/idl/asol_program'
 
 interface TokenConfig {
   axis: 'Spirit' | 'Essence' | 'Matter' | 'Substance'
@@ -149,7 +149,7 @@ async function main() {
     commitment: 'confirmed',
     preflightCommitment: 'confirmed',
   })
-  const program = new Program<AaeSolana>(AAE_SOLANA_IDL as unknown as AaeSolana, provider)
+  const program = new Program<AsolProgram>(ASOL_PROGRAM_IDL as unknown as AsolProgram, provider)
 
   for (let i = 0; i < ELEMENTAL_TOKENS.length; i++) {
     const config = ELEMENTAL_TOKENS[i]

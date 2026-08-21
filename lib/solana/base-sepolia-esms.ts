@@ -1,8 +1,9 @@
 import { getAddress } from 'viem'
 
-export const AAE_BASE_SEPOLIA_ESMS_ADDRESS = getAddress(
+export const ASOL_BASE_SEPOLIA_ESMS_ADDRESS = getAddress(
   process.env.NEXT_PUBLIC_BASE_SEPOLIA_ESMS_ADDRESS ?? '0x124ECa1bb1E106D3614A22A256f9A412FfeEAd8F'
 )
+export const AAE_BASE_SEPOLIA_ESMS_ADDRESS = ASOL_BASE_SEPOLIA_ESMS_ADDRESS
 
 export const BASE_SEPOLIA_ESMS_ABI = [
   {

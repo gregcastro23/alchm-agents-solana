@@ -4,9 +4,9 @@ import { PublicKey } from '@solana/web3.js'
 import { createWalletClient, custom, getAddress, type Address } from 'viem'
 import { baseSepolia } from 'viem/chains'
 
-const BINDING_DOMAIN = 'AAE Solana Wallet Binding'
-const EVM_RECONNECT_KEY = 'aae_evm_wallet_reconnect'
-const SOLANA_RECONNECT_KEY = 'aae_solana_wallet_reconnect'
+const BINDING_DOMAIN = 'ASOL Solana Wallet Binding'
+const EVM_RECONNECT_KEY = 'asol_evm_wallet_reconnect'
+const SOLANA_RECONNECT_KEY = 'asol_solana_wallet_reconnect'
 
 export interface SolanaWalletBindingChallenge {
   userId: string

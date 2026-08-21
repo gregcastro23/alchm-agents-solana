@@ -1,5 +1,5 @@
 [workspace]
-members = ["programs/aae_solana"]
+members = ["programs/asol_program"]
 resolver = "2"
 
 [profile.release]

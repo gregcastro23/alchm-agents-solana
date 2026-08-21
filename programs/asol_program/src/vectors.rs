@@ -4,8 +4,8 @@ use unicode_normalization::UnicodeNormalization;
 
 pub const ESMS_DECIMALS: u8 = 4;
 pub const MAX_LEDGER_ATOMS: u64 = 999_999_999_999;
-pub const PERSONA_DOMAIN: &[u8] = b"AAE_PERSONA_V1";
-pub const EPOCH_DOMAIN: &[u8] = b"AAE_EPOCH_V1";
+pub const PERSONA_DOMAIN: &[u8] = b"ASOL_PERSONA_V1";
+pub const EPOCH_DOMAIN: &[u8] = b"ASOL_EPOCH_V1";
 
 pub fn ledger_units_to_atoms(value: &str) -> Option<u64> {
     let (whole, fraction) = match value.split_once('.') {
@@ -92,13 +92,13 @@ mod tests {
 
         assert_eq!(
             hex(&target_persona_hash("gregory-castro", &persona).unwrap()),
-            "f1b08a3175901956e3a1e9949a017bc326a66530bfb7a937e3c316a4c8643e9c"
+            "d796333f06b38838fd61c409a36a83051e441bc1cd3ae5185d428ddce9fae4c0"
         );
         assert_eq!(
             hex(&epoch_context_hash(
                 br#"{"domicile":"Sun","epoch":42,"retrogrades":["Mercury"],"transits":{"Moon":123.456}}"#
             )),
-            "b6ad9d09d6e12f32c5c42826d9ab8f96be8d98e5a93fd047b38576ce81e1b7b0"
+            "fa9eb38e5689391a27906e2f356d9fc60b78f8f6b0c3fc1a5ff41222ffe58063"
         );
     }
 

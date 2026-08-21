@@ -14,22 +14,22 @@ import {
 import bs58 from 'bs58'
 import nacl from 'tweetnacl'
 
-import { AAE_SOLANA_PROGRAM_ID } from '@/lib/solana/esms'
+import { ASOL_SOLANA_PROGRAM_ID } from '@/lib/solana/esms'
 import {
   createSolanaSyncBatchProcessor,
   createSolanaSyncProcessor,
-  decodeAaeTransactionEvents,
-  decodeAaeInstructionEvent,
+  decodeAsolTransactionEvents,
+  decodeAsolInstructionEvent,
   encodeSolanaSyncBody,
   solanaSlotToBigInt,
-  type AaeSolanaSyncEvent,
+  type AsolSolanaSyncEvent,
 } from '@/lib/solana/solana-sync-service'
 import {
   createBridgeProcessor,
   destinationAmount,
   type PendingBridgeTransfer,
 } from '@/lib/solana/bridge-service'
-import { AaeSolanaClient } from '@/lib/solana/aae-solana-client'
+import { AsolSolanaClient } from '@/lib/solana/asol-solana-client'
 import {
   MultiChainWalletManager,
   buildSolanaWalletBindingMessage,
@@ -96,7 +96,7 @@ describe('AAE Solana sync worker', () => {
       'hex'
     )
     const instruction = new TransactionInstruction({
-      programId: AAE_SOLANA_PROGRAM_ID,
+      programId: ASOL_SOLANA_PROGRAM_ID,
       keys: [
         { pubkey: PublicKey.default, isSigner: false, isWritable: false },
         { pubkey: PublicKey.default, isSigner: false, isWritable: true },
@@ -107,7 +107,7 @@ describe('AAE Solana sync worker', () => {
     })
 
     expect(
-      decodeAaeInstructionEvent({
+      decodeAsolInstructionEvent({
         signature: 'claim-signature',
         slot: 480_000_000n,
         instruction,
@@ -127,7 +127,7 @@ describe('AAE Solana sync worker', () => {
   it('checks the processed transaction guard before dispatching a decoded event', async () => {
     const processed = new Set<string>()
     const dispatched: string[] = []
-    const event: AaeSolanaSyncEvent = {
+    const event: AsolSolanaSyncEvent = {
       signature: 'same-signature',
       slot: 480_000_001n,
       eventType: 'OrderReceipt',
@@ -163,7 +163,7 @@ describe('AAE Solana sync worker', () => {
       slot: 480_000_002n,
       amounts: [1n, 0n, 0n, 0n] as const,
     }
-    const events: AaeSolanaSyncEvent[] = [
+    const events: AsolSolanaSyncEvent[] = [
       {
         ...base,
         eventType: 'ClaimMintReceipt',
@@ -277,10 +277,10 @@ describe('AAE two-way bridge relay', () => {
   })
 })
 
-describe('AAE Solana Anchor client', () => {
+describe('ASOL Solana Anchor client', () => {
   it('builds claim instructions from the generated IDL with deterministic receipt and mint accounts', async () => {
     const payer = Keypair.generate()
-    const client = new AaeSolanaClient({
+    const client = new AsolSolanaClient({
       connection: new Connection('http://127.0.0.1:8899', 'confirmed'),
       wallet: {
         publicKey: payer.publicKey,
@@ -297,7 +297,7 @@ describe('AAE Solana Anchor client', () => {
       amounts: [1n, 1_000_000n, 0n, 4n],
     })
 
-    expect(instruction.programId.equals(AAE_SOLANA_PROGRAM_ID)).toBe(true)
+    expect(instruction.programId.equals(ASOL_SOLANA_PROGRAM_ID)).toBe(true)
     expect(instruction.data.subarray(0, 8).toString('hex')).toBe('c23b7886979dc1ef')
     expect(instruction.keys[1].pubkey.equals(client.getClaimReceiptAddress(claimId))).toBe(true)
     expect(instruction.keys.slice(4, 8).map(account => account.pubkey.toBase58())).toEqual(
@@ -310,7 +310,7 @@ describe('AAE Solana Anchor client', () => {
       amounts: [0n, 1n, 2n, 3n],
     })
     expect(
-      decodeAaeInstructionEvent({ signature: 'redeem', slot: 1n, instruction: redeem })
+      decodeAsolInstructionEvent({ signature: 'redeem', slot: 1n, instruction: redeem })
     ).toMatchObject({
       eventType: 'OrderReceipt',
       mode: 'self',
@@ -328,7 +328,7 @@ describe('AAE Solana Anchor client', () => {
     })
     expect(sponsored[0].programId.equals(Ed25519Program.programId)).toBe(true)
     expect(
-      decodeAaeInstructionEvent({ signature: 'sponsored', slot: 2n, instruction: sponsored[1] })
+      decodeAsolInstructionEvent({ signature: 'sponsored', slot: 2n, instruction: sponsored[1] })
     ).toMatchObject({ eventType: 'OrderReceipt', mode: 'sponsored', holder: recipient.toBase58() })
 
     const persona = await client.buildRecordPersonaCommitmentInstruction({
@@ -338,7 +338,7 @@ describe('AAE Solana Anchor client', () => {
       sequence: 6n,
     })
     expect(
-      decodeAaeInstructionEvent({ signature: 'persona', slot: 3n, instruction: persona })
+      decodeAsolInstructionEvent({ signature: 'persona', slot: 3n, instruction: persona })
     ).toMatchObject({
       eventType: 'PersonaCommitmentRecorded',
       targetPersonaHash: '04'.repeat(32),
@@ -353,7 +353,7 @@ describe('AAE Solana Anchor client', () => {
         instructions: [instruction, redeem, persona],
       }).compileToV0Message()
     )
-    const decodedTransaction = decodeAaeTransactionEvents({
+    const decodedTransaction = decodeAsolTransactionEvents({
       signature: 'batched-client-transaction',
       slot: 4n,
       transaction: {

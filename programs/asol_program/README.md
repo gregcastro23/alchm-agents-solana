@@ -1,4 +1,4 @@
-# AAE Solana ESMS and Persona Core
+# ASOL Solana ESMS and Persona Core (AlchmAgentsSolana)
 
 Anchor program ID: `5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD` (Devnet)
 
@@ -28,6 +28,6 @@ bun run test:solana:extensions
 
 `test:solana` is deterministic and suitable for CI. `test:solana:devnet` is an opt-in, state-mutating smoke test that requires the configured Devnet admin wallet and spends Devnet SOL.
 
-Deployment additionally requires the stable program keypair. Keep it outside Git and set `AAE_SOLANA_PROGRAM_KEYPAIR=/secure/path/aae_solana-keypair.json`, or provision it at `target/deploy/aae_solana-keypair.json`. The deploy wrapper refuses to continue unless that keypair resolves to `5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD`.
+Deployment additionally requires the stable program keypair. Keep it outside Git and set `ASOL_SOLANA_PROGRAM_KEYPAIR=/secure/path/asol_program-keypair.json`, or provision it at `target/deploy/asol_program-keypair.json` (or `target/deploy/aae_solana-keypair.json`). The deploy wrapper refuses to continue unless that keypair resolves to `5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD`.
 
 The local Solana 1.18 validator embeds a Token-2022 binary that predates Permissioned Burn. The lifecycle and extension-combination tests consequently target Devnet's current Token-2022 deployment. No production/mainnet deployment is configured.

@@ -422,6 +422,7 @@
 .nav-mobile-signout:hover {
   background: rgba(239, 68, 68, 0.15);
 }
+.asol-solana-wallet-button.wallet-adapter-button,
 .aae-solana-wallet-button.wallet-adapter-button {
   height: 36px;
   border: 1px solid rgb(167 139 250 / 0.35);
@@ -433,10 +434,12 @@
   line-height: 1;
 }
 
+.asol-solana-wallet-button.wallet-adapter-button:hover,
 .aae-solana-wallet-button.wallet-adapter-button:hover {
   background: rgb(76 29 149 / 0.6);
 }
 
+.asol-solana-wallet-button-compact.wallet-adapter-button,
 .aae-solana-wallet-button-compact.wallet-adapter-button {
   height: 30px;
   padding: 0 9px;

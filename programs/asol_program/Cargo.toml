@@ -1,13 +1,13 @@
 [package]
-name = "aae_solana"
+name = "asol_program"
 version = "0.1.0"
-description = "AlchmAgentsEth ESMS and persona core for Solana"
+description = "AlchmAgentsSolana (ASOL) ESMS and persona core"
 edition = "2021"
 rust-version = "1.75"
 
 [lib]
 crate-type = ["cdylib", "lib"]
-name = "aae_solana"
+name = "asol_program"
 
 [features]
 default = []

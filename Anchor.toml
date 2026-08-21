@@ -7,10 +7,10 @@ resolution = true
 skip-lint = false
 
 [programs.localnet]
-aae_solana = "5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD"
+asol_program = "5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD"
 
 [programs.devnet]
-aae_solana = "5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD"
+asol_program = "5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD"
 
 [provider]
 cluster = "Localnet"

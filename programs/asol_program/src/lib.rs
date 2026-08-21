@@ -13,7 +13,7 @@ use instructions::*;
 declare_id!("5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD");
 
 #[program]
-pub mod aae_solana {
+pub mod asol_program {
     use super::*;
 
     pub fn initialize_config(

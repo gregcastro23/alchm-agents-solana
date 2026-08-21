@@ -27,12 +27,17 @@ import { createPublicClient, http } from 'viem'
 import { baseSepolia } from 'viem/chains'
 
 import {
+  ASOL_SOLANA_TRANSACTION_CONFIRMED_EVENT,
   AAE_SOLANA_TRANSACTION_CONFIRMED_EVENT,
+  AsolSolanaClient,
   AaeSolanaClient,
+  type AsolSolanaTransaction,
   type AaeSolanaTransaction,
+  type AsolSolanaWallet,
   type AaeSolanaWallet,
-} from '@/lib/solana/aae-solana-client'
+} from '@/lib/solana/asol-solana-client'
 import {
+  ASOL_BASE_SEPOLIA_ESMS_ADDRESS,
   AAE_BASE_SEPOLIA_ESMS_ADDRESS,
   BASE_SEPOLIA_ESMS_ABI,
   formatEvmEsmsAmount,
@@ -238,8 +243,8 @@ export function SolanaWalletConnectButton({ compact = false }: { compact?: boole
     <WalletMultiButton
       className={
         compact
-          ? 'aae-solana-wallet-button aae-solana-wallet-button-compact'
-          : 'aae-solana-wallet-button'
+          ? 'asol-solana-wallet-button aae-solana-wallet-button asol-solana-wallet-button-compact aae-solana-wallet-button-compact'
+          : 'asol-solana-wallet-button aae-solana-wallet-button'
       }
     />
   )
@@ -256,22 +261,24 @@ export function DualChainNetworkBadge() {
   )
 }
 
-/** Wallet-adapter or Dynamic-backed AAE client; confirmed writes emit Explorer toasts. */
-export function useAaeSolanaClient(): AaeSolanaClient | null {
+/** Wallet-adapter or Dynamic-backed ASOL client; confirmed writes emit Explorer toasts. */
+export function useAsolSolanaClient(): AsolSolanaClient | null {
   const { connection } = useConnection()
   const { wallet } = useSolanaWalletState()
   return useMemo(() => {
     if (!wallet) return null
-    return new AaeSolanaClient({ connection, wallet })
+    return new AsolSolanaClient({ connection, wallet })
   }, [connection, wallet])
 }
 
-/** Global notification bridge catches writes made by any browser AAE client. */
+export const useAaeSolanaClient = useAsolSolanaClient
+
+/** Global notification bridge catches writes made by any browser ASOL client. */
 function SolanaTransactionToastListener() {
   const { toast } = useToast()
   useEffect(() => {
     const onConfirmed = (event: Event) => {
-      const transaction = (event as CustomEvent<AaeSolanaTransaction>).detail
+      const transaction = (event as CustomEvent<AsolSolanaTransaction>).detail
       const label =
         transaction.type === 'persona'
           ? 'Persona commitment'
@@ -292,8 +299,12 @@ function SolanaTransactionToastListener() {
         ),
       })
     }
+    window.addEventListener(ASOL_SOLANA_TRANSACTION_CONFIRMED_EVENT, onConfirmed)
     window.addEventListener(AAE_SOLANA_TRANSACTION_CONFIRMED_EVENT, onConfirmed)
-    return () => window.removeEventListener(AAE_SOLANA_TRANSACTION_CONFIRMED_EVENT, onConfirmed)
+    return () => {
+      window.removeEventListener(ASOL_SOLANA_TRANSACTION_CONFIRMED_EVENT, onConfirmed)
+      window.removeEventListener(AAE_SOLANA_TRANSACTION_CONFIRMED_EVENT, onConfirmed)
+    }
   }, [toast])
   return null
 }
