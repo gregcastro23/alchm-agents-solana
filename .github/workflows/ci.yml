@@ -36,6 +36,12 @@ jobs:
         run: bun run build
         env:
           AUTH_SECRET: ci-build-only-auth-secret
+          # The crash log from the OOM this replaces reported a ceiling of
+          # 4113.9 MB, so the default heap on this runner is ALREADY ~4 GB —
+          # matching the 4096 that `typecheck` sets would have changed nothing.
+          # 8192 is the first value that actually raises it, and an
+          # ubuntu-latest runner has 16 GB to draw on.
+          NODE_OPTIONS: --max-old-space-size=8192
 
   # Raw SQL is only proven legal by a real query planner. A mock accepts
   # anything, which is how lib/security/security-audit.ts shipped a statement
