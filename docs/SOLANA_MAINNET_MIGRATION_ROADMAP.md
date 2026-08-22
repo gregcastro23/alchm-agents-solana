@@ -1,20 +1,24 @@
-# AlchmAgentsSolana (`ASOL`) Mainnet Migration Roadmap
+# AlchmAgentsSolana (`ASOL`) Mainnet Migration Roadmap & Prompt-by-Prompt Execution Blueprint
 
+**Document Version:** `2.0.0-PROD`  
 **Program ID:** `5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD`  
-**Target Networks:** Solana Devnet (Active) ➔ Solana Mainnet-Beta  
-**Runtime:** Bun (`bun` and `bun --bun run dev`) | Anchor `0.30.1`  
-**Authoritative Ledger:** PostgreSQL / WTEN `Decimal(12,4)` (4-Decimal Precision: $10^4$ raw atoms)
+**Cluster Target:** Solana Devnet ➔ Solana Mainnet-Beta  
+**Runtime & Toolchain:** Bun (`bun` and `bun --bun run dev`) | Anchor `0.30.1` | Solana `1.18.17` | Rust `1.79.0`  
+**Authoritative Ledger:** PostgreSQL / WTEN `Decimal(12,4)` ($10^4$ raw atoms / 4-decimal Token-2022 precision)
 
 ---
 
-## Executive Overview & Milestone Progression
+## 1. Executive Overview & System Topology
 
-This roadmap provides an execution plan broken down **prompt-by-prompt** into modular phases. Each chunk contains:
+The **AlchmAgentsSolana (`ASOL`)** architecture orchestrates high-throughput, low-cost native settlement for Planetary Agents, the 4-element ESMS Alchemical Economy (Spirit, Essence, Matter, Substance), and JEPA (Joint Embedding Predictive Architecture) persona commitment anchoring.
 
-1. **Goal & Target Files**
-2. **Technical Specifications & Invariants**
-3. **Exact Ready-to-Copy Prompt**
-4. **Verification & Acceptance Criteria**
+### Core Architectural Invariants
+
+1. **Ledger-Coordinated Dual-Rail Settlement:** Every claim and redemption is assigned an immutable target chain (`eip155:84532` Base Sepolia / Base or `solana:devnet` / `solana:mainnet-beta`).
+2. **Lossless $10^4$ Integer Boundary:** Rust Anchor contracts use native `u64` raw atoms and `u128` intermediate arithmetic. JavaScript/TypeScript never passes token units or slots through IEEE-754 `number`.
+3. **Token-2022 Soulbound & Permissioned Burn Security:** All 4 ESMS mints enforce `NonTransferable` + `PermissionedBurn` + `PermanentDelegate` + `MetadataPointer`. Standard holder burning is disallowed; burns require co-signing by the `EsmsMintAuthority` PDA.
+4. **Sysvar Introspection for Sponsored Redemptions:** `redeem_for_esms` inspects `SYSVAR_INSTRUCTIONS_PUBKEY` to verify preceding `Ed25519Program` signatures over canonical `ASOL_ESMS_REDEEM_V1` messages.
+5. **Monotonic JEPA Anchoring:** Persona commitments enforce strictly increasing sequence numbers ($\text{seq}_{n+1} = \text{seq}_n + 1$), non-zero SHA-256 digests, and canonical float/JSON serialization.
 
 ```
 ┌────────────────────────────────────────────────────────────────────────────────────────┐
@@ -26,7 +30,7 @@ This roadmap provides an execution plan broken down **prompt-by-prompt** into mo
 │ Phase 4: Metadata & Build    │ Phase 5: StarVault Staking   │ Phase 6: Constellation   │
 │ Prompt 4: Arweave & Verify   │ Prompt 5: Checkpointed Yield │ Prompt 6: AMM & Deeds    │
 ├──────────────────────────────┴──────────────────────────────┴──────────────────────────┤
-│ Phase 7: Mainnet Deployment, Rehearsal & Verification (Prompt 7)                       │
+│ Phase 7: Mainnet Deployment, Live Rehearsal & Verification Runbook (Prompt 7)          │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
@@ -34,337 +38,556 @@ This roadmap provides an execution plan broken down **prompt-by-prompt** into mo
 
 ## Prompt 1 — Governance & Cloud KMS Key Management (Phase 1)
 
-### Objective
+### Context & Architectural Seams
 
-Migrate hot settlement and attestor private keys from environment variables and disk (`SOLANA_AGENT_PAYER_KEY`) to **Cloud KMS HSM** (AWS KMS / GCP Cloud KMS), and prepare the **Squads v4 Multisig** governance structure for program upgrade authority.
+Currently, the backend minter ([`lib/solana/solana-minter.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/solana-minter.ts)) and bridge service ([`lib/solana/bridge-service.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/bridge-service.ts)) read raw private key bytes from `SOLANA_AGENT_PAYER_KEY` or disk (`~/.config/solana/id.json`). For Mainnet production, private keys must never touch application memory or persistent disk. Instead, automated workers use **Cloud KMS HSM** (AWS KMS / GCP Cloud KMS) via asymmetric Ed25519 signing APIs, while program ownership is transferred to a **Squads v4 Multisig** vault.
 
 ### Target Files
 
-- `lib/solana/kms-signer.ts` (New)
-- `lib/solana/solana-minter.ts`
-- `lib/solana/bridge-service.ts`
-- `scripts/governance/transfer-upgrade-authority.ts` (New)
+- `[NEW]` `lib/solana/kms-signer.ts` — Cloud KMS Ed25519 signer implementing `AsolSolanaWallet`.
+- `[MODIFY]` `lib/solana/solana-minter.ts` — Use KMS signer with devnet fallback.
+- `[MODIFY]` `lib/solana/bridge-service.ts` — Use KMS signer for relay transactions.
+- `[NEW]` `scripts/governance/squads-multisig-runbook.ts` — Squads v4 proposal generator for authority handover.
+- `[NEW]` `test/solana/kms-signer.spec.ts` — Unit & integration tests with mocked KMS client.
 
-### Technical Specifications
+### Prompt 1 (XML Structured)
 
-- Implement an asymmetric Ed25519 signer client adhering to the `AsolSolanaWallet` interface without exposing private keys.
-- Add fallback logic: Cloud KMS in production, local keypair/environment variable in local development.
-- Write the Squads v4 multisig transaction builder to manage `set_service_authorities` proposals.
+```xml
+<prompt id="asol-phase-1-kms-governance">
+  <context>
+    <repository>AlchmAgentsSolana (ASOL)</repository>
+    <program_id>5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD</program_id>
+    <runtime>Bun (bun and bun --bun run dev)</runtime>
+    <description>
+      Phase 1 of the Solana Mainnet Migration: Implement Cloud KMS (AWS KMS &amp; GCP Cloud KMS)
+      HSM signing for backend services and establish the Squads v4 multisig governance transition.
+    </description>
+  </context>
 
-### Copy-Paste Prompt 1
+  <task>
+    Implement production-grade Cloud KMS signing and Squads v4 multisig authority transition tooling.
+  </task>
 
-```text
-Execute Phase 1 of the Solana Mainnet Migration for AlchmAgentsSolana (ASOL): Cloud KMS and Governance Management.
+  <target_files>
+    <file action="create">lib/solana/kms-signer.ts</file>
+    <file action="modify">lib/solana/solana-minter.ts</file>
+    <file action="modify">lib/solana/bridge-service.ts</file>
+    <file action="create">scripts/governance/squads-multisig-runbook.ts</file>
+    <file action="create">test/solana/kms-signer.spec.ts</file>
+  </target_files>
 
-1. Implement `lib/solana/kms-signer.ts`:
-   - Create `KmsSolanaSigner` supporting AWS KMS and GCP Cloud KMS for Ed25519 signing.
-   - Implement the `AsolSolanaWallet` interface (`publicKey`, `signTransaction`, `signAllTransactions`).
-   - Ensure the raw private key never leaves the HSM boundary; transactions are serialized, hashed, and signed via the KMS API.
-   - Provide seamless fallback to `solanaPayerFromEnvironment()` for development and tests when KMS environment variables are not set.
+  <technical_specifications>
+    <kms_signer>
+      1. Define `KmsSignerConfig`:
+         - `provider`: 'aws' | 'gcp' | 'local'
+         - `keyId`: string (AWS Key ARN or GCP Key Resource Path)
+         - `publicKey`: PublicKey
+      2. Implement `KmsSolanaSigner` satisfying `AsolSolanaWallet`:
+         - `publicKey: PublicKey`
+         - `signTransaction<T extends Transaction | VersionedTransaction>(transaction: T): Promise<T>`
+         - `signAllTransactions<T extends Transaction | VersionedTransaction>(transactions: T[]): Promise<T[]>`
+      3. For legacy `Transaction`: serialize message via `tx.serializeMessage()`, submit digest to KMS Ed25519 `Sign`, append signature with `tx.addSignature(publicKey, signature)`.
+      4. For `VersionedTransaction`: serialize message via `tx.message.serialize()`, sign digest, append signature via `tx.signatures[0] = signature`.
+      5. Implement `getSolanaServiceSigner()`:
+         - If `AWS_KMS_KEY_ID` or `GCP_KMS_KEY_NAME` is set, instantiate `KmsSolanaSigner`.
+         - Otherwise, fall back to `solanaPayerFromEnvironment()` with warning in non-production.
+    </kms_signer>
 
-2. Update `lib/solana/solana-minter.ts` and `lib/solana/bridge-service.ts`:
-   - Replace direct synchronous keypair dependencies with `getSolanaServiceSigner()`.
-   - Maintain full compatibility with existing test suites.
+    <squads_governance>
+      1. Create `scripts/governance/squads-multisig-runbook.ts`:
+         - Derive Squads v4 vault PDA and proposal PDAs.
+         - Construct instructions to:
+           a. Transfer Solana program upgrade authority (`solana program set-upgrade-authority`).
+           b. Execute `asol_program.set_service_authorities` setting `admin` and `pauser` to the Squads Vault.
+    </squads_governance>
+  </technical_specifications>
 
-3. Create `scripts/governance/squads-multisig-runbook.ts`:
-   - Script to construct and verify a Squads v4 multisig proposal to accept program upgrade authority and update `ProgramConfig` admin/pauser roles.
-
-4. Add unit and integration tests in `test/solana/kms-signer.spec.ts` with mocked KMS responses and run `bun run test:solana`.
+  <testing_and_verification>
+    1. In `test/solana/kms-signer.spec.ts`:
+       - Mock AWS KMS `SignCommand` and GCP KMS `asymmetricSign`.
+       - Verify that both legacy `Transaction` and `VersionedTransaction` instances receive valid 64-byte Ed25519 signatures.
+       - Verify that the local fallback works seamlessly when environment variables are absent.
+    2. Run full test suite:
+       `bun test:solana && bunx vitest run test/solana/kms-signer.spec.ts test/solana/solana-minter.spec.ts --config vitest.solana.config.ts`
+  </testing_and_verification>
+</prompt>
 ```
 
 ---
 
 ## Prompt 2 — Network Resiliency, Dynamic Priority Fees & Geyser Failover (Phase 2)
 
-### Objective
+### Context & Architectural Seams
 
-Ensure transactions land reliably during peak network congestion on Solana Mainnet through dynamic compute unit limit profiling, micro-lamport prioritization pricing, and low-latency Yellowstone gRPC Geyser ingestion.
+During high Mainnet traffic, fixed-fee Solana transactions risk starvation or block expiration. Furthermore, reliance on a single public or private RPC creates single-point-of-failure vulnerabilities. This phase introduces dynamic compute unit budgeting, real-time priority fee estimation, and Yellowstone gRPC Geyser stream failover into [`lib/solana/rpc-failover.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/rpc-failover.ts) and [`lib/solana/solana-sync-service.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/solana-sync-service.ts).
 
 ### Target Files
 
-- `lib/solana/priority-fee.ts` (New)
-- `lib/solana/rpc-failover.ts`
-- `lib/solana/solana-sync-service.ts`
-- `lib/solana/asol-solana-client.ts`
+- `[NEW]` `lib/solana/priority-fee.ts` — Dynamic CU profiling and prioritization fee estimator.
+- `[MODIFY]` `lib/solana/rpc-failover.ts` — Enhanced multi-tier RPC fallback and Yellowstone gRPC streaming.
+- `[MODIFY]` `lib/solana/solana-sync-service.ts` — Real-time event ingestion with Geyser failover.
+- `[MODIFY]` `lib/solana/asol-solana-client.ts` — Auto-inject compute budget into `sendInstructions`.
+- `[NEW]` `test/solana/priority-fee.spec.ts` — Validation of instruction ordering and fee calculations.
 
-### Technical Specifications
+### Prompt 2 (XML Structured)
 
-- Profile compute unit consumption:
-  - `claim_mint_esms`: ~125,000 CU limit.
-  - `redeem_esms`: ~75,000 CU limit.
-  - `redeem_for_esms` (with Ed25519 precompile): ~110,000 CU limit.
-  - `record_persona_commitment`: ~45,000 CU limit.
-- Query dynamic priority fees using `getRecentPrioritizationFees` with percentile options (median, 75th percentile) and fallback bounds.
-- Integrate Yellowstone gRPC streaming adapter into `solana-sync-service.ts` alongside standard WebSocket logs subscription.
+```xml
+<prompt id="asol-phase-2-priority-fees-geyser">
+  <context>
+    <repository>AlchmAgentsSolana (ASOL)</repository>
+    <program_id>5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD</program_id>
+    <runtime>Bun</runtime>
+    <description>
+      Phase 2 of the Solana Mainnet Migration: Implement dynamic compute unit limits,
+      prioritization fee micro-lamport budgeting, and Yellowstone gRPC Geyser failover.
+    </description>
+  </context>
 
-### Copy-Paste Prompt 2
+  <task>
+    Implement dynamic priority fee estimation and Yellowstone Geyser failover ingestion.
+  </task>
 
-```text
-Execute Phase 2 of the Solana Mainnet Migration for AlchmAgentsSolana (ASOL): Dynamic Priority Fees & Geyser Failover.
+  <target_files>
+    <file action="create">lib/solana/priority-fee.ts</file>
+    <file action="modify">lib/solana/rpc-failover.ts</file>
+    <file action="modify">lib/solana/solana-sync-service.ts</file>
+    <file action="modify">lib/solana/asol-solana-client.ts</file>
+    <file action="create">test/solana/priority-fee.spec.ts</file>
+  </target_files>
 
-1. Implement `lib/solana/priority-fee.ts`:
-   - Create `estimatePriorityFee(connection, accounts, percentile)` querying `getRecentPrioritizationFees`.
-   - Implement `withComputeBudget(instructions, { units, microLamports })` injecting `ComputeBudgetProgram.setComputeUnitLimit` and `ComputeBudgetProgram.setComputeUnitPrice` as the first transaction instructions.
-   - Define exact CU profiles for `claim_mint_esms`, `redeem_esms`, `redeem_for_esms`, and `record_persona_commitment`.
+  <technical_specifications>
+    <compute_budget>
+      1. Define profiled instruction CU limits in `lib/solana/priority-fee.ts`:
+         - `CLAIM_MINT_CU_LIMIT = 135_000`
+         - `REDEEM_SELF_CU_LIMIT = 80_000`
+         - `REDEEM_SPONSORED_CU_LIMIT = 115_000` (accounts for Ed25519 precompile verification)
+         - `RECORD_PERSONA_CU_LIMIT = 50_000`
+      2. Implement `estimatePriorityFee(connection: Connection, accounts: PublicKey[], options?: { percentile?: number; minMicroLamports?: number; maxMicroLamports?: number }): Promise<bigint>`:
+         - Call `connection.getRecentPrioritizationFees({ lockedWritableAccounts: accounts })`.
+         - Sort non-zero fees and compute target percentile (default: 65th percentile).
+         - Clamp between `minMicroLamports` (default: 5,000) and `maxMicroLamports` (default: 2,000,000).
+      3. Implement `injectComputeBudgetInstructions(instructions: TransactionInstruction[], config: { units: number; microLamports: bigint }): TransactionInstruction[]`:
+         - Prepend `ComputeBudgetProgram.setComputeUnitLimit({ units })` and `ComputeBudgetProgram.setComputeUnitPrice({ microLamports })`.
+         - Ensure compute budget instructions are placed at indices 0 and 1.
+    </compute_budget>
 
-2. Enhance `lib/solana/asol-solana-client.ts`:
-   - Update `sendInstructions` to automatically attach compute budget and dynamic priority fees before requesting wallet signatures.
+    <geyser_and_rpc_failover>
+      1. In `lib/solana/rpc-failover.ts`:
+         - Support gRPC Geyser endpoint configuration (`SOLANA_GEYSER_ENDPOINT`, `SOLANA_GEYSER_X_TOKEN`).
+         - Implement `createResilientStreamSubscription()`:
+           * Primary: Yellowstone gRPC stream filtered by `ASOL_SOLANA_PROGRAM_ID`.
+           * Secondary fallback: WebSocket `onLogs` subscription.
+           * Tertiary fallback: Polling backfill via `getSignaturesForAddress`.
+      2. Record failover state in `SolanaServiceHeartbeat` model (`prisma/schema.prisma`).
+    </geyser_and_rpc_failover>
+  </technical_specifications>
 
-3. Enhance `lib/solana/rpc-failover.ts` and `lib/solana/solana-sync-service.ts`:
-   - Add Yellowstone gRPC stream subscriber option for Helius / Triton RPC nodes.
-   - Implement automatic fallback: Yellowstone gRPC -> WebSocket logsSubscribe -> Polling backfill.
-
-4. Add tests in `test/solana/priority-fee.spec.ts` verifying instruction ordering and CU budgeting, then run `bun run test:solana`.
+  <testing_and_verification>
+    1. In `test/solana/priority-fee.spec.ts`:
+       - Verify compute budget instructions are placed strictly before business instructions.
+       - Verify percentile fee calculation and bounds clamping.
+    2. Run tests:
+       `bunx vitest run test/solana/priority-fee.spec.ts test/solana/production-integration.spec.ts --config vitest.solana.config.ts`
+  </testing_and_verification>
+</prompt>
 ```
 
 ---
 
-## Prompt 3 — Dual-Rail Storefront & Solana Checkout Flow in `ShopClient.tsx` (Phase 3)
+## Prompt 3 — Dual-Rail Storefront Wiring & Detached Ed25519 Solana Burn Checkout (Phase 3)
 
-### Objective
+### Context & Architectural Seams
 
-Wire the native Solana checkout rail in `components/shop/ShopClient.tsx`, enabling users to purchase apothecary boosts, digital items, and sigils via `redeem_for_esms` and detached Ed25519 authorization.
+The digital shop ([`components/shop/ShopClient.tsx`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/components/shop/ShopClient.tsx) and [`app/api/shop/purchase/route.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/app/api/shop/purchase/route.ts)) currently executes sponsored burns exclusively against the Base Sepolia ERC-1155 contract via EIP-712 challenges. This phase wires the native Solana checkout flow using `redeem_for_esms`, detached Ed25519 wallet signing, and the multi-chain wallet facade ([`lib/web3/multi-chain-wallet.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/web3/multi-chain-wallet.ts)).
 
 ### Target Files
 
-- `components/shop/ShopClient.tsx`
-- `app/api/shop/purchase/route.ts`
-- `lib/solana/useSolanaShop.ts` (New)
-- `components/providers/SolanaWalletProvider.tsx`
+- `[NEW]` `lib/solana/useSolanaShop.ts` — React hook coordinating the Solana detached burn challenge flow.
+- `[MODIFY]` `app/api/shop/purchase/route.ts` — Support `rail: 'solana'` with Token-2022 balance checks and relayer burn.
+- `[MODIFY]` `components/shop/ShopClient.tsx` — Dual-rail payment selector and wallet balance strip.
+- `[MODIFY]` `lib/solana/asol-solana-client.ts` — Support detached redeem submission.
+- `[NEW]` `test/solana/shop-checkout.spec.ts` — Integration test covering challenge generation, detached signing, and relayer redemption.
 
-### Technical Specifications
+### Prompt 3 (XML Structured)
 
-- Dual-rail toggle: Users can select whether to pay using Base Sepolia / Base (EVM) or Solana.
-- Solana Flow:
-  1. Client requests challenge: `POST /api/shop/purchase { itemId, rail: 'solana' }`.
-  2. Server generates `orderId`, derives canonical message via `buildRedeemAuthorizationMessage(...)`, and returns challenge.
-  3. Client signs the challenge message with their connected Solana wallet (`signMessage`).
-  4. Client submits detached signature to server: `POST /api/shop/purchase { itemId, rail: 'solana', signature, deadline, orderId }`.
-  5. Backend relayer submits atomic transaction (`Ed25519Program` verify + `redeem_for_esms`).
-  6. Server grants purchase entitlement upon finalized transaction receipt.
+```xml
+<prompt id="asol-phase-3-storefront-checkout">
+  <context>
+    <repository>AlchmAgentsSolana (ASOL)</repository>
+    <program_id>5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD</program_id>
+    <runtime>Bun</runtime>
+    <description>
+      Phase 3 of the Solana Mainnet Migration: Implement native Solana Token-2022 checkout in
+      ShopClient.tsx and app/api/shop/purchase/route.ts using detached Ed25519 signatures and redeem_for_esms.
+    </description>
+  </context>
 
-### Copy-Paste Prompt 3
+  <task>
+    Wire native Solana checkout rail into the storefront and backend purchase API.
+  </task>
 
-```text
-Execute Phase 3 of the Solana Mainnet Migration for AlchmAgentsSolana (ASOL): Dual-Rail Storefront Checkout.
+  <target_files>
+    <file action="create">lib/solana/useSolanaShop.ts</file>
+    <file action="modify">app/api/shop/purchase/route.ts</file>
+    <file action="modify">components/shop/ShopClient.tsx</file>
+    <file action="create">test/solana/shop-checkout.spec.ts</file>
+  </target_files>
 
-1. Implement `lib/solana/useSolanaShop.ts`:
-   - Hook to coordinate Solana ESMS burning: request challenge, sign detached Ed25519 authorization via `useSolanaWalletState()`, and submit to backend.
+  <technical_specifications>
+    <backend_purchase_route>
+      1. In `app/api/shop/purchase/route.ts`:
+         - Accept optional `rail?: 'evm' | 'solana'` in POST body (defaults to 'evm' for backwards compatibility).
+         - When `rail === 'solana'`:
+           a. Query `VerifiedSolanaWallet` for `userId` to obtain authenticated `solanaPubKey`. If not found, return 400 (`no_solana_wallet`).
+           b. Read 4 Token-2022 balances via `AsolSolanaClient.readEsmsBalances(solanaPubKey)`.
+           c. Check affordability against `item.esms` scaled by $10^4$ raw atoms (`toSolanaOnchainAmounts`).
+           d. If `signature` is absent:
+              - Generate `orderId = shopOrderId(userId, item.id, nonce)`.
+              - Set `deadline = BigInt(Math.floor(Date.now() / 1000) + 600)`.
+              - Derive `clusterDomain` from `ProgramConfig.cluster_domain`.
+              - Call `buildRedeemAuthorizationMessage({ programId, clusterDomain, holder: solanaPubKey, orderId, amounts, deadline })`.
+              - Return JSON `{ mode: 'sign_solana', itemId, orderId, deadline: deadline.toString(), messageBase64: message.toString('base64'), challengeDomain: 'ASOL_ESMS_REDEEM_V1' }`.
+           e. If `signature` is present:
+              - Verify deadline has not expired.
+              - Submit sponsored transaction via `AsolSolanaClient.redeemForEsms({ orderId, amounts, holder: solanaPubKey, holderSignature: bs58.decode(signature), clusterDomain, deadline })`.
+              - Await confirmation, record `txHash`, and grant entitlement via `grantPurchase({ userId, item, orderId, txHash })`.
+              - Return JSON `{ ok: true, itemId, orderId, txHash, rail: 'solana' }`.
+    </backend_purchase_route>
 
-2. Update `app/api/shop/purchase/route.ts`:
-   - Add support for `rail: 'solana'`.
-   - When rail is Solana:
-     a. Validate user's bound Solana wallet in `VerifiedSolanaWallet` table.
-     b. Read Solana ESMS Token-2022 balances using `AsolSolanaClient.readEsmsBalances()`.
-     c. Verify balance sufficiency against 4-decimal catalog pricing.
-     d. Challenge phase: return `orderId`, `deadline`, `clusterDomain`, and canonical message payload.
-     e. Execution phase: execute `redeemEsmsFor()` using backend relayer, submit `redeem_for_esms` transaction, confirm receipt, and call `grantPurchase()`.
+    <frontend_shop_client>
+      1. Create `lib/solana/useSolanaShop.ts`:
+         - Coordinates challenge request, signing via `useSolanaWalletState().wallet.signMessage`, and submission to `/api/shop/purchase`.
+      2. Update `components/shop/ShopClient.tsx`:
+         - Add payment rail toggle: "Base (EVM)" vs "Solana Token-2022".
+         - In `WalletStrip`: render Solana balances from `useSolanaWalletState().balances` alongside EVM balances.
+         - Connect `ItemCard` button to `buyDigitalSolana(item)` when Solana rail is active.
+         - Dispatch `ASOL_SOLANA_TRANSACTION_CONFIRMED_EVENT` on success to trigger toast with Solana Explorer link.
+    </frontend_shop_client>
+  </technical_specifications>
 
-3. Update `components/shop/ShopClient.tsx`:
-   - Add Payment Rail Selector ("Base (EVM)" vs "Solana Token-2022").
-   - Display both EVM and Solana ESMS balances side-by-side or based on active tab.
-   - Connect the purchase button to `buyDigitalSolana()` when the Solana rail is selected.
-   - Emit transaction toast with Solana Explorer link upon confirmation.
-
-4. Test the complete flow and verify all existing Vitest suites pass.
+  <testing_and_verification>
+    1. In `test/solana/shop-checkout.spec.ts`:
+       - Verify message serialization matches Rust Anchor `instructions::esms::tests::redeem_authorization_serialization_is_unambiguous`.
+       - Test signature verification against detached TweetNaCl keypair.
+       - Simulate purchase flow with mocked relayer and verify entitlement granting.
+    2. Run test suite:
+       `bunx vitest run test/solana/shop-checkout.spec.ts test/solana/sync-and-wallet.spec.ts --config vitest.solana.config.ts`
+  </testing_and_verification>
+</prompt>
 ```
 
 ---
 
-## Prompt 4 — Mainnet Token-2022 Metadata & Verifiable Anchor Build (Phase 4)
+## Prompt 4 — Mainnet Token-2022 Metadata & Verifiable Anchor Builds (Phase 4)
 
-### Objective
+### Context & Architectural Seams
 
-Create and register permanent, decentralized metadata on Arweave for the 4 ESMS mints and establish reproducible, verifiable Anchor program builds.
+The 4 ESMS mints on Devnet currently point to placeholder URIs (`https://alchm.kitchen/metadata/esms/*.json`). For Mainnet, metadata schemas and elemental iconography must be permanently registered on **Arweave** (via Irys/Bundlr) and embedded in the Token-2022 mint accounts. Furthermore, the Anchor program bytecode must be reproducibly built and verified using `solana-verify`.
 
 ### Target Files
 
-- `metadata/solana/spirit.json` (New)
-- `metadata/solana/essence.json` (New)
-- `metadata/solana/matter.json` (New)
-- `metadata/solana/substance.json` (New)
-- `scripts/metadata/upload-arweave-metadata.ts` (New)
-- `Anchor.toml`
-- `programs/asol_program/Cargo.toml`
+- `[NEW]` `metadata/solana/spirit.json` — Token-2022 Metadata manifest for Spirit (Fire).
+- `[NEW]` `metadata/solana/essence.json` — Token-2022 Metadata manifest for Essence (Water).
+- `[NEW]` `metadata/solana/matter.json` — Token-2022 Metadata manifest for Matter (Earth).
+- `[NEW]` `metadata/solana/substance.json` — Token-2022 Metadata manifest for Substance (Air).
+- `[NEW]` `scripts/metadata/upload-arweave-metadata.ts` — Arweave upload automation via Irys.
+- `[NEW]` `docs/deployment/VERIFIABLE_BUILD_RUNBOOK.md` — Reproducible Docker build guide.
+- `[MODIFY]` `Anchor.toml` — Mainnet configuration and verifiable settings.
 
-### Technical Specifications
+### Prompt 4 (XML Structured)
 
-- Metadata format: Standard Token-2022 Metadata schema embedded directly into the mint accounts via `MetadataPointer`.
-- Permanent decentralized hosting on Arweave (via Irys/Bundlr) for JSON schemas and elemental SVG/PNG assets.
-- Verifiable build configuration: `anchor build --verifiable` with Solana 1.18.17 / Anchor 0.30.1 Docker image.
+```xml
+<prompt id="asol-phase-4-metadata-verifiable-build">
+  <context>
+    <repository>AlchmAgentsSolana (ASOL)</repository>
+    <program_id>5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD</program_id>
+    <runtime>Bun</runtime>
+    <description>
+      Phase 4 of the Solana Mainnet Migration: Create permanent Token-2022 Arweave metadata
+      manifests, upload tooling via Irys, and configure verifiable Anchor builds with solana-verify.
+    </description>
+  </context>
 
-### Copy-Paste Prompt 4
+  <task>
+    Create permanent Arweave metadata assets and configure verifiable Anchor builds for Mainnet.
+  </task>
 
-```text
-Execute Phase 4 of the Solana Mainnet Migration for AlchmAgentsSolana (ASOL): Metadata Registration and Verifiable Build.
+  <target_files>
+    <file action="create">metadata/solana/spirit.json</file>
+    <file action="create">metadata/solana/essence.json</file>
+    <file action="create">metadata/solana/matter.json</file>
+    <file action="create">metadata/solana/substance.json</file>
+    <file action="create">scripts/metadata/upload-arweave-metadata.ts</file>
+    <file action="create">docs/deployment/VERIFIABLE_BUILD_RUNBOOK.md</file>
+    <file action="modify">Anchor.toml</file>
+  </target_files>
 
-1. Create permanent Token-2022 JSON metadata manifests in `metadata/solana/`:
-   - `spirit.json`, `essence.json`, `matter.json`, `substance.json`.
-   - Include element traits, alchemical axis (Fire, Water, Earth, Air), 4-decimal precision specification, and soulbound non-transferability attributes.
+  <technical_specifications>
+    <metadata_schemas>
+      1. Create JSON manifests in `metadata/solana/` for all 4 elements adhering to Token-2022 standards:
+         - `name`: "Spirit (ESMS)", "Essence (ESMS)", "Matter (ESMS)", "Substance (ESMS)"
+         - `symbol`: "SPIRIT", "ESSENCE", "MATTER", "SUBSTANCE"
+         - `description`: Detailed description of the element, alchemical axis, psychological and JEPA persona properties.
+         - `decimals`: 4
+         - `attributes`: `[{ "trait_type": "Element", "value": "..." }, { "trait_type": "Decimals", "value": 4 }, { "trait_type": "Soulbound", "value": "Non-Transferable" }, { "trait_type": "BurnAuthority", "value": "Permissioned" }]`
+      2. Implement `scripts/metadata/upload-arweave-metadata.ts`:
+         - Uses `@irys/sdk` to upload SVG icons and JSON manifests to Arweave.
+         - Returns permanent `https://arweave.net/<HASH>` URLs.
+         - Generates updated constants for `programs/asol_program/src/constants.rs`.
+    </metadata_schemas>
 
-2. Create `scripts/metadata/upload-arweave-metadata.ts`:
-   - Script to upload metadata files and icons to Arweave using Irys / Bundlr.
-   - Script to update on-chain `TokenMetadata` pointers on the 4 Token-2022 mints via program authority.
+    <verifiable_build>
+      1. Update `Anchor.toml`:
+         - Set `[programs.mainnet] asol_program = "5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD"`.
+         - Pin solana version `1.18.17` and anchor version `0.30.1`.
+      2. Create `docs/deployment/VERIFIABLE_BUILD_RUNBOOK.md`:
+         - Step-by-step instructions for `anchor build --verifiable`.
+         - Step-by-step instructions for `solana-verify verify-from-repo --program-id 5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD https://github.com/gregcastro23/AlchmAgentsSolana --mount-path programs/asol_program`.
+    </verifiable_build>
+  </technical_specifications>
 
-3. Update `Anchor.toml` and documentation for Verifiable Build:
-   - Configure mainnet cluster parameters in `Anchor.toml`.
-   - Create `docs/deployment/VERIFIABLE_BUILD_RUNBOOK.md` detailing exact `anchor build --verifiable` commands and `solana-verify` validation steps.
-
-4. Run `bun test:solana` to ensure all vector and IDL generation assertions remain green.
+  <testing_and_verification>
+    1. Verify JSON syntax and schemas with `bunx prettier --check metadata/solana/*.json`.
+    2. Run golden vector tests to ensure URI constants match: `bun run test:solana`.
+  </testing_and_verification>
+</prompt>
 ```
 
 ---
 
-## Prompt 5 — StarVault Staking & Checkpointed Yield Accrual (Parity Port)
+## Prompt 5 — StarVault Staking & Checkpointed Yield Accrual Engine (Parity Port)
 
-### Objective
+### Context & Architectural Seams
 
-Port Arc EVM's `StarVault` staking protocol to Solana, remediating the historical retroactive timestamp accrual vulnerability with a zero-loss checkpointed accumulator.
+On Circle Arc EVM, `StarVault.sol` allows users to stake 6-decimal USDC into celestial star pools identified by Hipparcos star IDs and claim ESMS yield. However, Arc EVM's contract contains a critical vulnerability: `lastClaimAt` is only initialized when shares are zero, allowing a user to top-up principal and retroactively earn yield over past elapsed time on new capital. The Solana implementation ports StarVault with a **checkpointed yield accumulator** that permanently eliminates this flaw while replicating OpenZeppelin `StandardMerkleTree` uint32 leaf verification.
 
 ### Target Files
 
-- `programs/asol_program/src/instructions/staking/mod.rs` (New)
-- `programs/asol_program/src/state/staking.rs` (New)
-- `lib/solana/star-vault.ts` (New)
-- `test/solana/star-vault.spec.ts` (New)
+- `[NEW]` `programs/asol_program/src/state/staking.rs` — `StarVaultState`, `StarPool`, `StakePosition` accounts.
+- `[NEW]` `programs/asol_program/src/instructions/staking/mod.rs` — `activate_star`, `stake_star`, `unstake_star`, `claim_star_yield`.
+- `[MODIFY]` `programs/asol_program/src/lib.rs` — Expose staking instructions.
+- `[NEW]` `lib/solana/star-vault.ts` — TypeScript SDK client for StarVault staking.
+- `[NEW]` `test/solana/star-vault.spec.ts` — Anchor & TypeScript test suite proving zero retroactive accrual.
 
-### Technical Specifications
+### Prompt 5 (XML Structured)
 
-- Accounts: `StarVaultState` (`["star-vault"]`), `StarPool` (`["star-pool", star_id]`), `StakePosition` (`["stake", star_id, staker]`).
-- Checkpointed Yield Math:
-  $$\text{accrued\_cap} \mathrel{+}= \frac{\text{old\_principal} \times \text{max\_rate} \times (\text{now} - \text{last\_checkpoint})}{10^6 \times 86400}$$
-  $$\text{last\_checkpoint} = \text{now}$$
-- Proof Verification: Replicate OpenZeppelin `StandardMerkleTree` uint32 leaf verification on-chain (`openZeppelinStarLeaf`).
-- Unstake: Always available, never pausable.
+```xml
+<prompt id="asol-phase-5-starvault-staking">
+  <context>
+    <repository>AlchmAgentsSolana (ASOL)</repository>
+    <program_id>5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD</program_id>
+    <runtime>Bun</runtime>
+    <description>
+      Phase 5 of the Solana Migration: Port StarVault staking from Arc EVM to Solana with
+      checkpointed yield accrual and OpenZeppelin Merkle tree leaf verification.
+    </description>
+  </context>
 
-### Copy-Paste Prompt 5
+  <task>
+    Implement StarVault staking accounts and instructions with checkpointed yield accrual.
+  </task>
 
-```text
-Execute Phase 5 of the Solana Migration for AlchmAgentsSolana (ASOL): StarVault Staking & Checkpointed Yield Engine.
+  <target_files>
+    <file action="create">programs/asol_program/src/state/staking.rs</file>
+    <file action="create">programs/asol_program/src/instructions/staking/mod.rs</file>
+    <file action="modify">programs/asol_program/src/lib.rs</file>
+    <file action="create">lib/solana/star-vault.ts</file>
+    <file action="create">test/solana/star-vault.spec.ts</file>
+  </target_files>
 
-1. Implement `programs/asol_program/src/state/staking.rs`:
-   - `StarVaultState`, `StarPool`, and `StakePosition` accounts.
-   - Include `accrued_cap`, `last_checkpoint`, `shares`, `principal`, and claim nonce.
+  <technical_specifications>
+    <state_and_math>
+      1. Define accounts in `programs/asol_program/src/state/staking.rs`:
+         - `StarVaultState` (`seeds = [b"star-vault"]`): `usdc_mint`, `vault_usdc_ata`, `total_principal`, `star_root`, `bump`.
+         - `StarPool` (`seeds = [b"star-pool", star_id.to_le_bytes()]`): `star_id: u32`, `activated: bool`, `total_principal: u64`, `total_shares: u64`, `bump: u8`.
+         - `StakePosition` (`seeds = [b"stake", star_id.to_le_bytes(), staker.key()]`):
+           `staker: Pubkey`, `star_id: u32`, `shares: u64`, `principal: u64`, `accrued_cap: u64`, `last_checkpoint: i64`, `claim_nonce: u64`, `bump: u8`.
+      2. Yield Math Formula with `u128` intermediates:
+         $$\Delta\text{Cap} = \frac{\text{old\_principal} \times \text{max\_rate\_esms\_atoms\_per\_usdc\_day} \times (\text{now} - \text{last\_checkpoint})}{10^6 \times 86400}$$
+         Before any stake or unstake changes principal:
+         $$\text{accrued\_cap} \mathrel{+}= \Delta\text{Cap}$$
+         $$\text{last\_checkpoint} = \text{now}$$
+    </state_and_math>
 
-2. Implement Anchor instructions in `programs/asol_program/src/instructions/staking/`:
-   - `activate_star`: Verify OpenZeppelin StandardMerkleTree proof against `GlobalConfig.star_root`.
-   - `stake_star`: Checkpoint accrued yield cap using old principal, transfer USDC to vault PDA, and mint shares.
-   - `unstake_star`: Checkpoint yield, burn shares, and transfer USDC back (non-pausable).
-   - `claim_star_yield`: Validate Ed25519 attestor signature, clamp amount to accrued cap, consume nonce, and mint Token-2022 ESMS.
+    <instructions>
+      1. `activate_star`: Verify OpenZeppelin `StandardMerkleTree` proof for `uint32 starId` against `StarVaultState.star_root`.
+      2. `stake_star`: Checkpoint yield, transfer SPL USDC from staker to vault PDA, update shares and principal.
+      3. `unstake_star`: Checkpoint yield, burn shares, transfer USDC from vault PDA back to staker (always enabled, non-pausable).
+      4. `claim_star_yield`: Validate Ed25519 attestor signature over `(staker, star_id, element_id, amount, nonce, deadline)`.
+         Assert `amount <= accrued_cap + current_interval_cap`. Mint Token-2022 ESMS atoms to staker, consume nonce, reset `accrued_cap = 0`.
+    </instructions>
+  </technical_specifications>
 
-3. Implement TypeScript client SDK in `lib/solana/star-vault.ts`.
-
-4. Add unit and integration tests in `test/solana/star-vault.spec.ts` proving:
-   - Proof verification matches OpenZeppelin golden vector.
-   - Top-up attacks cannot retroactively earn yield on un-staked time.
-   - Unstake functions during paused claim state.
-   - Run `bun test:solana`.
+  <testing_and_verification>
+    1. In `test/solana/star-vault.spec.ts`:
+       - Verify OpenZeppelin leaf vector matching `openZeppelinStarLeaf(677)`.
+       - Test: User stakes 10 USDC for 10 days, tops up 1000 USDC on day 10, and claims on day 10 + 1 second.
+       - Prove that the claim cap strictly reflects 10 USDC over the 10 days, not 1010 USDC over 10 days.
+       - Test: Unstake functions normally even when `pause_claims == true`.
+    2. Run test suite: `bun test:solana`.
+  </testing_and_verification>
+</prompt>
 ```
 
 ---
 
-## Prompt 6 — Constellation Virtual-Reserve AMM & LP Deeds (Parity Port)
+## Prompt 6 — Constellation Virtual-Reserve AMM & LP Deed NFTs (Parity Port)
 
-### Objective
+### Context & Architectural Seams
 
-Port Arc EVM's `ConstellationAMM` to Solana, locking bootstrap liquidity permanently and binding LP positions to non-fungible Token-2022 Deed NFTs.
+On Circle Arc EVM, `ConstellationAMM.sol` and `ConstellationDeed.sol` provide constant-product swapping between soulbound ESMS tokens. However, Arc EVM's `seedInitial` instruction can be called repeatedly without burning tokens, allowing an admin to mint unbacked withdrawable Deeds. The Solana implementation fixes this by enforcing **one-time bootstrapping with permanently locked unbacked shares** and issuing **Token-2022 Deed NFTs** (`supply = 1`, `decimals = 0`).
 
 ### Target Files
 
-- `programs/asol_program/src/instructions/amm/mod.rs` (New)
-- `programs/asol_program/src/state/amm.rs` (New)
-- `programs/asol_program/src/state/deed.rs` (New)
-- `lib/solana/constellation-amm.ts` (New)
-- `test/solana/constellation-amm.spec.ts` (New)
+- `[NEW]` `programs/asol_program/src/state/amm.rs` — `ConstellationPool`, `PoolTraderNonce`.
+- `[NEW]` `programs/asol_program/src/state/deed.rs` — `DeedPosition` state.
+- `[NEW]` `programs/asol_program/src/instructions/amm/mod.rs` — `register_pool`, `bootstrap_pool`, `add_liquidity`, `swap_esms`, `withdraw_liquidity`.
+- `[MODIFY]` `programs/asol_program/src/lib.rs` — Expose AMM instructions.
+- `[NEW]` `lib/solana/constellation-amm.ts` — TypeScript SDK client for Constellation AMM.
+- `[NEW]` `test/solana/constellation-amm.spec.ts` — Comprehensive AMM test suite.
 
-### Technical Specifications
+### Prompt 6 (XML Structured)
 
-- Virtual-Reserve Constant Product: $x \cdot y = k$ with `u128` intermediates.
-- Reentrancy & Mint Guard: One-time pool bootstrapping; initial unbacked shares are permanently locked in a non-withdrawable PDA.
-- LP Deed NFT: Token-2022 mint (`decimals = 0`, `supply = 1`, Non-Transferable = FALSE).
-- Swaps: Burns input ESMS and mints output ESMS atomically.
-- Withdrawals: Always available, burns Deed NFT, and mints owed ESMS reserves.
+```xml
+<prompt id="asol-phase-6-constellation-amm">
+  <context>
+    <repository>AlchmAgentsSolana (ASOL)</repository>
+    <program_id>5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD</program_id>
+    <runtime>Bun</runtime>
+    <description>
+      Phase 6 of the Solana Migration: Port Constellation constant-product AMM and Deed NFTs
+      to Solana with locked bootstrap liquidity and Token-2022 NFT positions.
+    </description>
+  </context>
 
-### Copy-Paste Prompt 6
+  <task>
+    Implement Constellation AMM pools, atomic swap instructions, and Token-2022 Deed NFT positions.
+  </task>
 
-```text
-Execute Phase 6 of the Solana Migration for AlchmAgentsSolana (ASOL): Constellation AMM & LP Deed NFTs.
+  <target_files>
+    <file action="create">programs/asol_program/src/state/amm.rs</file>
+    <file action="create">programs/asol_program/src/state/deed.rs</file>
+    <file action="create">programs/asol_program/src/instructions/amm/mod.rs</file>
+    <file action="modify">programs/asol_program/src/lib.rs</file>
+    <file action="create">lib/solana/constellation-amm.ts</file>
+    <file action="create">test/solana/constellation-amm.spec.ts</file>
+  </target_files>
 
-1. Implement `programs/asol_program/src/state/amm.rs` and `deed.rs`:
-   - `ConstellationPool` (`["constellation", pool_id]`): virtual reserves, shares, fee BPS ($\le 10,000$), element pair.
-   - `DeedPosition` (`["deed", deed_mint]`): owner, shares, created slot.
+  <technical_specifications>
+    <amm_state>
+      1. `ConstellationPool` (`seeds = [b"constellation", pool_id.to_le_bytes()]`):
+         - `pool_id: u16`, `element_a: u8`, `element_b: u8`, `fee_bps: u16` (strictly $\le 10_000$)
+         - `reserve_a: u64`, `reserve_b: u64`, `total_shares: u64`, `bootstrapped: bool`, `bump: u8`
+      2. `DeedPosition` (`seeds = [b"deed", deed_mint.key()]`):
+         - `pool_id: u16`, `shares: u64`, `created_slot: u64`, `active: bool`, `bump: u8`
+    </amm_state>
 
-2. Implement Anchor instructions in `programs/asol_program/src/instructions/amm/`:
-   - `register_pool`: Validate distinct elements and fee BPS.
-   - `bootstrap_pool`: One-time initialization; locks bootstrap shares in a non-withdrawable PDA.
-   - `add_liquidity`: Burns ESMS inputs, verifies slippage/ratio tolerance, and mints a Token-2022 Deed NFT.
-   - `swap_esms`: Requires visibility attestation, performs u128 constant-product math, burns input element, and mints output element.
-   - `withdraw_liquidity`: Always available; verifies Deed ownership, burns Deed NFT, and mints underlying ESMS reserves.
+    <instructions>
+      1. `register_pool`: Admin registers a pool with distinct elements `element_a != element_b` and `fee_bps <= 10_000`.
+      2. `bootstrap_pool`: Admin injects initial virtual reserves. Bootstrapped shares are credited to a locked program PDA and cannot be withdrawn. Callable exactly once (`require!(!pool.bootstrapped)`).
+      3. `add_liquidity`: User deposits ESMS amounts; contract burns both Token-2022 ESMS inputs via CPI, computes shares with 1% ratio tolerance, and mints a Token-2022 Deed NFT (`decimals = 0`, `supply = 1`) to the user.
+      4. `swap_esms`: Validates trader visibility attestation, performs $x \cdot y = k$ checked math with `u128` intermediates, burns input element from user, and mints output element to user.
+      5. `withdraw_liquidity`: Always enabled. Verifies caller holds the Deed NFT, burns the Deed NFT, updates virtual reserves, and mints owed ESMS tokens back to the caller.
+    </instructions>
+  </technical_specifications>
 
-3. Implement TypeScript client SDK in `lib/solana/constellation-amm.ts`.
-
-4. Add unit and integration tests in `test/solana/constellation-amm.spec.ts` and run `bun test:solana`.
+  <testing_and_verification>
+    1. In `test/solana/constellation-amm.spec.ts`:
+       - Verify repeated `bootstrap_pool` attempts revert.
+       - Verify swaps maintain $k$ invariant minus fees.
+       - Verify Deed NFT minting, transferability, and burn-on-withdrawal.
+       - Verify fee overflow protection (`fee_bps > 10_000` reverts).
+    2. Run test suite: `bun test:solana`.
+  </testing_and_verification>
+</prompt>
 ```
 
 ---
 
 ## Prompt 7 — Mainnet Deployment, Rehearsal & Verification Runbook (Phase 7)
 
-### Objective
+### Context & Architectural Seams
 
-Execute the live production deployment of `asol_program` to Solana Mainnet-Beta, initialize configuration PDAs and Token-2022 mints, verify on-chain bytecode, and switch the frontend connection.
+The final phase executes the Mainnet deployment of `asol_program`, initializes the `ProgramConfig` and the 4 `EsmsMint` accounts on Solana Mainnet-Beta, performs deterministic bytecode verification via `solana-verify`, and switches production environment configurations.
 
 ### Target Files
 
-- `scripts/deploy/deploy-mainnet.sh` (New)
-- `scripts/deploy/init-mainnet.ts` (New)
-- `deployments/solana-mainnet.json` (New)
-- `.env.production`
+- `[NEW]` `scripts/deploy/deploy-mainnet.sh` — Verifiable build and deployment runner.
+- `[NEW]` `scripts/deploy/init-mainnet.ts` — Idempotent Mainnet PDA initialization script.
+- `[NEW]` `deployments/solana-mainnet.json` — Deployment artifact registry.
+- `[MODIFY]` `.env.production.sample` — Production environment template.
 
-### Checklist & Steps
+### Prompt 7 (XML Structured)
 
-1. **Pre-Flight Funding:** Ensure deployer keypair has sufficient SOL (~5.5 SOL for program buffer + rent for PDAs and 4 Token-2022 mints).
-2. **Deterministic Program Deployment:** Deploy `asol_program` via Anchor CLI.
-3. **Idempotent Initialization:** Run `init-mainnet.ts` to create `ProgramConfig` and the 4 `EsmsMint` Token-2022 accounts.
-4. **Authority Handover:** Transfer upgrade authority to the Squads v4 Multisig.
-5. **Bytecode Verification:** Run `solana-verify` to register verified source status on Solana Explorer / SolanaFM.
-6. **Sync Service Activation:** Launch `solana-sync-service` worker pointing to Mainnet Yellowstone / RPC.
+```xml
+<prompt id="asol-phase-7-mainnet-deployment">
+  <context>
+    <repository>AlchmAgentsSolana (ASOL)</repository>
+    <program_id>5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD</program_id>
+    <runtime>Bun</runtime>
+    <description>
+      Phase 7 of the Solana Migration: Execute the live production deployment of asol_program
+      to Solana Mainnet-Beta, run idempotent initialization, and verify on-chain bytecode.
+    </description>
+  </context>
 
-### Copy-Paste Prompt 7
+  <task>
+    Implement Mainnet deployment automation, idempotent initialization, and bytecode verification.
+  </task>
 
-```text
-Execute Phase 7 of the Solana Migration for AlchmAgentsSolana (ASOL): Mainnet Deployment & Verification Runbook.
+  <target_files>
+    <file action="create">scripts/deploy/deploy-mainnet.sh</file>
+    <file action="create">scripts/deploy/init-mainnet.ts</file>
+    <file action="create">deployments/solana-mainnet.json</file>
+    <file action="modify">.env.production.sample</file>
+  </target_files>
 
-1. Implement `scripts/deploy/init-mainnet.ts`:
-   - Idempotent script that checks RPC cluster genesis hash to guarantee execution on Mainnet-Beta.
-   - Derives and checks all PDAs (`ProgramConfig`, 4 `EsmsMint` accounts).
-   - Initializes config with Squads multisig attestor/pauser and sets cluster domain to `ASOL_MAINNET_V1`.
-   - Initializes the 4 Token-2022 mints with `NonTransferable`, `PermissionedBurn`, `PermanentDelegate`, and `MetadataPointer`.
-   - Saves deployment receipt to `deployments/solana-mainnet.json`.
+  <technical_specifications>
+    <deployment_script>
+      1. Create `scripts/deploy/deploy-mainnet.sh`:
+         - Checks prerequisites: `bun`, `solana-cli` (1.18.17), `anchor` (0.30.1), `solana-verify`.
+         - Verifies cluster endpoint genesis hash matches Mainnet-Beta (`5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d`).
+         - Executes `anchor build --verifiable`.
+         - Deploys program binary to `5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD`.
+         - Executes `bun run scripts/deploy/init-mainnet.ts`.
+         - Runs `solana-verify verify-from-repo` and outputs verification hash.
+    </deployment_script>
 
-2. Create `scripts/deploy/deploy-mainnet.sh`:
-   - Verifies Bun runtime and Solana CLI tools.
-   - Runs `anchor build --verifiable`.
-   - Deploys program to Mainnet-Beta.
-   - Executes `init-mainnet.ts`.
-   - Submits `solana-verify` build verification.
+    <initialization_script>
+      1. Create `scripts/deploy/init-mainnet.ts`:
+         - Loads deployer keypair from explicit secure path or Cloud KMS.
+         - Asserts cluster genesis hash is Mainnet-Beta.
+         - Derives `ProgramConfig` PDA (`seeds = [b"program_authority"]`).
+         - If `ProgramConfig` is uninitialized, calls `initialize_config` with:
+           * `attestor`: Squads multisig vault or configured attestor public key.
+           * `pauser`: Squads multisig vault.
+           * `cluster_domain`: `sha256("ASOL_MAINNET_V1")`.
+         - If `EsmsMint` accounts are uninitialized, calls `initialize_esms_mints`.
+         - Asserts all 4 Token-2022 mint accounts exist and match expected extension layout (`NonTransferable`, `PermissionedBurn`, `PermanentDelegate`, `MetadataPointer`).
+         - Writes verified public addresses to `deployments/solana-mainnet.json`.
+    </initialization_script>
+  </technical_specifications>
 
-3. Update production environment configuration in `.env.production.sample` with Mainnet RPC endpoints and program addresses.
-
-4. Run dry-run simulation against localnet/devnet and verify zero regressions across the test suite with `bun test:solana`.
+  <testing_and_verification>
+    1. Perform full dry-run simulation against Localnet / Devnet:
+       `ANCHOR_PROVIDER_URL=https://api.devnet.solana.com bun run scripts/deploy/init-mainnet.ts --dry-run`
+    2. Confirm all 34 unit and integration tests pass:
+       `bun test:solana && bunx vitest run test/solana/golden-vectors.spec.ts test/solana/solana-minter.spec.ts test/solana/sync-and-wallet.spec.ts test/solana/production-integration.spec.ts --config vitest.solana.config.ts`
+  </testing_and_verification>
+</prompt>
 ```
 
 ---
 
-## 4. Test Execution & Quality Assurance Standards
+## 5. Verification & Test Run Matrix
 
-Before moving between prompts, the following test suite must always be run and verified:
+To guarantee continuous quality across all prompts, maintain the following testing matrix:
 
 ```bash
-# 1. Fast vector and Rust program tests
+# Vector and Rust Anchor tests
 bun run test:solana
 
-# 2. Comprehensive Vitest Solana test suite
+# Full TypeScript Vitest suite
 bunx vitest run test/solana/golden-vectors.spec.ts \
                 test/solana/solana-minter.spec.ts \
                 test/solana/sync-and-wallet.spec.ts \
@@ -372,10 +595,10 @@ bunx vitest run test/solana/golden-vectors.spec.ts \
                 --config vitest.solana.config.ts
 ```
 
-### Protocol Invariant Checklist
-
-- [x] **Decimal Integrity:** All token units strictly use 4 decimals ($10^4$ raw atoms / `Decimal(12,4)`). No floating-point or JS `number` conversions for on-chain integers.
-- [x] **Soulbound Security:** `NonTransferable` + `PermissionedBurn` extensions prevent unauthorized wallet transfers and holder-side out-of-band burns.
-- [x] **Detached Ed25519 Authentication:** Sysvar introspection guarantees holder authorization message, deadline, and cluster domain match exactly.
-- [x] **Monotonic State Anchoring:** JEPA commitments verify sequential updates ($\text{seq}_{n+1} = \text{seq}_n + 1$) and non-zero SHA-256 digests.
-- [x] **Durable Indexing:** `SolanaProcessedTx` and transactional outbox guard against duplicate processing or dropped events across network hiccups.
+| Verification Check  | Target Standard                 | Expected Outcome                                                                       |
+| :------------------ | :------------------------------ | :------------------------------------------------------------------------------------- |
+| **Rust Unit Tests** | 6 Anchor Program Tests          | All 6 tests pass in $< 0.1\text{s}$                                                    |
+| **Vitest Suite**    | 28+ Integration Tests           | All tests pass in $< 1.0\text{s}$                                                      |
+| **Integer Scaling** | Lossless $10^4$ Conversion      | Zero rounding dust, no JS `number` precision leaks                                     |
+| **Extensions**      | Token-2022 Protocol Constraints | `NonTransferable`, `PermissionedBurn`, `PermanentDelegate`, `MetadataPointer` enforced |
+| **Replay Guards**   | Permanent PDAs                  | `ClaimReceipt` and `OrderReceipt` accounts prevent double-settlement                   |
