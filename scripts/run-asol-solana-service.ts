@@ -6,6 +6,7 @@ import bs58 from 'bs58'
 import type { Hex } from 'viem'
 
 import { AsolSolanaClient } from '@/lib/solana/asol-solana-client'
+import { getSolanaServiceSigner } from '@/lib/solana/kms-signer'
 import { AsyncCosmicContextEncoder } from '@/lib/jepa/cosmic-context-encoder'
 import type { SolanaServiceHealth } from '@/lib/solana/rpc-failover'
 import {
@@ -121,13 +122,20 @@ async function runSync(client: PrismaClient) {
 }
 
 async function runBridge(client: PrismaClient) {
-  const minter = solanaMinter()
+  const kmsSigner = getSolanaServiceSigner()
+  const solanaWallet =
+    kmsSigner ?? (process.env.SOLANA_MINTER_SECRET_KEY ? new Wallet(solanaMinter()) : null)
+  if (!solanaWallet) {
+    throw new Error(
+      'Solana bridge signer not configured (set AWS_KMS_KEY_ID, GCP_KMS_KEY_NAME, or SOLANA_MINTER_SECRET_KEY)'
+    )
+  }
   const evmKey = process.env.EVM_MINTER_PRIVATE_KEY as Hex | undefined
   if (!evmKey) throw new Error('EVM_MINTER_PRIVATE_KEY is required for bridge service')
 
   const { publicClient, walletClient } = createBaseSepoliaClients(evmKey)
   const solanaClient = new AsolSolanaClient({
-    wallet: new Wallet(minter),
+    wallet: solanaWallet,
   })
 
   const store = createPrismaBridgeStore(client)

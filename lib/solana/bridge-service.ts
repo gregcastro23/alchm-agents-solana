@@ -12,11 +12,12 @@ import {
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { baseSepolia } from 'viem/chains'
-import { Connection, PublicKey, Transaction } from '@solana/web3.js'
+import { Connection, Keypair, PublicKey, Transaction } from '@solana/web3.js'
 
 import {
   AsolSolanaClient,
   AaeSolanaClient,
+  type AsolSolanaWallet,
   type EsmsAmounts,
 } from '@/lib/solana/asol-solana-client'
 import {
@@ -24,6 +25,7 @@ import {
   AAE_BASE_SEPOLIA_ESMS_ADDRESS,
 } from '@/lib/solana/base-sepolia-esms'
 import { ASOL_SOLANA_PROGRAM_ID, AAE_SOLANA_PROGRAM_ID } from '@/lib/solana/esms'
+import { getSolanaServiceSigner, KmsSolanaSigner } from '@/lib/solana/kms-signer'
 import {
   resolveSolanaRpcUrls,
   withSolanaRpcFailover,
@@ -592,6 +594,36 @@ export function createSolanaDestinationMinter(args: {
           transfer
         ),
     })
+}
+
+export function resolveSolanaBridgeSigner(signer?: AsolSolanaWallet | Keypair): AsolSolanaWallet {
+  if (signer) {
+    return signer instanceof Keypair
+      ? new KmsSolanaSigner({
+          provider: 'local',
+          keypair: signer,
+          publicKey: signer.publicKey,
+        })
+      : signer
+  }
+  const serviceSigner = getSolanaServiceSigner()
+  if (!serviceSigner) {
+    throw new Error(
+      'Solana bridge signer not configured (set AWS_KMS_KEY_ID, GCP_KMS_KEY_NAME, or SOLANA_AGENT_PAYER_KEY)'
+    )
+  }
+  return serviceSigner
+}
+
+export function createSolanaBridgeClient(args?: {
+  signer?: AsolSolanaWallet | Keypair
+  connection?: Connection
+}): AsolSolanaClient {
+  const wallet = resolveSolanaBridgeSigner(args?.signer)
+  return new AsolSolanaClient({
+    wallet,
+    connection: args?.connection,
+  })
 }
 
 export function createAsolBridgeProcessor(args: {

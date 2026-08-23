@@ -14,8 +14,13 @@ import bs58 from 'bs58'
 import { Connection, Keypair, PublicKey, Transaction } from '@solana/web3.js'
 import { parseUnits, type Hex } from 'viem'
 
-import { AsolSolanaClient, type EsmsAmounts } from '@/lib/solana/asol-solana-client'
+import {
+  AsolSolanaClient,
+  type AsolSolanaWallet,
+  type EsmsAmounts,
+} from '@/lib/solana/asol-solana-client'
 import { resolveSolanaRpcUrls, withSolanaRpcFailover } from '@/lib/solana/rpc-failover'
+import { getSolanaServiceSigner, KmsSolanaSigner } from '@/lib/solana/kms-signer'
 
 export interface EsmsClaimAmounts {
   spirit: string
@@ -80,7 +85,8 @@ export function computeLedgerReferenceHash(
 }
 
 /**
- * Mint a settled claim natively on Solana Devnet Token-2022 mints.
+ * Mint a settled claim natively on Solana Token-2022 mints.
+ * Uses Cloud KMS HSM signer with devnet/local fallback.
  * `claimId` is the bytes32 hex idempotency key.
  * Returns the transaction signature string.
  */
@@ -88,11 +94,21 @@ export async function mintEsmsClaimSolana(params: {
   recipient: PublicKey | string
   claimId: Hex | string
   amounts: EsmsClaimAmounts
+  signer?: AsolSolanaWallet | Keypair
 }): Promise<string> {
-  const payer = solanaPayerFromEnvironment()
-  if (!payer) {
+  const resolvedSigner: AsolSolanaWallet | null = params.signer
+    ? params.signer instanceof Keypair
+      ? new KmsSolanaSigner({
+          provider: 'local',
+          keypair: params.signer,
+          publicKey: params.signer.publicKey,
+        })
+      : params.signer
+    : getSolanaServiceSigner()
+
+  if (!resolvedSigner) {
     throw new Error(
-      'Solana payer keypair not configured (set SOLANA_AGENT_PAYER_KEY or SOLANA_AGENT_PAYER_PATH)'
+      'Solana service signer not configured (set AWS_KMS_KEY_ID, GCP_KMS_KEY_NAME, or SOLANA_AGENT_PAYER_KEY)'
     )
   }
 
@@ -110,19 +126,7 @@ export async function mintEsmsClaimSolana(params: {
     operation: async connection => {
       const client = new AsolSolanaClient({
         connection,
-        wallet: {
-          publicKey: payer.publicKey,
-          signTransaction: async tx => {
-            if (tx instanceof Transaction) tx.partialSign(payer)
-            return tx
-          },
-          signAllTransactions: async txs => {
-            for (const tx of txs) {
-              if (tx instanceof Transaction) tx.partialSign(payer)
-            }
-            return txs
-          },
-        },
+        wallet: resolvedSigner,
       })
 
       const ix = await client.buildClaimMintEsmsInstruction({
@@ -130,14 +134,15 @@ export async function mintEsmsClaimSolana(params: {
         ledgerReferenceHash: ledgerHash,
         recipient: recipientPubkey,
         amounts: onchainAmounts,
-        authority: payer.publicKey,
+        authority: resolvedSigner.publicKey,
       })
 
       const tx = new Transaction().add(ix)
-      tx.feePayer = payer.publicKey
+      tx.feePayer = resolvedSigner.publicKey
       const { blockhash } = await connection.getLatestBlockhash('confirmed')
       tx.recentBlockhash = blockhash
-      tx.sign(payer)
+
+      await resolvedSigner.signTransaction(tx)
 
       const signature = await connection.sendRawTransaction(tx.serialize(), {
         skipPreflight: false,
