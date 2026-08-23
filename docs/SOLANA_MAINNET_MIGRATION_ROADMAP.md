@@ -26,7 +26,7 @@ The **AlchmAgentsSolana (`ASOL`)** architecture orchestrates high-throughput, lo
 ├──────────────────────────────┬──────────────────────────────┬──────────────────────────┤
 │ Phase 1: Governance & KMS    │ Phase 2: Network Resiliency  │ Phase 3: Storefront UI   │
 │ Prompt 1: Squads & Cloud KMS │ Prompt 2: Priority Fees & RPC│ Prompt 3: ShopClient.tsx │
-│ [STATUS: COMPLETED (PR #4)]  │ [STATUS: READY / NEXT]       │ [STATUS: QUEUED]         │
+│ [STATUS: COMPLETED (PR #4)]  │ [STATUS: COMPLETED (PR #5)]  │ [STATUS: READY / NEXT]   │
 ├──────────────────────────────┼──────────────────────────────┼──────────────────────────┤
 │ Phase 4: Metadata & Build    │ Phase 5: StarVault Staking   │ Phase 6: Constellation   │
 │ Prompt 4: Arweave & Verify   │ Prompt 5: Checkpointed Yield │ Prompt 6: AMM & Deeds    │
@@ -38,15 +38,15 @@ The **AlchmAgentsSolana (`ASOL`)** architecture orchestrates high-throughput, lo
 
 ### Migration Progress & Phase Status
 
-| Phase       | Title                                  | Target Scope                                            | Status        | References / PR                                                                        |
-| :---------- | :------------------------------------- | :------------------------------------------------------ | :------------ | :------------------------------------------------------------------------------------- |
-| **Phase 1** | Governance & Cloud KMS Key Management  | AWS KMS / GCP KMS HSM Signer, Squads v4 Runbook         | **COMPLETED** | [PR #4](https://github.com/gregcastro23/alchm-agents-solana/pull/4) / Commit `aa782d3` |
-| **Phase 2** | Network Resiliency & Dynamic Fees      | CU Budgeting, Priority Fees, Yellowstone Geyser         | **COMPLETED** | [PR #5](https://github.com/gregcastro23/alchm-agents-solana/pull/5) / Commit `563a807` |
-| **Phase 3** | Storefront & Detached Checkout         | Dual-rail Shop, detached Ed25519 redeem_for_esms        | **QUEUED**    | `components/shop/ShopClient.tsx`                                                       |
-| **Phase 4** | Token-2022 Metadata & Verifiable Build | Arweave metadata, reproducible Docker Anchor build      | **QUEUED**    | `metadata/solana/*.json`                                                               |
-| **Phase 5** | StarVault Staking & Yield Claims       | Time-weighted element lockups, yield checkpoints        | **QUEUED**    | `programs/asol_program/src/instructions/stake.rs`                                      |
-| **Phase 6** | Constellation Deeds & AMM Bonding      | Fractional agent deeds, Constant Product AMM            | **QUEUED**    | `programs/asol_program/src/instructions/amm.rs`                                        |
-| **Phase 7** | Mainnet Deployment & Live Rehearsal    | Mainnet deployment runbook, Genesis check, Verification | **QUEUED**    | `scripts/deploy/deploy-mainnet.sh`                                                     |
+| Phase       | Title                                  | Target Scope                                            | Status           | References / PR                                                                        |
+| :---------- | :------------------------------------- | :------------------------------------------------------ | :--------------- | :------------------------------------------------------------------------------------- |
+| **Phase 1** | Governance & Cloud KMS Key Management  | AWS KMS / GCP KMS HSM Signer, Squads v4 Runbook         | **COMPLETED**    | [PR #4](https://github.com/gregcastro23/alchm-agents-solana/pull/4) / Commit `aa782d3` |
+| **Phase 2** | Network Resiliency & Dynamic Fees      | CU Budgeting, Priority Fees, Yellowstone Geyser         | **COMPLETED**    | [PR #5](https://github.com/gregcastro23/alchm-agents-solana/pull/5) / Commit `563a807` |
+| **Phase 3** | Storefront & Detached Checkout         | Dual-rail Shop, detached Ed25519 redeem_for_esms        | **READY / NEXT** | `components/shop/ShopClient.tsx`                                                       |
+| **Phase 4** | Token-2022 Metadata & Verifiable Build | Arweave metadata, reproducible Docker Anchor build      | **QUEUED**       | `metadata/solana/*.json`                                                               |
+| **Phase 5** | StarVault Staking & Yield Claims       | Time-weighted element lockups, yield checkpoints        | **QUEUED**       | `programs/asol_program/src/instructions/stake.rs`                                      |
+| **Phase 6** | Constellation Deeds & AMM Bonding      | Fractional agent deeds, Constant Product AMM            | **QUEUED**       | `programs/asol_program/src/instructions/amm.rs`                                        |
+| **Phase 7** | Mainnet Deployment & Live Rehearsal    | Mainnet deployment runbook, Genesis check, Verification | **QUEUED**       | `scripts/deploy/deploy-mainnet.sh`                                                     |
 
 ---
 
@@ -162,18 +162,38 @@ Phase 1 introduced **Cloud KMS HSM** (AWS KMS / GCP Cloud KMS) via asymmetric Ed
 
 During high Mainnet traffic, fixed-fee Solana transactions risk starvation or block expiration. Furthermore, reliance on a single public or private RPC creates single-point-of-failure vulnerabilities. This phase introduces dynamic compute unit budgeting, real-time priority fee estimation, and Yellowstone gRPC Geyser stream failover into [`lib/solana/rpc-failover.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/rpc-failover.ts) and [`lib/solana/solana-sync-service.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/solana-sync-service.ts).
 
-### Target Files
+### Implemented Deliverables
 
-- `[NEW]` `lib/solana/priority-fee.ts` — Dynamic CU profiling and prioritization fee estimator.
-- `[MODIFY]` `lib/solana/rpc-failover.ts` — Enhanced multi-tier RPC fallback and Yellowstone gRPC streaming.
-- `[MODIFY]` `lib/solana/solana-sync-service.ts` — Real-time event ingestion with Geyser failover.
-- `[MODIFY]` `lib/solana/asol-solana-client.ts` — Auto-inject compute budget into `sendInstructions`.
-- `[NEW]` `test/solana/priority-fee.spec.ts` — Validation of instruction ordering and fee calculations.
+- `[NEW]` [`lib/solana/priority-fee.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/priority-fee.ts) — Profiled CU limits (`CLAIM_MINT_CU_LIMIT = 135_000`, `REDEEM_SELF_CU_LIMIT = 80_000`, `REDEEM_SPONSORED_CU_LIMIT = 115_000`, `RECORD_PERSONA_CU_LIMIT = 50_000`), dynamic 65th percentile prioritization fee estimator (`estimatePriorityFee`), and compute budget instruction injector (`injectComputeBudgetInstructions`).
+- `[MODIFY]` [`lib/solana/rpc-failover.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/rpc-failover.ts) — Multi-tier streaming failover supervisor (`createResilientStreamSubscription`) supporting Yellowstone gRPC (Tier 1) -> WebSocket `onLogs` (Tier 2) -> Polling backfill (Tier 3) with `activeTier` observability.
+- `[MODIFY]` [`lib/solana/solana-sync-service.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/solana-sync-service.ts) — Real-time event ingestion wired to `createResilientStreamSubscription` with durable slot tracking and Yellowstone Geyser failover.
+- `[MODIFY]` [`lib/solana/asol-solana-client.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/asol-solana-client.ts) — Auto-injects compute unit limits and dynamic priority fee budget into `sendInstructions` before wallet signing.
+- `[NEW]` [`test/solana/priority-fee.spec.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/test/solana/priority-fee.spec.ts) — 12 unit and integration tests validating CU profiling, index 0/1 instruction ordering, fee percentile calculation, bounds clamping (5k to 2M), client transaction injection, and multi-tier stream failover.
+
+### Architectural Insights & Lessons Learned
+
+1. **Deterministic CU Profiling Prevents Fee Waste & Block Rejection:**
+   - Default Solana transactions request 200,000 to 1,400,000 CU, wasting block space and increasing fees.
+   - Profiled limits (`claim`: 135k, `redeem`: 80k, `redeemFor`: 115k with Ed25519 precompile, `persona`: 50k) guarantee optimal transaction scheduling and minimal compute fees without risk of compute exhaustion (`InstructionError::Custom(6000)`).
+
+2. **Strict Instruction Indexing Order (Indices 0 and 1):**
+   - Solana validators evaluate compute unit limits and priority fee prices from `ComputeBudgetProgram` instructions placed at the beginning of the transaction.
+   - `injectComputeBudgetInstructions` strips any pre-existing budget instructions and strictly places `setComputeUnitLimit` at index 0 and `setComputeUnitPrice` at index 1 before any business instructions (including preceding Ed25519 precompile verification).
+
+3. **Robust Percentile Estimation with Safe Clamping:**
+   - `estimatePriorityFee` filters non-zero fees across `lockedWritableAccounts` and computes the 65th percentile.
+   - Fees are clamped between `minMicroLamports` (5,000) and `maxMicroLamports` (2,000,000) to ensure reliability during both low-activity periods and extreme network congestion spikes.
+   - Graceful fallback returns `minMicroLamports` if the RPC fails or returns no recent prioritization fee data.
+
+4. **Multi-Tier Stream Ingestion Supervisor:**
+   - **Tier 1 (Yellowstone gRPC Geyser):** Low-latency sub-slot push via Yellowstone gRPC filtered by program ID (`ASOL_SOLANA_PROGRAM_ID`).
+   - **Tier 2 (WebSocket `onLogs`):** Resilient WebSocket log subscription with automatic exponential backoff reconnection across multi-tier RPC fallback list.
+   - **Tier 3 (Polling Backfill):** Finalized signature polling via `getSignaturesForAddress` when WebSockets are degraded or disconnected.
 
 ### Prompt 2 (XML Structured)
 
 ```xml
-<prompt id="asol-phase-2-priority-fees-geyser">
+<prompt id="asol-phase-2-priority-fees-geyser" status="completed" pr="5">
   <context>
     <repository>AlchmAgentsSolana (ASOL)</repository>
     <program_id>5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD</program_id>
@@ -235,7 +255,7 @@ During high Mainnet traffic, fixed-fee Solana transactions risk starvation or bl
 
 ---
 
-## Prompt 3 — Dual-Rail Storefront Wiring & Detached Ed25519 Solana Burn Checkout (Phase 3)
+## Prompt 3 — Dual-Rail Storefront Wiring & Detached Ed25519 Solana Burn Checkout (Phase 3) [READY / NEXT]
 
 ### Context & Architectural Seams
 
@@ -630,6 +650,7 @@ bun run test:solana
 
 # Full TypeScript Vitest suite
 bunx vitest run test/solana/golden-vectors.spec.ts \
+                test/solana/priority-fee.spec.ts \
                 test/solana/solana-minter.spec.ts \
                 test/solana/kms-signer.spec.ts \
                 test/solana/sync-and-wallet.spec.ts \
@@ -637,11 +658,13 @@ bunx vitest run test/solana/golden-vectors.spec.ts \
                 --config vitest.solana.config.ts
 ```
 
-| Verification Check  | Target Standard                 | Expected Outcome                                                                       |
-| :------------------ | :------------------------------ | :------------------------------------------------------------------------------------- |
-| **Rust Unit Tests** | 6 Anchor Program Tests          | All 6 tests pass in $< 0.1\text{s}$                                                    |
-| **Vitest Suite**    | 39+ Integration Tests           | All tests pass in $< 1.5\text{s}$                                                      |
-| **Integer Scaling** | Lossless $10^4$ Conversion      | Zero rounding dust, no JS `number` precision leaks                                     |
-| **KMS HSM Signing** | Ed25519 Message Authentication  | Private keys never touch memory in production; 64-byte Ed25519 signatures verified     |
-| **Extensions**      | Token-2022 Protocol Constraints | `NonTransferable`, `PermissionedBurn`, `PermanentDelegate`, `MetadataPointer` enforced |
-| **Replay Guards**   | Permanent PDAs                  | `ClaimReceipt` and `OrderReceipt` accounts prevent double-settlement                   |
+| Verification Check     | Target Standard                 | Expected Outcome                                                                       |
+| :--------------------- | :------------------------------ | :------------------------------------------------------------------------------------- |
+| **Rust Unit Tests**    | 6 Anchor Program Tests          | All 6 tests pass in $< 0.1\text{s}$                                                    |
+| **Vitest Suite**       | 51+ Integration Tests           | All tests pass in $< 1.5\text{s}$                                                      |
+| **Integer Scaling**    | Lossless $10^4$ Conversion      | Zero rounding dust, no JS `number` precision leaks                                     |
+| **KMS HSM Signing**    | Ed25519 Message Authentication  | Private keys never touch memory in production; 64-byte Ed25519 signatures verified     |
+| **CU & Priority Fees** | Dynamic Profiling & 65th Pct    | CU limits at index 0, priority fee at index 1, bounds clamped [5k, 2M] micro-lamports  |
+| **Geyser Failover**    | 3-Tier Resilient Ingestion      | Sub-slot push via Yellowstone gRPC with automatic WebSocket & polling failover         |
+| **Extensions**         | Token-2022 Protocol Constraints | `NonTransferable`, `PermissionedBurn`, `PermanentDelegate`, `MetadataPointer` enforced |
+| **Replay Guards**      | Permanent PDAs                  | `ClaimReceipt` and `OrderReceipt` accounts prevent double-settlement                   |
