@@ -22,6 +22,12 @@ import {
 } from '@/lib/solana/esms'
 import ASOL_PROGRAM_IDL from '@/lib/solana/idl/asol_program.json'
 import type { AsolProgram } from '@/lib/solana/idl/asol_program'
+import {
+  estimatePriorityFee,
+  injectComputeBudgetInstructions,
+  resolveComputeUnitLimit,
+  type PriorityFeeOptions,
+} from '@/lib/solana/priority-fee'
 
 const MAX_U64 = (1n << 64n) - 1n
 const DEFAULT_RPC = 'https://api.devnet.solana.com'
@@ -45,6 +51,7 @@ export interface AsolSolanaClientOptions {
   connection?: Connection
   confirmOptions?: ConfirmOptions
   onTransactionConfirmed?: (transaction: AsolSolanaTransaction) => void | Promise<void>
+  priorityFee?: PriorityFeeOptions
 }
 
 export interface AsolSolanaWallet {
@@ -80,6 +87,7 @@ export class AsolSolanaClient {
   readonly programConfig: PublicKey
   readonly mints: readonly PublicKey[]
   private readonly onTransactionConfirmed?: AsolSolanaClientOptions['onTransactionConfirmed']
+  private readonly priorityFeeOptions?: PriorityFeeOptions
 
   constructor(options: AsolSolanaClientOptions) {
     this.connection =
@@ -90,6 +98,7 @@ export class AsolSolanaClient {
       )
     this.wallet = options.wallet
     this.onTransactionConfirmed = options.onTransactionConfirmed
+    this.priorityFeeOptions = options.priorityFee
     const provider = new AnchorProvider(
       this.connection,
       options.wallet,
@@ -243,12 +252,26 @@ export class AsolSolanaClient {
     type: AsolSolanaTransactionType,
     instructions: readonly TransactionInstruction[]
   ): Promise<string> {
+    const writableAccounts = instructions.flatMap(ix =>
+      ix.keys.filter(k => k.isWritable).map(k => k.pubkey)
+    )
+    const priorityFee = await estimatePriorityFee(
+      this.connection,
+      writableAccounts,
+      this.priorityFeeOptions
+    ).catch(() => 5_000n)
+    const units = resolveComputeUnitLimit(type)
+    const computeBudgetedInstructions = injectComputeBudgetInstructions(instructions, {
+      units,
+      microLamports: priorityFee,
+    })
+
     const latest = await this.connection.getLatestBlockhash('confirmed')
     const transaction = new Transaction({
       feePayer: this.wallet.publicKey,
       blockhash: latest.blockhash,
       lastValidBlockHeight: latest.lastValidBlockHeight,
-    }).add(...instructions)
+    }).add(...computeBudgetedInstructions)
     const signed = await this.wallet.signTransaction(transaction)
     const signature = await this.connection.sendRawTransaction(signed.serialize())
     await this.connection.confirmTransaction({ signature, ...latest }, 'confirmed')

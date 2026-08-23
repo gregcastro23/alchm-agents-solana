@@ -26,34 +26,75 @@ The **AlchmAgentsSolana (`ASOL`)** architecture orchestrates high-throughput, lo
 ├──────────────────────────────┬──────────────────────────────┬──────────────────────────┤
 │ Phase 1: Governance & KMS    │ Phase 2: Network Resiliency  │ Phase 3: Storefront UI   │
 │ Prompt 1: Squads & Cloud KMS │ Prompt 2: Priority Fees & RPC│ Prompt 3: ShopClient.tsx │
+│ [STATUS: COMPLETED (PR #4)]  │ [STATUS: READY / NEXT]       │ [STATUS: QUEUED]         │
 ├──────────────────────────────┼──────────────────────────────┼──────────────────────────┤
 │ Phase 4: Metadata & Build    │ Phase 5: StarVault Staking   │ Phase 6: Constellation   │
 │ Prompt 4: Arweave & Verify   │ Prompt 5: Checkpointed Yield │ Prompt 6: AMM & Deeds    │
+│ [STATUS: QUEUED]             │ [STATUS: QUEUED]             │ [STATUS: QUEUED]         │
 ├──────────────────────────────┴──────────────────────────────┴──────────────────────────┤
-│ Phase 7: Mainnet Deployment, Live Rehearsal & Verification Runbook (Prompt 7)          │
+│ Phase 7: Mainnet Deployment, Live Rehearsal & Verification Runbook (Prompt 7) [QUEUED] │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
+### Migration Progress & Phase Status
+
+| Phase       | Title                                  | Target Scope                                            | Status        | References / PR                                                                        |
+| :---------- | :------------------------------------- | :------------------------------------------------------ | :------------ | :------------------------------------------------------------------------------------- |
+| **Phase 1** | Governance & Cloud KMS Key Management  | AWS KMS / GCP KMS HSM Signer, Squads v4 Runbook         | **COMPLETED** | [PR #4](https://github.com/gregcastro23/alchm-agents-solana/pull/4) / Commit `aa782d3` |
+| **Phase 2** | Network Resiliency & Dynamic Fees      | CU Budgeting, Priority Fees, Yellowstone Geyser         | **COMPLETED** | `lib/solana/priority-fee.ts`                                                           |
+| **Phase 3** | Storefront & Detached Checkout         | Dual-rail Shop, detached Ed25519 redeem_for_esms        | **QUEUED**    | `components/shop/ShopClient.tsx`                                                       |
+| **Phase 4** | Token-2022 Metadata & Verifiable Build | Arweave metadata, reproducible Docker Anchor build      | **QUEUED**    | `metadata/solana/*.json`                                                               |
+| **Phase 5** | StarVault Staking & Yield Claims       | Time-weighted element lockups, yield checkpoints        | **QUEUED**    | `programs/asol_program/src/instructions/stake.rs`                                      |
+| **Phase 6** | Constellation Deeds & AMM Bonding      | Fractional agent deeds, Constant Product AMM            | **QUEUED**    | `programs/asol_program/src/instructions/amm.rs`                                        |
+| **Phase 7** | Mainnet Deployment & Live Rehearsal    | Mainnet deployment runbook, Genesis check, Verification | **QUEUED**    | `scripts/deploy/deploy-mainnet.sh`                                                     |
+
 ---
 
-## Prompt 1 — Governance & Cloud KMS Key Management (Phase 1)
+## Prompt 1 — Governance & Cloud KMS Key Management (Phase 1) [COMPLETED — PR #4]
 
 ### Context & Architectural Seams
 
-Currently, the backend minter ([`lib/solana/solana-minter.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/solana-minter.ts)) and bridge service ([`lib/solana/bridge-service.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/bridge-service.ts)) read raw private key bytes from `SOLANA_AGENT_PAYER_KEY` or disk (`~/.config/solana/id.json`). For Mainnet production, private keys must never touch application memory or persistent disk. Instead, automated workers use **Cloud KMS HSM** (AWS KMS / GCP Cloud KMS) via asymmetric Ed25519 signing APIs, while program ownership is transferred to a **Squads v4 Multisig** vault.
+The backend minter ([`lib/solana/solana-minter.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/solana-minter.ts)) and bridge service ([`lib/solana/bridge-service.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/bridge-service.ts)) historically read raw private key bytes from `SOLANA_AGENT_PAYER_KEY` or disk (`~/.config/solana/id.json`). For Mainnet production, private keys must never touch application memory or persistent disk.
 
-### Target Files
+Phase 1 introduced **Cloud KMS HSM** (AWS KMS / GCP Cloud KMS) via asymmetric Ed25519 signing APIs, while establishing the **Squads v4 Multisig** governance transition runbook.
 
-- `[NEW]` `lib/solana/kms-signer.ts` — Cloud KMS Ed25519 signer implementing `AsolSolanaWallet`.
-- `[MODIFY]` `lib/solana/solana-minter.ts` — Use KMS signer with devnet fallback.
-- `[MODIFY]` `lib/solana/bridge-service.ts` — Use KMS signer for relay transactions.
-- `[NEW]` `scripts/governance/squads-multisig-runbook.ts` — Squads v4 proposal generator for authority handover.
-- `[NEW]` `test/solana/kms-signer.spec.ts` — Unit & integration tests with mocked KMS client.
+### Implemented Deliverables
+
+- `[NEW]` [`lib/solana/kms-signer.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/kms-signer.ts) — Cloud KMS Ed25519 signer implementing `AsolSolanaWallet` for `aws`, `gcp`, and `local` keypair fallback with production guards.
+- `[MODIFY]` [`lib/solana/solana-minter.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/solana-minter.ts) — Migrated `mintEsmsClaimSolana` to use `getSolanaServiceSigner()` with asynchronous `signer.signTransaction(tx)`.
+- `[MODIFY]` [`lib/solana/bridge-service.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/bridge-service.ts) — Exported `resolveSolanaBridgeSigner` and `createSolanaBridgeClient` for Cloud KMS bridge relays.
+- `[MODIFY]` [`scripts/run-asol-solana-service.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/scripts/run-asol-solana-service.ts) — Wired KMS signer resolution into service runners.
+- `[MODIFY]` [`lib/jepa/onchain-sync.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/jepa/onchain-sync.ts) — Cleaned client imports for dual-chain JEPA anchoring.
+- `[NEW]` [`scripts/governance/squads-multisig-runbook.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/scripts/governance/squads-multisig-runbook.ts) — Squads v4 proposal & PDA generator, BPF Loader Upgradeable authority transfer instruction, and `asol_program.set_service_authorities` Anchor instruction builder.
+- `[NEW]` [`test/solana/kms-signer.spec.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/test/solana/kms-signer.spec.ts) — 11 unit & integration tests validating AWS KMS, GCP KMS, TweetNaCl verification, fallback guards, and Squads v4 PDAs.
+
+### Architectural Insights & Lessons Learned
+
+1. **Lightweight Pluggable KMS Clients Without Bloat:**
+   - Dynamic optional imports (`@aws-sdk/client-kms`, `@google-cloud/kms`) allow runtime instantiation without imposing heavy mandatory bundle dependencies.
+   - Injectable client interfaces (`AwsKmsClientLike`, `GcpKmsClientLike`) ensure 100% test isolation without requiring active cloud credentials during CI.
+
+2. **Dual Transaction Serialization Invariants:**
+   - **Legacy `Transaction`:** Uses `tx.serializeMessage()`, submits raw message bytes to Ed25519 `Sign`, and applies signature via `tx.addSignature(publicKey, signature)`.
+   - **`VersionedTransaction` (v0):** Uses `tx.message.serialize()`, locates the public key index in `tx.message.staticAccountKeys`, and assigns the 64-byte signature into `tx.signatures[signerIndex]`.
+
+3. **Zero-Secret In-Memory Rule in Production:**
+   - `getSolanaServiceSigner()` throws an explicit error if running under `NODE_ENV=production` without `AWS_KMS_KEY_ID` or `GCP_KMS_KEY_NAME`, preventing accidental secret key leaks.
+   - In non-production environments, it smoothly falls back to local keypair resolution (`SOLANA_AGENT_PAYER_KEY` or `~/.config/solana/id.json`) to maintain local test and development velocity.
+
+4. **Squads v4 Multisig Invariants:**
+   - Program ID: `SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pcf`.
+   - Multisig PDA: `seeds = [b"multisig", create_key]`.
+   - Vault PDA: `seeds = [b"multisig", multisig_pda, &[vault_index]]`.
+   - Proposal PDA: `seeds = [b"multisig", multisig_pda, b"proposal", &u64_le]`.
+   - Transaction PDA: `seeds = [b"multisig", multisig_pda, b"transaction", &u64_le]`.
+   - BPF Loader Upgradeable `ProgramData` address: `findProgramAddressSync([program_id], BPFLoaderUpgradeab1e11111111111111111111111)`.
+   - `asol_program.set_service_authorities` discriminator: `[42, 156, 68, 130, 225, 158, 43, 33]`.
 
 ### Prompt 1 (XML Structured)
 
 ```xml
-<prompt id="asol-phase-1-kms-governance">
+<prompt id="asol-phase-1-kms-governance" status="completed" pr="4">
   <context>
     <repository>AlchmAgentsSolana (ASOL)</repository>
     <program_id>5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD</program_id>
@@ -571,8 +612,8 @@ The final phase executes the Mainnet deployment of `asol_program`, initializes t
   <testing_and_verification>
     1. Perform full dry-run simulation against Localnet / Devnet:
        `ANCHOR_PROVIDER_URL=https://api.devnet.solana.com bun run scripts/deploy/init-mainnet.ts --dry-run`
-    2. Confirm all 34 unit and integration tests pass:
-       `bun test:solana && bunx vitest run test/solana/golden-vectors.spec.ts test/solana/solana-minter.spec.ts test/solana/sync-and-wallet.spec.ts test/solana/production-integration.spec.ts --config vitest.solana.config.ts`
+    2. Confirm all unit and integration tests pass:
+       `bun test:solana && bunx vitest run test/solana/golden-vectors.spec.ts test/solana/solana-minter.spec.ts test/solana/kms-signer.spec.ts test/solana/sync-and-wallet.spec.ts test/solana/production-integration.spec.ts --config vitest.solana.config.ts`
   </testing_and_verification>
 </prompt>
 ```
@@ -590,6 +631,7 @@ bun run test:solana
 # Full TypeScript Vitest suite
 bunx vitest run test/solana/golden-vectors.spec.ts \
                 test/solana/solana-minter.spec.ts \
+                test/solana/kms-signer.spec.ts \
                 test/solana/sync-and-wallet.spec.ts \
                 test/solana/production-integration.spec.ts \
                 --config vitest.solana.config.ts
@@ -598,7 +640,8 @@ bunx vitest run test/solana/golden-vectors.spec.ts \
 | Verification Check  | Target Standard                 | Expected Outcome                                                                       |
 | :------------------ | :------------------------------ | :------------------------------------------------------------------------------------- |
 | **Rust Unit Tests** | 6 Anchor Program Tests          | All 6 tests pass in $< 0.1\text{s}$                                                    |
-| **Vitest Suite**    | 28+ Integration Tests           | All tests pass in $< 1.0\text{s}$                                                      |
+| **Vitest Suite**    | 39+ Integration Tests           | All tests pass in $< 1.5\text{s}$                                                      |
 | **Integer Scaling** | Lossless $10^4$ Conversion      | Zero rounding dust, no JS `number` precision leaks                                     |
+| **KMS HSM Signing** | Ed25519 Message Authentication  | Private keys never touch memory in production; 64-byte Ed25519 signatures verified     |
 | **Extensions**      | Token-2022 Protocol Constraints | `NonTransferable`, `PermissionedBurn`, `PermanentDelegate`, `MetadataPointer` enforced |
 | **Replay Guards**   | Permanent PDAs                  | `ClaimReceipt` and `OrderReceipt` accounts prevent double-settlement                   |
