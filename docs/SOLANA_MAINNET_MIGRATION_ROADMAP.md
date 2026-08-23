@@ -41,7 +41,7 @@ The **AlchmAgentsSolana (`ASOL`)** architecture orchestrates high-throughput, lo
 | Phase       | Title                                  | Target Scope                                            | Status        | References / PR                                                                        |
 | :---------- | :------------------------------------- | :------------------------------------------------------ | :------------ | :------------------------------------------------------------------------------------- |
 | **Phase 1** | Governance & Cloud KMS Key Management  | AWS KMS / GCP KMS HSM Signer, Squads v4 Runbook         | **COMPLETED** | [PR #4](https://github.com/gregcastro23/alchm-agents-solana/pull/4) / Commit `aa782d3` |
-| **Phase 2** | Network Resiliency & Dynamic Fees      | CU Budgeting, Priority Fees, Yellowstone Geyser         | **COMPLETED** | `lib/solana/priority-fee.ts`                                                           |
+| **Phase 2** | Network Resiliency & Dynamic Fees      | CU Budgeting, Priority Fees, Yellowstone Geyser         | **COMPLETED** | [PR #5](https://github.com/gregcastro23/alchm-agents-solana/pull/5) / Commit `563a807` |
 | **Phase 3** | Storefront & Detached Checkout         | Dual-rail Shop, detached Ed25519 redeem_for_esms        | **QUEUED**    | `components/shop/ShopClient.tsx`                                                       |
 | **Phase 4** | Token-2022 Metadata & Verifiable Build | Arweave metadata, reproducible Docker Anchor build      | **QUEUED**    | `metadata/solana/*.json`                                                               |
 | **Phase 5** | StarVault Staking & Yield Claims       | Time-weighted element lockups, yield checkpoints        | **QUEUED**    | `programs/asol_program/src/instructions/stake.rs`                                      |
@@ -156,7 +156,7 @@ Phase 1 introduced **Cloud KMS HSM** (AWS KMS / GCP Cloud KMS) via asymmetric Ed
 
 ---
 
-## Prompt 2 — Network Resiliency, Dynamic Priority Fees & Geyser Failover (Phase 2)
+## Prompt 2 — Network Resiliency, Dynamic Priority Fees & Geyser Failover (Phase 2) [COMPLETED — PR #5]
 
 ### Context & Architectural Seams
 
