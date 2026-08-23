@@ -11,9 +11,12 @@ import { ASOL_SOLANA_PROGRAM_ID, AAE_SOLANA_PROGRAM_ID } from '@/lib/solana/esms
 import ASOL_PROGRAM_IDL from '@/lib/solana/idl/asol_program.json'
 import {
   createResilientSolanaLogSubscription,
+  createResilientStreamSubscription,
   resolveSolanaRpcUrls,
   solanaSlotToBigInt,
   type SolanaServiceHealth,
+  type SolanaGeyserConfig,
+  type YellowstoneGeyserClientLike,
 } from '@/lib/solana/rpc-failover'
 
 export { solanaSlotToBigInt } from '@/lib/solana/rpc-failover'
@@ -495,13 +498,18 @@ export function startSolanaSyncOutboxPolling(args: {
   }
 }
 
-export function startSolanaSyncService(args: {
+export interface SolanaSyncServiceOptions {
   store: SolanaSyncStore
   onEvent?: (event: AaeSolanaSyncEvent) => Promise<void>
   connection?: Connection
   programId?: PublicKey
   rpcUrls?: readonly string[]
-}): SolanaSyncSubscription {
+  geyserEndpoint?: string
+  geyserXToken?: string
+  geyserClientFactory?: (config: SolanaGeyserConfig) => YellowstoneGeyserClientLike
+}
+
+export function startSolanaSyncService(args: SolanaSyncServiceOptions): SolanaSyncSubscription {
   const onEvent =
     args.onEvent ?? (async event => console.log('[SolanaSync]', encodeSolanaSyncBody(event)))
   const processBatch = createSolanaSyncBatchProcessor({ store: args.store, onEvent })
@@ -527,6 +535,9 @@ export function startSolanaSyncService(args: {
       connection: args.connection,
       programId: args.programId,
       rpcUrls: args.rpcUrls,
+      geyserEndpoint: args.geyserEndpoint,
+      geyserXToken: args.geyserXToken,
+      geyserClientFactory: args.geyserClientFactory,
       onConnectionReady: async connection => {
         const durableCursor = (await args.store.getLastProcessedSlot?.()) ?? null
         const cursor = durableCursor ?? observedCursorSlot
@@ -570,8 +581,7 @@ export interface SolanaSyncSubscription {
 }
 
 /**
- * Subscribe to AAE program logs. Transaction decoding and persistence are
- * added below; this shell keeps the same WebSocket lifecycle as Pentacles.
+ * Subscribe to AAE program logs with Yellowstone Geyser -> WebSocket -> Polling failover.
  */
 export function listenToSolanaEvents(
   onLogs: (logs: Logs, slot: bigint) => Promise<void>,
@@ -579,15 +589,21 @@ export function listenToSolanaEvents(
     connection?: Connection
     programId?: PublicKey
     rpcUrls?: readonly string[]
+    geyserEndpoint?: string
+    geyserXToken?: string
+    geyserClientFactory?: (config: SolanaGeyserConfig) => YellowstoneGeyserClientLike
     onConnectionReady?: (connection: Connection, reconnected: boolean) => Promise<void>
   } = {}
 ): SolanaSyncSubscription {
   const programId = options.programId ?? AAE_SOLANA_PROGRAM_ID
-  const subscription = createResilientSolanaLogSubscription({
+  const subscription = createResilientStreamSubscription({
     programId,
     onLogs: (logs, slot) => onLogs(logs, solanaSlotToBigInt(slot)),
     connection: options.connection,
     rpcUrls: options.rpcUrls ?? resolveSolanaRpcUrls(),
+    geyserEndpoint: options.geyserEndpoint,
+    geyserXToken: options.geyserXToken,
+    geyserClientFactory: options.geyserClientFactory,
     onConnectionReady: options.onConnectionReady,
   })
   return {

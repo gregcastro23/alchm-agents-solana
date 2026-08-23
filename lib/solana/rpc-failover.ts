@@ -9,13 +9,39 @@ export type SolanaConnectionStatus =
   | 'degraded'
   | 'stopped'
 
+export type StreamIngestionTier = 'geyser' | 'websocket' | 'polling'
+
 export interface SolanaServiceHealth {
   connectionStatus: SolanaConnectionStatus
   activeRpc: string | null
+  activeTier?: StreamIngestionTier
   reconnectAttempts: number
   queueDepth: number
   lastProcessedSlot: bigint | null
   lastError: string | null
+}
+
+export interface SolanaGeyserConfig {
+  endpoint: string | null
+  xToken: string | null
+}
+
+export function resolveSolanaGeyserConfig(overrides?: {
+  endpoint?: string
+  xToken?: string
+}): SolanaGeyserConfig {
+  const endpoint =
+    overrides?.endpoint ??
+    process.env.SOLANA_GEYSER_ENDPOINT ??
+    process.env.HELIUS_GEYSER_ENDPOINT ??
+    null
+  const xToken =
+    overrides?.xToken ??
+    process.env.SOLANA_GEYSER_X_TOKEN ??
+    process.env.HELIUS_GEYSER_X_TOKEN ??
+    process.env.HELIUS_API_KEY ??
+    null
+  return { endpoint, xToken }
 }
 
 export function resolveSolanaRpcUrls(
@@ -101,6 +127,7 @@ export function createResilientSolanaLogSubscription(args: {
   connectionFactory?: (rpcUrl: string) => Connection
   heartbeatMs?: number
   onConnectionReady?: (connection: Connection, reconnected: boolean) => Promise<void>
+  onDegradedOrFailed?: (error: unknown) => void
 }): ResilientSolanaSubscription {
   const urls = args.connection ? [args.connection.rpcEndpoint] : [...(args.rpcUrls ?? [])]
   if (urls.length === 0) urls.push(...resolveSolanaRpcUrls())
@@ -220,6 +247,7 @@ export function createResilientSolanaLogSubscription(args: {
     if (stopped || reconnectTimer || connectionStatus === 'reconnecting') return
     lastError = error instanceof Error ? error.message : String(error)
     connectionStatus = 'reconnecting'
+    args.onDegradedOrFailed?.(error)
     await removeSubscription()
     endpointIndex = (endpointIndex + 1) % urls.length
     const delay = reconnectDelayMs(reconnectAttempts)
@@ -242,6 +270,7 @@ export function createResilientSolanaLogSubscription(args: {
     getHealth: () => ({
       connectionStatus,
       activeRpc: rpcEndpointLabel(connection.rpcEndpoint),
+      activeTier: 'websocket',
       reconnectAttempts,
       queueDepth: 0,
       lastProcessedSlot,
@@ -253,6 +282,248 @@ export function createResilientSolanaLogSubscription(args: {
       if (reconnectTimer) clearTimeout(reconnectTimer)
       reconnectTimer = null
       await removeSubscription()
+    },
+  }
+}
+
+export interface GeyserTransactionUpdate {
+  signature: string
+  slot: number | bigint
+  err?: unknown
+  logs?: string[]
+}
+
+export interface YellowstoneGeyserClientLike {
+  subscribe(args: {
+    programId: PublicKey
+    onTransaction: (update: GeyserTransactionUpdate) => Promise<void> | void
+    onError: (error: unknown) => void
+  }): Promise<{ unsubscribe: () => Promise<void> | void }>
+}
+
+export interface ResilientStreamSubscriptionOptions {
+  programId: PublicKey
+  onLogs: (logs: Logs, slot: number) => Promise<void>
+  rpcUrls?: readonly string[]
+  connection?: Connection
+  connectionFactory?: (rpcUrl: string) => Connection
+  geyserEndpoint?: string
+  geyserXToken?: string
+  geyserClientFactory?: (config: SolanaGeyserConfig) => YellowstoneGeyserClientLike
+  heartbeatMs?: number
+  pollingIntervalMs?: number
+  onConnectionReady?: (connection: Connection, reconnected: boolean) => Promise<void>
+}
+
+export interface ResilientStreamSubscription extends ResilientSolanaSubscription {
+  readonly activeTier: StreamIngestionTier
+}
+
+/**
+ * Three-tier resilient subscription for Solana events:
+ * Tier 1 (Primary): Yellowstone gRPC Geyser stream (low-latency push)
+ * Tier 2 (Secondary fallback): WebSocket onLogs subscription with multi-RPC failover
+ * Tier 3 (Tertiary fallback): Polling backfill via getSignaturesForAddress
+ */
+export function createResilientStreamSubscription(
+  options: ResilientStreamSubscriptionOptions
+): ResilientStreamSubscription {
+  const geyserConfig = resolveSolanaGeyserConfig({
+    endpoint: options.geyserEndpoint,
+    xToken: options.geyserXToken,
+  })
+
+  let activeTier: StreamIngestionTier = geyserConfig.endpoint ? 'geyser' : 'websocket'
+  let connectionStatus: SolanaConnectionStatus = 'connecting'
+  let lastError: string | null = null
+  let lastProcessedSlot: bigint | null = null
+  let reconnectAttempts = 0
+  let stopped = false
+
+  let activeGeyserUnsub: (() => Promise<void> | void) | null = null
+  let websocketSub: ResilientSolanaSubscription | null = null
+  let pollingTimer: ReturnType<typeof setInterval> | null = null
+  let pollingActive = false
+
+  const urls = options.connection ? [options.connection.rpcEndpoint] : [...(options.rpcUrls ?? [])]
+  if (urls.length === 0) urls.push(...resolveSolanaRpcUrls())
+  const connectionFactory =
+    options.connectionFactory ?? ((rpcUrl: string) => new Connection(rpcUrl, 'finalized'))
+  const baseConnection = options.connection ?? connectionFactory(urls[0])
+
+  const handleIncomingLogs = async (logs: Logs, slot: number) => {
+    if (stopped) return
+    try {
+      await options.onLogs(logs, slot)
+      lastProcessedSlot = solanaSlotToBigInt(slot)
+      connectionStatus = 'connected'
+      lastError = null
+    } catch (error) {
+      lastError = error instanceof Error ? error.message : String(error)
+      throw error
+    }
+  }
+
+  const startPollingFallback = () => {
+    if (pollingTimer || stopped) return
+    activeTier = 'polling'
+    connectionStatus = 'degraded'
+    const pollSignatures = async () => {
+      if (pollingActive || stopped) return
+      pollingActive = true
+      try {
+        const signatures = await baseConnection.getSignaturesForAddress(
+          options.programId,
+          { limit: 20 },
+          'finalized'
+        )
+        for (const entry of signatures.reverse()) {
+          if (entry.err) continue
+          const entrySlot = solanaSlotToBigInt(entry.slot)
+          if (lastProcessedSlot !== null && entrySlot <= lastProcessedSlot) continue
+          await handleIncomingLogs(
+            { err: entry.err, logs: entry.memo ? [entry.memo] : [], signature: entry.signature },
+            entry.slot
+          )
+        }
+      } catch (err) {
+        lastError = err instanceof Error ? err.message : String(err)
+      } finally {
+        pollingActive = false
+      }
+    }
+    pollingTimer = setInterval(() => void pollSignatures(), options.pollingIntervalMs ?? 5_000)
+    void pollSignatures()
+  }
+
+  const stopPolling = () => {
+    if (pollingTimer) clearInterval(pollingTimer)
+    pollingTimer = null
+  }
+
+  const startWebSocketTier = () => {
+    if (websocketSub || stopped) return
+    activeTier = 'websocket'
+    connectionStatus = 'connecting'
+    websocketSub = createResilientSolanaLogSubscription({
+      programId: options.programId,
+      onLogs: handleIncomingLogs,
+      rpcUrls: urls,
+      connection: options.connection,
+      connectionFactory: options.connectionFactory,
+      heartbeatMs: options.heartbeatMs,
+      onConnectionReady: options.onConnectionReady,
+      onDegradedOrFailed: error => {
+        reconnectAttempts += 1
+        lastError = error instanceof Error ? error.message : String(error)
+        if (reconnectAttempts > 3 && !pollingTimer) {
+          startPollingFallback()
+        }
+      },
+    })
+  }
+
+  const stopWebSocketTier = async () => {
+    if (websocketSub) {
+      const sub = websocketSub
+      websocketSub = null
+      await sub.stop()
+    }
+  }
+
+  const startGeyserTier = async () => {
+    if (!geyserConfig.endpoint || stopped) {
+      startWebSocketTier()
+      return
+    }
+
+    try {
+      activeTier = 'geyser'
+      connectionStatus = 'connecting'
+      const client = options.geyserClientFactory ? options.geyserClientFactory(geyserConfig) : null
+
+      if (!client) {
+        // If no factory provided, fall back to WebSocket tier gracefully
+        startWebSocketTier()
+        return
+      }
+
+      const subscription = await client.subscribe({
+        programId: options.programId,
+        onTransaction: async update => {
+          if (update.err) return
+          await handleIncomingLogs(
+            {
+              err: update.err ?? null,
+              logs: update.logs ?? [],
+              signature: update.signature,
+            },
+            Number(update.slot)
+          )
+        },
+        onError: async err => {
+          lastError = err instanceof Error ? err.message : String(err)
+          reconnectAttempts += 1
+          if (activeGeyserUnsub) {
+            try {
+              await activeGeyserUnsub()
+            } catch {
+              // ignore
+            }
+            activeGeyserUnsub = null
+          }
+          startWebSocketTier()
+        },
+      })
+      activeGeyserUnsub = subscription.unsubscribe
+      connectionStatus = 'connected'
+      lastError = null
+    } catch (err) {
+      lastError = err instanceof Error ? err.message : String(err)
+      startWebSocketTier()
+    }
+  }
+
+  void startGeyserTier()
+
+  return {
+    get connection() {
+      return websocketSub?.connection ?? baseConnection
+    },
+    get subscriptionId() {
+      return websocketSub?.subscriptionId ?? -1
+    },
+    get activeTier() {
+      return activeTier
+    },
+    getHealth: () => {
+      const wsHealth = websocketSub?.getHealth()
+      return {
+        connectionStatus: wsHealth ? wsHealth.connectionStatus : connectionStatus,
+        activeRpc:
+          activeTier === 'geyser'
+            ? rpcEndpointLabel(geyserConfig.endpoint ?? 'geyser')
+            : (wsHealth?.activeRpc ?? rpcEndpointLabel(baseConnection.rpcEndpoint)),
+        activeTier,
+        reconnectAttempts: wsHealth ? wsHealth.reconnectAttempts : reconnectAttempts,
+        queueDepth: 0,
+        lastProcessedSlot: lastProcessedSlot ?? wsHealth?.lastProcessedSlot ?? null,
+        lastError: lastError ?? wsHealth?.lastError ?? null,
+      }
+    },
+    stop: async () => {
+      stopped = true
+      connectionStatus = 'stopped'
+      stopPolling()
+      if (activeGeyserUnsub) {
+        try {
+          await activeGeyserUnsub()
+        } catch {
+          // ignore
+        }
+        activeGeyserUnsub = null
+      }
+      await stopWebSocketTier()
     },
   }
 }
