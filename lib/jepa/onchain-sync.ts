@@ -11,7 +11,7 @@ import { createWalletClient, http, publicActions, type Hex } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
 import { baseSepolia } from 'viem/chains'
 
-import { AsolSolanaClient } from '@/lib/solana/asol-solana-client'
+import { AsolSolanaClient, AaeSolanaClient } from '@/lib/solana/asol-solana-client'
 import { solanaAgentIdBytes } from '@/lib/solana/agent-metadata'
 import { resolveSolanaRpcUrls, withSolanaRpcFailover } from '@/lib/solana/rpc-failover'
 import { AsyncCosmicContextEncoder } from '@/lib/jepa/cosmic-context-encoder'
