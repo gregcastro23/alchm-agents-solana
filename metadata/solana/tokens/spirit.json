@@ -1,0 +1,25 @@
+{
+  "name": "Spirit",
+  "symbol": "SPIRIT",
+  "description": "Elemental Spirit token of the Alchm protocol representing the Fire axis (Sun / Volatile). Governs projective dynamic energy, creative initiative, and JEPA latent persona drive vectors.",
+  "image": null,
+  "decimals": 4,
+  "attributes": [
+    {
+      "trait_type": "Element",
+      "value": "Fire"
+    },
+    {
+      "trait_type": "Decimals",
+      "value": 4
+    },
+    {
+      "trait_type": "Soulbound",
+      "value": "Non-Transferable"
+    },
+    {
+      "trait_type": "BurnAuthority",
+      "value": "Permissioned"
+    }
+  ]
+}

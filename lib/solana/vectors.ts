@@ -4,6 +4,15 @@ import { encodeAbiParameters, keccak256 } from 'viem'
 export const ESMS_DECIMALS = 4 as const
 export const MAX_LEDGER_ATOMS = 999_999_999_999n
 
+export const ESMS_NAMES = ['Spirit', 'Essence', 'Matter', 'Substance'] as const
+export const ESMS_SYMBOLS = ['SPIRIT', 'ESSENCE', 'MATTER', 'SUBSTANCE'] as const
+export const ESMS_METADATA_URIS = [
+  'https://alchm.kitchen/metadata/esms/spirit.json',
+  'https://alchm.kitchen/metadata/esms/essence.json',
+  'https://alchm.kitchen/metadata/esms/matter.json',
+  'https://alchm.kitchen/metadata/esms/substance.json',
+] as const
+
 const PERSONA_DOMAIN = Buffer.from('ASOL_PERSONA_V1', 'utf8')
 const EPOCH_DOMAIN = Buffer.from('ASOL_EPOCH_V1', 'utf8')
 

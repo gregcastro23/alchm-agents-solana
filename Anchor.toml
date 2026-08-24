@@ -12,6 +12,9 @@ asol_program = "5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD"
 [programs.devnet]
 asol_program = "5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD"
 
+[programs.mainnet]
+asol_program = "5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD"
+
 [provider]
 cluster = "Localnet"
 wallet = "~/.config/solana/id.json"

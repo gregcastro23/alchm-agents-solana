@@ -339,21 +339,32 @@ The digital shop ([`components/shop/ShopClient.tsx`](file:///Users/cookingwithca
 
 ---
 
-## Prompt 4 — Mainnet Token-2022 Metadata & Verifiable Anchor Builds (Phase 4) [READY / NEXT]
+## Prompt 4 — Mainnet Token-2022 Metadata & Verifiable Anchor Builds (Phase 4) [COMPLETED]
 
 ### Context & Architectural Seams
 
-The 4 ESMS mints on Devnet currently point to placeholder URIs (`https://alchm.kitchen/metadata/esms/*.json`). For Mainnet, metadata schemas and elemental iconography must be permanently registered on **Arweave** (via Irys/Bundlr) and embedded in the Token-2022 mint accounts. Furthermore, the Anchor program bytecode must be reproducibly built and verified using `solana-verify`.
+The 4 ESMS mints carry placeholder URIs (`https://alchm.kitchen/metadata/esms/*.json`) in `programs/asol_program/src/constants.rs:24`. Mainnet requires permanent Arweave URIs uploaded via Irys before Mainnet mints are initialized.
+
+**Consensus-Critical Invariants:**
+
+1. `validate_existing_mint` (`instructions/esms.rs:483`) asserts `metadata.uri == ESMS_METADATA_URIS[mint_id]`, and `initialize_mints` routes every initialized mint through it.
+2. The program exposes **no metadata-update instruction** (`lib.rs` has 8 instructions; none calls `token_metadata_update_field`). A URI written at init is permanent.
+3. `esms_mint_fixed_account_len()` defines creation space (310 bytes), while `esms_mint_account_len()` (469–475 bytes with Arweave URIs) determines the rent-exempt funding basis.
+4. **Devnet Divergence Accepted (Option a):** The 4 ESMS mints on Devnet are PDAs at `[b"esms_mint", &[id]]` (`K5kwwomtWYydxJacA7bC5yUEW9TtEuVqBKBoqAWLmhQ`, `3FcpToU7bj4sLD687uecbesEjzjxBfqYn2EcBXJKPaCf`, `7naJZozLrknDF3dguAdEWn7Z4MviUkXitjhaAt57Vkb4`, `6RY6ZG1eJQ2uEvpyA6XK74WyF1MpTYbw97hdhELqDUsa`). Without a `CloseAuthority` extension, these cannot be closed or re-initialized with new URIs. Once `constants.rs` points to permanent Arweave URIs, `initialize_esms_mints` will permanently fail `validate_existing_mint` on Devnet. Devnet divergence is documented as retired-in-place. `claim_mint_esms` and `redeem_esms` remain fully functional because they do not call `validate_existing_mint`.
 
 ### Target Files
 
-- `[NEW]` `metadata/solana/spirit.json` — Token-2022 Metadata manifest for Spirit (Fire).
-- `[NEW]` `metadata/solana/essence.json` — Token-2022 Metadata manifest for Essence (Water).
-- `[NEW]` `metadata/solana/matter.json` — Token-2022 Metadata manifest for Matter (Earth).
-- `[NEW]` `metadata/solana/substance.json` — Token-2022 Metadata manifest for Substance (Air).
-- `[NEW]` `scripts/metadata/upload-arweave-metadata.ts` — Arweave upload automation via Irys.
+- `[NEW]` `metadata/solana/manifest.schema.json` — Token-2022 JSON Schema Draft-07 validator.
+- `[NEW]` `metadata/solana/tokens/{spirit,essence,matter,substance}.json` — Off-chain manifests (Fire/Water/Earth/Air).
+- `[NEW]` `metadata/solana/icons/{spirit,essence,matter,substance}.svg` — Self-contained elemental iconography.
+- `[NEW]` `metadata/solana/arweave-manifest.json` — Committed upload receipt tracking checksums and txIds.
+- `[NEW]` `lib/solana/irys-signer-adapter.ts` — KMS-to-Irys raw message signing adapter.
+- `[NEW]` `scripts/metadata/upload-arweave-metadata.ts` — Two-pass Irys upload automation (dry-run by default).
+- `[NEW]` `test/solana/metadata-uris.spec.ts` — Cross-language URI pinning, schema validation, and rent gate.
+- `[NEW]` `test/solana/upload-arweave-metadata.spec.ts` — Uploader logic and KMS adapter unit tests.
 - `[NEW]` `docs/deployment/VERIFIABLE_BUILD_RUNBOOK.md` — Reproducible Docker build guide.
-- `[MODIFY]` `Anchor.toml` — Mainnet configuration and verifiable settings.
+- `[MODIFY]` `Anchor.toml` — Add `[programs.mainnet]`.
+- `[MODIFY]` `lib/solana/vectors.ts` — Export `ESMS_NAMES`, `ESMS_SYMBOLS`, `ESMS_METADATA_URIS`.
 
 ### Prompt 4 (XML Structured)
 
@@ -361,56 +372,38 @@ The 4 ESMS mints on Devnet currently point to placeholder URIs (`https://alchm.k
 <prompt id="asol-phase-4-metadata-verifiable-build">
   <context>
     <repository>AlchmAgentsSolana (ASOL)</repository>
+    <repository_url>https://github.com/gregcastro23/alchm-agents-solana</repository_url>
     <program_id>5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD</program_id>
-    <runtime>Bun</runtime>
+    <runtime>Bun 1.3.13 | Anchor 0.30.1 | Solana 1.18.17 | Rust 1.79.0</runtime>
     <description>
       Phase 4 of the Solana Mainnet Migration: Create permanent Token-2022 Arweave metadata
-      manifests, upload tooling via Irys, and configure verifiable Anchor builds with solana-verify.
+      manifests in tokens/, upload tooling via Irys with KMS adapter, cross-language URI pinning test suite,
+      and reproducible verifiable Anchor build runbook.
     </description>
   </context>
 
   <task>
-    Create permanent Arweave metadata assets and configure verifiable Anchor builds for Mainnet.
+    Produce permanent Arweave metadata assets and a reproducible, independently verifiable Mainnet build.
   </task>
 
-  <target_files>
-    <file action="create">metadata/solana/spirit.json</file>
-    <file action="create">metadata/solana/essence.json</file>
-    <file action="create">metadata/solana/matter.json</file>
-    <file action="create">metadata/solana/substance.json</file>
-    <file action="create">scripts/metadata/upload-arweave-metadata.ts</file>
-    <file action="create">docs/deployment/VERIFIABLE_BUILD_RUNBOOK.md</file>
-    <file action="modify">Anchor.toml</file>
-  </target_files>
-
-  <technical_specifications>
-    <metadata_schemas>
-      1. Create JSON manifests in `metadata/solana/` for all 4 elements adhering to Token-2022 standards:
-         - `name`: "Spirit (ESMS)", "Essence (ESMS)", "Matter (ESMS)", "Substance (ESMS)"
-         - `symbol`: "SPIRIT", "ESSENCE", "MATTER", "SUBSTANCE"
-         - `description`: Detailed description of the element, alchemical axis, psychological and JEPA persona properties.
-         - `decimals`: 4
-         - `attributes`: `[{ "trait_type": "Element", "value": "..." }, { "trait_type": "Decimals", "value": 4 }, { "trait_type": "Soulbound", "value": "Non-Transferable" }, { "trait_type": "BurnAuthority", "value": "Permissioned" }]`
-      2. Implement `scripts/metadata/upload-arweave-metadata.ts`:
-         - Uses `@irys/sdk` to upload SVG icons and JSON manifests to Arweave.
-         - Returns permanent `https://arweave.net/<HASH>` URLs.
-         - Generates updated constants for `programs/asol_program/src/constants.rs`.
-    </metadata_schemas>
-
-    <verifiable_build>
-      1. Update `Anchor.toml`:
-         - Set `[programs.mainnet] asol_program = "5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD"`.
-         - Pin solana version `1.18.17` and anchor version `0.30.1`.
-      2. Create `docs/deployment/VERIFIABLE_BUILD_RUNBOOK.md`:
-         - Step-by-step instructions for `anchor build --verifiable`.
-         - Step-by-step instructions for `solana-verify verify-from-repo --program-id 5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD https://github.com/gregcastro23/AlchmAgentsSolana --mount-path programs/asol_program`.
-    </verifiable_build>
-  </technical_specifications>
-
-  <testing_and_verification>
-    1. Verify JSON syntax and schemas with `bunx prettier --check metadata/solana/*.json`.
-    2. Run golden vector tests to ensure URI constants match: `bun run test:solana`.
-  </testing_and_verification>
+  <invariants>
+    <invariant id="uri-immutability">
+      On-chain TokenMetadata is written once at init and has no update path in this program.
+      The Arweave upload MUST complete and be committed before Mainnet mints are initialized.
+    </invariant>
+    <invariant id="empty-additional-metadata">
+      `esms.rs:484` requires `metadata.additional_metadata.is_empty()`. Element traits, soulbound
+      flags and burn-authority notes belong ONLY in the off-chain JSON. Never write them on-chain.
+    </invariant>
+    <invariant id="decimals-source-of-truth">
+      `ESMS_DECIMALS = 4` lives on the mint account. A `decimals` field in the JSON is a wallet-display
+      hint that must mirror the mint, never define it.
+    </invariant>
+    <invariant id="account-space">
+      Longer Arweave URIs increase `esms_metadata_value_len`. Recompute and report the new per-mint
+      rent-exempt lamports; do not assume Devnet's figure carries to Mainnet.
+    </invariant>
+  </invariants>
 </prompt>
 ```
 

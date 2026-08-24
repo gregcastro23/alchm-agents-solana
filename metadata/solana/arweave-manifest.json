@@ -1,0 +1,80 @@
+{
+  "version": "1.0.0",
+  "cluster": null,
+  "irysNetwork": null,
+  "uploadedAtIso": null,
+  "assets": {
+    "icons/spirit.svg": {
+      "file": "metadata/solana/icons/spirit.svg",
+      "sha256": null,
+      "byteLength": null,
+      "txId": null,
+      "uri": null,
+      "irysNetwork": null,
+      "uploadedAtIso": null
+    },
+    "icons/essence.svg": {
+      "file": "metadata/solana/icons/essence.svg",
+      "sha256": null,
+      "byteLength": null,
+      "txId": null,
+      "uri": null,
+      "irysNetwork": null,
+      "uploadedAtIso": null
+    },
+    "icons/matter.svg": {
+      "file": "metadata/solana/icons/matter.svg",
+      "sha256": null,
+      "byteLength": null,
+      "txId": null,
+      "uri": null,
+      "irysNetwork": null,
+      "uploadedAtIso": null
+    },
+    "icons/substance.svg": {
+      "file": "metadata/solana/icons/substance.svg",
+      "sha256": null,
+      "byteLength": null,
+      "txId": null,
+      "uri": null,
+      "irysNetwork": null,
+      "uploadedAtIso": null
+    },
+    "tokens/spirit.json": {
+      "file": "metadata/solana/tokens/spirit.json",
+      "sha256": null,
+      "byteLength": null,
+      "txId": null,
+      "uri": null,
+      "irysNetwork": null,
+      "uploadedAtIso": null
+    },
+    "tokens/essence.json": {
+      "file": "metadata/solana/tokens/essence.json",
+      "sha256": null,
+      "byteLength": null,
+      "txId": null,
+      "uri": null,
+      "irysNetwork": null,
+      "uploadedAtIso": null
+    },
+    "tokens/matter.json": {
+      "file": "metadata/solana/tokens/matter.json",
+      "sha256": null,
+      "byteLength": null,
+      "txId": null,
+      "uri": null,
+      "irysNetwork": null,
+      "uploadedAtIso": null
+    },
+    "tokens/substance.json": {
+      "file": "metadata/solana/tokens/substance.json",
+      "sha256": null,
+      "byteLength": null,
+      "txId": null,
+      "uri": null,
+      "irysNetwork": null,
+      "uploadedAtIso": null
+    }
+  }
+}
