@@ -32,6 +32,8 @@ jobs:
       - name: Enforce the canonical Kalchm engine (Python runtime)
         if: '!cancelled()'
         run: python3 scripts/check_no_stray_kalchm_formula.py
+      - name: Run Solana protocol unit and metadata tests
+        run: bun run test:solana:unit
       - name: Build application
         run: bun run build
         env:
@@ -113,3 +115,12 @@ jobs:
         run: |
           cd backend
           pytest
+
+  solana-program:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Rust toolchain
+        uses: dtolnay/rust-toolchain@1.79.0
+      - name: Run Anchor program Rust unit tests
+        run: cargo test -p asol_program --lib

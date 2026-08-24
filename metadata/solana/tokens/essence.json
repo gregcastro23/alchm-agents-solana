@@ -1,0 +1,25 @@
+{
+  "name": "Essence",
+  "symbol": "ESSENCE",
+  "description": "Elemental Essence token of the Alchm protocol representing the Water axis (Moon / Dissolution). Governs receptive emotional resonance, subconscious integration, and JEPA latent persona attunement vectors.",
+  "image": null,
+  "decimals": 4,
+  "attributes": [
+    {
+      "trait_type": "Element",
+      "value": "Water"
+    },
+    {
+      "trait_type": "Decimals",
+      "value": 4
+    },
+    {
+      "trait_type": "Soulbound",
+      "value": "Non-Transferable"
+    },
+    {
+      "trait_type": "BurnAuthority",
+      "value": "Permissioned"
+    }
+  ]
+}

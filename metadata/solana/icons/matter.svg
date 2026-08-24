@@ -1,0 +1,57 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512" width="512" height="512">
+  <defs>
+    <radialGradient id="bg-glow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#00FF7F" stop-opacity="0.35"/>
+      <stop offset="70%" stop-color="#021408" stop-opacity="0.8"/>
+      <stop offset="100%" stop-color="#010803" stop-opacity="1"/>
+    </radialGradient>
+    <linearGradient id="earth-grad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#00FF7F"/>
+      <stop offset="50%" stop-color="#10B981"/>
+      <stop offset="100%" stop-color="#064E3B"/>
+    </linearGradient>
+    <linearGradient id="saturn-ring" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#A7F3D0" stop-opacity="0.9"/>
+      <stop offset="50%" stop-color="#34D399" stop-opacity="0.5"/>
+      <stop offset="100%" stop-color="#064E3B" stop-opacity="0"/>
+    </linearGradient>
+    <filter id="crystal-glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="10" result="blur"/>
+      <feMerge>
+        <feMergeNode in="blur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- Background Base -->
+  <rect width="512" height="512" rx="96" fill="url(#bg-glow)"/>
+  <rect width="504" height="504" x="4" y="4" rx="92" fill="none" stroke="#00FF7F" stroke-width="2" stroke-opacity="0.4"/>
+
+  <!-- Saturnian Orbit Ring -->
+  <circle cx="256" cy="256" r="190" fill="none" stroke="url(#saturn-ring)" stroke-width="2" stroke-dasharray="6 8" opacity="0.6"/>
+  <circle cx="256" cy="256" r="160" fill="none" stroke="#34D399" stroke-width="1.5" stroke-opacity="0.3"/>
+
+  <!-- Alchemical Earth Sigil (Downward Triangle with Horizontal Bar) -->
+  <g filter="url(#crystal-glow)">
+    <!-- Outer Triangle -->
+    <polygon points="96,116 416,116 256,420" fill="none" stroke="url(#earth-grad)" stroke-width="16" stroke-linejoin="round" stroke-linecap="round"/>
+
+    <!-- Horizontal Stabilizing Bar -->
+    <line x1="60" y1="236" x2="452" y2="236" stroke="url(#earth-grad)" stroke-width="14" stroke-linecap="round"/>
+
+    <!-- Inner Nested Crystal Core -->
+    <polygon points="136,132 376,132 256,352" fill="url(#earth-grad)" fill-opacity="0.2" stroke="#00FF7F" stroke-width="4" stroke-linejoin="round"/>
+
+    <!-- Central Grounding Anchor -->
+    <circle cx="256" cy="236" r="28" fill="#00FF7F" fill-opacity="0.25" stroke="#00FF7F" stroke-width="3"/>
+    <circle cx="256" cy="236" r="10" fill="#A7F3D0"/>
+  </g>
+
+  <!-- Cardinal Embellishments -->
+  <circle cx="96" cy="116" r="6" fill="#00FF7F"/>
+  <circle cx="416" cy="116" r="6" fill="#00FF7F"/>
+  <circle cx="256" cy="420" r="6" fill="#10B981"/>
+  <circle cx="60" cy="236" r="5" fill="#34D399"/>
+  <circle cx="452" cy="236" r="5" fill="#34D399"/>
+</svg>

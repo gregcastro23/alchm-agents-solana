@@ -82,6 +82,7 @@ chroma_db/
 scratch/
 test-import.ts
 .dev_server*
+.tmp-test-*
 AGENTS.md
 
 backend/node_modules/

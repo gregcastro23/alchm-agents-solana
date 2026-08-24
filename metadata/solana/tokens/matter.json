@@ -1,0 +1,25 @@
+{
+  "name": "Matter",
+  "symbol": "MATTER",
+  "description": "Elemental Matter token of the Alchm protocol representing the Earth axis (Saturn / Coagulation). Governs structural stability, systematic execution, and JEPA latent persona discipline vectors.",
+  "image": null,
+  "decimals": 4,
+  "attributes": [
+    {
+      "trait_type": "Element",
+      "value": "Earth"
+    },
+    {
+      "trait_type": "Decimals",
+      "value": 4
+    },
+    {
+      "trait_type": "Soulbound",
+      "value": "Non-Transferable"
+    },
+    {
+      "trait_type": "BurnAuthority",
+      "value": "Permissioned"
+    }
+  ]
+}
