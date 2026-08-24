@@ -66,6 +66,29 @@ pub fn openzeppelin_star_leaf(star_id: u32) -> [u8; 32] {
     Keccak256::digest(inner).into()
 }
 
+pub const REDEEM_AUTHORIZATION_DOMAIN: &[u8] = b"ASOL_ESMS_REDEEM_V1";
+
+pub fn redeem_authorization_vector(
+    program_id: &[u8; 32],
+    cluster_domain: &[u8; 32],
+    holder: &[u8; 32],
+    order_id: &[u8; 32],
+    amounts: &[u64; 4],
+    deadline: i64,
+) -> Vec<u8> {
+    let mut message = Vec::with_capacity(REDEEM_AUTHORIZATION_DOMAIN.len() + 32 * 4 + 8 * 5);
+    message.extend_from_slice(REDEEM_AUTHORIZATION_DOMAIN);
+    message.extend_from_slice(program_id);
+    message.extend_from_slice(cluster_domain);
+    message.extend_from_slice(holder);
+    message.extend_from_slice(order_id);
+    for amount in amounts {
+        message.extend_from_slice(&amount.to_le_bytes());
+    }
+    message.extend_from_slice(&deadline.to_le_bytes());
+    message
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -109,6 +132,29 @@ mod tests {
             "3faa6d4015e2c725ac8e804470bee904ec1855a333dafaf3fbf6e06fdf3e94a2"
         );
     }
+
+    #[test]
+    fn serializes_canonical_redeem_authorization_vector() {
+        let program_id = [1; 32];
+        let cluster = [2; 32];
+        let holder = [3; 32];
+        let order = [4; 32];
+        let amounts = [10_000, 20_000, 30_000, 40_000];
+        let deadline = 1_900_000_000;
+        let vector = redeem_authorization_vector(
+            &program_id,
+            &cluster,
+            &holder,
+            &order,
+            &amounts,
+            deadline,
+        );
+        assert_eq!(
+            hex(&vector),
+            "41534f4c5f45534d535f52454445454d5f563101010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202030303030303030303030303030303030303030303030303030303030303030304040404040404040404040404040404040404040404040404040404040404041027000000000000204e0000000000003075000000000000409c00000000000000b33f7100000000"
+        );
+    }
+
 
     fn hex(bytes: &[u8]) -> String {
         use std::fmt::Write;

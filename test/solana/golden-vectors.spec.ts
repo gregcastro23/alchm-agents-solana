@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 
 import {
+  buildRedeemAuthorizationVector,
   canonicalizeContext,
   ESMS_DECIMALS,
   hashEpochContext,
@@ -43,6 +44,28 @@ describe('Solana protocol golden vectors', () => {
   it('matches the OpenZeppelin StandardMerkleTree uint32 leaf', () => {
     expect(openZeppelinStarLeaf(677)).toBe(
       '0x3faa6d4015e2c725ac8e804470bee904ec1855a333dafaf3fbf6e06fdf3e94a2'
+    )
+  })
+
+  it('serializes the canonical redeem authorization vector matching Rust Anchor', () => {
+    const programId = new Uint8Array(32).fill(1)
+    const clusterDomain = new Uint8Array(32).fill(2)
+    const holder = new Uint8Array(32).fill(3)
+    const orderId = new Uint8Array(32).fill(4)
+    const amounts = [10_000n, 20_000n, 30_000n, 40_000n] as const
+    const deadline = 1_900_000_000n
+
+    const vector = buildRedeemAuthorizationVector({
+      programId,
+      clusterDomain,
+      holder,
+      orderId,
+      amounts,
+      deadline,
+    })
+
+    expect(vector).toBe(
+      '41534f4c5f45534d535f52454445454d5f563101010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202030303030303030303030303030303030303030303030303030303030303030304040404040404040404040404040404040404040404040404040404040404041027000000000000204e0000000000003075000000000000409c00000000000000b33f7100000000'
     )
   })
 })

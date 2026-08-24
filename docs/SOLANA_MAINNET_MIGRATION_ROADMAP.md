@@ -26,11 +26,11 @@ The **AlchmAgentsSolana (`ASOL`)** architecture orchestrates high-throughput, lo
 ├──────────────────────────────┬──────────────────────────────┬──────────────────────────┤
 │ Phase 1: Governance & KMS    │ Phase 2: Network Resiliency  │ Phase 3: Storefront UI   │
 │ Prompt 1: Squads & Cloud KMS │ Prompt 2: Priority Fees & RPC│ Prompt 3: ShopClient.tsx │
-│ [STATUS: COMPLETED (PR #4)]  │ [STATUS: COMPLETED (PR #5)]  │ [STATUS: READY / NEXT]   │
+│ [STATUS: COMPLETED (PR #4)]  │ [STATUS: COMPLETED (PR #5)]  │ [STATUS: COMPLETED]      │
 ├──────────────────────────────┼──────────────────────────────┼──────────────────────────┤
 │ Phase 4: Metadata & Build    │ Phase 5: StarVault Staking   │ Phase 6: Constellation   │
 │ Prompt 4: Arweave & Verify   │ Prompt 5: Checkpointed Yield │ Prompt 6: AMM & Deeds    │
-│ [STATUS: QUEUED]             │ [STATUS: QUEUED]             │ [STATUS: QUEUED]         │
+│ [STATUS: READY / NEXT]       │ [STATUS: QUEUED]             │ [STATUS: QUEUED]         │
 ├──────────────────────────────┴──────────────────────────────┴──────────────────────────┤
 │ Phase 7: Mainnet Deployment, Live Rehearsal & Verification Runbook (Prompt 7) [QUEUED] │
 └────────────────────────────────────────────────────────────────────────────────────────┘
@@ -42,8 +42,8 @@ The **AlchmAgentsSolana (`ASOL`)** architecture orchestrates high-throughput, lo
 | :---------- | :------------------------------------- | :------------------------------------------------------ | :--------------- | :------------------------------------------------------------------------------------- |
 | **Phase 1** | Governance & Cloud KMS Key Management  | AWS KMS / GCP KMS HSM Signer, Squads v4 Runbook         | **COMPLETED**    | [PR #4](https://github.com/gregcastro23/alchm-agents-solana/pull/4) / Commit `aa782d3` |
 | **Phase 2** | Network Resiliency & Dynamic Fees      | CU Budgeting, Priority Fees, Yellowstone Geyser         | **COMPLETED**    | [PR #5](https://github.com/gregcastro23/alchm-agents-solana/pull/5) / Commit `563a807` |
-| **Phase 3** | Storefront & Detached Checkout         | Dual-rail Shop, detached Ed25519 redeem_for_esms        | **READY / NEXT** | `components/shop/ShopClient.tsx`                                                       |
-| **Phase 4** | Token-2022 Metadata & Verifiable Build | Arweave metadata, reproducible Docker Anchor build      | **QUEUED**       | `metadata/solana/*.json`                                                               |
+| **Phase 3** | Storefront & Detached Checkout         | Dual-rail Shop, detached Ed25519 redeem_for_esms        | **COMPLETED**    | `components/shop/ShopClient.tsx`                                                       |
+| **Phase 4** | Token-2022 Metadata & Verifiable Build | Arweave metadata, reproducible Docker Anchor build      | **READY / NEXT** | `metadata/solana/*.json`                                                               |
 | **Phase 5** | StarVault Staking & Yield Claims       | Time-weighted element lockups, yield checkpoints        | **QUEUED**       | `programs/asol_program/src/instructions/stake.rs`                                      |
 | **Phase 6** | Constellation Deeds & AMM Bonding      | Fractional agent deeds, Constant Product AMM            | **QUEUED**       | `programs/asol_program/src/instructions/amm.rs`                                        |
 | **Phase 7** | Mainnet Deployment & Live Rehearsal    | Mainnet deployment runbook, Genesis check, Verification | **QUEUED**       | `scripts/deploy/deploy-mainnet.sh`                                                     |
@@ -255,7 +255,7 @@ During high Mainnet traffic, fixed-fee Solana transactions risk starvation or bl
 
 ---
 
-## Prompt 3 — Dual-Rail Storefront Wiring & Detached Ed25519 Solana Burn Checkout (Phase 3) [READY / NEXT]
+## Prompt 3 — Dual-Rail Storefront Wiring & Detached Ed25519 Solana Burn Checkout (Phase 3) [COMPLETED]
 
 ### Context & Architectural Seams
 
@@ -339,7 +339,7 @@ The digital shop ([`components/shop/ShopClient.tsx`](file:///Users/cookingwithca
 
 ---
 
-## Prompt 4 — Mainnet Token-2022 Metadata & Verifiable Anchor Builds (Phase 4)
+## Prompt 4 — Mainnet Token-2022 Metadata & Verifiable Anchor Builds (Phase 4) [READY / NEXT]
 
 ### Context & Architectural Seams
 

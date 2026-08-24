@@ -62,3 +62,52 @@ export function onchainShortfall(balances: OnchainEsms, cost: EsmsCost): EsmsCos
 export function formatUsd(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`
 }
+
+/** 1 whole ESMS token = 10,000 raw atoms (4 decimal places) on Solana. */
+export const SOLANA_RAW_SCALE = 10_000n
+
+/**
+ * Convert EsmsCost (whole units) to 4-dp raw u64 bigints on Solana.
+ * Order: [Spirit (0), Essence (1), Matter (2), Substance (3)]
+ */
+export function costToSolanaAmounts(cost: EsmsCost): readonly [bigint, bigint, bigint, bigint] {
+  return [
+    BigInt(Math.max(0, cost.spirit)) * SOLANA_RAW_SCALE,
+    BigInt(Math.max(0, cost.essence)) * SOLANA_RAW_SCALE,
+    BigInt(Math.max(0, cost.matter)) * SOLANA_RAW_SCALE,
+    BigInt(Math.max(0, cost.substance)) * SOLANA_RAW_SCALE,
+  ]
+}
+
+/**
+ * Whether Solana on-chain balances (4-dp raw bigints) cover the cost on every axis.
+ */
+export function canAffordSolana(
+  balances: readonly [bigint, bigint, bigint, bigint],
+  cost: EsmsCost
+): boolean {
+  const needed = costToSolanaAmounts(cost)
+  return needed.every((need, index) => (balances[index] ?? 0n) >= need)
+}
+
+/**
+ * The per-axis shortfall on Solana (in whole ESMS units, rounded up).
+ */
+export function solanaShortfall(
+  balances: readonly [bigint, bigint, bigint, bigint],
+  cost: EsmsCost
+): EsmsCost {
+  const needed = costToSolanaAmounts(cost)
+  const short = (index: number): number => {
+    const need = needed[index]
+    const have = balances[index] ?? 0n
+    if (have >= need) return 0
+    return Math.ceil(Number(need - have) / Number(SOLANA_RAW_SCALE))
+  }
+  return {
+    spirit: short(0),
+    essence: short(1),
+    matter: short(2),
+    substance: short(3),
+  }
+}

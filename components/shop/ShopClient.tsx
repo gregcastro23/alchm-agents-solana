@@ -16,9 +16,15 @@ import {
   FlaskConical,
   Shield,
   CreditCard,
+  Layers,
 } from 'lucide-react'
 import type { ShopItem, ShopItemKind, ElementKey } from '@/lib/shop/catalog'
 import type { ShopPurchaseStatus } from '@/lib/shop/navigation'
+import { useSolanaShop } from '@/lib/solana/useSolanaShop'
+import {
+  useSolanaWalletState,
+  type EsmsBalanceMap,
+} from '@/components/providers/SolanaWalletProvider'
 
 const PRIVY_APP_ID = process.env.NEXT_PUBLIC_PRIVY_APP_ID || 'cmi9t84qs00acl80dam2j8195'
 
@@ -93,6 +99,16 @@ function usd(cents: number): string {
   return `$${(cents / 100).toFixed(2)}`
 }
 
+function parseSolanaBalances(balances: EsmsBalanceMap | null): Balances | null {
+  if (!balances) return null
+  return {
+    spirit: Number.parseFloat(balances.spirit || '0'),
+    essence: Number.parseFloat(balances.essence || '0'),
+    matter: Number.parseFloat(balances.matter || '0'),
+    substance: Number.parseFloat(balances.substance || '0'),
+  }
+}
+
 function ShopClientInner({
   initialTab,
   purchaseStatus,
@@ -107,12 +123,18 @@ function ShopClientInner({
   const router = useRouter()
   const { wallets } = useWallets()
   const [tab, setTab] = useState<ShopItemKind>(initialTab)
-  const [balances, setBalances] = useState<Balances | null>(onchainBalances)
+  const [rail, setRail] = useState<'evm' | 'solana'>('evm')
+  const [evmBalances, setEvmBalances] = useState<Balances | null>(onchainBalances)
   const [ownedSet, setOwnedSet] = useState<Set<string>>(new Set(owned))
   const [states, setStates] = useState<Record<string, PurchaseState>>({})
 
+  const solanaWalletState = useSolanaWalletState()
+  const { buyDigitalSolana } = useSolanaShop()
+
   const items = catalog[tab] ?? []
-  const hasWallet = Boolean(walletAddress)
+  const hasEvmWallet = Boolean(walletAddress)
+  const hasSolanaWallet = Boolean(solanaWalletState.publicKey)
+  const solanaBalances = parseSolanaBalances(solanaWalletState.balances)
 
   const setItemState = (id: string, s: PurchaseState) => setStates(prev => ({ ...prev, [id]: s }))
 
@@ -155,18 +177,18 @@ function ShopClientInner({
       const res = await fetch('/api/shop/catalog', { cache: 'no-store' })
       if (!res.ok) return
       const data = await res.json()
-      if (data.onchainBalances) setBalances(data.onchainBalances)
+      if (data.onchainBalances) setEvmBalances(data.onchainBalances)
       if (Array.isArray(data.owned)) setOwnedSet(new Set<string>(data.owned))
     } catch {
       /* keep current view */
     }
   }
 
-  /** Sign the server's RedeemAuthorization challenge with the buyer's Privy wallet. */
+  /** Sign the server's RedeemAuthorization challenge with the buyer's Privy wallet (EVM). */
   async function signRedeemAuth(challenge: RedeemChallenge): Promise<`0x${string}`> {
     const embedded = wallets.find(w => w.walletClientType === 'privy') ?? wallets[0]
     if (!embedded) {
-      throw new Error('Connect your wallet on the Account page, then try again.')
+      throw new Error('Connect your EVM wallet on the Account page, then try again.')
     }
     const provider = await embedded.getEthereumProvider()
     const typedData = {
@@ -195,10 +217,10 @@ function ShopClientInner({
     return sig
   }
 
-  async function buyDigital(item: ShopItem) {
+  async function handleBuyDigitalEvm(item: ShopItem) {
     setItemState(item.id, { status: 'busy' })
     try {
-      const body: Record<string, unknown> = { itemId: item.id, payWith: 'esms' }
+      const body: Record<string, unknown> = { itemId: item.id, payWith: 'esms', rail: 'evm' }
       if (item.repeatable) {
         body.nonce =
           typeof crypto !== 'undefined' && 'randomUUID' in crypto
@@ -236,13 +258,13 @@ function ShopClientInner({
           txHash: data.txHash ?? null,
           reconciled: data.reconciled,
         })
-        refresh()
+        void refresh()
         return
       }
       if (res.status === 402 && data.code === 'insufficient_esms') {
         setItemState(item.id, {
           status: 'error',
-          message: 'Not enough ESMS on chain.',
+          message: 'Not enough ESMS on Base Sepolia.',
           shortfall: data.shortfall,
         })
         return
@@ -257,6 +279,34 @@ function ShopClientInner({
         message: e instanceof Error ? e.message : 'Network error. Try again.',
       })
     }
+  }
+
+  async function handleBuyDigitalSolana(item: ShopItem) {
+    setItemState(item.id, { status: 'busy' })
+    const result = await buyDigitalSolana(item)
+
+    if (result.alreadyOwned) {
+      setOwnedSet(prev => new Set(prev).add(item.id))
+      setItemState(item.id, { status: 'owned' })
+      return
+    }
+
+    if (result.ok) {
+      if (!item.repeatable) setOwnedSet(prev => new Set(prev).add(item.id))
+      setItemState(item.id, {
+        status: 'done',
+        txHash: result.txHash ?? null,
+        reconciled: result.reconciled,
+      })
+      void refresh()
+      return
+    }
+
+    setItemState(item.id, {
+      status: 'error',
+      message: result.error || 'Solana purchase failed. Try again.',
+      shortfall: result.shortfall,
+    })
   }
 
   async function buyTokenBundle(item: ShopItem) {
@@ -285,14 +335,22 @@ function ShopClientInner({
     }
   }
 
+  const activeBalances = rail === 'solana' ? solanaBalances : evmBalances
+  const hasActiveWallet = rail === 'solana' ? hasSolanaWallet : hasEvmWallet
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
-      {/* Wallet / balance strip */}
+      {/* Dual-Rail Wallet / balance strip */}
       <WalletStrip
         signedIn={signedIn}
-        hasWallet={hasWallet}
-        walletAddress={walletAddress}
-        balances={balances}
+        rail={rail}
+        setRail={setRail}
+        hasEvmWallet={hasEvmWallet}
+        hasSolanaWallet={hasSolanaWallet}
+        evmAddress={walletAddress}
+        solanaAddress={solanaWalletState.publicKey}
+        evmBalances={evmBalances}
+        solanaBalances={solanaBalances}
         onchainConfigured={onchainConfigured}
       />
 
@@ -327,13 +385,41 @@ function ShopClientInner({
       )}
 
       {/* Pay-with legend */}
-      <div className="flex flex-wrap items-center gap-x-4 gap-y-2 text-xs text-zinc-500">
-        <span className="inline-flex items-center gap-1.5">
-          <Flame className="w-3.5 h-3.5 text-amber-500" /> ESMS — on-chain burn settlement for
-          digital items &amp; boosts
-        </span>
-        <span className="text-zinc-700">·</span>
-        <span>Stripe / Card / USDC — direct ESMS token bundle top-ups</span>
+      <div className="flex flex-wrap items-center justify-between gap-y-2 text-xs text-zinc-500">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-2">
+          <span className="inline-flex items-center gap-1.5">
+            <Flame className="w-3.5 h-3.5 text-amber-500" /> ESMS — on-chain burn settlement for
+            digital items &amp; boosts
+          </span>
+          <span className="text-zinc-700">·</span>
+          <span>Stripe / Card / USDC — direct ESMS token bundle top-ups</span>
+        </div>
+
+        {/* Rail quick toggle */}
+        <div className="inline-flex items-center rounded-lg border border-border/80 bg-background/80 p-0.5 text-xs">
+          <button
+            type="button"
+            onClick={() => setRail('evm')}
+            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 font-medium transition-all ${
+              rail === 'evm'
+                ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <span>Base (EVM)</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setRail('solana')}
+            className={`flex items-center gap-1.5 rounded-md px-2.5 py-1 font-medium transition-all ${
+              rail === 'solana'
+                ? 'bg-amber-500/15 text-amber-300 border border-amber-500/30'
+                : 'text-zinc-400 hover:text-zinc-200'
+            }`}
+          >
+            <span>Solana Token-2022</span>
+          </button>
+        </div>
       </div>
 
       {/* Tabs */}
@@ -380,12 +466,21 @@ function ShopClientInner({
           <ItemCard
             key={item.id}
             item={item}
+            rail={rail}
             owned={ownedSet.has(item.id)}
             state={states[item.id] ?? { status: 'idle' }}
             signedIn={signedIn}
-            hasWallet={hasWallet}
-            onchainConfigured={onchainConfigured}
-            onBuy={() => (item.kind === 'tokens' ? buyTokenBundle(item) : buyDigital(item))}
+            hasWallet={hasActiveWallet}
+            onchainConfigured={rail === 'solana' ? true : onchainConfigured}
+            onBuy={() => {
+              if (item.kind === 'tokens') {
+                void buyTokenBundle(item)
+              } else if (rail === 'solana') {
+                void handleBuyDigitalSolana(item)
+              } else {
+                void handleBuyDigitalEvm(item)
+              }
+            }}
           />
         ))}
       </div>
@@ -394,9 +489,7 @@ function ShopClientInner({
 }
 
 /**
- * Scoped Privy provider (same pattern as /account) so the shop can sign the
- * RedeemAuthorization for sponsored ESMS burns — the buyer's wallet signs, the backend
- * BURNER submits — without bundling the web3 SDK into every route.
+ * Scoped Privy provider for EVM signing alongside standard Solana wallet adapter context.
  */
 export default function ShopClient(props: ShopClientProps) {
   return (
@@ -420,24 +513,67 @@ export default function ShopClient(props: ShopClientProps) {
 
 function WalletStrip({
   signedIn,
-  hasWallet,
-  walletAddress,
-  balances,
+  rail,
+  setRail,
+  hasEvmWallet,
+  hasSolanaWallet,
+  evmAddress,
+  solanaAddress,
+  evmBalances,
+  solanaBalances,
   onchainConfigured,
 }: {
   signedIn: boolean
-  hasWallet: boolean
-  walletAddress: string | null
-  balances: Balances | null
+  rail: 'evm' | 'solana'
+  setRail: (rail: 'evm' | 'solana') => void
+  hasEvmWallet: boolean
+  hasSolanaWallet: boolean
+  evmAddress: string | null
+  solanaAddress: string | null
+  evmBalances: Balances | null
+  solanaBalances: Balances | null
   onchainConfigured: boolean
 }) {
+  const isSolana = rail === 'solana'
+  const activeBalances = isSolana ? solanaBalances : evmBalances
+  const activeAddress = isSolana ? solanaAddress : evmAddress
+  const hasWallet = isSolana ? hasSolanaWallet : hasEvmWallet
+
   return (
     <div className="bg-surface border border-border rounded-xl p-5 space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
-        <h2 className="text-sm font-semibold text-zinc-300 flex items-center gap-2">
-          <Wallet className="w-4 h-4 text-amber-500" />
-          On-chain ESMS Balances
-        </h2>
+        <div className="flex items-center gap-3">
+          <h2 className="text-sm font-semibold text-zinc-300 flex items-center gap-2">
+            <Wallet className="w-4 h-4 text-amber-500" />
+            On-chain ESMS Balances
+          </h2>
+          {/* Rail Selector Tabs */}
+          <div className="inline-flex rounded-lg border border-border/70 bg-background/60 p-0.5 text-xs">
+            <button
+              type="button"
+              onClick={() => setRail('evm')}
+              className={`px-2.5 py-0.5 rounded-md font-mono text-[11px] transition-colors ${
+                !isSolana
+                  ? 'bg-amber-500/20 text-amber-400 font-semibold'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              Base Sepolia
+            </button>
+            <button
+              type="button"
+              onClick={() => setRail('solana')}
+              className={`px-2.5 py-0.5 rounded-md font-mono text-[11px] transition-colors ${
+                isSolana
+                  ? 'bg-amber-500/20 text-amber-400 font-semibold'
+                  : 'text-zinc-400 hover:text-zinc-200'
+              }`}
+            >
+              Solana Devnet
+            </button>
+          </div>
+        </div>
+
         {!signedIn ? (
           <Link
             href="/auth/signin?callbackUrl=/shop"
@@ -446,12 +582,16 @@ function WalletStrip({
             Sign in to spend
           </Link>
         ) : !hasWallet ? (
-          <Link href="/economy" className="text-xs text-amber-400 hover:underline">
-            Claim ESMS to chain →
+          <Link
+            href={isSolana ? '/account' : '/economy'}
+            className="text-xs text-amber-400 hover:underline"
+          >
+            {isSolana ? 'Connect Solana wallet →' : 'Claim ESMS to chain →'}
           </Link>
-        ) : walletAddress ? (
-          <span className="text-xs font-mono text-zinc-500">
-            {walletAddress.slice(0, 6)}…{walletAddress.slice(-4)}
+        ) : activeAddress ? (
+          <span className="text-xs font-mono text-zinc-400 bg-background border border-border/60 px-2 py-0.5 rounded">
+            {isSolana ? 'SOL: ' : 'EVM: '}
+            {activeAddress.slice(0, 6)}…{activeAddress.slice(-4)}
           </span>
         ) : null}
       </div>
@@ -467,22 +607,33 @@ function WalletStrip({
               {axis}
             </span>
             <span className="text-xl font-bold text-white tabular-nums">
-              {balances ? Math.floor(balances[axis]) : '—'}
+              {activeBalances ? Math.floor(activeBalances[axis]) : '—'}
             </span>
           </div>
         ))}
       </div>
 
-      {!onchainConfigured && (
+      {!isSolana && !onchainConfigured && (
         <p className="text-xs text-zinc-500 flex items-center gap-1.5">
           <AlertTriangle className="w-3.5 h-3.5 text-amber-600/80" />
-          On-chain settlement activates when the ESMS contract is deployed. Browse now; burns unlock
-          at launch.
+          Base Sepolia settlement activates when the ESMS contract is deployed.
         </p>
       )}
-      {onchainConfigured && signedIn && hasWallet && !balances && (
+
+      {isSolana && signedIn && !hasSolanaWallet && (
+        <p className="text-xs text-zinc-500 flex items-center gap-1.5">
+          <AlertTriangle className="w-3.5 h-3.5 text-amber-500/80" />
+          Link and verify a Solana wallet on your{' '}
+          <Link href="/account" className="text-amber-400 hover:underline">
+            Account page
+          </Link>{' '}
+          to enable Token-2022 burn checkout.
+        </p>
+      )}
+
+      {signedIn && hasWallet && !activeBalances && (
         <p className="text-xs text-zinc-500">
-          No claimed ESMS on chain yet.{' '}
+          No claimed ESMS on this rail yet.{' '}
           <Link href="/economy" className="text-amber-400 hover:underline">
             Claim your balance →
           </Link>
@@ -512,6 +663,7 @@ function EsmsChips({ item }: { item: ShopItem }) {
 
 function ItemCard({
   item,
+  rail,
   owned,
   state,
   signedIn,
@@ -520,6 +672,7 @@ function ItemCard({
   onBuy,
 }: {
   item: ShopItem
+  rail: 'evm' | 'solana'
   owned: boolean
   state: PurchaseState
   signedIn: boolean
@@ -528,6 +681,7 @@ function ItemCard({
   onBuy: () => void
 }) {
   const isToken = item.kind === 'tokens'
+  const isSolana = rail === 'solana'
   const busy = state.status === 'busy'
   const total = item.esms.spirit + item.esms.essence + item.esms.matter + item.esms.substance
 
@@ -590,7 +744,7 @@ function ItemCard({
             </>
           ) : (
             <>
-              <Flame className="w-4 h-4" /> Burn {total} ESMS
+              <Flame className="w-4 h-4" /> Burn {total} ESMS ({isSolana ? 'Solana' : 'Base'})
             </>
           )}
         </button>
@@ -601,7 +755,11 @@ function ItemCard({
         <p className="text-xs text-emerald-400 flex items-center gap-1.5">
           <Sparkles className="w-3.5 h-3.5" />
           {item.repeatable ? 'Redeemed!' : 'Unlocked!'}
-          {state.txHash ? ' Burn settled on-chain.' : state.reconciled ? ' (already settled)' : ''}
+          {state.txHash
+            ? ` Burn settled on-chain (${isSolana ? 'Solana' : 'Base'}).`
+            : state.reconciled
+              ? ' (already settled)'
+              : ''}
         </p>
       )}
       {state.status === 'owned' && (
@@ -630,7 +788,9 @@ function ItemCard({
           {!signedIn
             ? 'Sign in to spend ESMS.'
             : !hasWallet
-              ? 'Claim ESMS to chain first.'
+              ? isSolana
+                ? 'Link a Solana wallet in Account settings.'
+                : 'Claim ESMS to chain first.'
               : !onchainConfigured
                 ? 'On-chain settlement not live yet.'
                 : ''}

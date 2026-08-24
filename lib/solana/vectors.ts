@@ -61,6 +61,39 @@ export function openZeppelinStarLeaf(starId: number): string {
   return keccak256(keccak256(encoded))
 }
 
+export const REDEEM_AUTHORIZATION_DOMAIN = Buffer.from('ASOL_ESMS_REDEEM_V1', 'utf8')
+
+export function buildRedeemAuthorizationVector(args: {
+  programId: Uint8Array
+  clusterDomain: Uint8Array
+  holder: Uint8Array
+  orderId: Uint8Array
+  amounts: readonly [bigint, bigint, bigint, bigint]
+  deadline: bigint
+}): string {
+  if (
+    args.programId.length !== 32 ||
+    args.clusterDomain.length !== 32 ||
+    args.holder.length !== 32 ||
+    args.orderId.length !== 32 ||
+    args.amounts.length !== 4
+  ) {
+    throw new Error('All authorization vector identifiers must be 32 bytes with exactly 4 amounts')
+  }
+  const values = Buffer.alloc(8 * 5)
+  args.amounts.forEach((amount, index) => values.writeBigUInt64LE(amount, index * 8))
+  values.writeBigInt64LE(args.deadline, 32)
+  const buffer = Buffer.concat([
+    REDEEM_AUTHORIZATION_DOMAIN,
+    Buffer.from(args.programId),
+    Buffer.from(args.clusterDomain),
+    Buffer.from(args.holder),
+    Buffer.from(args.orderId),
+    values,
+  ])
+  return buffer.toString('hex')
+}
+
 function sha256(value: Uint8Array): Buffer {
   return createHash('sha256').update(value).digest()
 }

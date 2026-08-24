@@ -1,5 +1,9 @@
 import { AnchorProvider, BN, Program } from '@coral-xyz/anchor'
-import { getAssociatedTokenAddressSync } from '@solana/spl-token'
+import {
+  ASSOCIATED_TOKEN_PROGRAM_ID,
+  createAssociatedTokenAccountIdempotentInstruction,
+  getAssociatedTokenAddressSync,
+} from '@solana/spl-token'
 import {
   Connection,
   Ed25519Program,
@@ -228,6 +232,35 @@ export class AsolSolanaClient {
     return [ed25519Instruction, redeemInstruction]
   }
 
+  buildEnsureAtaInstructions(
+    owner: PublicKey,
+    payer?: PublicKey
+  ): readonly TransactionInstruction[] {
+    const feePayer = payer ?? this.wallet.publicKey
+    const tokenAccounts = this.getTokenAccounts(owner)
+    return this.mints.map((mint, index) =>
+      createAssociatedTokenAccountIdempotentInstruction(
+        feePayer,
+        tokenAccounts[index],
+        owner,
+        mint,
+        TOKEN_2022_PROGRAM_ID,
+        ASSOCIATED_TOKEN_PROGRAM_ID
+      )
+    )
+  }
+
+  async fetchClusterDomain(): Promise<Uint8Array> {
+    const config = await this.program.account.programConfig.fetch(this.programConfig)
+    return Uint8Array.from(config.clusterDomain)
+  }
+
+  async hasOrderReceipt(orderId: Uint8Array): Promise<boolean> {
+    const address = this.getOrderReceiptAddress(orderId)
+    const account = await this.program.account.orderReceipt.fetchNullable(address)
+    return account !== null
+  }
+
   async buildRecordPersonaCommitmentInstruction(args: {
     agentId: Uint8Array
     targetPersonaHash: Uint8Array
@@ -305,7 +338,9 @@ export class AsolSolanaClient {
   async redeemForEsms(
     args: Parameters<AsolSolanaClient['buildRedeemForEsmsInstructions']>[0]
   ): Promise<string> {
-    return this.sendInstructions('redeemFor', await this.buildRedeemForEsmsInstructions(args))
+    const ataInstructions = this.buildEnsureAtaInstructions(args.holder, args.sponsor)
+    const redeemInstructions = await this.buildRedeemForEsmsInstructions(args)
+    return this.sendInstructions('redeemFor', [...ataInstructions, ...redeemInstructions])
   }
 
   async nextPersonaSequence(agentId: Uint8Array): Promise<bigint> {
