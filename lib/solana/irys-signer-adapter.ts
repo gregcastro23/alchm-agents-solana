@@ -1,7 +1,7 @@
 import { PublicKey } from '@solana/web3.js'
 import nacl from 'tweetnacl'
 import { Uploader } from '@irys/upload'
-import { Solana } from '@irys/upload-solana'
+import { Solana, SolanaToken } from '@irys/upload-solana'
 import type { KmsSolanaSigner } from '@/lib/solana/kms-signer'
 
 /**
@@ -64,20 +64,15 @@ export class KmsIrysSignerAdapter implements IrysSignerLike {
 /**
  * Custom Solana Token configuration for @irys/upload that plugs in our KmsIrysSignerAdapter.
  */
-export class CustomKmsSolanaToken extends Solana {
+export class CustomKmsSolanaToken extends SolanaToken {
   private customSigner?: IrysSignerLike
 
-  constructor(config: {
-    providerUrl?: string
-    customSigner?: IrysSignerLike
-    wallet?: unknown
-    [key: string]: unknown
-  }) {
+  constructor(config: any) {
     super(config)
-    this.customSigner = config.customSigner
+    this.customSigner = config?.customSigner
   }
 
-  getSigner(): IrysSignerLike {
+  override getSigner(): any {
     if (this.customSigner) {
       return this.customSigner
     }
