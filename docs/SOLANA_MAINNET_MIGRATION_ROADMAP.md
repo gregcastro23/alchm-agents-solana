@@ -341,6 +341,8 @@ The digital shop ([`components/shop/ShopClient.tsx`](file:///Users/cookingwithca
 
 ## Prompt 4 — Mainnet Token-2022 Metadata & Verifiable Anchor Builds (Phase 4) [COMPLETED]
 
+> **Pull Request:** [#7](https://github.com/gregcastro23/alchm-agents-solana/pull/7)
+
 ### Context & Architectural Seams
 
 The 4 ESMS mints carry placeholder URIs (`https://alchm.kitchen/metadata/esms/*.json`) in `programs/asol_program/src/constants.rs:24`. Mainnet requires permanent Arweave URIs uploaded via Irys before Mainnet mints are initialized.
@@ -409,7 +411,7 @@ The 4 ESMS mints carry placeholder URIs (`https://alchm.kitchen/metadata/esms/*.
 
 ---
 
-## Prompt 5 — StarVault Staking & Checkpointed Yield Accrual Engine (Parity Port)
+## Prompt 5 — StarVault Staking & Checkpointed Yield Accrual Engine (Parity Port) [READY / NEXT]
 
 ### Context & Architectural Seams
 
