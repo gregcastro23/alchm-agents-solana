@@ -92,8 +92,16 @@ export async function grantPurchase(params: {
       },
     })
     return true
-  } catch {
-    // Unique-constraint collision → already granted, which is success here.
-    return true
+  } catch (error) {
+    // Unique-constraint collision (Prisma P2002) → already granted, which is success here.
+    if (
+      typeof error === 'object' &&
+      error !== null &&
+      'code' in error &&
+      (error as { code: string }).code === 'P2002'
+    ) {
+      return true
+    }
+    throw error
   }
 }
