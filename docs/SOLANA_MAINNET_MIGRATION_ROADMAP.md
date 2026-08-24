@@ -42,7 +42,7 @@ The **AlchmAgentsSolana (`ASOL`)** architecture orchestrates high-throughput, lo
 | :---------- | :------------------------------------- | :------------------------------------------------------ | :--------------- | :------------------------------------------------------------------------------------- |
 | **Phase 1** | Governance & Cloud KMS Key Management  | AWS KMS / GCP KMS HSM Signer, Squads v4 Runbook         | **COMPLETED**    | [PR #4](https://github.com/gregcastro23/alchm-agents-solana/pull/4) / Commit `aa782d3` |
 | **Phase 2** | Network Resiliency & Dynamic Fees      | CU Budgeting, Priority Fees, Yellowstone Geyser         | **COMPLETED**    | [PR #5](https://github.com/gregcastro23/alchm-agents-solana/pull/5) / Commit `563a807` |
-| **Phase 3** | Storefront & Detached Checkout         | Dual-rail Shop, detached Ed25519 redeem_for_esms        | **COMPLETED**    | `components/shop/ShopClient.tsx`                                                       |
+| **Phase 3** | Storefront & Detached Checkout         | Dual-rail Shop, detached Ed25519 redeem_for_esms        | **COMPLETED**    | [PR #6](https://github.com/gregcastro23/alchm-agents-solana/pull/6) / `ShopClient.tsx` |
 | **Phase 4** | Token-2022 Metadata & Verifiable Build | Arweave metadata, reproducible Docker Anchor build      | **READY / NEXT** | `metadata/solana/*.json`                                                               |
 | **Phase 5** | StarVault Staking & Yield Claims       | Time-weighted element lockups, yield checkpoints        | **QUEUED**       | `programs/asol_program/src/instructions/stake.rs`                                      |
 | **Phase 6** | Constellation Deeds & AMM Bonding      | Fractional agent deeds, Constant Product AMM            | **QUEUED**       | `programs/asol_program/src/instructions/amm.rs`                                        |
@@ -255,7 +255,7 @@ During high Mainnet traffic, fixed-fee Solana transactions risk starvation or bl
 
 ---
 
-## Prompt 3 — Dual-Rail Storefront Wiring & Detached Ed25519 Solana Burn Checkout (Phase 3) [COMPLETED]
+## Prompt 3 — Dual-Rail Storefront Wiring & Detached Ed25519 Solana Burn Checkout (Phase 3) [COMPLETED — PR #6]
 
 ### Context & Architectural Seams
 
