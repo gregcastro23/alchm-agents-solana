@@ -80,4 +80,56 @@ pub mod asol_program {
     ) -> Result<()> {
         persona::record(ctx, agent_id, target_persona_hash, epoch_hash, sequence)
     }
+
+    pub fn initialize_star_vault(
+        ctx: Context<InitializeStarVault>,
+        star_root: [u8; 32],
+        max_yield_rate_per_usdc_day: u64,
+    ) -> Result<()> {
+        staking::initialize_star_vault(ctx, star_root, max_yield_rate_per_usdc_day)
+    }
+
+    pub fn set_star_vault_config(
+        ctx: Context<SetStarVaultConfig>,
+        star_root: Option<[u8; 32]>,
+        max_yield_rate_per_usdc_day: Option<u64>,
+    ) -> Result<()> {
+        staking::set_star_vault_config(ctx, star_root, max_yield_rate_per_usdc_day)
+    }
+
+    pub fn activate_star(
+        ctx: Context<ActivateStar>,
+        star_id: u32,
+        proof: Vec<[u8; 32]>,
+    ) -> Result<()> {
+        staking::activate_star(ctx, star_id, proof)
+    }
+
+    pub fn stake_star(
+        ctx: Context<StakeStar>,
+        star_id: u32,
+        usdc_amount: u64,
+    ) -> Result<()> {
+        staking::stake_star(ctx, star_id, usdc_amount)
+    }
+
+    pub fn unstake_star(
+        ctx: Context<UnstakeStar>,
+        star_id: u32,
+        shares: u64,
+    ) -> Result<()> {
+        staking::unstake_star(ctx, star_id, shares)
+    }
+
+    pub fn claim_star_yield(
+        ctx: Context<ClaimStarYield>,
+        star_id: u32,
+        element_id: u8,
+        amount: u64,
+        nonce: u64,
+        deadline: i64,
+    ) -> Result<()> {
+        staking::claim_star_yield(ctx, star_id, element_id, amount, nonce, deadline)
+    }
 }
+

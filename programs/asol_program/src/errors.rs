@@ -38,4 +38,30 @@ pub enum AsolError {
     InvalidTokenAccount,
     #[msg("The instruction sysvar account is invalid")]
     InvalidInstructionsSysvar,
+    #[msg("Star has not been activated")]
+    StarNotActivated,
+    #[msg("Invalid Merkle proof for star activation")]
+    InvalidStarProof,
+    #[msg("Insufficient pool shares for unstaking")]
+    InsufficientShares,
+    #[msg("Requested yield exceeds dynamic accrued yield cap")]
+    YieldExceedsCap,
+    #[msg("Invalid element identifier (must be 0..3)")]
+    InvalidElement,
+    #[msg("Invalid yield claim nonce")]
+    InvalidYieldNonce,
+    #[msg("Amount must be greater than zero")]
+    ZeroAmount,
+    #[msg("The vault or star pool state is invalid")]
+    InvalidVault,
+    #[msg("Yield rate exceeds the protocol safety ceiling")]
+    RateExceedsCeiling,
+    #[msg("Star registry Merkle root has not been initialized")]
+    StarRootUnset,
+    #[msg("Merkle proof exceeds maximum depth of 32 nodes")]
+    ProofTooDeep,
+    #[msg("Vault USDC mint carries unsupported extensions")]
+    InvalidVaultMintExtensions,
 }
+
+

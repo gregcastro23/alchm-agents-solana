@@ -246,7 +246,6 @@ export const GREG_CASTRO: HistoricalCraftedAgent = {
       'Artisanal sourdough bread',
       'Avocado & olive oil',
       'Fresh berries',
-      'Matcha',
       'Wild salmon',
     ],
     favoriteFoods: [
