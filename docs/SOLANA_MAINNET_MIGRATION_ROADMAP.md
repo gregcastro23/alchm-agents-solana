@@ -44,7 +44,7 @@ The **AlchmAgentsSolana (`ASOL`)** architecture orchestrates high-throughput, lo
 | **Phase 2** | Network Resiliency & Dynamic Fees      | CU Budgeting, Priority Fees, Yellowstone Geyser         | **COMPLETED**    | [PR #5](https://github.com/gregcastro23/alchm-agents-solana/pull/5) / Commit `563a807` |
 | **Phase 3** | Storefront & Detached Checkout         | Dual-rail Shop, detached Ed25519 redeem_for_esms        | **COMPLETED**    | [PR #6](https://github.com/gregcastro23/alchm-agents-solana/pull/6) / Commit `565d768` |
 | **Phase 4** | Token-2022 Metadata & Verifiable Build | Arweave metadata, reproducible Docker Anchor build      | **COMPLETED**    | [PR #7](https://github.com/gregcastro23/alchm-agents-solana/pull/7) / Commit `499afee` |
-| **Phase 5** | StarVault Staking & Yield Claims       | Checkpointed yield accumulator, Hipparcos star pools    | **COMPLETED**    | `programs/asol_program/src/state/staking.rs`                                           |
+| **Phase 5** | StarVault Staking & Yield Claims       | Checkpointed yield accumulator, Hipparcos star pools    | **COMPLETED**    | [PR #9](https://github.com/gregcastro23/alchm-agents-solana/pull/9) / Commit `8a52479` |
 | **Phase 6** | Constellation Deeds & AMM Bonding      | Fractional agent deeds, Constant Product AMM            | **READY / NEXT** | `programs/asol_program/src/instructions/amm.rs`                                        |
 | **Phase 7** | Mainnet Deployment & Live Rehearsal    | Mainnet deployment runbook, Genesis check, Verification | **QUEUED**       | `scripts/deploy/deploy-mainnet.sh`                                                     |
 
@@ -432,19 +432,22 @@ The 4 ESMS mints carry placeholder URIs (`https://alchm.kitchen/metadata/esms/*.
 
 ---
 
-## Prompt 5 — StarVault Staking & Checkpointed Yield Accrual Engine (Parity Port) [READY / NEXT]
+## Prompt 5 — StarVault Staking & Checkpointed Yield Accrual Engine (Phase 5) [COMPLETED — PR #9]
 
 ### Context & Architectural Seams
 
-On Circle Arc EVM, `StarVault.sol` allows users to stake 6-decimal USDC into celestial star pools identified by Hipparcos star IDs and claim ESMS yield. However, Arc EVM's contract contains a critical vulnerability: `lastClaimAt` is only initialized when shares are zero, allowing a user to top-up principal and retroactively earn yield over past elapsed time on new capital. The Solana implementation ports StarVault with a **checkpointed yield accumulator** that permanently eliminates this flaw while replicating OpenZeppelin `StandardMerkleTree` uint32 leaf verification.
+On Circle Arc EVM, `StarVault.sol` allowed users to stake 6-decimal USDC into celestial star pools identified by Hipparcos star IDs and claim ESMS yield. However, Arc EVM's contract contained a critical vulnerability: `lastClaimAt` was only initialized when shares were zero, allowing a user to top-up principal and retroactively earn yield over past elapsed time on new capital. The Solana implementation ports StarVault with a **checkpointed yield accumulator** that permanently eliminates this flaw while replicating OpenZeppelin `StandardMerkleTree` uint32 leaf verification.
 
-### Target Files
+Phase 5 was audited in [`docs/PHASE_5_STARVAULT_REVIEW.md`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/docs/PHASE_5_STARVAULT_REVIEW.md) and hardened under **PR 1: Custody Safety** with infallible saturating yield math, rate ceiling enforcement, monotonic clock protection, net-delta balance measurement, and Token-2022 extension validation.
 
-- `[NEW]` `programs/asol_program/src/state/staking.rs` — `StarVaultState`, `StarPool`, `StakePosition` accounts.
-- `[NEW]` `programs/asol_program/src/instructions/staking/mod.rs` — `activate_star`, `stake_star`, `unstake_star`, `claim_star_yield`.
-- `[MODIFY]` `programs/asol_program/src/lib.rs` — Expose staking instructions.
-- `[NEW]` `lib/solana/star-vault.ts` — TypeScript SDK client for StarVault staking.
-- `[NEW]` `test/solana/star-vault.spec.ts` — Anchor & TypeScript test suite proving zero retroactive accrual.
+### Implemented Deliverables
+
+- `[NEW]` [`programs/asol_program/src/state/staking.rs`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/programs/asol_program/src/state/staking.rs) — `StarVaultState`, `StarPool`, and `StakePosition` accounts with infallible `calculate_accrued_yield_cap` and monotonic `checkpoint_yield`.
+- `[NEW]` [`programs/asol_program/src/instructions/staking/mod.rs`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/programs/asol_program/src/instructions/staking/mod.rs) — `initialize_star_vault`, `set_star_vault_config`, `activate_star`, `stake_star`, `unstake_star`, and `claim_star_yield` with Ed25519 attestations, net balance delta validation, and Token-2022 TLV extension checks.
+- `[MODIFY]` [`programs/asol_program/src/lib.rs`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/programs/asol_program/src/lib.rs) — Exposed Anchor staking entrypoints.
+- `[NEW]` [`lib/solana/star-vault.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/star-vault.ts) — TypeScript SDK client for StarVault staking, PDA derivations, leaf hashes, and Ed25519 authorization message builders.
+- `[NEW]` [`test/solana/star-vault.spec.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/test/solana/star-vault.spec.ts) — Test suite proving 0 retroactive accrual on top-ups, OpenZeppelin leaf compatibility, monotonic clock protection, and non-pausable withdrawals.
+- `[NEW]` [`docs/PHASE_5_STARVAULT_REVIEW.md`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/docs/PHASE_5_STARVAULT_REVIEW.md) — Comprehensive architectural review and 3-PR remediation campaign (PR 1 Custody Safety, PR 2 Accounting Model, PR 3 Provability).
 
 ### Prompt 5 (XML Structured)
 
@@ -475,23 +478,23 @@ On Circle Arc EVM, `StarVault.sol` allows users to stake 6-decimal USDC into cel
   <technical_specifications>
     <state_and_math>
       1. Define accounts in `programs/asol_program/src/state/staking.rs`:
-         - `StarVaultState` (`seeds = [b"star-vault"]`): `usdc_mint`, `vault_usdc_ata`, `total_principal`, `star_root`, `bump`.
-         - `StarPool` (`seeds = [b"star-pool", star_id.to_le_bytes()]`): `star_id: u32`, `activated: bool`, `total_principal: u64`, `total_shares: u64`, `bump: u8`.
+         - `StarVaultState` (`seeds = [b"star-vault"]`): `version`, `admin`, `usdc_mint`, `vault_usdc_ata`, `total_principal`, `star_root`, `max_yield_rate_per_usdc_day`, `bump`.
+         - `StarPool` (`seeds = [b"star-pool", star_id.to_le_bytes()]`): `version`, `star_id: u32`, `activated: bool`, `total_principal: u64`, `total_shares: u64`, `bump: u8`.
          - `StakePosition` (`seeds = [b"stake", star_id.to_le_bytes(), staker.key()]`):
-           `staker: Pubkey`, `star_id: u32`, `shares: u64`, `principal: u64`, `accrued_cap: u64`, `last_checkpoint: i64`, `claim_nonce: u64`, `bump: u8`.
-      2. Yield Math Formula with `u128` intermediates:
-         $$\Delta\text{Cap} = \frac{\text{old\_principal} \times \text{max\_rate\_esms\_atoms\_per\_usdc\_day} \times (\text{now} - \text{last\_checkpoint})}{10^6 \times 86400}$$
+           `version`, `staker: Pubkey`, `star_id: u32`, `shares: u64`, `principal: u64`, `accrued_cap: u64`, `last_checkpoint: i64`, `claim_nonce: u64`, `bump: u8`.
+      2. Yield Math Formula (Infallible Saturating Math):
+         $$\Delta\text{Cap} = \frac{\text{principal} \times \text{max\_yield\_rate\_per\_usdc\_day} \times (\text{now} - \text{last\_checkpoint})}{10^6 \times 86400}$$
          Before any stake or unstake changes principal:
-         $$\text{accrued\_cap} \mathrel{+}= \Delta\text{Cap}$$
-         $$\text{last\_checkpoint} = \text{now}$$
+         $$\text{accrued\_cap} = \text{accrued\_cap}.\text{saturating\_add}(\Delta\text{Cap})$$
+         $$\text{last\_checkpoint} = \text{now}.\text{max}(\text{last\_checkpoint})$$
     </state_and_math>
 
     <instructions>
-      1. `activate_star`: Verify OpenZeppelin `StandardMerkleTree` proof for `uint32 starId` against `StarVaultState.star_root`.
-      2. `stake_star`: Checkpoint yield, transfer SPL USDC from staker to vault PDA, update shares and principal.
+      1. `activate_star`: Verify OpenZeppelin `StandardMerkleTree` proof for `uint32 starId` against `StarVaultState.star_root` (bounded to depth <= 32).
+      2. `stake_star`: Checkpoint yield, transfer SPL USDC from staker to vault PDA, measure net balance increase delta, update shares and principal.
       3. `unstake_star`: Checkpoint yield, burn shares, transfer USDC from vault PDA back to staker (always enabled, non-pausable).
       4. `claim_star_yield`: Validate Ed25519 attestor signature over `(staker, star_id, element_id, amount, nonce, deadline)`.
-         Assert `amount <= accrued_cap + current_interval_cap`. Mint Token-2022 ESMS atoms to staker, consume nonce, reset `accrued_cap = 0`.
+         Assert `amount <= accrued_cap + current_interval_cap`. Mint Token-2022 ESMS atoms to staker, increment nonce, rollover remainder (`accrued_cap = total_claimable - amount`).
     </instructions>
   </technical_specifications>
 
@@ -499,9 +502,10 @@ On Circle Arc EVM, `StarVault.sol` allows users to stake 6-decimal USDC into cel
     1. In `test/solana/star-vault.spec.ts`:
        - Verify OpenZeppelin leaf vector matching `openZeppelinStarLeaf(677)`.
        - Test: User stakes 10 USDC for 10 days, tops up 1000 USDC on day 10, and claims on day 10 + 1 second.
-       - Prove that the claim cap strictly reflects 10 USDC over the 10 days, not 1010 USDC over 10 days.
+       - Prove that the claim cap strictly reflects 10 USDC over the 10 days, not 1010 USDC over 10 days (500,000,000 atom over-mint prevented).
+       - Test: Backwards clock timestamps never rewind checkpoint or credit illegitimate yield.
        - Test: Unstake functions normally even when `pause_claims == true`.
-    2. Run test suite: `bun test:solana`.
+    2. Run test suite: `bun test:solana` and `RUSTUP_TOOLCHAIN=1.79.0 cargo test -p asol_program --lib`.
   </testing_and_verification>
 </prompt>
 ```
