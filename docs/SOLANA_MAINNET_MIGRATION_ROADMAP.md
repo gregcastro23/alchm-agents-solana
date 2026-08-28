@@ -44,8 +44,8 @@ The **AlchmAgentsSolana (`ASOL`)** architecture orchestrates high-throughput, lo
 | **Phase 2** | Network Resiliency & Dynamic Fees      | CU Budgeting, Priority Fees, Yellowstone Geyser         | **COMPLETED**    | [PR #5](https://github.com/gregcastro23/alchm-agents-solana/pull/5) / Commit `563a807` |
 | **Phase 3** | Storefront & Detached Checkout         | Dual-rail Shop, detached Ed25519 redeem_for_esms        | **COMPLETED**    | [PR #6](https://github.com/gregcastro23/alchm-agents-solana/pull/6) / Commit `565d768` |
 | **Phase 4** | Token-2022 Metadata & Verifiable Build | Arweave metadata, reproducible Docker Anchor build      | **COMPLETED**    | [PR #7](https://github.com/gregcastro23/alchm-agents-solana/pull/7) / Commit `499afee` |
-| **Phase 5** | StarVault Staking & Yield Claims       | Checkpointed yield accumulator, Hipparcos star pools    | **READY / NEXT** | `programs/asol_program/src/state/staking.rs`                                           |
-| **Phase 6** | Constellation Deeds & AMM Bonding      | Fractional agent deeds, Constant Product AMM            | **QUEUED**       | `programs/asol_program/src/instructions/amm.rs`                                        |
+| **Phase 5** | StarVault Staking & Yield Claims       | Checkpointed yield accumulator, Hipparcos star pools    | **COMPLETED**    | `programs/asol_program/src/state/staking.rs`                                           |
+| **Phase 6** | Constellation Deeds & AMM Bonding      | Fractional agent deeds, Constant Product AMM            | **READY / NEXT** | `programs/asol_program/src/instructions/amm.rs`                                        |
 | **Phase 7** | Mainnet Deployment & Live Rehearsal    | Mainnet deployment runbook, Genesis check, Verification | **QUEUED**       | `scripts/deploy/deploy-mainnet.sh`                                                     |
 
 ---

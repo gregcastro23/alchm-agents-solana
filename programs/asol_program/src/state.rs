@@ -1,5 +1,8 @@
 use anchor_lang::prelude::*;
 
+pub mod staking;
+pub use staking::*;
+
 #[account]
 #[derive(InitSpace)]
 pub struct ProgramConfig {
