@@ -23,32 +23,49 @@ import type { CraftedAgent } from '@/lib/agent-types'
  *
  * Returns null when nothing matches — the caller renders notFound().
  */
+import { deriveSacredStats } from '@/lib/agents/persona/derive-sacred-stats'
+
 export async function resolveAnyAgent(id: string): Promise<CraftedAgent | null> {
   if (!id || !id.trim()) return null
 
+  let agent: CraftedAgent | null = null
+
   // 1. Canonical fast path (no DB).
   const canonical = getHistoricalAgent(id)
-  if (canonical) return canonical
+  if (canonical) {
+    agent = canonical
+  } else {
+    // 2. DB-backed agents (planetary / moon / crafted), same slug as the feed.
+    try {
+      let row = await HistoricalAgentsService.getAgent(id)
 
-  // 2. DB-backed agents (planetary / moon / crafted), same slug as the feed.
-  try {
-    let row = await HistoricalAgentsService.getAgent(id)
-
-    if (!row) {
-      const lower = id.trim().toLowerCase()
-      if (lower !== id) {
-        row = await HistoricalAgentsService.getAgent(lower)
+      if (!row) {
+        const lower = id.trim().toLowerCase()
+        if (lower !== id) {
+          row = await HistoricalAgentsService.getAgent(lower)
+        }
+        // 3. A feed link may carry an email-derived slug missing the `planetary-`
+        //    prefix (e.g. `mars-aries-12` instead of `planetary-mars-aries-12`).
+        if (!row && !lower.startsWith('planetary-')) {
+          row = await HistoricalAgentsService.getAgent(`planetary-${lower}`)
+        }
       }
-      // 3. A feed link may carry an email-derived slug missing the `planetary-`
-      //    prefix (e.g. `mars-aries-12` instead of `planetary-mars-aries-12`).
-      if (!row && !lower.startsWith('planetary-')) {
-        row = await HistoricalAgentsService.getAgent(`planetary-${lower}`)
+
+      if (row) agent = dbAgentToCraftedAgent(row as any)
+    } catch (err) {
+      console.error(`[resolveAnyAgent] DB lookup failed for "${id}":`, err)
+    }
+  }
+
+  if (agent) {
+    if (!agent.sacredStats && agent.consciousness?.natalChart?.planets) {
+      try {
+        agent.sacredStats = deriveSacredStats(agent)
+      } catch (err) {
+        console.warn(`[resolveAnyAgent] Failed to derive sacred stats for "${id}":`, err)
       }
     }
-
-    if (row) return dbAgentToCraftedAgent(row as any)
-  } catch (err) {
-    console.error(`[resolveAnyAgent] DB lookup failed for "${id}":`, err)
+    return agent
   }
 
   return null

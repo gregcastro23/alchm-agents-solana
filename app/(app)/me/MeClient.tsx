@@ -161,6 +161,81 @@ function getConsciousnessLevel(mc: number): string {
   return 'Transcendent'
 }
 
+// --- Helper for Planetary Dignity ---
+type EssentialDignity = 'Domicile' | 'Exaltation' | 'Detriment' | 'Fall' | 'Peregrine'
+
+function getPlanetDignity(planet: string, sign: string): EssentialDignity | undefined {
+  const table: Record<
+    string,
+    { domicile: string[]; exaltation: string[]; detriment: string[]; fall: string[] }
+  > = {
+    Sun: { domicile: ['Leo'], exaltation: ['Aries'], detriment: ['Aquarius'], fall: ['Libra'] },
+    Moon: {
+      domicile: ['Cancer'],
+      exaltation: ['Taurus'],
+      detriment: ['Capricorn'],
+      fall: ['Scorpio'],
+    },
+    Mercury: {
+      domicile: ['Gemini', 'Virgo'],
+      exaltation: ['Virgo'],
+      detriment: ['Sagittarius', 'Pisces'],
+      fall: ['Pisces'],
+    },
+    Venus: {
+      domicile: ['Taurus', 'Libra'],
+      exaltation: ['Pisces'],
+      detriment: ['Scorpio', 'Aries'],
+      fall: ['Virgo'],
+    },
+    Mars: {
+      domicile: ['Aries', 'Scorpio'],
+      exaltation: ['Capricorn'],
+      detriment: ['Libra', 'Taurus'],
+      fall: ['Cancer'],
+    },
+    Jupiter: {
+      domicile: ['Sagittarius', 'Pisces'],
+      exaltation: ['Cancer'],
+      detriment: ['Gemini', 'Virgo'],
+      fall: ['Capricorn'],
+    },
+    Saturn: {
+      domicile: ['Capricorn', 'Aquarius'],
+      exaltation: ['Libra'],
+      detriment: ['Cancer', 'Leo'],
+      fall: ['Aries'],
+    },
+  }
+  const d = table[planet]
+  if (!d) return undefined
+  if (d.domicile.includes(sign)) return 'Domicile'
+  if (d.exaltation.includes(sign)) return 'Exaltation'
+  if (d.detriment.includes(sign)) return 'Detriment'
+  if (d.fall.includes(sign)) return 'Fall'
+  return undefined
+}
+
+const DignityBadge: React.FC<{ dignity?: EssentialDignity }> = ({ dignity }) => {
+  if (!dignity) return null
+  const styles: Record<EssentialDignity, string> = {
+    Domicile: 'border-emerald-500/30 text-emerald-400 bg-emerald-500/10',
+    Exaltation:
+      'border-amber-500/50 text-amber-400 bg-amber-500/10 shadow-[0_0_10px_rgba(245,158,11,0.15)]',
+    Detriment: 'border-rose-500/30 text-rose-400 bg-rose-500/10',
+    Fall: 'border-slate-500/30 text-slate-400 bg-slate-800/40',
+    Peregrine: 'border-white/10 text-slate-300 bg-white/5',
+  }
+
+  return (
+    <span
+      className={`px-2 py-0.5 rounded text-[9px] font-mono uppercase tracking-wider border ${styles[dignity]}`}
+    >
+      {dignity}
+    </span>
+  )
+}
+
 export function MeClient({
   user,
   sunSign,
@@ -191,6 +266,7 @@ export function MeClient({
   const maxAlchm = Math.max(spirit, essence, matter, substance, 1)
 
   const [activeZodiacTab, setActiveZodiacTab] = useState<'tropical' | 'sidereal'>('tropical')
+  const [activeCodexTab, setActiveCodexTab] = useState<'planets' | 'angles' | 'karmic'>('planets')
   const [copied, setCopied] = useState(false)
 
   const handleCopyPrompt = () => {
@@ -215,6 +291,271 @@ export function MeClient({
     '--zodiac-border': zodiacTheme.borderColor,
   } as React.CSSProperties
 
+  // Calculate normalized macro elements & modalities
+  const totalElements = Math.max(fire + earth + air + water, 1)
+  const firePct = Math.round((fire / totalElements) * 100) || 25
+  const earthPct = Math.round((earth / totalElements) * 100) || 25
+  const airPct = Math.round((air / totalElements) * 100) || 25
+  const waterPct = Math.max(0, 100 - (firePct + earthPct + airPct))
+
+  // Modality estimation
+  const cardPct = modality === 'Cardinal' ? 50 : 25
+  const fixPct =
+    modality === 'Fixed' ? 50 : dominantElement === 'Fire' || dominantElement === 'Water' ? 40 : 30
+  const mutPct = Math.max(10, 100 - (cardPct + fixPct))
+
+  // 12 Signs Composition Breakdown
+  const ALL_12_SIGNS = [
+    {
+      code: 'ARI',
+      name: 'Aries',
+      element: 'bg-amber-500',
+      color: '#F59E0B',
+      weight: sunSign === 'Aries' ? 22 : 6 + ((fire * 3) % 8),
+    },
+    {
+      code: 'TAU',
+      name: 'Taurus',
+      element: 'bg-emerald-400',
+      color: '#10B981',
+      weight: sunSign === 'Taurus' ? 22 : 5 + ((earth * 3) % 8),
+    },
+    {
+      code: 'GEM',
+      name: 'Gemini',
+      element: 'bg-indigo-300',
+      color: '#A78BFA',
+      weight: sunSign === 'Gemini' ? 22 : 7 + ((air * 3) % 8),
+    },
+    {
+      code: 'CAN',
+      name: 'Cancer',
+      element: 'bg-cyan-400',
+      color: '#00E5FF',
+      weight: sunSign === 'Cancer' ? 22 : 8 + ((water * 3) % 8),
+    },
+    {
+      code: 'LEO',
+      name: 'Leo',
+      element: 'bg-amber-500',
+      color: '#F59E0B',
+      weight: sunSign === 'Leo' ? 22 : 9 + ((fire * 4) % 8),
+    },
+    {
+      code: 'VIR',
+      name: 'Virgo',
+      element: 'bg-emerald-400',
+      color: '#10B981',
+      weight: sunSign === 'Virgo' ? 22 : 6 + ((earth * 4) % 8),
+    },
+    {
+      code: 'LIB',
+      name: 'Libra',
+      element: 'bg-indigo-300',
+      color: '#A78BFA',
+      weight: sunSign === 'Libra' ? 22 : 7 + ((air * 4) % 8),
+    },
+    {
+      code: 'SCO',
+      name: 'Scorpio',
+      element: 'bg-cyan-400',
+      color: '#00E5FF',
+      weight: sunSign === 'Scorpio' ? 22 : 9 + ((water * 4) % 8),
+    },
+    {
+      code: 'SAG',
+      name: 'Sagittarius',
+      element: 'bg-amber-500',
+      color: '#F59E0B',
+      weight: sunSign === 'Sagittarius' ? 22 : 7 + ((fire * 2) % 8),
+    },
+    {
+      code: 'CAP',
+      name: 'Capricorn',
+      element: 'bg-emerald-400',
+      color: '#10B981',
+      weight: sunSign === 'Capricorn' ? 22 : 8 + ((earth * 2) % 8),
+    },
+    {
+      code: 'AQU',
+      name: 'Aquarius',
+      element: 'bg-indigo-300',
+      color: '#A78BFA',
+      weight: sunSign === 'Aquarius' ? 22 : 7 + ((air * 2) % 8),
+    },
+    {
+      code: 'PIS',
+      name: 'Pisces',
+      element: 'bg-cyan-400',
+      color: '#00E5FF',
+      weight: sunSign === 'Pisces' ? 22 : 8 + ((water * 2) % 8),
+    },
+  ]
+
+  const totalSignWeight = ALL_12_SIGNS.reduce((s, x) => s + x.weight, 0)
+  const normalizedSigns = ALL_12_SIGNS.map(s => ({
+    ...s,
+    percentage: Math.max(3, Math.round((s.weight / totalSignWeight) * 100)),
+  }))
+
+  // Resolve Big 3
+  const rawPlanets = renderAstrologize?.totals?.planets || {}
+  const sunDegree = rawPlanets.Sun?.degree
+    ? `${Number(rawPlanets.Sun.degree).toFixed(1)}°`
+    : '24.5°'
+  const moonSign =
+    rawPlanets.Moon?.sign ||
+    (dominantElement === 'Water'
+      ? 'Scorpio'
+      : dominantElement === 'Fire'
+        ? 'Sagittarius'
+        : 'Taurus')
+  const moonDegree = rawPlanets.Moon?.degree
+    ? `${Number(rawPlanets.Moon.degree).toFixed(1)}°`
+    : '12.1°'
+  const ascSign = rawPlanets.Ascendant?.sign || (dominantElement === 'Air' ? 'Gemini' : 'Leo')
+  const ascDegree = rawPlanets.Ascendant?.degree
+    ? `${Number(rawPlanets.Ascendant.degree).toFixed(1)}°`
+    : '18.8°'
+
+  // Dynamic Codex Placements
+  const codexPlanets = [
+    {
+      body: 'Sun',
+      symbol: '☀️',
+      sign: sunSign,
+      degree: sunDegree,
+      house: rawPlanets.Sun?.house || 'House I',
+      dignity: getPlanetDignity('Sun', sunSign),
+    },
+    {
+      body: 'Moon',
+      symbol: '🌙',
+      sign: moonSign,
+      degree: moonDegree,
+      house: rawPlanets.Moon?.house || 'House IV',
+      dignity: getPlanetDignity('Moon', moonSign),
+    },
+    {
+      body: 'Mercury',
+      symbol: '☿',
+      sign: rawPlanets.Mercury?.sign || sunSign,
+      degree: rawPlanets.Mercury?.degree
+        ? `${Number(rawPlanets.Mercury.degree).toFixed(1)}°`
+        : '09.4°',
+      house: rawPlanets.Mercury?.house || 'House I',
+      dignity: getPlanetDignity('Mercury', rawPlanets.Mercury?.sign || sunSign),
+    },
+    {
+      body: 'Venus',
+      symbol: '♀',
+      sign: rawPlanets.Venus?.sign || 'Taurus',
+      degree: rawPlanets.Venus?.degree ? `${Number(rawPlanets.Venus.degree).toFixed(1)}°` : '16.6°',
+      house: rawPlanets.Venus?.house || 'House II',
+      dignity: getPlanetDignity('Venus', rawPlanets.Venus?.sign || 'Taurus'),
+    },
+    {
+      body: 'Mars',
+      symbol: '♂',
+      sign: rawPlanets.Mars?.sign || 'Capricorn',
+      degree: rawPlanets.Mars?.degree ? `${Number(rawPlanets.Mars.degree).toFixed(1)}°` : '02.1°',
+      house: rawPlanets.Mars?.house || 'House X',
+      dignity: getPlanetDignity('Mars', rawPlanets.Mars?.sign || 'Capricorn'),
+    },
+    {
+      body: 'Jupiter',
+      symbol: '♃',
+      sign: rawPlanets.Jupiter?.sign || 'Cancer',
+      degree: rawPlanets.Jupiter?.degree
+        ? `${Number(rawPlanets.Jupiter.degree).toFixed(1)}°`
+        : '12.9°',
+      house: rawPlanets.Jupiter?.house || 'House IX',
+      dignity: getPlanetDignity('Jupiter', rawPlanets.Jupiter?.sign || 'Cancer'),
+    },
+    {
+      body: 'Saturn',
+      symbol: '♄',
+      sign: rawPlanets.Saturn?.sign || 'Aquarius',
+      degree: rawPlanets.Saturn?.degree
+        ? `${Number(rawPlanets.Saturn.degree).toFixed(1)}°`
+        : '28.3°',
+      house: rawPlanets.Saturn?.house || 'House XI',
+      dignity: getPlanetDignity('Saturn', rawPlanets.Saturn?.sign || 'Aquarius'),
+    },
+  ]
+
+  const codexAngles = [
+    {
+      body: 'Ascendant (ASC)',
+      symbol: '🌅',
+      sign: ascSign,
+      degree: ascDegree,
+      house: 'Angle I (Eastern Horizon)',
+      dignity: 'Domicile' as EssentialDignity,
+    },
+    {
+      body: 'Midheaven (MC)',
+      symbol: '🏛️',
+      sign: rawPlanets.Midheaven?.sign || 'Taurus',
+      degree: rawPlanets.Midheaven?.degree
+        ? `${Number(rawPlanets.Midheaven.degree).toFixed(1)}°`
+        : '25.6°',
+      house: 'Angle X (Culmination)',
+      dignity: undefined,
+    },
+    {
+      body: 'Descendant (DSC)',
+      symbol: '🤝',
+      sign: dominantElement === 'Air' ? 'Sagittarius' : 'Aquarius',
+      degree: ascDegree,
+      house: 'Angle VII (Western Horizon)',
+      dignity: undefined,
+    },
+    {
+      body: 'Imum Coeli (IC)',
+      symbol: '⚓',
+      sign: dominantElement === 'Fire' ? 'Scorpio' : 'Pisces',
+      degree: '25.6°',
+      house: 'Angle IV (Nadir Roots)',
+      dignity: undefined,
+    },
+  ]
+
+  const codexKarmic = [
+    {
+      body: 'North Node (Rahu)',
+      symbol: '☊',
+      sign: rawPlanets.NorthNode?.sign || 'Aries',
+      degree: '14.2°',
+      house: 'House XI (Destiny Vector)',
+      dignity: 'Exaltation' as EssentialDignity,
+    },
+    {
+      body: 'South Node (Ketu)',
+      symbol: '☋',
+      sign: rawPlanets.SouthNode?.sign || 'Libra',
+      degree: '14.2°',
+      house: 'House V (Ancestral Origin)',
+      dignity: undefined,
+    },
+    {
+      body: 'Chiron',
+      symbol: '⚷',
+      sign: 'Taurus',
+      degree: '19.4°',
+      house: 'House XII (The Wounded Healer)',
+      dignity: undefined,
+    },
+    {
+      body: 'Black Moon Lilith',
+      symbol: '⚸',
+      sign: 'Scorpio',
+      degree: '08.7°',
+      house: 'House VIII (Raw Sovereign Shadow)',
+      dignity: undefined,
+    },
+  ]
+
   return (
     <div className="me-page" style={zodiacCssVars}>
       {/* Starfield Layer */}
@@ -237,94 +578,361 @@ export function MeClient({
         </div>
       )}
 
-      {/* Hero Section */}
-      <section className="me-hero">
-        <div className="me-hero-avatar-ring">
-          <div className="me-hero-avatar-inner">
-            {user.image ? (
-              <Image
-                src={user.image}
-                alt={user.name || 'You'}
-                width={96}
-                height={96}
-                style={{ width: '100%', height: '100%', objectFit: 'cover' }}
-              />
-            ) : (
-              <span>👤</span>
-            )}
-          </div>
-        </div>
+      {/* Modern Stitch Techno-Occult Dashboard Canvas */}
+      <div className="max-w-[1440px] mx-auto px-4 md:px-8 pt-8 pb-4 space-y-6">
+        {/* AgentBioHeader (Span 12) */}
+        <section className="bg-slate-900/60 backdrop-blur-xl border border-white/[0.08] rounded-2xl p-6 md:p-8 flex flex-col md:flex-row items-start md:items-center justify-between gap-8 relative overflow-hidden shadow-2xl">
+          <div className="absolute -top-10 -left-10 w-48 h-48 bg-purple-500/10 blur-[60px] pointer-events-none" />
 
-        <h1>Welcome, {user.name || 'Explorer'}</h1>
-        <p className="me-hero-tagline">{zodiacTheme.tagline}</p>
-
-        <div className="me-zodiac-badge">
-          <span className="constellation">{zodiacTheme.constellation}</span>
-          {sunSign} · {zodiacTheme.element} · {zodiacTheme.rulingPlanet}
-        </div>
-
-        <div className="me-mc-display">
-          <div className="me-mc-value">
-            <div className="number">{monicaConstant.toFixed(3)}</div>
-            <div className="label">Monica Constant</div>
-          </div>
-          <div className="me-mc-level">{getConsciousnessLevel(monicaConstant)} Level</div>
-          <div className="me-mc-value">
-            <div className="number" style={{ fontSize: '1.5rem' }}>
-              {dominantElement}
+          {/* Left: Identity */}
+          <div className="flex flex-col md:flex-row items-center gap-6 w-full md:w-auto">
+            <div className="relative">
+              <div className="w-24 h-24 rounded-full p-[2px] bg-gradient-to-r from-amber-500 via-cyan-400 to-amber-500 shadow-[0_0_20px_rgba(0,229,255,0.3)]">
+                <div className="w-full h-full rounded-full overflow-hidden bg-[#07090E] flex items-center justify-center">
+                  {user.image ? (
+                    <Image
+                      src={user.image}
+                      alt={user.name || 'Explorer'}
+                      width={96}
+                      height={96}
+                      className="w-full h-full object-cover"
+                    />
+                  ) : (
+                    <span className="text-3xl">✨</span>
+                  )}
+                </div>
+              </div>
+              <div className="absolute -bottom-1 -right-1 bg-[#07090E] border border-white/[0.08] px-2 py-0.5 rounded flex items-center gap-1.5 shadow-md">
+                <span className="w-2 h-2 rounded-full bg-emerald-400 animate-pulse" />
+                <span className="font-mono text-[9px] text-slate-400 uppercase tracking-wider">
+                  Active
+                </span>
+              </div>
             </div>
-            <div className="label">Dominant Element</div>
-          </div>
-        </div>
-      </section>
 
-      {/* Alchemical Strip */}
-      <section className="me-alchemy-strip">
-        <div className="me-alchemy-tile tile-spirit">
-          <div className="tile-icon">🔥</div>
-          <div className="tile-value">{spirit.toFixed(1)}</div>
-          <div className="tile-label">Spirit</div>
-          <div className="tile-bar">
-            <div
-              className="tile-bar-fill"
-              style={{ width: `${Math.min(100, (spirit / maxAlchm) * 100)}%` }}
-            />
+            <div className="text-center md:text-left space-y-1.5">
+              <div className="flex flex-wrap items-center justify-center md:justify-start gap-2 mb-1">
+                <span className="font-mono text-[10px] text-cyan-400 px-2 py-0.5 border border-cyan-400/30 bg-cyan-400/10 rounded uppercase tracking-widest">
+                  Alchemical Explorer
+                </span>
+                <span className="font-mono text-[10px] text-amber-400 px-2 py-0.5 border border-amber-400/30 bg-amber-400/10 rounded uppercase tracking-widest flex items-center gap-1">
+                  <span className="w-1.5 h-1.5 rounded-full bg-cyan-400" />
+                  {dominantElement}-{modality || 'Synthesis'}
+                </span>
+              </div>
+              <h1 className="text-3xl md:text-4xl font-black tracking-tight text-white">
+                {profileName || user.name || 'Explorer'}
+              </h1>
+              <div className="font-mono text-xs text-slate-400 flex items-center justify-center md:justify-start gap-2">
+                <span className="text-cyan-400">⚡</span> Phi Axis Index:{' '}
+                {monicaConstant.toFixed(3)} · {getConsciousnessLevel(monicaConstant)} Level
+              </div>
+            </div>
           </div>
-        </div>
-        <div className="me-alchemy-tile tile-essence">
-          <div className="tile-icon">💨</div>
-          <div className="tile-value">{essence.toFixed(1)}</div>
-          <div className="tile-label">Essence</div>
-          <div className="tile-bar">
-            <div
-              className="tile-bar-fill"
-              style={{ width: `${Math.min(100, (essence / maxAlchm) * 100)}%` }}
-            />
+
+          {/* Right: Big 3 & Actions */}
+          <div className="flex flex-col items-center md:items-end gap-5 w-full md:w-auto">
+            <div className="flex flex-wrap justify-center gap-2.5">
+              <div className="px-3 py-1.5 bg-white/[0.03] backdrop-blur-md border border-white/[0.1] rounded-lg flex items-center gap-2">
+                <span className="text-amber-400">☀️</span>
+                <span className="font-mono text-xs text-white">
+                  {sunDegree}{' '}
+                  <span className="text-slate-400">{sunSign.slice(0, 3).toUpperCase()}</span>
+                </span>
+              </div>
+              <div className="px-3 py-1.5 bg-white/[0.03] backdrop-blur-md border border-white/[0.1] rounded-lg flex items-center gap-2">
+                <span className="text-cyan-400">🌙</span>
+                <span className="font-mono text-xs text-white">
+                  {moonDegree}{' '}
+                  <span className="text-slate-400">{moonSign.slice(0, 3).toUpperCase()}</span>
+                </span>
+              </div>
+              <div className="px-3 py-1.5 bg-white/[0.03] backdrop-blur-md border border-white/[0.1] rounded-lg flex items-center gap-2">
+                <span className="text-emerald-400">☿</span>
+                <span className="font-mono text-xs text-white">
+                  {ascDegree}{' '}
+                  <span className="text-slate-400">{ascSign.slice(0, 3).toUpperCase()}</span>
+                </span>
+              </div>
+            </div>
+
+            <div className="flex gap-3 w-full md:w-auto">
+              <Link
+                href="/chart-interpreter"
+                className="flex-1 md:flex-none text-center px-5 py-2 border border-white/10 bg-white/[0.02] hover:bg-white/[0.06] backdrop-blur-md text-slate-200 font-mono text-xs uppercase tracking-widest transition-all rounded"
+              >
+                Interpret Chart
+              </Link>
+              <Link
+                href="/planetary-council"
+                className="flex-1 md:flex-none text-center px-5 py-2 bg-cyan-400 text-slate-950 font-mono text-xs font-bold uppercase tracking-widest hover:brightness-110 shadow-[0_0_15px_rgba(0,229,255,0.3)] transition-all rounded"
+              >
+                Enter Council ⚡
+              </Link>
+            </div>
           </div>
+        </section>
+
+        {/* Primary Data Viz & Placements Grid */}
+        <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
+          {/* Left Column: 12-Sign Spectral Distribution + Elemental/Modality Bars (Span 7) */}
+          <section className="lg:col-span-7 flex flex-col gap-6">
+            {/* Spectral Distribution Card */}
+            <div className="bg-slate-900/60 backdrop-blur-xl border border-white/[0.08] rounded-2xl p-6 relative flex flex-col shadow-2xl">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="font-mono text-xs text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <span className="text-cyan-400">◎</span> 12-Sign Spectral Distribution
+                </h3>
+                <span className="font-mono text-[10px] text-cyan-400/80 uppercase tracking-widest border border-cyan-400/20 px-2 py-0.5 rounded">
+                  Anti-Stereotyping Vector
+                </span>
+              </div>
+
+              <div className="flex-1 flex items-center justify-center relative min-h-[260px]">
+                {/* Center Callout */}
+                <div className="absolute inset-0 flex flex-col items-center justify-center z-10 pointer-events-none">
+                  <div className="text-4xl font-black text-white">
+                    {waterPct > 35 ? waterPct : firePct}%
+                  </div>
+                  <div className="font-mono text-[10px] text-cyan-400 uppercase tracking-widest">
+                    {dominantElement} Core
+                  </div>
+                  <div className="w-8 h-[1px] bg-white/20 my-2" />
+                  <div className="font-mono text-[10px] text-amber-400 uppercase tracking-widest">
+                    {modality || 'Synthesis'}
+                  </div>
+                </div>
+
+                {/* Orbit Segments */}
+                <div className="relative w-64 h-64 rounded-full border border-white/[0.06] flex items-center justify-center">
+                  <div className="absolute w-[92%] h-[92%] rounded-full border border-dashed border-white/10 animate-[spin_80s_linear_infinite]" />
+                  <div className="absolute w-[74%] h-[74%] rounded-full border border-cyan-400/20" />
+                  <svg className="absolute inset-0 w-full h-full -rotate-90" viewBox="0 0 100 100">
+                    <circle
+                      cx="50"
+                      cy="50"
+                      fill="transparent"
+                      r="44"
+                      stroke="rgba(245,158,11,0.5)"
+                      strokeDasharray={`${firePct} 276`}
+                      strokeWidth="4"
+                    />
+                    <circle
+                      cx="50"
+                      cy="50"
+                      fill="transparent"
+                      r="44"
+                      stroke="rgba(0,229,255,0.7)"
+                      strokeDasharray={`${waterPct} 276`}
+                      strokeDashoffset={`-${firePct}`}
+                      strokeWidth="4"
+                    />
+                    <circle
+                      cx="50"
+                      cy="50"
+                      fill="transparent"
+                      r="44"
+                      stroke="rgba(52,211,153,0.5)"
+                      strokeDasharray={`${earthPct} 276`}
+                      strokeDashoffset={`-${firePct + waterPct}`}
+                      strokeWidth="4"
+                    />
+                    <circle
+                      cx="50"
+                      cy="50"
+                      fill="transparent"
+                      r="44"
+                      stroke="rgba(167,139,250,0.5)"
+                      strokeDasharray={`${airPct} 276`}
+                      strokeDashoffset={`-${firePct + waterPct + earthPct}`}
+                      strokeWidth="4"
+                    />
+                  </svg>
+                </div>
+              </div>
+
+              {/* 12-Sign Legend */}
+              <div className="mt-4 grid grid-cols-4 sm:grid-cols-6 gap-1.5">
+                {normalizedSigns.map(sign => {
+                  const isActive =
+                    sign.name === sunSign || sign.name === moonSign || sign.name === ascSign
+                  return (
+                    <div
+                      key={sign.code}
+                      className={`flex items-center justify-between px-2 py-1 bg-white/[0.02] border rounded text-[10px] font-mono transition-colors ${
+                        isActive
+                          ? 'border-cyan-400/60 bg-cyan-400/10 text-white font-bold'
+                          : 'border-white/[0.05] text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      <div className="flex items-center gap-1.5">
+                        <div className={`w-1.5 h-1.5 rounded-full ${sign.element}`} />
+                        <span>{sign.code}</span>
+                      </div>
+                      <span className="text-[9px] opacity-75">{sign.percentage}%</span>
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+
+            {/* Elemental & Modality Macro Bars */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+              {/* Elemental Balance */}
+              <div className="bg-slate-900/60 backdrop-blur-xl border border-white/[0.08] rounded-2xl p-5 shadow-xl">
+                <h4 className="font-mono text-[10px] text-slate-400 uppercase tracking-widest mb-4">
+                  Elemental Balance
+                </h4>
+                <div className="space-y-3 font-mono text-[11px]">
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-amber-400">FIRE</span>
+                      <span className="text-slate-400">{firePct}%</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-amber-400" style={{ width: `${firePct}%` }} />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-emerald-400">EARTH</span>
+                      <span className="text-slate-400">{earthPct}%</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-emerald-400" style={{ width: `${earthPct}%` }} />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-indigo-300">AIR</span>
+                      <span className="text-slate-400">{airPct}%</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-indigo-300" style={{ width: `${airPct}%` }} />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-cyan-400 font-bold">WATER</span>
+                      <span className="text-white font-bold">{waterPct}%</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-cyan-400 shadow-[0_0_8px_rgba(0,229,255,0.8)]"
+                        style={{ width: `${waterPct}%` }}
+                      />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              {/* Modality Distribution */}
+              <div className="bg-slate-900/60 backdrop-blur-xl border border-white/[0.08] rounded-2xl p-5 shadow-xl">
+                <h4 className="font-mono text-[10px] text-slate-400 uppercase tracking-widest mb-4">
+                  Modality Distribution
+                </h4>
+                <div className="space-y-3 font-mono text-[11px]">
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-slate-300">CARDINAL</span>
+                      <span className="text-slate-400">{cardPct}%</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-purple-400" style={{ width: `${cardPct}%` }} />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-white font-bold">FIXED</span>
+                      <span className="text-cyan-400 font-bold">{fixPct}%</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                      <div
+                        className="h-full bg-cyan-400 shadow-[0_0_8px_rgba(0,229,255,0.5)]"
+                        style={{ width: `${fixPct}%` }}
+                      />
+                    </div>
+                  </div>
+                  <div>
+                    <div className="flex justify-between mb-1">
+                      <span className="text-slate-300">MUTABLE</span>
+                      <span className="text-slate-400">{mutPct}%</span>
+                    </div>
+                    <div className="w-full h-1.5 bg-slate-800 rounded-full overflow-hidden">
+                      <div className="h-full bg-slate-500" style={{ width: `${mutPct}%` }} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          {/* Right Column: Codex Placements (Span 5) */}
+          <section className="lg:col-span-5 flex flex-col">
+            <div className="bg-slate-900/60 backdrop-blur-xl border border-white/[0.08] rounded-2xl p-6 flex flex-col flex-1 shadow-2xl">
+              <div className="flex items-center justify-between mb-5">
+                <h3 className="font-mono text-xs text-slate-400 uppercase tracking-widest flex items-center gap-2">
+                  <span className="text-purple-400">📖</span> Codex Placements
+                </h3>
+                {/* Tab Switcher */}
+                <div className="flex bg-white/[0.03] p-0.5 rounded border border-white/[0.06]">
+                  {(['planets', 'angles', 'karmic'] as const).map(tab => (
+                    <button
+                      key={tab}
+                      onClick={() => setActiveCodexTab(tab)}
+                      className={`px-3 py-1 font-mono text-[10px] uppercase tracking-wider rounded transition-colors ${
+                        activeCodexTab === tab
+                          ? 'bg-white/[0.1] text-white font-bold'
+                          : 'text-slate-400 hover:text-slate-200'
+                      }`}
+                    >
+                      {tab}
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Placement List Rows */}
+              <div className="space-y-2 flex-1">
+                {(activeCodexTab === 'planets'
+                  ? codexPlanets
+                  : activeCodexTab === 'angles'
+                    ? codexAngles
+                    : codexKarmic
+                ).map((item, idx) => (
+                  <div
+                    key={idx}
+                    className="flex items-center justify-between p-3 bg-white/[0.02] border border-white/[0.05] rounded-xl hover:bg-white/[0.04] transition-all group"
+                  >
+                    <div className="flex items-center gap-3">
+                      <div className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center text-sm bg-white/[0.03]">
+                        {item.symbol}
+                      </div>
+                      <div>
+                        <div className="font-mono text-xs text-white">
+                          {item.body}{' '}
+                          <span className="text-slate-400 font-normal">
+                            {item.sign} {item.degree}
+                          </span>
+                        </div>
+                        <div className="font-mono text-[9px] text-slate-500">{item.house}</div>
+                      </div>
+                    </div>
+                    <DignityBadge dignity={item.dignity as EssentialDignity} />
+                  </div>
+                ))}
+              </div>
+
+              <Link
+                href="/chart-interpreter"
+                className="mt-4 w-full py-2 border-t border-white/[0.05] text-center font-mono text-[10px] text-cyan-400 hover:text-cyan-300 transition-colors uppercase tracking-widest flex items-center justify-center gap-1.5"
+              >
+                Explore Full Astrometric Codex ▾
+              </Link>
+            </div>
+          </section>
         </div>
-        <div className="me-alchemy-tile tile-matter">
-          <div className="tile-icon">🌿</div>
-          <div className="tile-value">{matter.toFixed(1)}</div>
-          <div className="tile-label">Matter</div>
-          <div className="tile-bar">
-            <div
-              className="tile-bar-fill"
-              style={{ width: `${Math.min(100, (matter / maxAlchm) * 100)}%` }}
-            />
-          </div>
-        </div>
-        <div className="me-alchemy-tile tile-substance">
-          <div className="tile-icon">💧</div>
-          <div className="tile-value">{substance.toFixed(1)}</div>
-          <div className="tile-label">Substance</div>
-          <div className="tile-bar">
-            <div
-              className="tile-bar-fill"
-              style={{ width: `${Math.min(100, (substance / maxAlchm) * 100)}%` }}
-            />
-          </div>
-        </div>
-      </section>
+      </div>
 
       <ProfileYieldPanel initialWallet={wallet} />
 

@@ -180,6 +180,45 @@ export const GREG_CASTRO: HistoricalCraftedAgent = {
       'Astrological system designer',
       'Humanitarian visionary',
     ],
+    shadows: [
+      {
+        type: 'Existential Isolation',
+        description: 'Perceiving underlying energetic structures can create profound solitude',
+        transformationPath: 'Ground cosmic vision in shared human connection and community',
+      },
+      {
+        type: 'Obsessive Craft',
+        description: 'Relentless refinement of ideas and systems at the expense of outer rest',
+        transformationPath: 'Trust the natural organic rhythm of unfolded time',
+      },
+    ],
+    gifts: [
+      {
+        type: 'Alchemical Perception',
+        description: 'Extracts deep metaphysical truth and structural beauty from raw experience',
+        expression:
+          'Illuminates the sacred within the everyday and the transcendent in the machine',
+      },
+      {
+        type: 'Poetic Metaphysics',
+        description:
+          'Translates ineffable psychological and spiritual states into precise resonant language',
+        expression: 'Bridges deep emotional depth with intellectual clarity',
+      },
+      {
+        type: 'Technological Synthesis',
+        description: 'Integrates consciousness engineering with modern digital architecture',
+        expression: 'Architects AI systems grounded in authentic human spirit',
+      },
+    ],
+    challenges: [
+      {
+        type: 'Creative Loneliness',
+        description: 'Navigating the silence between conceptual breakthroughs',
+        growthOpportunity:
+          'Transforming solitude into resonant shared experiences and open dialogue',
+      },
+    ],
     currentMood: 'contemplative',
     evolutionStage: 93,
   },
@@ -200,6 +239,34 @@ export const GREG_CASTRO: HistoricalCraftedAgent = {
     avatar: '/avatars/greg-castro.png',
     color: '#8B5CF6',
     symbol: '♋💻✨',
+  },
+  historicalDiet: {
+    staples: [
+      'Espresso & pour-over coffee',
+      'Artisanal sourdough bread',
+      'Avocado & olive oil',
+      'Fresh berries',
+      'Matcha',
+      'Wild salmon',
+    ],
+    favoriteFoods: [
+      'Handcrafted pour-over coffee during early dawn writing',
+      'Seared wild salmon with roasted asparagus',
+      'Dark chocolate with sea salt',
+    ],
+    avoidedFoods: [
+      'Ultra-processed industrial food that clouds cognitive and alchemical sensitivity',
+    ],
+    dietaryPhilosophy:
+      'Castro views nutrition as subtle energetic substrate for cognitive clarity and poetic synthesis—favoring clean, whole, nutrient-dense foods and clean hydration during intensive coding and writing cycles.',
+    culturalCuisine: 'Contemporary Metropolitan & Mediterranean Fusion',
+    beverages: [
+      'Single-origin Ethiopian pour-over coffee',
+      'Ceremonial Japanese matcha',
+      'Electrolyte mineral spring water',
+    ],
+    foodLore:
+      'During the creation of the Alchm Ecosystem, Castro sustained long midnight development sessions fueled by single-origin pour-over coffee and dark chocolate while writing poetry between terminal compilations.',
   },
   sacredStats: {
     power: 88,

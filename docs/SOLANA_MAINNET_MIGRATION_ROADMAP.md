@@ -26,11 +26,11 @@ The **AlchmAgentsSolana (`ASOL`)** architecture orchestrates high-throughput, lo
 ├──────────────────────────────┬──────────────────────────────┬──────────────────────────┤
 │ Phase 1: Governance & KMS    │ Phase 2: Network Resiliency  │ Phase 3: Storefront UI   │
 │ Prompt 1: Squads & Cloud KMS │ Prompt 2: Priority Fees & RPC│ Prompt 3: ShopClient.tsx │
-│ [STATUS: COMPLETED (PR #4)]  │ [STATUS: COMPLETED (PR #5)]  │ [STATUS: COMPLETED]      │
+│ [STATUS: COMPLETED (PR #4)]  │ [STATUS: COMPLETED (PR #5)]  │ [STATUS: COMPLETED (PR#6)]│
 ├──────────────────────────────┼──────────────────────────────┼──────────────────────────┤
 │ Phase 4: Metadata & Build    │ Phase 5: StarVault Staking   │ Phase 6: Constellation   │
 │ Prompt 4: Arweave & Verify   │ Prompt 5: Checkpointed Yield │ Prompt 6: AMM & Deeds    │
-│ [STATUS: READY / NEXT]       │ [STATUS: QUEUED]             │ [STATUS: QUEUED]         │
+│ [STATUS: COMPLETED (PR #7)]  │ [STATUS: READY / NEXT]       │ [STATUS: QUEUED]         │
 ├──────────────────────────────┴──────────────────────────────┴──────────────────────────┤
 │ Phase 7: Mainnet Deployment, Live Rehearsal & Verification Runbook (Prompt 7) [QUEUED] │
 └────────────────────────────────────────────────────────────────────────────────────────┘
@@ -42,9 +42,9 @@ The **AlchmAgentsSolana (`ASOL`)** architecture orchestrates high-throughput, lo
 | :---------- | :------------------------------------- | :------------------------------------------------------ | :--------------- | :------------------------------------------------------------------------------------- |
 | **Phase 1** | Governance & Cloud KMS Key Management  | AWS KMS / GCP KMS HSM Signer, Squads v4 Runbook         | **COMPLETED**    | [PR #4](https://github.com/gregcastro23/alchm-agents-solana/pull/4) / Commit `aa782d3` |
 | **Phase 2** | Network Resiliency & Dynamic Fees      | CU Budgeting, Priority Fees, Yellowstone Geyser         | **COMPLETED**    | [PR #5](https://github.com/gregcastro23/alchm-agents-solana/pull/5) / Commit `563a807` |
-| **Phase 3** | Storefront & Detached Checkout         | Dual-rail Shop, detached Ed25519 redeem_for_esms        | **COMPLETED**    | [PR #6](https://github.com/gregcastro23/alchm-agents-solana/pull/6) / `ShopClient.tsx` |
-| **Phase 4** | Token-2022 Metadata & Verifiable Build | Arweave metadata, reproducible Docker Anchor build      | **READY / NEXT** | `metadata/solana/*.json`                                                               |
-| **Phase 5** | StarVault Staking & Yield Claims       | Time-weighted element lockups, yield checkpoints        | **QUEUED**       | `programs/asol_program/src/instructions/stake.rs`                                      |
+| **Phase 3** | Storefront & Detached Checkout         | Dual-rail Shop, detached Ed25519 redeem_for_esms        | **COMPLETED**    | [PR #6](https://github.com/gregcastro23/alchm-agents-solana/pull/6) / Commit `565d768` |
+| **Phase 4** | Token-2022 Metadata & Verifiable Build | Arweave metadata, reproducible Docker Anchor build      | **COMPLETED**    | [PR #7](https://github.com/gregcastro23/alchm-agents-solana/pull/7) / Commit `499afee` |
+| **Phase 5** | StarVault Staking & Yield Claims       | Checkpointed yield accumulator, Hipparcos star pools    | **READY / NEXT** | `programs/asol_program/src/state/staking.rs`                                           |
 | **Phase 6** | Constellation Deeds & AMM Bonding      | Fractional agent deeds, Constant Product AMM            | **QUEUED**       | `programs/asol_program/src/instructions/amm.rs`                                        |
 | **Phase 7** | Mainnet Deployment & Live Rehearsal    | Mainnet deployment runbook, Genesis check, Verification | **QUEUED**       | `scripts/deploy/deploy-mainnet.sh`                                                     |
 
@@ -354,24 +354,45 @@ The 4 ESMS mints carry placeholder URIs (`https://alchm.kitchen/metadata/esms/*.
 3. `esms_mint_fixed_account_len()` defines creation space (310 bytes), while `esms_mint_account_len()` (469–475 bytes with Arweave URIs) determines the rent-exempt funding basis.
 4. **Devnet Divergence Accepted (Option a):** The 4 ESMS mints on Devnet are PDAs at `[b"esms_mint", &[id]]` (`K5kwwomtWYydxJacA7bC5yUEW9TtEuVqBKBoqAWLmhQ`, `3FcpToU7bj4sLD687uecbesEjzjxBfqYn2EcBXJKPaCf`, `7naJZozLrknDF3dguAdEWn7Z4MviUkXitjhaAt57Vkb4`, `6RY6ZG1eJQ2uEvpyA6XK74WyF1MpTYbw97hdhELqDUsa`). Without a `CloseAuthority` extension, these cannot be closed or re-initialized with new URIs. Once `constants.rs` points to permanent Arweave URIs, `initialize_esms_mints` will permanently fail `validate_existing_mint` on Devnet. Devnet divergence is documented as retired-in-place. `claim_mint_esms` and `redeem_esms` remain fully functional because they do not call `validate_existing_mint`.
 
-### Target Files
+### Implemented Deliverables
 
-- `[NEW]` `metadata/solana/manifest.schema.json` — Token-2022 JSON Schema Draft-07 validator.
-- `[NEW]` `metadata/solana/tokens/{spirit,essence,matter,substance}.json` — Off-chain manifests (Fire/Water/Earth/Air).
-- `[NEW]` `metadata/solana/icons/{spirit,essence,matter,substance}.svg` — Self-contained elemental iconography.
-- `[NEW]` `metadata/solana/arweave-manifest.json` — Committed upload receipt tracking checksums and txIds.
-- `[NEW]` `lib/solana/irys-signer-adapter.ts` — KMS-to-Irys raw message signing adapter.
-- `[NEW]` `scripts/metadata/upload-arweave-metadata.ts` — Two-pass Irys upload automation (dry-run by default).
-- `[NEW]` `test/solana/metadata-uris.spec.ts` — Cross-language URI pinning, schema validation, and rent gate.
-- `[NEW]` `test/solana/upload-arweave-metadata.spec.ts` — Uploader logic and KMS adapter unit tests.
-- `[NEW]` `docs/deployment/VERIFIABLE_BUILD_RUNBOOK.md` — Reproducible Docker build guide.
-- `[MODIFY]` `Anchor.toml` — Add `[programs.mainnet]`.
-- `[MODIFY]` `lib/solana/vectors.ts` — Export `ESMS_NAMES`, `ESMS_SYMBOLS`, `ESMS_METADATA_URIS`.
+- `[NEW]` [`metadata/solana/manifest.schema.json`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/metadata/solana/manifest.schema.json) — Token-2022 JSON Schema Draft-07 validator supporting honest `null` images pre-upload and strict Arweave regex format.
+- `[NEW]` [`metadata/solana/tokens/{spirit,essence,matter,substance}.json`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/metadata/solana/tokens/) — Off-chain manifests matching on-chain Token-2022 name/symbol byte parity.
+- `[NEW]` [`metadata/solana/icons/{spirit,essence,matter,substance}.svg`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/metadata/solana/icons/) — Self-contained Techno-Occult SVG icons enforcing zero `<script>`, zero `<foreignObject>`, and zero external links.
+- `[NEW]` [`metadata/solana/arweave-manifest.json`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/metadata/solana/arweave-manifest.json) — Committed upload receipt tracking SHA-256 digests, txIds, and remote URIs.
+- `[NEW]` [`lib/solana/irys-signer-adapter.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/irys-signer-adapter.ts) — Signer adapter bridging `KmsSolanaSigner` Ed25519 signatures to Irys's raw message bundle contract.
+- `[NEW]` [`scripts/metadata/upload-arweave-metadata.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/scripts/metadata/upload-arweave-metadata.ts) — Two-pass Arweave uploader (SVGs first, manifests second) with Prettier-first normalization, dry-run mode, and fail-closed Cloud KMS enforcement.
+- `[NEW]` [`test/solana/metadata-uris.spec.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/test/solana/metadata-uris.spec.ts) — Non-tautological rent calculation pin (`310b` fixed space, `453b`..`462b` current / `469b`..`475b` Arweave), AJV schema validation, and SVG security tests.
+- `[NEW]` [`test/solana/upload-arweave-metadata.spec.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/test/solana/upload-arweave-metadata.spec.ts) — Comprehensive unit tests with mocked Irys uploader verifying two-pass ordering, readback mismatch detection, and `os.tmpdir()` isolation.
+- `[NEW]` [`docs/deployment/VERIFIABLE_BUILD_RUNBOOK.md`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/docs/deployment/VERIFIABLE_BUILD_RUNBOOK.md) — Reproducible Docker Anchor build runbook (`backpackapp/build:v0.30.1`), `solana-verify` commands, and Devnet retirement policy.
+- `[MODIFY]` [`Anchor.toml`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/Anchor.toml) — Added `[programs.mainnet]` entry mapping `asol_program`.
+- `[MODIFY]` [`lib/solana/vectors.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/vectors.ts) — Exported `ESMS_NAMES`, `ESMS_SYMBOLS`, `ESMS_METADATA_URIS`.
+- `[MODIFY]` [`.github/workflows/ci.yml`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/.github/workflows/ci.yml) — Added dedicated `solana-program` Rust `cargo test` job and `test:solana:unit` runner.
+
+### Architectural Insights & Lessons Learned
+
+1. **Consensus-Critical Immutability & Two-Pass Upload Order:**
+   - In Anchor Token-2022 programs without `token_metadata_update_field`, URIs written during `initialize_esms_mints` are permanently immutable.
+   - The upload process strictly follows a two-pass order: Pass 1 uploads the 4 elemental SVGs to obtain permanent Arweave transaction IDs; Pass 2 patches those URLs into `image` fields, canonicalizes formatting via Prettier, and uploads the 4 JSON manifests to obtain the final metadata URIs.
+
+2. **Cloud KMS Bridging for Arweave Data Bundles:**
+   - Arweave/Irys data bundles require detached 64-byte Ed25519 signatures (signature type 2).
+   - `KmsIrysSignerAdapter` directly wraps `KmsSolanaSigner.signMessage()` to ensure live mainnet uploads utilize HSM-backed keys without exposing secrets in memory.
+   - A fail-closed check enforces `signer.provider !== 'local'` on live mainnet executions.
+
+3. **Non-Tautological Token-2022 Account Rent Derivation:**
+   - Creation space is strictly 310 bytes (`esms_mint_fixed_account_len()`).
+   - Value length (`80 + name + symbol + uri`) dynamically accounts for URI lengths (e.g. 63 bytes for `https://arweave.net/<43-char-txid>`), resulting in total account sizes of 469B (Spirit/Matter), 471B (Essence), and 475B (Substance).
+   - Tests dynamically derive rent assertions from `ESMS_METADATA_URIS` rather than hardcoding static assumptions.
+
+4. **Verifiable Docker Anchor Builds & Devnet Divergence:**
+   - Anchor binaries are compiled inside `backpackapp/build:v0.30.1` (`Solana 1.18.17`, `Rust 1.79.0`) to guarantee deterministic SHA-256 hash matching for `solana-verify` and OtterSec verified builds.
+   - Devnet divergence (Option a) retires existing Devnet placeholder mints in-place rather than breaking initialization idempotency assumptions.
 
 ### Prompt 4 (XML Structured)
 
 ```xml
-<prompt id="asol-phase-4-metadata-verifiable-build">
+<prompt id="asol-phase-4-metadata-verifiable-build" status="completed" pr="7">
   <context>
     <repository>AlchmAgentsSolana (ASOL)</repository>
     <repository_url>https://github.com/gregcastro23/alchm-agents-solana</repository_url>
