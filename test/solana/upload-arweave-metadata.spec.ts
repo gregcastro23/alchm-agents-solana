@@ -137,7 +137,8 @@ describe('Irys Signer Adapter & Upload Automation', () => {
       if (match) {
         const found = uploadedAssets.find(a => a.id === match[1])
         if (found) {
-          return new Response(found.buffer, { status: 200 })
+          // Node `Buffer` is not a `BodyInit`; its backing bytes are.
+          return new Response(new Uint8Array(found.buffer), { status: 200 })
         }
       }
       return new Response('Not Found', { status: 404 })

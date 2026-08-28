@@ -67,6 +67,7 @@ pub fn openzeppelin_star_leaf(star_id: u32) -> [u8; 32] {
 }
 
 pub const REDEEM_AUTHORIZATION_DOMAIN: &[u8] = b"ASOL_ESMS_REDEEM_V1";
+pub const AMM_VISIBILITY_AUTHORIZATION_DOMAIN: &[u8] = b"ASOL_AMM_VISIBILITY_V1";
 
 pub fn redeem_authorization_vector(
     program_id: &[u8; 32],
@@ -85,6 +86,31 @@ pub fn redeem_authorization_vector(
     for amount in amounts {
         message.extend_from_slice(&amount.to_le_bytes());
     }
+    message.extend_from_slice(&deadline.to_le_bytes());
+    message
+}
+
+pub fn amm_visibility_authorization_message(
+    program_id: &[u8; 32],
+    cluster_domain: &[u8; 32],
+    trader: &[u8; 32],
+    pool_id: u16,
+    op: u8,
+    region_commit: &[u8; 32],
+    visible_stars: u8,
+    nonce: u64,
+    deadline: i64,
+) -> Vec<u8> {
+    let mut message = Vec::with_capacity(170);
+    message.extend_from_slice(AMM_VISIBILITY_AUTHORIZATION_DOMAIN);
+    message.extend_from_slice(program_id);
+    message.extend_from_slice(cluster_domain);
+    message.extend_from_slice(trader);
+    message.extend_from_slice(&pool_id.to_le_bytes());
+    message.push(op);
+    message.extend_from_slice(region_commit);
+    message.push(visible_stars);
+    message.extend_from_slice(&nonce.to_le_bytes());
     message.extend_from_slice(&deadline.to_le_bytes());
     message
 }
@@ -141,20 +167,44 @@ mod tests {
         let order = [4; 32];
         let amounts = [10_000, 20_000, 30_000, 40_000];
         let deadline = 1_900_000_000;
-        let vector = redeem_authorization_vector(
-            &program_id,
-            &cluster,
-            &holder,
-            &order,
-            &amounts,
-            deadline,
-        );
+        let vector =
+            redeem_authorization_vector(&program_id, &cluster, &holder, &order, &amounts, deadline);
         assert_eq!(
             hex(&vector),
             "41534f4c5f45534d535f52454445454d5f563101010101010101010101010101010101010101010101010101010101010101010202020202020202020202020202020202020202020202020202020202020202030303030303030303030303030303030303030303030303030303030303030304040404040404040404040404040404040404040404040404040404040404041027000000000000204e0000000000003075000000000000409c00000000000000b33f7100000000"
         );
     }
 
+    #[test]
+    fn serializes_canonical_amm_visibility_authorization_vector() {
+        let program_id = [1; 32];
+        let cluster = [2; 32];
+        let trader = [3; 32];
+        let pool_id: u16 = 3;
+        let op: u8 = 1; // swap
+        let region_commit = [5; 32];
+        let visible_stars: u8 = 7;
+        let nonce: u64 = 42;
+        let deadline: i64 = 1_900_000_000;
+
+        let message = amm_visibility_authorization_message(
+            &program_id,
+            &cluster,
+            &trader,
+            pool_id,
+            op,
+            &region_commit,
+            visible_stars,
+            nonce,
+            deadline,
+        );
+
+        assert_eq!(message.len(), 170);
+        assert_eq!(
+            hex(&message),
+            "41534f4c5f414d4d5f5649534942494c4954595f56310101010101010101010101010101010101010101010101010101010101010101020202020202020202020202020202020202020202020202020202020202020203030303030303030303030303030303030303030303030303030303030303030300010505050505050505050505050505050505050505050505050505050505050505072a0000000000000000b33f7100000000"
+        );
+    }
 
     fn hex(bytes: &[u8]) -> String {
         use std::fmt::Write;

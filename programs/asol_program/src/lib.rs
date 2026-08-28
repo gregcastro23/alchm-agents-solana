@@ -105,19 +105,11 @@ pub mod asol_program {
         staking::activate_star(ctx, star_id, proof)
     }
 
-    pub fn stake_star(
-        ctx: Context<StakeStar>,
-        star_id: u32,
-        usdc_amount: u64,
-    ) -> Result<()> {
+    pub fn stake_star(ctx: Context<StakeStar>, star_id: u32, usdc_amount: u64) -> Result<()> {
         staking::stake_star(ctx, star_id, usdc_amount)
     }
 
-    pub fn unstake_star(
-        ctx: Context<UnstakeStar>,
-        star_id: u32,
-        shares: u64,
-    ) -> Result<()> {
+    pub fn unstake_star(ctx: Context<UnstakeStar>, star_id: u32, shares: u64) -> Result<()> {
         staking::unstake_star(ctx, star_id, shares)
     }
 
@@ -131,5 +123,83 @@ pub mod asol_program {
     ) -> Result<()> {
         staking::claim_star_yield(ctx, star_id, element_id, amount, nonce, deadline)
     }
-}
 
+    pub fn register_pool(
+        ctx: Context<RegisterPool>,
+        pool_id: u16,
+        element_a: u8,
+        element_b: u8,
+        fee_bps: u16,
+    ) -> Result<()> {
+        amm::register_pool(ctx, pool_id, element_a, element_b, fee_bps)
+    }
+
+    pub fn bootstrap_pool(
+        ctx: Context<BootstrapPool>,
+        pool_id: u16,
+        reserve_a: u64,
+        reserve_b: u64,
+    ) -> Result<()> {
+        amm::bootstrap_pool(ctx, pool_id, reserve_a, reserve_b)
+    }
+
+    pub fn set_pool_pause(ctx: Context<SetPoolPause>, pool_id: u16, paused: bool) -> Result<()> {
+        amm::set_pool_pause(ctx, pool_id, paused)
+    }
+
+    pub fn add_liquidity(
+        ctx: Context<AddLiquidity>,
+        pool_id: u16,
+        amt_a: u64,
+        amt_b: u64,
+        min_shares: u64,
+        region_commit: [u8; 32],
+        visible_stars: u8,
+        nonce: u64,
+        deadline: i64,
+    ) -> Result<()> {
+        amm::add_liquidity(
+            ctx,
+            pool_id,
+            amt_a,
+            amt_b,
+            min_shares,
+            region_commit,
+            visible_stars,
+            nonce,
+            deadline,
+        )
+    }
+
+    pub fn swap_esms(
+        ctx: Context<SwapEsms>,
+        pool_id: u16,
+        in_element: u8,
+        in_amount: u64,
+        min_out: u64,
+        region_commit: [u8; 32],
+        visible_stars: u8,
+        nonce: u64,
+        deadline: i64,
+    ) -> Result<()> {
+        amm::swap_esms(
+            ctx,
+            pool_id,
+            in_element,
+            in_amount,
+            min_out,
+            region_commit,
+            visible_stars,
+            nonce,
+            deadline,
+        )
+    }
+
+    pub fn withdraw_liquidity(
+        ctx: Context<WithdrawLiquidity>,
+        pool_id: u16,
+        share_bps: u16,
+    ) -> Result<()> {
+        amm::withdraw_liquidity(ctx, pool_id, share_bps)
+    }
+}

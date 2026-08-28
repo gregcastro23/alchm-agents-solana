@@ -38,15 +38,15 @@ The **AlchmAgentsSolana (`ASOL`)** architecture orchestrates high-throughput, lo
 
 ### Migration Progress & Phase Status
 
-| Phase       | Title                                  | Target Scope                                            | Status           | References / PR                                                                        |
-| :---------- | :------------------------------------- | :------------------------------------------------------ | :--------------- | :------------------------------------------------------------------------------------- |
-| **Phase 1** | Governance & Cloud KMS Key Management  | AWS KMS / GCP KMS HSM Signer, Squads v4 Runbook         | **COMPLETED**    | [PR #4](https://github.com/gregcastro23/alchm-agents-solana/pull/4) / Commit `aa782d3` |
-| **Phase 2** | Network Resiliency & Dynamic Fees      | CU Budgeting, Priority Fees, Yellowstone Geyser         | **COMPLETED**    | [PR #5](https://github.com/gregcastro23/alchm-agents-solana/pull/5) / Commit `563a807` |
-| **Phase 3** | Storefront & Detached Checkout         | Dual-rail Shop, detached Ed25519 redeem_for_esms        | **COMPLETED**    | [PR #6](https://github.com/gregcastro23/alchm-agents-solana/pull/6) / Commit `565d768` |
-| **Phase 4** | Token-2022 Metadata & Verifiable Build | Arweave metadata, reproducible Docker Anchor build      | **COMPLETED**    | [PR #7](https://github.com/gregcastro23/alchm-agents-solana/pull/7) / Commit `499afee` |
-| **Phase 5** | StarVault Staking & Yield Claims       | Checkpointed yield accumulator, Hipparcos star pools    | **COMPLETED**    | [PR #9](https://github.com/gregcastro23/alchm-agents-solana/pull/9) / Commit `8a52479` |
-| **Phase 6** | Constellation Deeds & AMM Bonding      | Fractional agent deeds, Constant Product AMM            | **READY / NEXT** | `programs/asol_program/src/instructions/amm.rs`                                        |
-| **Phase 7** | Mainnet Deployment & Live Rehearsal    | Mainnet deployment runbook, Genesis check, Verification | **QUEUED**       | `scripts/deploy/deploy-mainnet.sh`                                                     |
+| Phase       | Title                                  | Target Scope                                            | Status        | References / PR                                                                        |
+| :---------- | :------------------------------------- | :------------------------------------------------------ | :------------ | :------------------------------------------------------------------------------------- |
+| **Phase 1** | Governance & Cloud KMS Key Management  | AWS KMS / GCP KMS HSM Signer, Squads v4 Runbook         | **COMPLETED** | [PR #4](https://github.com/gregcastro23/alchm-agents-solana/pull/4) / Commit `aa782d3` |
+| **Phase 2** | Network Resiliency & Dynamic Fees      | CU Budgeting, Priority Fees, Yellowstone Geyser         | **COMPLETED** | [PR #5](https://github.com/gregcastro23/alchm-agents-solana/pull/5) / Commit `563a807` |
+| **Phase 3** | Storefront & Detached Checkout         | Dual-rail Shop, detached Ed25519 redeem_for_esms        | **COMPLETED** | [PR #6](https://github.com/gregcastro23/alchm-agents-solana/pull/6) / Commit `565d768` |
+| **Phase 4** | Token-2022 Metadata & Verifiable Build | Arweave metadata, reproducible Docker Anchor build      | **COMPLETED** | [PR #7](https://github.com/gregcastro23/alchm-agents-solana/pull/7) / Commit `499afee` |
+| **Phase 5** | StarVault Staking & Yield Claims       | Checkpointed yield accumulator, Hipparcos star pools    | **COMPLETED** | [PR #9](https://github.com/gregcastro23/alchm-agents-solana/pull/9) / Commit `8a52479` |
+| **Phase 6** | Constellation AMM & LP Deed Positions  | Constant-product AMM, owner-seeded LP position PDAs     | **COMPLETED** | `programs/asol_program/src/instructions/amm/mod.rs`                                    |
+| **Phase 7** | Mainnet Deployment & Live Rehearsal    | Mainnet deployment runbook, Genesis check, Verification | **QUEUED**    | `scripts/deploy/deploy-mainnet.sh`                                                     |
 
 ---
 
@@ -512,76 +512,102 @@ Phase 5 was audited in [`docs/PHASE_5_STARVAULT_REVIEW.md`](file:///Users/cookin
 
 ---
 
-## Prompt 6 — Constellation Virtual-Reserve AMM & LP Deed NFTs (Parity Port)
+## Phase 6 — Constellation Virtual-Reserve AMM & LP Deed Positions (as built)
+
+Executable spec and the findings behind it: [`PHASE_6_AMM_PLAN.md`](./PHASE_6_AMM_PLAN.md),
+[`PHASE_6_AMM_PLAN_REVIEW.md`](./PHASE_6_AMM_PLAN_REVIEW.md).
 
 ### Context & Architectural Seams
 
-On Circle Arc EVM, `ConstellationAMM.sol` and `ConstellationDeed.sol` provide constant-product swapping between soulbound ESMS tokens. However, Arc EVM's `seedInitial` instruction can be called repeatedly without burning tokens, allowing an admin to mint unbacked withdrawable Deeds. The Solana implementation fixes this by enforcing **one-time bootstrapping with permanently locked unbacked shares** and issuing **Token-2022 Deed NFTs** (`supply = 1`, `decimals = 0`).
+On Circle Arc EVM, `ConstellationAMM.sol` and `ConstellationDeed.sol` provide
+constant-product swapping between soulbound ESMS tokens. Arc's `seedInitial` can be
+called repeatedly without burning tokens, which lets an admin mint unbacked
+withdrawable Deeds. The Solana port closes that hole with **one-time bootstrapping
+whose shares are permanently locked**, and diverges from Arc on the position itself.
 
-### Target Files
+### The one divergence a reader has to know
 
-- `[NEW]` `programs/asol_program/src/state/amm.rs` — `ConstellationPool`, `PoolTraderNonce`.
-- `[NEW]` `programs/asol_program/src/state/deed.rs` — `DeedPosition` state.
-- `[NEW]` `programs/asol_program/src/instructions/amm/mod.rs` — `register_pool`, `bootstrap_pool`, `add_liquidity`, `swap_esms`, `withdraw_liquidity`.
-- `[MODIFY]` `programs/asol_program/src/lib.rs` — Expose AMM instructions.
-- `[NEW]` `lib/solana/constellation-amm.ts` — TypeScript SDK client for Constellation AMM.
-- `[NEW]` `test/solana/constellation-amm.spec.ts` — Comprehensive AMM test suite.
+**Solana LP positions are not transferable.** `ConstellationDeed` is a transferable
+ERC-721 by explicit design -- the tradable trophy. On Solana the position is an
+**owner-seeded `DeedPosition` PDA**, `seeds = [b"deed", pool_id, owner]`, which no
+instruction can move to another wallet.
 
-### Prompt 6 (XML Structured)
+The rent and compute savings are the implementation detail (~0.0012 SOL in one
+account instead of ~0.0047 across a mint, an ATA and a position; `add_liquidity`
+measured at 61k CU rather than the ~260k a Token-2022 NFT mint would need). The
+fact a reader needs is the divergence: an integration that expected to list, price,
+or trade an LP position cannot do so here. Re-adding transferability later is
+additive -- a `transfer_position` instruction requiring both signatures -- but
+positions written before that stay non-portable.
 
-```xml
-<prompt id="asol-phase-6-constellation-amm">
-  <context>
-    <repository>AlchmAgentsSolana (ASOL)</repository>
-    <program_id>5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD</program_id>
-    <runtime>Bun</runtime>
-    <description>
-      Phase 6 of the Solana Migration: Port Constellation constant-product AMM and Deed NFTs
-      to Solana with locked bootstrap liquidity and Token-2022 NFT positions.
-    </description>
-  </context>
+Two smaller divergences follow from the same model:
 
-  <task>
-    Implement Constellation AMM pools, atomic swap instructions, and Token-2022 Deed NFT positions.
-  </task>
+- There is **one position per `(owner, pool)`**. A repeat add accumulates into it
+  rather than minting a second Deed; a full exit closes it and refunds its rent.
+- Aggregate ESMS is **not conserved per swap**, because virtual reserves were never
+  funded by a burn. Reserves `(100 in, 10_000 out)` burn 10 to mint 909. It is
+  conserved across closed round trips, where fees make it net-deflationary. The
+  permanently unbacked component is capped by `MAX_BOOTSTRAP_RESERVE` (100,000 ESMS
+  per element).
 
-  <target_files>
-    <file action="create">programs/asol_program/src/state/amm.rs</file>
-    <file action="create">programs/asol_program/src/state/deed.rs</file>
-    <file action="create">programs/asol_program/src/instructions/amm/mod.rs</file>
-    <file action="modify">programs/asol_program/src/lib.rs</file>
-    <file action="create">lib/solana/constellation-amm.ts</file>
-    <file action="create">test/solana/constellation-amm.spec.ts</file>
-  </target_files>
+### What shipped
 
-  <technical_specifications>
-    <amm_state>
-      1. `ConstellationPool` (`seeds = [b"constellation", pool_id.to_le_bytes()]`):
-         - `pool_id: u16`, `element_a: u8`, `element_b: u8`, `fee_bps: u16` (strictly $\le 10_000$)
-         - `reserve_a: u64`, `reserve_b: u64`, `total_shares: u64`, `bootstrapped: bool`, `bump: u8`
-      2. `DeedPosition` (`seeds = [b"deed", deed_mint.key()]`):
-         - `pool_id: u16`, `shares: u64`, `created_slot: u64`, `active: bool`, `bump: u8`
-    </amm_state>
+| Path                                                          | Role                                                                                                    |
+| :------------------------------------------------------------ | :------------------------------------------------------------------------------------------------------ |
+| `programs/asol_program/src/state/amm.rs`                      | `ConstellationPool`, `PoolTraderNonce`, checked `u128` math, six events                                 |
+| `programs/asol_program/src/state/deed.rs`                     | `DeedPosition`                                                                                          |
+| `programs/asol_program/src/instructions/amm/mod.rs`           | `register_pool`, `bootstrap_pool`, `set_pool_pause`, `add_liquidity`, `swap_esms`, `withdraw_liquidity` |
+| `programs/asol_program/src/instructions/amm/runtime_tests.rs` | litesvm suite against the compiled `.so` and the real Token-2022 binary                                 |
+| `programs/asol_program/src/instructions/ed25519.rs`           | Shared precompile verifier; `esms.rs` and `staking/` now delegate to it                                 |
+| `lib/solana/constellation-amm.ts`                             | PDAs, math mirror, instruction and transaction builders, account decoders                               |
+| `lib/solana/amm-attestor.ts`                                  | Server-side Ed25519 attestation signer                                                                  |
+| `app/api/solana/amm-attestation/route.ts`                     | Sky-gated feeder: aspect + horizon gates, on-chain nonce, signed preimage                               |
+| `test/solana/constellation-amm.spec.ts`                       | Preimage vector, IDL-conformance, math mirror, PDA derivations                                          |
+| `tsconfig.solana.json`                                        | Type checks a surface the root `tsconfig.json` excludes (Phase 5 **S8**)                                |
 
-    <instructions>
-      1. `register_pool`: Admin registers a pool with distinct elements `element_a != element_b` and `fee_bps <= 10_000`.
-      2. `bootstrap_pool`: Admin injects initial virtual reserves. Bootstrapped shares are credited to a locked program PDA and cannot be withdrawn. Callable exactly once (`require!(!pool.bootstrapped)`).
-      3. `add_liquidity`: User deposits ESMS amounts; contract burns both Token-2022 ESMS inputs via CPI, computes shares with 1% ratio tolerance, and mints a Token-2022 Deed NFT (`decimals = 0`, `supply = 1`) to the user.
-      4. `swap_esms`: Validates trader visibility attestation, performs $x \cdot y = k$ checked math with `u128` intermediates, burns input element from user, and mints output element to user.
-      5. `withdraw_liquidity`: Always enabled. Verifies caller holds the Deed NFT, burns the Deed NFT, updates virtual reserves, and mints owed ESMS tokens back to the caller.
-    </instructions>
-  </technical_specifications>
+### Load-bearing decisions
 
-  <testing_and_verification>
-    1. In `test/solana/constellation-amm.spec.ts`:
-       - Verify repeated `bootstrap_pool` attempts revert.
-       - Verify swaps maintain $k$ invariant minus fees.
-       - Verify Deed NFT minting, transferability, and burn-on-withdrawal.
-       - Verify fee overflow protection (`fee_bps > 10_000` reverts).
-    2. Run test suite: `bun test:solana`.
-  </testing_and_verification>
-</prompt>
+1. **Pause is per-pool, not global.** `ProgramConfig` is live on devnet at exactly
+   `8 + INIT_SPACE = 140` bytes with no slack. Adding a field to it EOFs borsh on
+   the existing account and bricks `claim_mint_esms`, `redeem_esms` and
+   `claim_star_yield`. `ConstellationPool.paused` carries the flag instead.
+2. **Withdrawal is never gated.** No attestation, no pause check: liquidity can
+   always leave. `share_bps` (`1..=10_000`) is a fraction of the caller's own
+   position.
+3. **`fee_bps <= MAX_FEE_BPS = 1_000`.** Arc validated only `<= 10_000`, at which
+   `in_with_fee` is zero and every swap reverts with no update path.
+4. **One attestor, two domains.** `ASOL_AMM_VISIBILITY_V1` is verified against
+   `ProgramConfig.attestor` -- necessarily the same key that signs
+   `ASOL_STAR_YIELD_V1`, since the account has one attestor field. Domain
+   separation keeps the messages unforgeable across surfaces. **The Arc attestor
+   key cannot be reused:** it is secp256k1 signing EIP-712, and this path needs the
+   Ed25519 keypair `config.attestor` names (`SOLANA_ATTESTOR_KEYPAIR`).
+5. **Mints are derived from pool state, never from a caller argument.**
+   `seeds = [ESMS_MINT_SEED, &[pool.element_a]]`. `in_element` only _selects_
+   between two already-verified mints.
+
+### The bug the runtime suite caught
+
+`AddLiquidity::try_accounts` and `WithdrawLiquidity::try_accounts` overflowed the
+4 KiB SBF stack frame by 64 and 200 bytes. The linker reported it and **`anchor
+build` exited 0 and wrote a `.so` anyway**; the program then faulted with `Access
+violation in unknown section at address 0x0` on every call to either instruction.
+No unit test, type check, or IDL build notices this. The accounts are now boxed, and
+`bun run solana:build` goes through `scripts/build-solana-program.mjs`, which fails
+the build when the linker reports a stack overflow.
+
+### Verification
+
+```bash
+bun run solana:build        # BPF build + IDL, fails loudly on stack overflow
+bun run solana:idl:sync     # refresh lib/solana/idl from target/
+bun run test:solana         # typecheck:solana + TS unit suite + cargo (incl. litesvm)
+bun run test:solana:runtime # build, then the litesvm suite alone with CU output
 ```
+
+Still outstanding before Phase 7: one devnet end-to-end pass
+(`register -> bootstrap -> add -> swap -> partial withdraw -> full withdraw`)
+driven through the SDK builders against the live Token-2022 program.
 
 ---
 

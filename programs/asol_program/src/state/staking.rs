@@ -2,7 +2,6 @@ use anchor_lang::prelude::*;
 
 use crate::constants::{SECONDS_PER_DAY, USDC_SCALE};
 
-
 #[account]
 #[derive(InitSpace)]
 pub struct StarVaultState {
@@ -81,7 +80,6 @@ pub fn checkpoint_yield(
     Ok(())
 }
 
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -114,7 +112,6 @@ mod tests {
         assert_eq!(position.accrued_cap, expected_cap_10_days as u64);
         assert_eq!(position.last_checkpoint, day_10_time);
 
-
         // User deposits 1,000 USDC on day 10
         let top_up: u64 = 1_000_000_000;
         position.principal += top_up;
@@ -135,11 +132,8 @@ mod tests {
 
         // Under vulnerable Arc EVM formula (no checkpoint on top-up):
         // 1,010 USDC over 10 days + 1s = (1010 * 10^6 * 50000 * 864001) / (10^6 * 86400) = 505,000,584 atoms
-        let vulnerable_evm_cap = calculate_accrued_yield_cap(
-            position.principal,
-            max_rate,
-            day_10_plus_1 - start_time,
-        );
+        let vulnerable_evm_cap =
+            calculate_accrued_yield_cap(position.principal, max_rate, day_10_plus_1 - start_time);
         assert_eq!(vulnerable_evm_cap, 505_000_584);
 
         // Checkpointed engine prevented an illegitimate 500,000,000 atom (100x) over-mint!
@@ -193,4 +187,3 @@ mod tests {
         assert_eq!(position.accrued_cap, 100);
     }
 }
-

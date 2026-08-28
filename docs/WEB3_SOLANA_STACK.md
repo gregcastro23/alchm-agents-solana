@@ -11,6 +11,7 @@ AAE already has two distinct EVM rails:
 
 - Base Sepolia hosts the ESMS claim/shop lifecycle.
 - Circle Arc testnet hosts ESMS plus star staking, the virtual-reserve constellation AMM, and transferable LP Deeds.
+  (**Solana diverges here:** its LP positions are non-transferable owner-seeded PDAs -- see §4 and §8.)
 
 Those deployments use the same ESMS contract address but have independent chain state. There is no bridge or global on-chain supply coordinator. The authoritative WTEN ledger prevents a normal claim from being free, but the existing system should not yet be described as fungibly “omnichain.” Solana should begin as a third settlement domain coordinated by the same off-chain ledger, not as an automatic bridge.
 
@@ -163,6 +164,12 @@ Migration gaps:
 - `feeBps` is not bounded at registration; values above 10,000 make swap arithmetic revert.
 - The Solana bootstrap should be one-time, validate the fee, and lock any unbacked bootstrap shares permanently rather than issue an admin-withdrawable Deed.
 
+**As shipped (Phase 6):** the bootstrap is one-time and admin-only, its shares are
+permanently locked, no position is created for it, and `fee_bps` is capped at
+`MAX_FEE_BPS = 1_000` rather than 10,000 -- at exactly 10,000 the fee zeroes
+`in_with_fee` and every swap reverts with no update path. The LP position is **not**
+an NFT: it is an owner-seeded `DeedPosition` PDA and is not transferable. See §8.
+
 ### 5. Rights and recipe NFT registries
 
 Sources:
@@ -253,24 +260,23 @@ The program upgrade authority is separate from `GlobalConfig.admin`. Both should
 
 All integer seeds use fixed-width little-endian bytes; all externally supplied identifiers are first reduced to a 32-byte canonical hash. Every account includes a schema version and bump.
 
-| PDA/state               | Seeds                                             | Core fields / purpose                                                                  |
-| ----------------------- | ------------------------------------------------- | -------------------------------------------------------------------------------------- |
-| `ProgramConfig`         | `["program_authority"]`                           | Phase 2 admin, rotatable attestor/pauser, cluster domain, granular pause state         |
-| `RoleGrant` (later)     | `["role", role_id, member]`                       | future active/expiry grants for scaled service/operator delegation                     |
-| `EsmsMint`              | `["esms_mint", mint_id_u8]`                       | deterministic Token-2022 mint, mint ID `0..3`                                          |
-| `ClaimReceipt`          | `["claim_receipt", claim_id_32]`                  | recipient, `[u64;4]` atoms, ledger hash, signer and slot; never closed                 |
-| `OrderReceipt`          | `["order_receipt", order_id_32]`                  | holder, `[u64;4]` atoms, mode, submitter and slot; never closed                        |
-| `PersonaCommitment`     | `["persona_commitment", agent_key_32]`            | writer, target hash, epoch hash, sequence and updated slot                             |
-| `StarVaultState`        | `["star-vault"]`                                  | USDC mint/vault, total logical principal, configuration link                           |
-| `StarPool`              | `["star-pool", star_id_u32]`                      | activated flag, total principal, total shares                                          |
-| `StakePosition`         | `["stake", star_id_u32, staker]`                  | shares, accrued-cap accumulator, last checkpoint, claim nonce                          |
-| `ConstellationPool`     | `["constellation", id_u16]`                       | pair, fee, virtual reserves, total shares, visibility nonce version, bootstrapped flag |
-| `PoolTraderNonce`       | `["pool-nonce", id_u16, trader]`                  | next visibility-attestation nonce                                                      |
-| `DeedMint`              | `["deed-mint", id_u16, sequence_u64]`             | deterministic Token-2022 NFT mint                                                      |
-| `DeedPosition`          | `["deed", deed_mint]`                             | pool, shares, created slot, active/closed state                                        |
-| `RightsAnchor` (later)  | `["rights", anchor_id_32]`                        | holder, immutable hashes, mutable license, operator epoch                              |
-| `OperatorGrant` (later) | `["operator", anchor_id_32, epoch_u64, operator]` | current-epoch recipe authorization                                                     |
-| `RecipeRecord` (later)  | `["recipe", content_hash_32]`                     | provenance, lineage, creator, recipe NFT mint                                          |
+| PDA/state               | Seeds                                             | Core fields / purpose                                                             |
+| ----------------------- | ------------------------------------------------- | --------------------------------------------------------------------------------- |
+| `ProgramConfig`         | `["program_authority"]`                           | Phase 2 admin, rotatable attestor/pauser, cluster domain, granular pause state    |
+| `RoleGrant` (later)     | `["role", role_id, member]`                       | future active/expiry grants for scaled service/operator delegation                |
+| `EsmsMint`              | `["esms_mint", mint_id_u8]`                       | deterministic Token-2022 mint, mint ID `0..3`                                     |
+| `ClaimReceipt`          | `["claim_receipt", claim_id_32]`                  | recipient, `[u64;4]` atoms, ledger hash, signer and slot; never closed            |
+| `OrderReceipt`          | `["order_receipt", order_id_32]`                  | holder, `[u64;4]` atoms, mode, submitter and slot; never closed                   |
+| `PersonaCommitment`     | `["persona_commitment", agent_key_32]`            | writer, target hash, epoch hash, sequence and updated slot                        |
+| `StarVaultState`        | `["star-vault"]`                                  | USDC mint/vault, total logical principal, configuration link                      |
+| `StarPool`              | `["star-pool", star_id_u32]`                      | activated flag, total principal, total shares                                     |
+| `StakePosition`         | `["stake", star_id_u32, staker]`                  | shares, accrued-cap accumulator, last checkpoint, claim nonce                     |
+| `ConstellationPool`     | `["constellation_pool", id_u16]`                  | pair, fee, virtual reserves, total shares, bootstrapped flag, per-pool pause flag |
+| `PoolTraderNonce`       | `["amm_nonce", id_u16, trader]`                   | next visibility-attestation nonce                                                 |
+| `DeedPosition`          | `["deed", id_u16, owner]`                         | pool, owner, shares, created slot. One per `(owner, pool)`; closed at zero shares |
+| `RightsAnchor` (later)  | `["rights", anchor_id_32]`                        | holder, immutable hashes, mutable license, operator epoch                         |
+| `OperatorGrant` (later) | `["operator", anchor_id_32, epoch_u64, operator]` | current-epoch recipe authorization                                                |
+| `RecipeRecord` (later)  | `["recipe", content_hash_32]`                     | provenance, lineage, creator, recipe NFT mint                                     |
 
 Anchor account constraints such as `seeds`, `bump`, `has_one`, `owner`, token program selection, and Token-2022 extension constraints should be used wherever available; see [Anchor account constraints](https://www.anchor-lang.com/docs/references/account-constraints). Permissioned Burn is newer than several Anchor wrapper surfaces, so the implementation phase must prove the exact `anchor-spl`/`spl-token-2022-interface` CPI versions in a small local test before program work expands.
 
@@ -292,12 +298,13 @@ Anchor account constraints such as `seeds`, `bump`, `has_one`, `owner`, token pr
 | `stake`                | `stake_star`                                       | SPL USDC transfer CPI and checked share math                                                                               |
 | `unstake`              | `unstake_star`                                     | Always available; vault PDA transfers USDC back                                                                            |
 | `claimYield`           | `claim_star_yield`                                 | Ed25519 attestation, nonce, expiry, cap, ESMS mint CPI                                                                     |
-| AMM `registerPool`     | `register_constellation_pool`                      | Validate distinct elements and `fee_bps <= 10_000`                                                                         |
-| AMM `seedInitial`      | `bootstrap_constellation_pool`                     | Exactly once; bootstrap shares locked/non-withdrawable                                                                     |
-| AMM `seedLiquidity`    | `add_constellation_liquidity`                      | Burns both ESMS inputs, ratio/slippage checks, mints Deed NFT                                                              |
+| AMM `registerPool`     | `register_pool`                                    | Canonical ordering `element_a < element_b`, `pool_id <= 5`, `fee_bps <= 1_000`                                             |
+| AMM `seedInitial`      | `bootstrap_pool`                                   | Exactly once; bootstrap shares locked/non-withdrawable; no position created                                                |
+| AMM `seedLiquidity`    | `add_liquidity`                                    | Burns both ESMS inputs, ratio/slippage checks, opens or accumulates a `DeedPosition`                                       |
 | AMM `swap`             | `swap_esms`                                        | `u128` constant-product intermediates; burns input/mints output                                                            |
-| AMM `withdraw`         | `withdraw_constellation_liquidity`                 | No visibility attestation; not pausable; update/burn Deed                                                                  |
-| `ConstellationDeed`    | Token-2022 NFT + `DeedPosition` PDA                | Transferable ownership token; state remains in PDA                                                                         |
+| AMM `withdraw`         | `withdraw_liquidity`                               | No visibility attestation; never pausable; `share_bps` partial exit; closes the position at zero shares                    |
+| AMM `pause`            | `set_pool_pause`                                   | **Per-pool**, not global: `ProgramConfig` is live at exactly its allocated size and cannot grow a field                    |
+| `ConstellationDeed`    | `DeedPosition` PDA only                            | **No NFT, and not transferable.** The PDA is owner-seeded, so it cannot be moved to another wallet                         |
 | `AlchmRightsRegistry`  | `RightsAnchor`/`OperatorGrant` PDAs                | Preserve two-step transfer and operator-epoch invalidation                                                                 |
 | `RecipeRegistry`       | `RecipeRecord` + Token-2022 NFT                    | Marketplace royalties need a separate policy; Token-2022 has no direct ERC-2981 semantic equivalent                        |
 
@@ -411,16 +418,26 @@ Claim checks the signed amount against `accrued_cap + cap(current_principal, ela
 
 The attestation message must include program/cluster domain, staker, star ID, element, amount, nonce, deadline and attestor-set version. The server must derive live sky/natal inputs from trusted server sources for production; the current API accepts those economic inputs from the client and is explicitly demo-grade.
 
-### 8. AMM and Deed details
+### 8. AMM and LP position details
 
-- Store reserves and shares as `u64` only if every operation proves bounds; use `u128` for products, ratios and fee calculations.
-- Reject zero input, identical elements, elements outside `0..3`, `fee_bps > 10_000`, expired attestation, wrong trader/pool, wrong signer and wrong nonce.
-- `bootstrap_constellation_pool` is callable exactly once. If virtual reserves are unbacked, their corresponding shares go to a permanently locked PDA and cannot withdraw.
+- Store reserves and shares as `u64` only if every operation proves bounds; use `u128` for products, ratios and fee calculations, and re-check the **post-state** reserve against `MAX_LEDGER_ATOMS` -- reserves accumulate, so validating only the input is insufficient.
+- Reject zero input, non-canonical or identical elements, elements outside `0..3`, `fee_bps > 1_000`, expired attestation, wrong trader/pool, wrong signer, wrong nonce, and an `op` that does not match the executing instruction.
+- `bootstrap_pool` is callable exactly once and is admin-only. Its shares are permanently locked and no position is created for them.
 - User liquidity burns real ESMS before reserves/shares increase.
 - Swap applies effects and Token-2022 burn/mint atomically in one transaction.
-- Withdrawal is always enabled and verifies current Deed ownership from a Token-2022 account with amount `1`.
+- Withdrawal is always enabled and is authorized by the position PDA's own seed.
 
-Each Deed uses a Token-2022 mint with decimals `0`, supply `1`, Metadata Pointer + Token Metadata, and optionally Group/Member extensions for an AAE Deed collection. It must **not** use NonTransferable. The changing share balance remains in `DeedPosition`, not mutable display metadata. On full withdrawal, burn the NFT and mark the position closed; retain enough PDA/event history for provenance. Token-2022's metadata/group/member relationships are documented in the [extension guide](https://www.solana-program.com/docs/token-2022/extensions#metadata).
+**The LP position is not an NFT.** `ConstellationDeed` on Arc is a transferable
+ERC-721 by design; the Solana position is a `DeedPosition` PDA seeded
+`[b"deed", pool_id, owner]`. That deletes the per-position Deed mint, its ATA, the
+`CloseAuthority` extension and both Deed CPIs -- `add_liquidity` measures at 61k CU
+rather than the ~260k an NFT mint would need, and rent drops from ~0.0047 SOL across
+three accounts to ~0.0012 SOL in one. **But the position cannot be transferred, and
+that is the fact an integration needs**: nothing can list, price, or trade it. There
+is one position per `(owner, pool)`; a repeat add accumulates into it, and a full
+exit closes it and refunds its rent to the owner. Adding transferability later is
+additive -- a `transfer_position` instruction requiring both signatures -- but
+positions written before that stay non-portable.
 
 ## Phase 2B — Solana feeder and durable synchronization
 
@@ -706,14 +723,17 @@ deployments/
 - stake and unstake share accounting conserve USDC modulo defined rounding dust;
 - unstake remains available under every pause combination.
 
-### AMM/Deed
+### AMM/LP position
 
 - bootstrap is exactly once and cannot create a withdrawable admin position;
 - constant product, fee and slippage properties use checked `u128` math;
 - no generic path can use the permanent delegate outside authorized AAE instructions;
-- Deed transfer changes withdrawal authority; metadata/state spoofing does not;
-- partial withdrawal updates shares and full withdrawal burns the NFT;
+- a position is redeemable only by the wallet its PDA is seeded from, and only against the pool its `pool_id` seed names;
+- partial withdrawal updates shares and full withdrawal closes the account and refunds its rent;
 - withdrawal remains available while add/swap are paused.
+
+These are executed, not asserted on paper: `programs/asol_program/src/instructions/amm/runtime_tests.rs`
+runs them in litesvm against the compiled `.so` and the real Token-2022 binary.
 
 ### Sync worker
 
@@ -761,12 +781,15 @@ The remaining bullets are gates for Phase 3+ and do not block the implemented ES
 - Add invariant and negative-path tests plus IDL client wrappers.
 
 **Exit:** Devnet demonstrates debit claim payload → one atomic four-mint claim → self/sponsored redeem, plus protected persona updates. The repository-pinned Solana 1.18 local validator bundles an older Token-2022 binary that predates Permissioned Burn, so the extension-combination test intentionally targets Devnet.
+Phase 6 removed that constraint for in-process tests: `programs/asol_program/tests/fixtures/spl_token_2022.so`
+vendors the Devnet binary (which does carry the extension) and the litesvm harness loads it over
+litesvm's bundled `spl_token_2022-1.0.0.so`, so ESMS burns and mints execute locally.
 
 ### Phase 3: staking, AMM and Deeds
 
 - Implement exact Merkle compatibility and USDC custody.
 - Implement checkpointed yield cap and native Ed25519 attestations.
-- Implement one-time bootstrap, checked AMM math, transferable Deeds and always-open exits.
+- Implement one-time bootstrap, checked AMM math, non-transferable owner-seeded LP position PDAs, and always-open exits.
 
 **Exit:** all economic invariants and pause/exit tests pass locally.
 

@@ -62,6 +62,34 @@ pub enum AsolError {
     ProofTooDeep,
     #[msg("Vault USDC mint carries unsupported extensions")]
     InvalidVaultMintExtensions,
+    #[msg("Pool has already been bootstrapped")]
+    PoolAlreadyBootstrapped,
+    #[msg("Pool has not been bootstrapped")]
+    PoolNotBootstrapped,
+    #[msg("Pool is currently paused")]
+    PoolPaused,
+    #[msg("Pool element pair contains invalid or identical elements, or pool_id is out of range")]
+    InvalidPoolElements,
+    #[msg("Pool fee exceeds maximum allowable fee basis points (1000)")]
+    FeeExceedsMaximum,
+    #[msg("Invalid element for the specified pool")]
+    InvalidElementForPool,
+    #[msg("Liquidity deposit is off-ratio by more than 1% tolerance")]
+    OffRatioDeposit,
+    #[msg("Slippage limit exceeded")]
+    SlippageExceeded,
+    #[msg("Calculated output amount is insufficient")]
+    InsufficientOutput,
+    #[msg("Insufficient liquidity in pool")]
+    InsufficientLiquidity,
+    #[msg(
+        "Caller is not the valid owner of the Deed position or position belongs to another pool"
+    )]
+    InvalidDeedOwner,
+    #[msg("Invalid pool trader nonce")]
+    InvalidPoolNonce,
+    #[msg("Share basis points must be between 1 and 10000")]
+    InvalidShareBps,
+    #[msg("Virtual reserve ceiling exceeded")]
+    ReserveCeilingExceeded,
 }
-
-

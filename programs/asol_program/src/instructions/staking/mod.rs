@@ -1,10 +1,4 @@
-use anchor_lang::{
-    prelude::*,
-    solana_program::{
-        ed25519_program,
-        sysvar::instructions::{load_current_index_checked, load_instruction_at_checked},
-    },
-};
+use anchor_lang::prelude::*;
 use anchor_spl::{
     associated_token::AssociatedToken,
     token_2022::{self, MintTo, Token2022},
@@ -12,13 +6,12 @@ use anchor_spl::{
 };
 use sha3::{Digest, Keccak256};
 
+use super::ed25519::verify_preceding_ed25519_instruction;
 use crate::{
     constants::{
-        ED25519_PUBLIC_KEY_SIZE, ED25519_SIGNATURE_SIZE, ESMS_MINT_COUNT,
-        ESMS_MINT_SEED, MAX_LEDGER_ATOMS, MAX_STAR_PROOF_DEPTH,
-        MAX_YIELD_RATE_PER_USDC_DAY, PROGRAM_AUTHORITY_SEED, STAR_POOL_SEED,
-        STAR_VAULT_SEED, STAR_YIELD_AUTHORIZATION_DOMAIN, STATE_VERSION, STAKE_POSITION_SEED,
-        USDC_DECIMALS,
+        ESMS_MINT_COUNT, ESMS_MINT_SEED, MAX_LEDGER_ATOMS, MAX_STAR_PROOF_DEPTH,
+        MAX_YIELD_RATE_PER_USDC_DAY, PROGRAM_AUTHORITY_SEED, STAKE_POSITION_SEED, STAR_POOL_SEED,
+        STAR_VAULT_SEED, STAR_YIELD_AUTHORIZATION_DOMAIN, STATE_VERSION, USDC_DECIMALS,
     },
     errors::AsolError,
     state::{
@@ -102,25 +95,21 @@ pub fn set_star_vault_config(
         ctx.accounts.star_vault_state.star_root = root;
     }
     if let Some(rate) = max_yield_rate_per_usdc_day {
-        require!(rate <= MAX_YIELD_RATE_PER_USDC_DAY, AsolError::RateExceedsCeiling);
+        require!(
+            rate <= MAX_YIELD_RATE_PER_USDC_DAY,
+            AsolError::RateExceedsCeiling
+        );
         ctx.accounts.star_vault_state.max_yield_rate_per_usdc_day = rate;
     }
     Ok(())
 }
 
-pub fn activate_star(
-    ctx: Context<ActivateStar>,
-    star_id: u32,
-    proof: Vec<[u8; 32]>,
-) -> Result<()> {
+pub fn activate_star(ctx: Context<ActivateStar>, star_id: u32, proof: Vec<[u8; 32]>) -> Result<()> {
     if ctx.accounts.star_pool.activated {
         return Ok(());
     }
 
-    require!(
-        proof.len() <= MAX_STAR_PROOF_DEPTH,
-        AsolError::ProofTooDeep
-    );
+    require!(proof.len() <= MAX_STAR_PROOF_DEPTH, AsolError::ProofTooDeep);
     let root = ctx.accounts.star_vault_state.star_root;
     require!(root != [0u8; 32], AsolError::StarRootUnset);
 
@@ -139,13 +128,12 @@ pub fn activate_star(
     Ok(())
 }
 
-pub fn stake_star(
-    ctx: Context<StakeStar>,
-    star_id: u32,
-    usdc_amount: u64,
-) -> Result<()> {
+pub fn stake_star(ctx: Context<StakeStar>, star_id: u32, usdc_amount: u64) -> Result<()> {
     require!(usdc_amount > 0, AsolError::ZeroAmount);
-    require!(ctx.accounts.star_pool.activated, AsolError::StarNotActivated);
+    require!(
+        ctx.accounts.star_pool.activated,
+        AsolError::StarNotActivated
+    );
     require_keys_eq!(
         ctx.accounts.vault_usdc_ata.key(),
         ctx.accounts.star_vault_state.vault_usdc_ata,
@@ -236,12 +224,7 @@ pub fn stake_star(
     Ok(())
 }
 
-
-pub fn unstake_star(
-    ctx: Context<UnstakeStar>,
-    star_id: u32,
-    shares: u64,
-) -> Result<()> {
+pub fn unstake_star(ctx: Context<UnstakeStar>, star_id: u32, shares: u64) -> Result<()> {
     require!(shares > 0, AsolError::ZeroAmount);
     require_keys_eq!(
         ctx.accounts.vault_usdc_ata.key(),
@@ -379,7 +362,6 @@ pub fn claim_star_yield(
     position.last_checkpoint = now.max(position.last_checkpoint);
     position.accrued_cap = total_claimable.saturating_sub(amount);
 
-
     let config_bump = [config.bump];
     let config_signer = [PROGRAM_AUTHORITY_SEED, config_bump.as_ref()];
 
@@ -440,64 +422,8 @@ pub fn star_yield_authorization_message(
     message
 }
 
-fn verify_preceding_ed25519_instruction(
-    instructions: &AccountInfo,
-    attestor: &Pubkey,
-    expected_message: &[u8],
-) -> Result<()> {
-    let current_index = load_current_index_checked(instructions)
-        .map_err(|_| error!(AsolError::InvalidInstructionsSysvar))?;
-    require!(current_index > 0, AsolError::InvalidEd25519Authorization);
-    let ed25519_instruction = load_instruction_at_checked(current_index as usize - 1, instructions)
-        .map_err(|_| error!(AsolError::InvalidEd25519Authorization))?;
-    require_keys_eq!(
-        ed25519_instruction.program_id,
-        ed25519_program::ID,
-        AsolError::InvalidEd25519Authorization
-    );
-    let data = &ed25519_instruction.data;
-    require!(data.len() >= 16, AsolError::InvalidEd25519Authorization);
-    require!(
-        data[0] == 1 && data[1] == 0,
-        AsolError::InvalidEd25519Authorization
-    );
-
-    let read_u16 = |offset: usize| u16::from_le_bytes([data[offset], data[offset + 1]]);
-    let signature_offset = read_u16(2) as usize;
-    let signature_instruction_index = read_u16(4);
-    let public_key_offset = read_u16(6) as usize;
-    let public_key_instruction_index = read_u16(8);
-    let message_offset = read_u16(10) as usize;
-    let message_size = read_u16(12) as usize;
-    let message_instruction_index = read_u16(14);
-    require!(
-        signature_instruction_index == u16::MAX
-            && public_key_instruction_index == u16::MAX
-            && message_instruction_index == u16::MAX,
-        AsolError::InvalidEd25519Authorization
-    );
-    require!(
-        signature_offset
-            .checked_add(ED25519_SIGNATURE_SIZE)
-            .is_some_and(|end| end <= data.len())
-            && public_key_offset
-                .checked_add(ED25519_PUBLIC_KEY_SIZE)
-                .is_some_and(|end| end <= data.len())
-            && message_offset
-                .checked_add(message_size)
-                .is_some_and(|end| end <= data.len()),
-        AsolError::InvalidEd25519Authorization
-    );
-    require!(
-        &data[public_key_offset..public_key_offset + ED25519_PUBLIC_KEY_SIZE] == attestor.as_ref()
-            && message_size == expected_message.len()
-            && &data[message_offset..message_offset + message_size] == expected_message,
-        AsolError::InvalidEd25519Authorization
-    );
-    Ok(())
-}
-
 #[derive(Accounts)]
+
 pub struct InitializeStarVault<'info> {
     #[account(
         init,
@@ -684,10 +610,7 @@ mod tests {
     fn test_openzeppelin_merkle_leaf_and_proof_verification() {
         let star_id: u32 = 677;
         let leaf = openzeppelin_star_leaf(star_id);
-        assert_eq!(
-            leaf,
-            openzeppelin_star_leaf(677)
-        );
+        assert_eq!(leaf, openzeppelin_star_leaf(677));
 
         // Single element tree where leaf == root
         let root = leaf;
@@ -731,8 +654,14 @@ mod tests {
             deadline,
         );
 
-        assert_eq!(&msg[0..STAR_YIELD_AUTHORIZATION_DOMAIN.len()], STAR_YIELD_AUTHORIZATION_DOMAIN);
-        assert_eq!(msg.len(), STAR_YIELD_AUTHORIZATION_DOMAIN.len() + 32 + 32 + 32 + 4 + 1 + 8 + 8 + 8);
+        assert_eq!(
+            &msg[0..STAR_YIELD_AUTHORIZATION_DOMAIN.len()],
+            STAR_YIELD_AUTHORIZATION_DOMAIN
+        );
+        assert_eq!(
+            msg.len(),
+            STAR_YIELD_AUTHORIZATION_DOMAIN.len() + 32 + 32 + 32 + 4 + 1 + 8 + 8 + 8
+        );
     }
 
     #[test]
@@ -776,7 +705,10 @@ mod tests {
         );
         let err = validate_vault_usdc_mint(&fee_mint_info);
         assert!(err.is_err());
-        assert_eq!(err.unwrap_err(), error!(AsolError::InvalidVaultMintExtensions));
+        assert_eq!(
+            err.unwrap_err(),
+            error!(AsolError::InvalidVaultMintExtensions)
+        );
 
         // Token-2022 mint with PermanentDelegate (extension type 12)
         let mut delegate_mint_data = vec![0u8; 200];
@@ -797,7 +729,10 @@ mod tests {
         );
         let err = validate_vault_usdc_mint(&delegate_mint_info);
         assert!(err.is_err());
-        assert_eq!(err.unwrap_err(), error!(AsolError::InvalidVaultMintExtensions));
+        assert_eq!(
+            err.unwrap_err(),
+            error!(AsolError::InvalidVaultMintExtensions)
+        );
 
         // Token-2022 mint with TransferHook (extension type 14)
         let mut hook_mint_data = vec![0u8; 200];
@@ -818,7 +753,10 @@ mod tests {
         );
         let err = validate_vault_usdc_mint(&hook_mint_info);
         assert!(err.is_err());
-        assert_eq!(err.unwrap_err(), error!(AsolError::InvalidVaultMintExtensions));
+        assert_eq!(
+            err.unwrap_err(),
+            error!(AsolError::InvalidVaultMintExtensions)
+        );
     }
 
     #[test]
@@ -827,4 +765,3 @@ mod tests {
         assert_eq!(MAX_YIELD_RATE_PER_USDC_DAY, 1_000_000_0000);
     }
 }
-

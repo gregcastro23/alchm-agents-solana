@@ -8,6 +8,7 @@ import {
   PublicKey,
   TransactionInstruction,
   Transaction,
+  VersionedTransaction,
 } from '@solana/web3.js'
 
 import {
@@ -201,9 +202,9 @@ describe('Solana Dynamic Priority Fees & Compute Budget (Phase 2)', () => {
     const keypair = Keypair.generate()
     const wallet: AsolSolanaWallet = {
       publicKey: keypair.publicKey,
-      signTransaction: vi.fn(async (tx: Transaction) => {
-        capturedTransaction = tx
-        tx.partialSign(keypair)
+      signTransaction: vi.fn(async <T extends Transaction | VersionedTransaction>(tx: T) => {
+        capturedTransaction = tx as Transaction
+        ;(tx as Transaction).partialSign(keypair)
         return tx
       }),
       signAllTransactions: vi.fn(async txs => txs),
@@ -296,7 +297,12 @@ describe('Resilient Stream Subscription & Yellowstone Geyser Failover (Phase 2)'
     expect(subscription.getHealth().connectionStatus).toBe('connected')
 
     // Simulate incoming Geyser transaction update
-    await geyserCallback?.({ signature: 'geyser-tx-1', slot: 100, logs: ['Instruction: Test'] })
+    // Read through a local: TS narrows the captured `let` to `null` because it
+    // cannot see that `subscribe` assigned it.
+    const onTransaction = geyserCallback as
+      | ((update: { signature: string; slot: number; logs?: string[] }) => Promise<void>)
+      | null
+    await onTransaction?.({ signature: 'geyser-tx-1', slot: 100, logs: ['Instruction: Test'] })
     expect(receivedLogs).toEqual([{ signature: 'geyser-tx-1', slot: 100 }])
 
     await subscription.stop()
@@ -337,7 +343,8 @@ describe('Resilient Stream Subscription & Yellowstone Geyser Failover (Phase 2)'
     expect(subscription.activeTier).toBe('geyser')
 
     // Trigger Geyser stream error
-    geyserErrorCallback?.(new Error('Geyser gRPC stream disconnected'))
+    const onError = geyserErrorCallback as ((error: unknown) => void) | null
+    onError?.(new Error('Geyser gRPC stream disconnected'))
     await Promise.resolve()
 
     expect(subscription.activeTier).toBe('websocket')

@@ -1,0 +1,15 @@
+{
+  "//": "The root tsconfig.json excludes `test/`, `**/*.spec.ts` and `scripts/`, so nothing type-checks the Solana client surface or its tests. Phase 5 finding S8 prescribed this file and it was never created; a test there had silently been passing `programId: undefined`. Run with `bun run typecheck:solana`.",
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "types": ["node", "vitest/globals"]
+  },
+  "include": [
+    "lib/solana/**/*.ts",
+    "test/solana/**/*.ts",
+    "app/api/solana/**/*.ts",
+    "scripts/deploy-solana-devnet.mjs"
+  ],
+  "exclude": ["node_modules", "**/*.js"]
+}
