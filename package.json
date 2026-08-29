@@ -92,7 +92,8 @@
     "sync:clear-chroma": "bun run scripts/clear-chromadb.ts",
     "solana:idl:sync": "bun run scripts/sync-solana-idl.mjs",
     "typecheck:solana": "tsc --noEmit -p tsconfig.solana.json",
-    "test:solana:runtime": "bun run solana:build && RUSTUP_TOOLCHAIN=1.79.0 cargo test -p asol_program --lib instructions::amm::runtime_tests -- --nocapture"
+    "test:solana:runtime": "bun run solana:build && RUSTUP_TOOLCHAIN=1.79.0 cargo test -p asol_program --lib instructions::amm::runtime_tests -- --nocapture",
+    "solana:build:sbf": "bun run scripts/build-solana-program.mjs --sbf-only"
   },
   "dependencies": {
     "@ai-sdk/anthropic": "^2.0.41",

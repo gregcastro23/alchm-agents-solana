@@ -15,13 +15,28 @@
  *
  * Fix an overflow by boxing the account: `Box<Account<'info, T>>` /
  * `Box<InterfaceAccount<'info, T>>`, which moves it to the 32 KiB heap.
+ *
+ * `--sbf-only` runs `cargo build-sbf` instead of `anchor build`, producing the
+ * same `target/deploy/asol_program.so` without the IDL pass. CI uses it: the
+ * runtime suite executes that .so, so it has to exist before `cargo test`, but
+ * the job only needs the Solana toolchain rather than a full `anchor` install.
+ * The overflow detection is deliberately shared — a guard that only runs on a
+ * developer's machine is the failure mode this script exists to prevent.
  */
 import { spawn } from 'node:child_process'
 
 const STACK_OVERFLOW = /Stack offset of (\d+) exceeded max offset of (\d+) by (\d+) bytes/
 const FUNCTION_NAME = /Function\s+(\S+)\s+Stack offset/
 
-const child = spawn('anchor', ['build', ...process.argv.slice(2)], {
+const args = process.argv.slice(2)
+const sbfOnly = args.includes('--sbf-only')
+const passthrough = args.filter(arg => arg !== '--sbf-only')
+
+const [command, commandArgs] = sbfOnly
+  ? ['cargo', ['build-sbf', ...passthrough, '--', '-p', 'asol_program']]
+  : ['anchor', ['build', ...passthrough]]
+
+const child = spawn(command, commandArgs, {
   env: { ...process.env, RUSTC_BOOTSTRAP: '1', RUSTUP_TOOLCHAIN: '1.79.0' },
   stdio: ['inherit', 'pipe', 'pipe'],
 })
@@ -58,7 +73,7 @@ child.on('close', code => {
   }
   if (overflows.length > 0) {
     console.error(
-      `\n\x1b[31manchor build exited 0 but the SBF linker reported ${overflows.length} stack-frame overflow(s).\x1b[0m`
+      `\n\x1b[31m${command} exited 0 but the SBF linker reported ${overflows.length} stack-frame overflow(s).\x1b[0m`
     )
     console.error('The emitted .so will fault at runtime on every call to these instructions.\n')
     for (const { fn, offset, max, over } of overflows) {
