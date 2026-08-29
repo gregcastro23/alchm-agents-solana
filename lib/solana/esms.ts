@@ -59,6 +59,20 @@ export function getPersonaCommitmentAddress(
   )[0]
 }
 
+/**
+ * Convert a hex claim/order id (`0x…`) to a 32-byte array.
+ *
+ * Lives here rather than in `solana-minter.ts` because the shop's client hook
+ * needs it: that module reaches for `node:fs`/`node:os` to load a payer keypair
+ * from disk, and importing it from a `'use client'` file pulled those built-ins
+ * into the browser bundle and broke every Next.js production build.
+ */
+export function claimIdToBytes32(claimId: string): Uint8Array {
+  const clean = claimId.startsWith('0x') ? claimId.slice(2) : claimId
+  if (clean.length !== 64) throw new Error('claimId must be a 32-byte hex string')
+  return Uint8Array.from(Buffer.from(clean, 'hex'))
+}
+
 /** Format Token-2022 raw units without ever crossing JavaScript's Number boundary. */
 export function formatEsmsRawAmount(raw: bigint): string {
   if (raw < 0n) throw new RangeError('ESMS token balances cannot be negative')

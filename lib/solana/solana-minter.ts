@@ -21,6 +21,7 @@ import {
 } from '@/lib/solana/asol-solana-client'
 import { resolveSolanaRpcUrls, withSolanaRpcFailover } from '@/lib/solana/rpc-failover'
 import { getSolanaServiceSigner, KmsSolanaSigner } from '@/lib/solana/kms-signer'
+import { claimIdToBytes32 } from '@/lib/solana/esms'
 
 export interface EsmsClaimAmounts {
   spirit: string
@@ -57,12 +58,10 @@ export function solanaPayerFromEnvironment(): Keypair | null {
   }
 }
 
-/** Convert hex claimId string (0x...) to 32-byte Uint8Array. */
-export function claimIdToBytes32(claimId: Hex | string): Uint8Array {
-  const clean = claimId.startsWith('0x') ? claimId.slice(2) : claimId
-  if (clean.length !== 64) throw new Error('claimId must be a 32-byte hex string')
-  return Uint8Array.from(Buffer.from(clean, 'hex'))
-}
+// Defined in `esms.ts`, which pulls in no Node built-ins, and re-exported here so
+// existing server-side importers keep working. This module loads keypairs from
+// disk and must never reach a client bundle.
+export { claimIdToBytes32 }
 
 /** Scale ledger decimals → 4-dp raw u64 bigints [spirit, essence, matter, substance]. */
 export function toSolanaOnchainAmounts(amounts: EsmsClaimAmounts): EsmsAmounts {
