@@ -62,6 +62,25 @@ cd backend && uvicorn main:app --reload --port 8000
 cd backend && pip install -r requirements.txt
 ```
 
+### Solana program (Anchor)
+
+```bash
+bun run solana:build        # BPF build + IDL. NEVER call `anchor build` directly — see below
+bun run solana:idl:sync     # Copy target/idl + target/types into lib/solana/idl (what the app imports)
+bun run test:solana         # typecheck:solana + TS unit suite + cargo (incl. the litesvm runtime suite)
+bun run test:solana:runtime # Rebuild, then the litesvm suite alone with compute-unit output
+bun run test:solana:unit    # TypeScript only
+bun run typecheck:solana    # tsc -p tsconfig.solana.json — the root tsconfig excludes this surface
+bun run test:solana:devnet  # Devnet integration (needs a funded wallet)
+
+RUSTUP_TOOLCHAIN=1.79.0 cargo test -p asol_program --lib   # Rust only; needs target/deploy/*.so
+```
+
+The toolchain is pinned: Anchor 0.30.1, solana 1.18.17, rustc 1.79.0
+(`rust-toolchain.toml`). The runtime suite executes the **compiled `.so`**, so
+`solana:build` has to run first — `cargo test` alone will fail with a clear message
+rather than silently skipping.
+
 ### Storybook
 
 ```bash
@@ -191,6 +210,101 @@ Both TS and Python engines own **all four** thermodynamic quantities, not just t
 **Still open:** `kalchmConstant`/`monicaConstant` are `NOT NULL` in `prisma/schema.prisma`, so ABSENT is unrepresentable at the DB layer. `backend/crud.py` no longer copies a fabricated Monica into `kalchmConstant`, but a placeholder is still written because the column cannot be null. The migration is **planned, not executed** — see the plan in `docs/`.
 
 **Removed 2026-07-28:** `desktop-shell/src/localAstrologyMetrics.ts` computed heat/entropy/reactivity from **sine waves of the calendar date and clock hour** — the planets appeared nowhere in it — and the shell swapped it in when `GET /api/astrology/consensus` failed, setting `status = 'ready'` and clearing `lastError`, so a failed fetch was indistinguishable from a successful one. The module, its local snapshot builder and its test are deleted; the astrology tab now surfaces the real error, matching `refreshAlchmPhysics`. **A fallback must not be able to impersonate the thing it replaces** — if the desktop shell needs a degraded mode, it has to announce itself as one.
+
+### Solana Program & Client (`asol_program`)
+
+Program ID `5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD` on devnet/mainnet.
+Rust in `programs/asol_program/src/`, client in `lib/solana/`, generated IDL in
+`lib/solana/idl/`. Phase history and rationale live in
+`docs/SOLANA_MAINNET_MIGRATION_ROADMAP.md`; the design constraints that produced
+the current shape are in `docs/WEB3_SOLANA_STACK.md`.
+
+Surfaces: ESMS Token-2022 mints + claim/redeem (`esms.rs`), persona commitments
+(`persona.rs`), StarVault staking (`staking/`), and the Constellation AMM
+(`amm/`). `instructions/ed25519.rs` is the **one** precompile verifier — `esms.rs`
+and `staking/` delegate to it; do not add a third copy.
+
+⚠️ **`anchor build` exits 0 when the SBF linker reports a stack-frame overflow**,
+writes a `.so` anyway, and the program then faults at runtime with
+`Access violation in unknown section at address 0x0` on every call to the affected
+instruction. Nothing else catches it — not `cargo test`, not the TypeScript suite,
+not `tsc`, not the IDL build. This shipped in Phase 6 (`AddLiquidity` and
+`WithdrawLiquidity`, 64 and 200 bytes over the 4 KiB frame). **Always build via
+`bun run solana:build`**, which wraps anchor in `scripts/build-solana-program.mjs`
+and fails on that message. The fix is to `Box<...>` the accounts in the offending
+`#[derive(Accounts)]` struct, moving them to the 32 KiB heap; `esms.rs` and `amm/`
+already do this throughout.
+
+⚠️ **A `node:` import anywhere in a client-reachable module fails the production
+build.** webpack cannot bundle the `node:` scheme, and `next.config.mjs`'s
+`resolve.fallback` maps bare `fs`/`os`/`path` — not `node:fs`, and no `crypto` at
+all. One such import in a `'use client'` component's transitive graph breaks
+`next build` (and therefore every Vercel deploy) with `UnhandledSchemeError`. This
+has happened twice: `useSolanaShop` → `solana-minter.ts` (`node:fs`/`node:os`), and
+`constellation-amm.ts` (`node:crypto`). Use `@noble/hashes` for sha256 in anything a
+browser might import. `test/solana/no-node-builtins.spec.ts` walks the import graph
+of the client-safe entry points and fails in ~1 ms instead; server-only modules
+(`amm-attestor.ts`, `solana-minter.ts`) deliberately **keep** their `node:` imports,
+because that is what makes them fail loudly if bundled.
+
+⚠️ **The IDL exists twice.** `target/idl/` is generated; `lib/solana/idl/` is what
+the app and scripts import, and it must be committed because Vercel ships a bundle,
+not the repo. Nothing keeps them in sync automatically — the committed copy had
+drifted to 8 instructions while the generated one had 20, missing two entire
+phases. Run `bun run solana:idl:sync` after any instruction change.
+
+⚠️ **The root `tsconfig.json` and `eslint.config.js` both excluded `lib/solana/**`**,
+so this surface went unchecked for five phases. `tsconfig.solana.json`+`bun run typecheck:solana`cover it now, and`lib/solana/**`/`app/api/solana/**`are un-ignored for lint. Un-ignoring in`eslint.config.js` requires the **full
+ancestor chain** or it is silently inert — the file's own note explains the form.
+
+**Testing is three-layered, and only one layer is load-bearing on its own.** The
+Rust unit tests cover pure math; the TypeScript suite is a re-implementation checked
+against itself _plus_ the generated IDL (every instruction's discriminator and full
+ordered account list, so a reordered Rust account fails locally); and
+`instructions/amm/runtime_tests.rs` executes the real `.so` in **litesvm** against
+the **real Token-2022 binary**. Prefer adding to the runtime suite — Phase 5 finding
+**S10** and the stack overflow above are both cases where nothing else would have
+noticed.
+
+- litesvm is pinned `=0.2.1`, the last line built on solana ~1.18.
+- litesvm bundles `spl_token_2022-1.0.0.so`, which predates **Permissioned Burn**,
+  so every ESMS burn would fail against it. The devnet binary is vendored at
+  `programs/asol_program/tests/fixtures/spl_token_2022.so` and loaded over it; see
+  that directory's README before replacing it.
+- litesvm registers no Ed25519 precompile account, so its loader rejects any
+  transaction containing one. The harness plants an executable at that address; the
+  runtime still does the real cryptography via `verify_precompiles`.
+- Compute limits in `lib/solana/priority-fee.ts` are **measured**, not estimated:
+  `profiles_compute_units` fails if an instruction outgrows the published limit.
+
+⚠️ **`Cargo.lock` pins `proc-macro2 = 1.0.86` and this is load-bearing.**
+`anchor build`'s IDL pass sets `RUSTFLAGS=--cfg procmacro2_semver_exempt`, which
+1.0.107 no longer satisfies for `proc-macro-error` — reached unavoidably via
+`anchor-lang-idl → borsh 1.5 → borsh-derive → syn_derive`, and every `borsh-derive`
+1.x depends on `syn_derive`. A `cargo update` that un-pins it breaks the IDL step.
+Four further pins (`idna_adapter`, `jobserver`, `async-compression`,
+`enum-iterator-derive`) keep the litesvm dev-dependency tree on rustc 1.79.
+
+**Attestations are Ed25519, not EIP-712.** `ASOL_ESMS_REDEEM_V1`,
+`ASOL_STAR_YIELD_V1` and `ASOL_AMM_VISIBILITY_V1` are byte strings signed by
+`ProgramConfig.attestor` and verified through the Ed25519 precompile, which must sit
+at exactly `current_index - 1`. `ARC_ATTESTOR_PRIVATE_KEY` is **secp256k1** and
+cannot sign for Solana — the Solana path needs `SOLANA_ATTESTOR_KEYPAIR`. Every
+preimage is pinned as a hex vector in `programs/asol_program/src/vectors.rs` and
+asserted byte-identical from TypeScript; `lib/solana/vectors.ts` owns the layout on
+that side and `constellation-amm.ts` wraps rather than re-serialises it.
+
+⚠️ **`ProgramConfig` is live on devnet at exactly `8 + INIT_SPACE = 140` bytes with
+no slack.** Adding a field EOFs borsh on the existing account and bricks
+`claim_mint_esms` / `redeem_esms` / `claim_star_yield`. This is why AMM pause is
+per-pool (`ConstellationPool.paused`) rather than global.
+
+**Constellation AMM LP positions are not transferable.** Arc's `ConstellationDeed`
+is a transferable ERC-721; the Solana position is an owner-seeded `DeedPosition`
+PDA (`seeds = [b"deed", pool_id, owner]`) that no instruction can move. One position
+per `(owner, pool)`; it closes and refunds its rent at zero shares. Reserves are
+virtual — ESMS is soulbound, so input is burned and output minted, and the pool
+custodies nothing.
 
 ### Database
 
