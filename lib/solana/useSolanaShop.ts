@@ -6,8 +6,11 @@ import bs58 from 'bs58'
 import type { ShopItem } from '@/lib/shop/catalog'
 import type { EsmsCost } from '@/lib/shop/pricing'
 import { costToSolanaAmounts } from '@/lib/shop/pricing'
-import { ASOL_SOLANA_PROGRAM_ID, buildRedeemAuthorizationMessage } from '@/lib/solana/esms'
-import { claimIdToBytes32 } from '@/lib/solana/solana-minter'
+import {
+  ASOL_SOLANA_PROGRAM_ID,
+  buildRedeemAuthorizationMessage,
+  claimIdToBytes32,
+} from '@/lib/solana/esms'
 import {
   ASOL_SOLANA_TRANSACTION_CONFIRMED_EVENT,
   solanaExplorerTransactionUrl,

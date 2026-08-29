@@ -15,7 +15,10 @@ pub fn initialize(
 ) -> Result<()> {
     require_keys_neq!(attestor, Pubkey::default(), AsolError::DefaultAuthority);
     require_keys_neq!(pauser, Pubkey::default(), AsolError::DefaultAuthority);
-    require!(cluster_domain != [0_u8; 32], AsolError::InvalidClusterDomain);
+    require!(
+        cluster_domain != [0_u8; 32],
+        AsolError::InvalidClusterDomain
+    );
 
     ctx.accounts.program_config.set_inner(ProgramConfig {
         version: STATE_VERSION,

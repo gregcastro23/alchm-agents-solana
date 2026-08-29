@@ -116,7 +116,7 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
     if (!existing) {
       await program.methods
         .initializeConfig(attestor.publicKey, pauser.publicKey, toBytes(clusterDomain))
-        .accounts({
+        .accountsPartial({
           programConfig,
           admin,
           program: program.programId,
@@ -154,7 +154,7 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
     await provider.sendAndConfirm(funding)
     await program.methods
       .initializeEsmsMints()
-      .accounts({
+      .accountsPartial({
         programConfig,
         admin,
         ...mintAccounts,
@@ -167,11 +167,11 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
   afterAll(async () => {
     await program.methods
       .setPauseState(false, false)
-      .accounts({ programConfig, authority: admin })
+      .accountsPartial({ programConfig, authority: admin })
       .rpc()
     await program.methods
       .setServiceAuthorities(admin, admin)
-      .accounts({ programConfig, authority: admin })
+      .accountsPartial({ programConfig, authority: admin })
       .rpc()
   }, 120_000)
 
@@ -179,14 +179,14 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
     await expect(
       program.methods
         .setServiceAuthorities(outsider.publicKey, outsider.publicKey)
-        .accounts({ programConfig, authority: outsider.publicKey })
+        .accountsPartial({ programConfig, authority: outsider.publicKey })
         .signers([outsider])
         .rpc()
     ).rejects.toThrow(/Unauthorized/)
 
     await program.methods
       .setServiceAuthorities(PublicKey.default, PublicKey.default)
-      .accounts({ programConfig, authority: admin })
+      .accountsPartial({ programConfig, authority: admin })
       .rpc()
     const revoked = await program.account.programConfig.fetch(programConfig)
     expect(revoked.attestor.equals(PublicKey.default)).toBe(true)
@@ -194,7 +194,7 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
 
     await program.methods
       .setServiceAuthorities(attestor.publicKey, pauser.publicKey)
-      .accounts({ programConfig, authority: admin })
+      .accountsPartial({ programConfig, authority: admin })
       .rpc()
 
     const config = await program.account.programConfig.fetch(programConfig)
@@ -224,7 +224,7 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
           toBytes(Uint8Array.from(randomBytes(32))),
           toAmounts(amounts)
         )
-        .accounts({
+        .accountsPartial({
           ...accounts,
           claimReceipt: getReceiptAddress('claim', unauthorizedClaimId, program.programId),
           authority: outsider.publicKey,
@@ -241,7 +241,7 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
         toBytes(Uint8Array.from(randomBytes(32))),
         toAmounts(amounts)
       )
-      .accounts({
+      .accountsPartial({
         ...accounts,
         claimReceipt: attestedReceipt,
         authority: attestor.publicKey,
@@ -261,8 +261,8 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
       tokenProgram: TOKEN_2022_PROGRAM_ID,
       systemProgram: SystemProgram.programId,
     }
-    await program.methods.initializeEsmsMints().accounts(accounts).rpc()
-    await program.methods.initializeEsmsMints().accounts(accounts).rpc()
+    await program.methods.initializeEsmsMints().accountsPartial(accounts).rpc()
+    await program.methods.initializeEsmsMints().accountsPartial(accounts).rpc()
 
     for (const mint of mints) {
       const info = await provider.connection.getAccountInfo(mint, 'confirmed')
@@ -293,7 +293,7 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
         toBytes(epochHash),
         new anchor.BN(1)
       )
-      .accounts({
+      .accountsPartial({
         programConfig,
         personaCommitment,
         writer: admin,
@@ -313,7 +313,7 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
           toBytes(epochHash),
           new anchor.BN(2)
         )
-        .accounts({
+        .accountsPartial({
           programConfig,
           personaCommitment,
           writer: outsider.publicKey,
@@ -331,7 +331,7 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
     const claimReceipt = getReceiptAddress('claim', claimId, program.programId)
     const claim = program.methods
       .claimMintEsms(toBytes(claimId), toBytes(ledgerReference), toAmounts(claimAmounts))
-      .accounts({
+      .accountsPartial({
         programConfig,
         claimReceipt,
         authority: admin,
@@ -356,7 +356,7 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
     const orderReceipt = getReceiptAddress('order', orderId, program.programId)
     const redeem = program.methods
       .redeemEsms(toBytes(orderId), toAmounts(redeemAmounts))
-      .accounts({
+      .accountsPartial({
         programConfig,
         orderReceipt,
         holder: holder.publicKey,
@@ -393,7 +393,7 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
     })
     const redeemInstruction = await program.methods
       .redeemForEsms(toBytes(orderId), toAmounts(amounts), new anchor.BN(deadline.toString()))
-      .accounts({
+      .accountsPartial({
         programConfig,
         orderReceipt,
         sponsor: admin,
@@ -424,7 +424,7 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
           toAmounts(amounts),
           new anchor.BN(deadline.toString())
         )
-        .accounts({
+        .accountsPartial({
           programConfig,
           orderReceipt: missingSignatureReceipt,
           sponsor: admin,
@@ -443,14 +443,14 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
     await expect(
       program.methods
         .setPauseState(true, true)
-        .accounts({ programConfig, authority: outsider.publicKey })
+        .accountsPartial({ programConfig, authority: outsider.publicKey })
         .signers([outsider])
         .rpc()
     ).rejects.toThrow(/Unauthorized/)
 
     await program.methods
       .setPauseState(true, false)
-      .accounts({ programConfig, authority: pauser.publicKey })
+      .accountsPartial({ programConfig, authority: pauser.publicKey })
       .signers([pauser])
       .rpc()
     const paused = await program.account.programConfig.fetch(programConfig)
@@ -465,7 +465,7 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
           toBytes(Uint8Array.from(randomBytes(32))),
           toAmounts([1n, 1n, 1n, 1n])
         )
-        .accounts({
+        .accountsPartial({
           programConfig,
           claimReceipt: getReceiptAddress('claim', pausedClaimId, program.programId),
           authority: admin,
@@ -482,7 +482,7 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
     const liveOrderId = Uint8Array.from(randomBytes(32))
     await program.methods
       .redeemEsms(toBytes(liveOrderId), toAmounts([1n, 1n, 1n, 1n]))
-      .accounts({
+      .accountsPartial({
         programConfig,
         orderReceipt: getReceiptAddress('order', liveOrderId, program.programId),
         holder: holder.publicKey,
@@ -496,7 +496,7 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
 
     await program.methods
       .setPauseState(false, true)
-      .accounts({ programConfig, authority: pauser.publicKey })
+      .accountsPartial({ programConfig, authority: pauser.publicKey })
       .signers([pauser])
       .rpc()
 
@@ -504,7 +504,7 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
     await expect(
       program.methods
         .redeemEsms(toBytes(pausedOrderId), toAmounts([1n, 1n, 1n, 1n]))
-        .accounts({
+        .accountsPartial({
           programConfig,
           orderReceipt: getReceiptAddress('order', pausedOrderId, program.programId),
           holder: holder.publicKey,
@@ -538,7 +538,7 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
         toAmounts(sponsoredAmounts),
         new anchor.BN(sponsoredDeadline.toString())
       )
-      .accounts({
+      .accountsPartial({
         programConfig,
         orderReceipt: getReceiptAddress('order', sponsoredOrderId, program.programId),
         sponsor: admin,
@@ -561,7 +561,7 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
         toBytes(Uint8Array.from(randomBytes(32))),
         toAmounts([1n, 1n, 1n, 1n])
       )
-      .accounts({
+      .accountsPartial({
         programConfig,
         claimReceipt: getReceiptAddress('claim', liveClaimId, program.programId),
         authority: admin,
@@ -576,7 +576,7 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
 
     await program.methods
       .setPauseState(false, false)
-      .accounts({ programConfig, authority: admin })
+      .accountsPartial({ programConfig, authority: admin })
       .rpc()
   }, 120_000)
 })

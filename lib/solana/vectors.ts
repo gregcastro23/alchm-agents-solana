@@ -71,6 +71,7 @@ export function openZeppelinStarLeaf(starId: number): string {
 }
 
 export const REDEEM_AUTHORIZATION_DOMAIN = Buffer.from('ASOL_ESMS_REDEEM_V1', 'utf8')
+export const AMM_VISIBILITY_AUTHORIZATION_DOMAIN = Buffer.from('ASOL_AMM_VISIBILITY_V1', 'utf8')
 
 export function buildRedeemAuthorizationVector(args: {
   programId: Uint8Array
@@ -101,6 +102,60 @@ export function buildRedeemAuthorizationVector(args: {
     values,
   ])
   return buffer.toString('hex')
+}
+
+/**
+ * The canonical 170-byte `ASOL_AMM_VISIBILITY_V1` preimage.
+ *
+ * Byte-for-byte mirror of `amm_visibility_authorization_message` in
+ * `programs/asol_program/src/vectors.rs`; both are asserted against the same pinned
+ * hex vector in `test/solana/constellation-amm.spec.ts`. This is the only place the
+ * layout is written in TypeScript -- `lib/solana/constellation-amm.ts` wraps it
+ * with a typed, validating interface rather than re-serialising it.
+ */
+export function buildAmmVisibilityAuthorizationVector(args: {
+  programId: Uint8Array
+  clusterDomain: Uint8Array
+  trader: Uint8Array
+  poolId: number
+  op: number
+  regionCommit: Uint8Array
+  visibleStars: number
+  nonce: bigint
+  deadline: bigint
+}): Buffer {
+  if (
+    args.programId.length !== 32 ||
+    args.clusterDomain.length !== 32 ||
+    args.trader.length !== 32 ||
+    args.regionCommit.length !== 32
+  ) {
+    throw new Error(
+      '32-byte buffers required for programId, clusterDomain, trader, and regionCommit'
+    )
+  }
+
+  const poolIdBuf = Buffer.alloc(2)
+  poolIdBuf.writeUInt16LE(args.poolId, 0)
+
+  const opBuf = Buffer.from([args.op])
+  const visibleStarsBuf = Buffer.from([args.visibleStars])
+
+  const nonceAndDeadline = Buffer.alloc(16)
+  nonceAndDeadline.writeBigUInt64LE(args.nonce, 0)
+  nonceAndDeadline.writeBigInt64LE(args.deadline, 8)
+
+  return Buffer.concat([
+    AMM_VISIBILITY_AUTHORIZATION_DOMAIN,
+    Buffer.from(args.programId),
+    Buffer.from(args.clusterDomain),
+    Buffer.from(args.trader),
+    poolIdBuf,
+    opBuf,
+    Buffer.from(args.regionCommit),
+    visibleStarsBuf,
+    nonceAndDeadline,
+  ])
 }
 
 function sha256(value: Uint8Array): Buffer {

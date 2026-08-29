@@ -1,12 +1,10 @@
 use anchor_lang::{
     prelude::*,
     solana_program::{
-        ed25519_program,
         instruction::{AccountMeta, Instruction},
         program::invoke_signed,
         program_option::COption,
         system_instruction,
-        sysvar::instructions::{load_current_index_checked, load_instruction_at_checked},
     },
 };
 use anchor_spl::token_2022_extensions::spl_token_metadata_interface::borsh::BorshDeserialize;
@@ -23,14 +21,15 @@ use anchor_spl::{
     token_interface::{Mint, TokenAccount},
 };
 
+use super::ed25519::verify_preceding_ed25519_instruction;
 use crate::{
     constants::{
-        CLAIM_RECEIPT_SEED, ED25519_PUBLIC_KEY_SIZE, ED25519_SIGNATURE_SIZE, ESMS_DECIMALS,
-        ESMS_METADATA_URIS, ESMS_MINT_COUNT, ESMS_MINT_SEED, ESMS_NAMES, ESMS_SYMBOLS,
-        MAX_LEDGER_ATOMS, ORDER_RECEIPT_SEED, PERMISSIONED_BURN_BURN_CHECKED_TAG,
-        PERMISSIONED_BURN_EXTENSION_TYPE, PERMISSIONED_BURN_INITIALIZE_TAG,
-        PERMISSIONED_BURN_INSTRUCTION_TAG, PROGRAM_AUTHORITY_SEED, REDEEM_AUTHORIZATION_DOMAIN,
-        REDEMPTION_MODE_SELF, REDEMPTION_MODE_SPONSORED, STATE_VERSION,
+        CLAIM_RECEIPT_SEED, ED25519_PUBLIC_KEY_SIZE, ESMS_DECIMALS, ESMS_METADATA_URIS,
+        ESMS_MINT_COUNT, ESMS_MINT_SEED, ESMS_NAMES, ESMS_SYMBOLS, MAX_LEDGER_ATOMS,
+        ORDER_RECEIPT_SEED, PERMISSIONED_BURN_BURN_CHECKED_TAG, PERMISSIONED_BURN_EXTENSION_TYPE,
+        PERMISSIONED_BURN_INITIALIZE_TAG, PERMISSIONED_BURN_INSTRUCTION_TAG,
+        PROGRAM_AUTHORITY_SEED, REDEEM_AUTHORIZATION_DOMAIN, REDEMPTION_MODE_SELF,
+        REDEMPTION_MODE_SPONSORED, STATE_VERSION,
     },
     errors::AsolError,
     state::{ClaimReceipt, OrderReceipt, ProgramConfig},
@@ -543,7 +542,7 @@ fn burn_all<'info>(
     Ok(())
 }
 
-fn permissioned_burn_checked<'info>(
+pub fn permissioned_burn_checked<'info>(
     source: &AccountInfo<'info>,
     mint: &AccountInfo<'info>,
     permissioned_burn_authority: &AccountInfo<'info>,
@@ -601,63 +600,6 @@ pub fn redeem_authorization_message(
     }
     message.extend_from_slice(&deadline.to_le_bytes());
     message
-}
-
-fn verify_preceding_ed25519_instruction(
-    instructions: &AccountInfo,
-    holder: &Pubkey,
-    expected_message: &[u8],
-) -> Result<()> {
-    let current_index = load_current_index_checked(instructions)
-        .map_err(|_| error!(AsolError::InvalidInstructionsSysvar))?;
-    require!(current_index > 0, AsolError::InvalidEd25519Authorization);
-    let ed25519_instruction = load_instruction_at_checked(current_index as usize - 1, instructions)
-        .map_err(|_| error!(AsolError::InvalidEd25519Authorization))?;
-    require_keys_eq!(
-        ed25519_instruction.program_id,
-        ed25519_program::ID,
-        AsolError::InvalidEd25519Authorization
-    );
-    let data = &ed25519_instruction.data;
-    require!(data.len() >= 16, AsolError::InvalidEd25519Authorization);
-    require!(
-        data[0] == 1 && data[1] == 0,
-        AsolError::InvalidEd25519Authorization
-    );
-
-    let read_u16 = |offset: usize| u16::from_le_bytes([data[offset], data[offset + 1]]);
-    let signature_offset = read_u16(2) as usize;
-    let signature_instruction_index = read_u16(4);
-    let public_key_offset = read_u16(6) as usize;
-    let public_key_instruction_index = read_u16(8);
-    let message_offset = read_u16(10) as usize;
-    let message_size = read_u16(12) as usize;
-    let message_instruction_index = read_u16(14);
-    require!(
-        signature_instruction_index == u16::MAX
-            && public_key_instruction_index == u16::MAX
-            && message_instruction_index == u16::MAX,
-        AsolError::InvalidEd25519Authorization
-    );
-    require!(
-        signature_offset
-            .checked_add(ED25519_SIGNATURE_SIZE)
-            .is_some_and(|end| end <= data.len())
-            && public_key_offset
-                .checked_add(ED25519_PUBLIC_KEY_SIZE)
-                .is_some_and(|end| end <= data.len())
-            && message_offset
-                .checked_add(message_size)
-                .is_some_and(|end| end <= data.len()),
-        AsolError::InvalidEd25519Authorization
-    );
-    require!(
-        &data[public_key_offset..public_key_offset + ED25519_PUBLIC_KEY_SIZE] == holder.as_ref()
-            && message_size == expected_message.len()
-            && &data[message_offset..message_offset + message_size] == expected_message,
-        AsolError::InvalidEd25519Authorization
-    );
-    Ok(())
 }
 
 fn write_order_receipt(

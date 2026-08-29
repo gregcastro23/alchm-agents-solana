@@ -1,6 +1,10 @@
 use anchor_lang::prelude::*;
 
+pub mod amm;
+pub mod deed;
 pub mod staking;
+pub use amm::*;
+pub use deed::*;
 pub use staking::*;
 
 #[account]

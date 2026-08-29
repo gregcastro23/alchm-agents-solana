@@ -159,6 +159,9 @@ on the existing `ConstellationAMM`, and stars crossing your ascendant fire on-ch
   `VisibilityAttestation` only while the pair's aspect is active and the sky is risen — the
   signature **is** the "pool is open" gate. `lib/staking/useZonePool.ts` + `components/staking/ZonePoolLP.tsx`
   let a holder seed liquidity with earned ESMS (the Deed NFT is the position).
+  On **Solana** the same AMM is ported without the NFT: the LP position is a
+  non-transferable, owner-seeded `DeedPosition` PDA. See
+  [`docs/SOLANA_MAINNET_MIGRATION_ROADMAP.md`](docs/SOLANA_MAINNET_MIGRATION_ROADMAP.md#phase-6--constellation-virtual-reserve-amm--lp-deed-positions-as-built).
 - **Ascendant activation ("shooting star").** The ascendant sweeps 15 arc-min/min; a star whose
   ecliptic longitude is within a ±2′ orb of the rising degree is "on the ascendant" (~16s window).
   While activated it **burst-boosts the zone it sits in**, minted on-chain as an extra ½-day of

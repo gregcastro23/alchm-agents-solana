@@ -74,6 +74,21 @@ const IGNORED_PATTERNS = [
   '!app/api/admin/',
   '!app/api/admin/**',
 
+  // Solana client surface — same reasoning. This is the code that builds the
+  // transactions users sign, and `tsconfig.solana.json` already type-checks it;
+  // leaving it un-linted was the other half of Phase 5 finding S8. Note the
+  // ancestor chain, per the form above; verified NOT to be inert (a planted
+  // `no-dupe-keys` violation was reported) and clean when added.
+  //
+  // Like `lib/admin/**`, this gets the correctness lockdown block only, not
+  // COMMON_RULES: those are bound to SOURCE_GLOBS, which sets `project: true`,
+  // and `lib/solana/**` is excluded from the root tsconfig — it is covered by
+  // `tsconfig.solana.json` and `bun run typecheck:solana` instead.
+  '!lib/solana/',
+  '!lib/solana/**',
+  '!app/api/solana/',
+  '!app/api/solana/**',
+
   '**/*.json',
   '**/*.md',
   '**/*.log',

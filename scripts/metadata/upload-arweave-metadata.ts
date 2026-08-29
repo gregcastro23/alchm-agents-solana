@@ -113,7 +113,7 @@ export async function runUploadArweaveMetadata(options: UploadOptions = {}) {
   })
   if (!signer) {
     throw new Error(
-      'Unable to resolve Solana service signer. Configure AWS_KMS_KEY_ID, GCP_KMS_KEY_NAME, or SOLANA_PAYER_SECRET_KEY.'
+      'Unable to resolve Solana service signer. Configure AWS_KMS_KEY_ID, GCP_KMS_KEY_NAME, or SOLANA_AGENT_PAYER_KEY.'
     )
   }
 

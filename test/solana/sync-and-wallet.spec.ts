@@ -192,7 +192,9 @@ describe('AAE Solana sync worker', () => {
           enqueued.push(...values.map(value => value.eventType))
         },
       },
-      onEvent: async event => projected.push(event.eventType),
+      onEvent: async event => {
+        projected.push(event.eventType)
+      },
     })
 
     expect(await processBatch(events)).toBe(true)
@@ -230,8 +232,12 @@ describe('AAE two-way bridge relay', () => {
           calls.push(`record:${value.sourceTxHash}`)
         },
       },
-      verifyEvmSource: async () => calls.push('verify-evm'),
-      verifySolanaSource: async () => calls.push('verify-solana'),
+      verifyEvmSource: async () => {
+        calls.push('verify-evm')
+      },
+      verifySolanaSource: async () => {
+        calls.push('verify-solana')
+      },
       mintEvmDestination: async () => {
         calls.push('mint-evm')
         return `0x${'66'.repeat(32)}`

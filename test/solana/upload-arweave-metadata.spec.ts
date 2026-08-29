@@ -57,7 +57,7 @@ describe('Irys Signer Adapter & Upload Automation', () => {
 
   it('runs upload automation in dry-run mode without modifying state or spending funds', async () => {
     const keypair = Keypair.generate()
-    vi.stubEnv('SOLANA_PAYER_SECRET_KEY', JSON.stringify(Array.from(keypair.secretKey)))
+    vi.stubEnv('SOLANA_AGENT_PAYER_KEY', JSON.stringify(Array.from(keypair.secretKey)))
 
     const manifest = await runUploadArweaveMetadata({
       dryRun: true,
@@ -71,7 +71,7 @@ describe('Irys Signer Adapter & Upload Automation', () => {
 
   it('rejects live upload if irys-network is not mainnet', async () => {
     const keypair = Keypair.generate()
-    vi.stubEnv('SOLANA_PAYER_SECRET_KEY', JSON.stringify(Array.from(keypair.secretKey)))
+    vi.stubEnv('SOLANA_AGENT_PAYER_KEY', JSON.stringify(Array.from(keypair.secretKey)))
 
     await expect(
       runUploadArweaveMetadata({
@@ -85,7 +85,7 @@ describe('Irys Signer Adapter & Upload Automation', () => {
 
   it('rejects local provider on live mainnet execution', async () => {
     const keypair = Keypair.generate()
-    vi.stubEnv('SOLANA_PAYER_SECRET_KEY', JSON.stringify(Array.from(keypair.secretKey)))
+    vi.stubEnv('SOLANA_AGENT_PAYER_KEY', JSON.stringify(Array.from(keypair.secretKey)))
 
     await expect(
       runUploadArweaveMetadata({
@@ -137,14 +137,15 @@ describe('Irys Signer Adapter & Upload Automation', () => {
       if (match) {
         const found = uploadedAssets.find(a => a.id === match[1])
         if (found) {
-          return new Response(found.buffer, { status: 200 })
+          // Node `Buffer` is not a `BodyInit`; its backing bytes are.
+          return new Response(new Uint8Array(found.buffer), { status: 200 })
         }
       }
       return new Response('Not Found', { status: 404 })
     }) as any
 
     const keypair = Keypair.generate()
-    vi.stubEnv('SOLANA_PAYER_SECRET_KEY', JSON.stringify(Array.from(keypair.secretKey)))
+    vi.stubEnv('SOLANA_AGENT_PAYER_KEY', JSON.stringify(Array.from(keypair.secretKey)))
     vi.stubEnv('AWS_KMS_KEY_ID', 'arn:aws:kms:us-east-1:123456789012:key/mock-kms-key')
     vi.stubEnv('SOLANA_SERVICE_PUBLIC_KEY', keypair.publicKey.toBase58())
 
@@ -223,7 +224,7 @@ describe('Irys Signer Adapter & Upload Automation', () => {
     }) as any
 
     const keypair = Keypair.generate()
-    vi.stubEnv('SOLANA_PAYER_SECRET_KEY', JSON.stringify(Array.from(keypair.secretKey)))
+    vi.stubEnv('SOLANA_AGENT_PAYER_KEY', JSON.stringify(Array.from(keypair.secretKey)))
     vi.stubEnv('AWS_KMS_KEY_ID', 'arn:aws:kms:us-east-1:123456789012:key/mock-kms-key')
     vi.stubEnv('SOLANA_SERVICE_PUBLIC_KEY', keypair.publicKey.toBase58())
 
