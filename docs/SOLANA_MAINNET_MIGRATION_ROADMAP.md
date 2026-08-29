@@ -605,6 +605,11 @@ bun run test:solana         # typecheck:solana + TS unit suite + cargo (incl. li
 bun run test:solana:runtime # build, then the litesvm suite alone with CU output
 ```
 
+Never call `anchor build` directly: it exits 0 when the SBF linker reports a
+stack-frame overflow and writes a `.so` that faults on every call to the affected
+instruction. `solana:build` wraps it and fails on that. The full workflow and its
+traps are recorded in `CLAUDE.md` under **Solana Program & Client**.
+
 Still outstanding before Phase 7: one devnet end-to-end pass
 (`register -> bootstrap -> add -> swap -> partial withdraw -> full withdraw`)
 driven through the SDK builders against the live Token-2022 program.

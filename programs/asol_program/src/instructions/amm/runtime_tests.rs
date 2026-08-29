@@ -1315,7 +1315,7 @@ fn profiles_compute_units() {
     let trader_kp = env.trader.insecure_clone();
     let mut measured: Vec<(&str, u64, u64)> = Vec::new();
 
-    let mut record = |name: &'static str,
+    let record = |name: &'static str,
                       meta: litesvm::types::TransactionMetadata,
                       ceiling: u64,
                       out: &mut Vec<(&'static str, u64, u64)>| {
@@ -1451,5 +1451,287 @@ fn profiles_compute_units() {
         over.is_empty(),
         "compute usage outgrew its declared ceiling -- raise both this constant and \
          the matching limit in lib/solana/priority-fee.ts: {over:?}"
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Position lifecycle
+// ---------------------------------------------------------------------------
+
+/// Drives one attested `add_liquidity` for the trader and returns the tx result.
+fn add_once(env: &mut Env, pool_id: u16, element_a: u8, element_b: u8, amount: u64) -> TransactionResult {
+    let deadline = env.deadline();
+    let nonce = env.trader_nonce(pool_id);
+    let message = env.attestation_message(pool_id, AMM_OP_ADD_LIQUIDITY, nonce, deadline);
+    let sig_ix = ed25519_instruction(&env.attestor, &message);
+    let add_ix =
+        env.add_liquidity_instruction(pool_id, element_a, element_b, amount, amount, nonce, deadline);
+    let trader = env.trader.insecure_clone();
+    env.send(&[sig_ix, add_ix], &[&trader])
+}
+
+#[test]
+fn a_repeat_add_accumulates_into_the_same_position() {
+    let mut env = Env::boot();
+    env.live_pool(POOL_SPIRIT_ESSENCE, ELEMENT_SPIRIT, ELEMENT_ESSENCE);
+    let trader = env.trader.pubkey();
+
+    unwrap_ok(
+        add_once(&mut env, POOL_SPIRIT_ESSENCE, ELEMENT_SPIRIT, ELEMENT_ESSENCE, 100_000),
+        "first add",
+    );
+    let first = env
+        .deed_state(POOL_SPIRIT_ESSENCE, &trader)
+        .expect("position opened");
+    let created_slot = first.created_slot;
+
+    env.svm.expire_blockhash();
+    unwrap_ok(
+        add_once(&mut env, POOL_SPIRIT_ESSENCE, ELEMENT_SPIRIT, ELEMENT_ESSENCE, 100_000),
+        "second add",
+    );
+    let second = env
+        .deed_state(POOL_SPIRIT_ESSENCE, &trader)
+        .expect("position still open");
+
+    // The `version == 0` first-touch branch must not run again and reset shares.
+    assert!(
+        second.shares > first.shares,
+        "a repeat add must accumulate, not overwrite: {} -> {}",
+        first.shares,
+        second.shares
+    );
+    assert_eq!(
+        second.created_slot, created_slot,
+        "created_slot records the first touch and must not be rewritten"
+    );
+    assert_eq!(second.owner, trader);
+    assert_eq!(second.pool_id, POOL_SPIRIT_ESSENCE);
+}
+
+#[test]
+fn a_closed_position_can_be_reopened_by_adding_again() {
+    let mut env = Env::boot();
+    env.live_pool(POOL_SPIRIT_ESSENCE, ELEMENT_SPIRIT, ELEMENT_ESSENCE);
+    let trader = env.trader.pubkey();
+    let trader_kp = env.trader.insecure_clone();
+
+    unwrap_ok(
+        add_once(&mut env, POOL_SPIRIT_ESSENCE, ELEMENT_SPIRIT, ELEMENT_ESSENCE, 100_000),
+        "first add",
+    );
+    let deed = deed_position_address(POOL_SPIRIT_ESSENCE, &trader);
+    let withdraw_ix = env.withdraw_instruction(
+        POOL_SPIRIT_ESSENCE,
+        ELEMENT_SPIRIT,
+        ELEMENT_ESSENCE,
+        10_000,
+        &trader,
+        deed,
+    );
+    unwrap_ok(env.send(&[withdraw_ix], &[&trader_kp]), "full withdraw");
+    assert!(
+        env.deed_state(POOL_SPIRIT_ESSENCE, &trader).is_none(),
+        "the position must be closed"
+    );
+
+    // `init_if_needed` has to re-create an account that `close()` drained to zero
+    // lamports and reassigned to the system program. If it did not, or if it
+    // re-created it without the `version == 0` first touch running, a returning LP
+    // would be locked out of the pool.
+    env.svm.expire_blockhash();
+    unwrap_ok(
+        add_once(&mut env, POOL_SPIRIT_ESSENCE, ELEMENT_SPIRIT, ELEMENT_ESSENCE, 50_000),
+        "add after close",
+    );
+
+    let reopened = env
+        .deed_state(POOL_SPIRIT_ESSENCE, &trader)
+        .expect("position reopened");
+    assert_eq!(reopened.version, STATE_VERSION);
+    assert_eq!(reopened.owner, trader);
+    assert_eq!(reopened.pool_id, POOL_SPIRIT_ESSENCE);
+    assert_eq!(
+        reopened.shares, 50_000,
+        "a reopened position starts from the new deposit, not from stale data"
+    );
+}
+
+#[test]
+fn a_partial_exit_leaves_a_position_that_can_still_be_added_to_and_fully_closed() {
+    let mut env = Env::boot();
+    env.live_pool(POOL_SPIRIT_ESSENCE, ELEMENT_SPIRIT, ELEMENT_ESSENCE);
+    let trader = env.trader.pubkey();
+    let trader_kp = env.trader.insecure_clone();
+    let deed = deed_position_address(POOL_SPIRIT_ESSENCE, &trader);
+
+    unwrap_ok(
+        add_once(&mut env, POOL_SPIRIT_ESSENCE, ELEMENT_SPIRIT, ELEMENT_ESSENCE, 100_000),
+        "add",
+    );
+
+    let half = env.withdraw_instruction(
+        POOL_SPIRIT_ESSENCE,
+        ELEMENT_SPIRIT,
+        ELEMENT_ESSENCE,
+        5_000,
+        &trader,
+        deed,
+    );
+    unwrap_ok(env.send(&[half], &[&trader_kp]), "partial exit");
+    assert_eq!(
+        env.deed_state(POOL_SPIRIT_ESSENCE, &trader)
+            .expect("position survives a partial exit")
+            .shares,
+        50_000
+    );
+
+    env.svm.expire_blockhash();
+    unwrap_ok(
+        add_once(&mut env, POOL_SPIRIT_ESSENCE, ELEMENT_SPIRIT, ELEMENT_ESSENCE, 25_000),
+        "add onto a partially exited position",
+    );
+    let topped_up = env
+        .deed_state(POOL_SPIRIT_ESSENCE, &trader)
+        .expect("position open");
+    assert!(topped_up.shares > 50_000);
+
+    env.svm.expire_blockhash();
+    let rest = env.withdraw_instruction(
+        POOL_SPIRIT_ESSENCE,
+        ELEMENT_SPIRIT,
+        ELEMENT_ESSENCE,
+        10_000,
+        &trader,
+        deed,
+    );
+    unwrap_ok(env.send(&[rest], &[&trader_kp]), "final exit");
+    assert!(env.deed_state(POOL_SPIRIT_ESSENCE, &trader).is_none());
+
+    // Only the permanently locked bootstrap shares are left behind.
+    assert_eq!(
+        env.pool_state(POOL_SPIRIT_ESSENCE).total_shares,
+        BOOTSTRAP_RESERVE
+    );
+}
+
+// ---------------------------------------------------------------------------
+// Cross-pool binding and the LP round trip
+// ---------------------------------------------------------------------------
+
+#[test]
+fn an_attestation_for_one_pool_cannot_be_spent_on_another() {
+    let mut env = Env::boot();
+    env.live_pool(POOL_SPIRIT_ESSENCE, ELEMENT_SPIRIT, ELEMENT_ESSENCE);
+    env.live_pool(POOL_SPIRIT_MATTER, ELEMENT_SPIRIT, ELEMENT_MATTER);
+    let trader = env.trader.pubkey();
+    let trader_kp = env.trader.insecure_clone();
+
+    let deadline = env.deadline();
+    // Signed for pool 0 ...
+    let nonce = env.trader_nonce(POOL_SPIRIT_MATTER);
+    let message = env.attestation_message(POOL_SPIRIT_ESSENCE, AMM_OP_SWAP, nonce, deadline);
+    let sig_ix = ed25519_instruction(&env.attestor, &message);
+    // ... and presented to pool 1. `pool_id` is inside the preimage, so the
+    // signature does not verify against the message the program rebuilds.
+    let swap_ix = env.swap_instruction(
+        POOL_SPIRIT_MATTER,
+        ELEMENT_SPIRIT,
+        ELEMENT_MATTER,
+        ELEMENT_SPIRIT,
+        50_000,
+        nonce,
+        deadline,
+        ata(&trader, &esms_mint_address(ELEMENT_SPIRIT)),
+        ata(&trader, &esms_mint_address(ELEMENT_MATTER)),
+    );
+    expect_asol_error(
+        env.send(&[sig_ix, swap_ix], &[&trader_kp]),
+        crate::errors::AsolError::InvalidEd25519Authorization,
+        "a pool-0 attestation spent on pool 1",
+    );
+}
+
+#[test]
+fn an_expired_attestation_is_refused() {
+    let mut env = Env::boot();
+    env.live_pool(POOL_SPIRIT_ESSENCE, ELEMENT_SPIRIT, ELEMENT_ESSENCE);
+
+    let expired = env.now() - 1;
+    let nonce = env.trader_nonce(POOL_SPIRIT_ESSENCE);
+    let message = env.attestation_message(POOL_SPIRIT_ESSENCE, AMM_OP_ADD_LIQUIDITY, nonce, expired);
+    let sig_ix = ed25519_instruction(&env.attestor, &message);
+    let add_ix = env.add_liquidity_instruction(
+        POOL_SPIRIT_ESSENCE,
+        ELEMENT_SPIRIT,
+        ELEMENT_ESSENCE,
+        50_000,
+        50_000,
+        nonce,
+        expired,
+    );
+    let trader_kp = env.trader.insecure_clone();
+    expect_asol_error(
+        env.send(&[sig_ix, add_ix], &[&trader_kp]),
+        crate::errors::AsolError::AuthorizationExpired,
+        "an expired attestation",
+    );
+}
+
+#[test]
+fn adding_then_swapping_then_exiting_is_never_profitable_for_the_same_actor() {
+    let mut env = Env::boot();
+    env.live_pool(POOL_SPIRIT_ESSENCE, ELEMENT_SPIRIT, ELEMENT_ESSENCE);
+    let trader = env.trader.pubkey();
+    let trader_kp = env.trader.insecure_clone();
+
+    let before = env.token_balance(&trader, ELEMENT_SPIRIT) as u128
+        + env.token_balance(&trader, ELEMENT_ESSENCE) as u128;
+
+    unwrap_ok(
+        add_once(&mut env, POOL_SPIRIT_ESSENCE, ELEMENT_SPIRIT, ELEMENT_ESSENCE, 200_000),
+        "add",
+    );
+
+    env.svm.expire_blockhash();
+    let deadline = env.deadline();
+    let nonce = env.trader_nonce(POOL_SPIRIT_ESSENCE);
+    let message = env.attestation_message(POOL_SPIRIT_ESSENCE, AMM_OP_SWAP, nonce, deadline);
+    let sig_ix = ed25519_instruction(&env.attestor, &message);
+    let swap_ix = env.swap_instruction(
+        POOL_SPIRIT_ESSENCE,
+        ELEMENT_SPIRIT,
+        ELEMENT_ESSENCE,
+        ELEMENT_SPIRIT,
+        150_000,
+        nonce,
+        deadline,
+        ata(&trader, &esms_mint_address(ELEMENT_SPIRIT)),
+        ata(&trader, &esms_mint_address(ELEMENT_ESSENCE)),
+    );
+    unwrap_ok(env.send(&[sig_ix, swap_ix], &[&trader_kp]), "swap");
+
+    env.svm.expire_blockhash();
+    let deed = deed_position_address(POOL_SPIRIT_ESSENCE, &trader);
+    let exit = env.withdraw_instruction(
+        POOL_SPIRIT_ESSENCE,
+        ELEMENT_SPIRIT,
+        ELEMENT_ESSENCE,
+        10_000,
+        &trader,
+        deed,
+    );
+    unwrap_ok(env.send(&[exit], &[&trader_kp]), "exit");
+
+    let after = env.token_balance(&trader, ELEMENT_SPIRIT) as u128
+        + env.token_balance(&trader, ELEMENT_ESSENCE) as u128;
+
+    // The actor pays the full swap fee and recovers only their fraction of it, and
+    // the curve charges them slippage on their own trade. A profitable round trip
+    // here would mean the pool mints ESMS out of nothing on demand -- the failure
+    // mode the locked, capped bootstrap exists to bound.
+    assert!(
+        after <= before,
+        "add -> swap -> exit must not be profitable: {before} -> {after}"
     );
 }

@@ -1,4 +1,10 @@
-import { createHash } from 'node:crypto'
+// `@noble/hashes`, not `node:crypto`: this module is client-reachable (it builds
+// the authorization preimages a wallet signs), and webpack cannot bundle a
+// `node:` scheme import for the browser -- it fails the production build with
+// `UnhandledSchemeError`, which is how `solana-minter.ts` broke every Vercel
+// deploy. Byte-identical to `createHash('sha256')`; `golden-vectors.spec.ts`
+// pins the digests.
+import { sha256 as nobleSha256 } from '@noble/hashes/sha256'
 import { encodeAbiParameters, keccak256 } from 'viem'
 
 export const ESMS_DECIMALS = 4 as const
@@ -159,7 +165,7 @@ export function buildAmmVisibilityAuthorizationVector(args: {
 }
 
 function sha256(value: Uint8Array): Buffer {
-  return createHash('sha256').update(value).digest()
+  return Buffer.from(nobleSha256(value))
 }
 
 function canonicalJson(value: unknown): string {

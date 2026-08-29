@@ -695,11 +695,74 @@ who closed an emptied ATA between adding and withdrawing.
 
 ### Suite as it stands
 
-36 Rust tests, of which **16 are litesvm runtime cases** executing the compiled
-`.so`: the six negative cases the plan named, plus nonce replay, op substitution,
-attestor substitution, mint substitution, pause behaviour, re-registration, both
-happy paths and the compute-unit profile. 56 new TypeScript cases (139 across
-`test:solana:unit`). Zero type errors and zero lint errors on the Solana surface.
+42 Rust tests, of which **22 are litesvm runtime cases** executing the compiled
+`.so`, and 66 new TypeScript cases (149 across `test:solana:unit`). Zero type
+errors and zero lint errors on the Solana surface.
+
+---
+
+## Post-merge review — 2026-08-29
+
+A second pass over the implementation after CI went green. One real defect, one
+defect in a test written during this review, and six previously unexecuted paths
+that turned out to be sound.
+
+### `constellation-amm.ts` imported `node:crypto`
+
+The same defect that had just broken every Vercel deploy from `solana-minter.ts`,
+in the module least able to afford it: `buildAddLiquidityTransaction` and
+`buildSwapEsmsTransaction` exist to be called from a wallet UI, so this SDK is
+_meant_ to be imported by a client component. The first one to do so would have
+failed `next build` with `UnhandledSchemeError`. It had not fired yet only because
+nothing imports the SDK from the client **yet**.
+
+webpack cannot bundle the `node:` scheme, and `next.config.mjs`'s
+`resolve.fallback` does not cover it — it maps bare `fs`/`os`/`path` and lists no
+`crypto` at all. `tsc`, ESLint and every unit test are blind to this; only a full
+`next build` catches it, which CI runs late and nobody runs locally.
+
+Both `constellation-amm.ts` and `lib/solana/vectors.ts` now hash with
+`@noble/hashes` (byte-identical to `createHash('sha256')`, verified, and pinned by
+the golden vectors), and `@noble/hashes` is a declared dependency rather than a
+transitive one. The server-only modules keep their `node:` imports deliberately —
+that is what makes them fail loudly rather than silently ship a keypair loader to a
+browser.
+
+`test/solana/no-node-builtins.spec.ts` now walks the transitive import graph of the
+six client-safe entry points and asserts no `node:` builtin is reachable, in about a
+millisecond. It also asserts the inverse for the server-only modules, so removing
+their built-ins is a deliberate act rather than an accident.
+
+**Its own first draft was wrong**, which is worth recording: the import regex
+forbade newlines, so it skipped every multi-line `import { a, b } from '...'` and
+walked 4 modules where it should have walked 20 — a guard that would have passed on
+almost anything. The `actually resolves the graph it claims to walk` case caught it.
+A static-analysis test needs a test that the analysis is running.
+
+### Paths that were reasoned about but never executed
+
+All six hold. Added to the runtime suite rather than left as arguments:
+
+|                                   |                                                                                                                                                                                                |
+| :-------------------------------- | :--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| reopen after a full exit          | `init_if_needed` correctly re-creates an account that `close()` drained and reassigned to the system program, and the `version == 0` first touch runs again — a returning LP is not locked out |
+| repeat add                        | accumulates; `created_slot` is not rewritten and shares are not reset                                                                                                                          |
+| partial exit → top up → full exit | position survives, accumulates, then closes, leaving only the locked bootstrap shares                                                                                                          |
+| attestation bound to its pool     | a pool-0 signature presented to pool 1 fails verification, because `pool_id` is inside the preimage                                                                                            |
+| expired attestation               | refused at the deadline check, before any state is touched                                                                                                                                     |
+| add → swap → exit by one actor    | never profitable: the actor pays the whole fee and recovers only their fraction, and pays slippage on their own trade                                                                          |
+
+That last one is the economic invariant the locked, capped bootstrap exists to
+bound. If it ever inverts, the pool mints ESMS out of nothing on demand.
+
+### Nothing else found
+
+No defects in the AMM math, the account constraints, the nonce handling, or the
+event payloads beyond the stack overflow already fixed above. Ordering is
+burn-before-credit throughout, every division floors toward the pool, and reserve
+ceilings are checked post-state.
+
+---
 
 ### Still outstanding
 

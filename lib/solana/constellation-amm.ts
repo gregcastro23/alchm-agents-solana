@@ -20,7 +20,7 @@
  * and previews only -- the program recomputes everything on chain.
  */
 
-import { createHash } from 'node:crypto'
+import { sha256 } from '@noble/hashes/sha256'
 import {
   Ed25519Program,
   PublicKey,
@@ -392,9 +392,19 @@ export function buildAmmVisibilityAuthorizationMessage(
 // Instruction encoding
 // ---------------------------------------------------------------------------
 
-/** Anchor instruction discriminator: `sha256("global:<snake_case_name>")[..8]`. */
+/**
+ * Anchor instruction discriminator: `sha256("global:<snake_case_name>")[..8]`.
+ *
+ * Hashed with `@noble/hashes` rather than `node:crypto` on purpose. This module is
+ * meant to be imported from client components -- `buildAddLiquidityTransaction` and
+ * `buildSwapEsmsTransaction` return transactions for a wallet to sign -- and webpack
+ * cannot bundle a `node:` scheme import for the browser. It fails the production
+ * build outright with `UnhandledSchemeError`, which is exactly how
+ * `solana-minter.ts` broke every Vercel deploy. `no-node-builtins.spec.ts` guards
+ * this whole import graph.
+ */
 export function anchorDiscriminator(instructionName: string): Buffer {
-  return createHash('sha256').update(`global:${instructionName}`).digest().subarray(0, 8)
+  return Buffer.from(sha256(new TextEncoder().encode(`global:${instructionName}`))).subarray(0, 8)
 }
 
 function u16le(value: number): Buffer {
@@ -897,7 +907,7 @@ export interface DeedPositionState {
 
 /** Anchor account discriminator: `sha256("account:<Name>")[..8]`. */
 export function anchorAccountDiscriminator(accountName: string): Buffer {
-  return createHash('sha256').update(`account:${accountName}`).digest().subarray(0, 8)
+  return Buffer.from(sha256(new TextEncoder().encode(`account:${accountName}`))).subarray(0, 8)
 }
 
 function requireDiscriminator(data: Buffer, accountName: string): Buffer {
