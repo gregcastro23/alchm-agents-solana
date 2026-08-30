@@ -113,18 +113,18 @@ export interface CurrentPromotionalThreadProps {
   onOpenCouncil?: () => void
 }
 
-// Peak Totality for August 12, 2026 Total Solar Eclipse (17:47 UTC)
-const ECLIPSE_PEAK_TOTALITY_DATE = new Date('2026-08-12T17:47:00.000Z')
+// Peak Greatest Eclipse for August 28, 2026 Lunar Eclipse in Pisces (04:13 UTC)
+const ECLIPSE_PEAK_TOTALITY_DATE = new Date('2026-08-28T04:13:00.000Z')
 
 const calculateEclipseCountdown = (): CountdownState => {
   const now = Date.now()
   const diffMs = ECLIPSE_PEAK_TOTALITY_DATE.getTime() - now
 
-  // Totality Window: 15 minutes before to 30 minutes after peak
-  const fifteenMinsMs = 15 * 60 * 1000
-  const thirtyMinsMs = 30 * 60 * 1000
+  // Eclipse Peak Window: 20 minutes before to 40 minutes after peak
+  const twentyMinsMs = 20 * 60 * 1000
+  const fortyMinsMs = 40 * 60 * 1000
 
-  if (diffMs > fifteenMinsMs) {
+  if (diffMs > twentyMinsMs) {
     const totalSecs = Math.floor(diffMs / 1000)
     const hours = Math.floor(totalSecs / 3600)
     const minutes = Math.floor((totalSecs % 3600) / 60)
@@ -135,22 +135,22 @@ const calculateEclipseCountdown = (): CountdownState => {
       minutes,
       seconds,
       phase: 'PRE_ECLIPSE',
-      phaseTitle: 'Eclipse Approaching · Countdown to Totality',
-      phaseBadgeText: 'ECLIPSE COUNTDOWN ACTIVE',
-      phaseBadgeBg: 'bg-[#fbbf24]/20 border-[#fbbf24]/50',
-      phaseBadgeColor: 'text-[#fbbf24]',
+      phaseTitle: 'Lunar Eclipse Approaching · Countdown to Peak',
+      phaseBadgeText: 'PISCES LUNAR ECLIPSE COUNTDOWN ACTIVE',
+      phaseBadgeBg: 'bg-[#38bdf8]/20 border-[#38bdf8]/50',
+      phaseBadgeColor: 'text-[#38bdf8]',
       isTotalityActive: false,
     }
-  } else if (diffMs >= -thirtyMinsMs && diffMs <= fifteenMinsMs) {
+  } else if (diffMs >= -fortyMinsMs && diffMs <= twentyMinsMs) {
     return {
       hours: 0,
       minutes: 0,
       seconds: 0,
       phase: 'TOTALITY',
-      phaseTitle: 'Peak Totality Active · Sun & Moon at 20° Leo',
-      phaseBadgeText: 'PEAK TOTALITY ACTIVE · BLACK SUN',
-      phaseBadgeBg: 'bg-amber-500/25 border-amber-400',
-      phaseBadgeColor: 'text-amber-300',
+      phaseTitle: 'Peak Lunar Eclipse Active · Moon at 5° Pisces ☍ Sun at 5° Virgo',
+      phaseBadgeText: 'PEAK LUNAR ECLIPSE ACTIVE · PISCES BLOOD MOON',
+      phaseBadgeBg: 'bg-red-500/25 border-red-400',
+      phaseBadgeColor: 'text-red-300',
       isTotalityActive: true,
     }
   } else {
@@ -165,8 +165,8 @@ const calculateEclipseCountdown = (): CountdownState => {
       minutes,
       seconds,
       phase: 'POST_ECLIPSE',
-      phaseTitle: 'Post-Eclipse Integration · Reborn Solar Crown',
-      phaseBadgeText: 'POST-ECLIPSE REBIRTH ACTIVE',
+      phaseTitle: 'Post-Eclipse Integration · Pisces-Virgo Axis Realignment',
+      phaseBadgeText: 'POST-ECLIPSE INTEGRATION ACTIVE',
       phaseBadgeBg: 'bg-[#38bdf8]/20 border-[#38bdf8]/50',
       phaseBadgeColor: 'text-[#38bdf8]',
       isTotalityActive: false,
@@ -180,138 +180,138 @@ const BASKET_AGENTS_CONFIG: Record<
 > = {
   sun: {
     key: 'sun',
-    name: 'Sun in Leo (20°)',
-    title: 'Main Stage · Solar Apex & Radiant Corona',
+    name: 'Sun in Virgo (5°)',
+    title: 'Main Stage · Solar Polarity & Discerning Radiance',
     planet: 'Sun',
-    element: 'fire',
+    element: 'earth',
     glyph: '☉',
-    callSign: 'SUN_LEO_20°',
+    callSign: 'SUN_VIRGO_5°',
     color: '#fbbf24',
     borderColor: 'border-[#fbbf24]/60',
     bgGlow: 'bg-[#fbbf24]/15',
     avatarBg: 'bg-[#fbbf24]/20 text-[#fbbf24]',
-    forceVector: 'Solar Apex (140.0°)',
+    forceVector: 'Solar Polarity (155.0°)',
     quote:
-      'I stand at the center of this eclipse totality. When the shadow falls, let your heart lead without asking for permission.',
+      'I stand in discerning Virgo across from the lunar waters. Clarity is not the enemy of surrender—it is the sacred vessel that holds it.',
     isMainStage: true,
   },
   moon: {
     key: 'moon',
-    name: 'Moon in Leo (20°)',
-    title: 'Main Stage · Total Eclipse Shadow & Black Sun',
+    name: 'Moon in Pisces (5°)',
+    title: 'Main Stage · Deep Lunar Eclipse & Ocean of Intuition',
     planet: 'Moon',
-    element: 'fire',
+    element: 'water',
     glyph: '☽',
-    callSign: 'MOON_LEO_20°',
-    color: '#e2e8f0',
-    borderColor: 'border-[#e2e8f0]/60',
-    bgGlow: 'bg-[#e2e8f0]/15',
-    avatarBg: 'bg-[#e2e8f0]/20 text-[#e2e8f0]',
-    forceVector: 'Eclipse Shadow (140.0°)',
+    callSign: 'MOON_PISCES_5°',
+    color: '#38bdf8',
+    borderColor: 'border-[#38bdf8]/60',
+    bgGlow: 'bg-[#38bdf8]/15',
+    avatarBg: 'bg-[#38bdf8]/20 text-[#38bdf8]',
+    forceVector: 'Lunar Eclipse Axis (335.0°)',
     quote:
-      'The glare fades so you can see your true hunger. The totality shadow isn’t darkness—it is deep subconscious truth.',
+      'I am the ocean eclipsed in Earth’s shadow. When the old emotional tides crest, release what is finished and trust your deep intuition.',
     isMainStage: true,
   },
   mercury: {
     key: 'mercury',
-    name: 'Mercury in Leo (4°)',
-    title: 'Solar Messenger & Mind Fire Delegate',
+    name: 'Mercury in Virgo (5°)',
+    title: 'Virgo Delegate · Discerning Mind & Sacred Method',
     planet: 'Mercury',
-    element: 'fire',
+    element: 'earth',
     glyph: '☿',
-    callSign: 'MERCURY_LEO_4°',
-    color: '#f59e0b',
-    borderColor: 'border-[#f59e0b]/50',
-    bgGlow: 'bg-[#f59e0b]/10',
-    avatarBg: 'bg-[#f59e0b]/20 text-[#f59e0b]',
-    forceVector: 'Catalytic Mind (124.0°)',
+    callSign: 'MERCURY_VIRGO_5°',
+    color: '#a3e635',
+    borderColor: 'border-[#a3e635]/50',
+    bgGlow: 'bg-[#a3e635]/10',
+    avatarBg: 'bg-[#a3e635]/20 text-[#a3e635]',
+    forceVector: 'Alchemical Precision (155.0°)',
     quote:
-      'Stop over-rationalizing your passion. Translate your inner fire into clear, unapologetic words.',
+      'Conjoined with the Sun in Virgo, I distill the intuitive flood into practical mastery. Give your spiritual insights clear form.',
   },
   venus: {
     key: 'venus',
-    name: 'Venus in Libra (5°)',
-    title: 'Harmonic Equilibrium & Aesthetic Union Delegate',
+    name: 'Venus in Libra (20°)',
+    title: 'Libra Delegate · Domicile Grace & Harmonic Equilibrium',
     planet: 'Venus',
     element: 'air',
     glyph: '♀',
-    callSign: 'VENUS_LIBRA_5°',
+    callSign: 'VENUS_LIBRA_20°',
     color: '#f472b6',
     borderColor: 'border-[#f472b6]/50',
     bgGlow: 'bg-[#f472b6]/10',
     avatarBg: 'bg-[#f472b6]/20 text-[#f472b6]',
-    forceVector: 'Harmonic Equilibrium (185.0°)',
+    forceVector: 'Harmonic Equilibrium (200.0°)',
     quote:
-      'Raw power needs grace. Make sure whatever you build in this eclipse fire is something you genuinely love.',
+      'In my home sign of Libra, I remind you that true boundaries preserve love. Harmonize the emotional tide with exquisite grace.',
   },
   mars: {
     key: 'mars',
-    name: 'Mars in Cancer (0°)',
-    title: 'Cardinal Water & Protective Hearth Delegate',
+    name: 'Mars in Cancer (11°)',
+    title: 'Cancer Delegate · Intuitive Courage & Protective Flame',
     planet: 'Mars',
     element: 'water',
     glyph: '♂',
-    callSign: 'MARS_CANCER_0°',
+    callSign: 'MARS_CANCER_11°',
     color: '#ef4444',
     borderColor: 'border-[#ef4444]/50',
     bgGlow: 'bg-[#ef4444]/10',
     avatarBg: 'bg-[#ef4444]/20 text-[#ef4444]',
-    forceVector: 'Cardinal Protection (90.0°)',
+    forceVector: 'Instinctual Armor (101.0°)',
     quote:
-      'Protect what is sacred to you. Real strength isn’t loud aggression—it’s instinctual courage for what you cherish.',
+      'Trining the Pisces Moon, I channel fierce protective courage. Defend what is sacred to your soul and act from gut instinct.',
   },
   jupiter: {
     key: 'jupiter',
-    name: 'Jupiter in Leo (9°)',
-    title: 'Sovereign Expansion & Royal Heart Delegate',
+    name: 'Jupiter in Leo (13°)',
+    title: 'Leo Delegate · Sovereign Expansion & Generous Vision',
     planet: 'Jupiter',
     element: 'fire',
     glyph: '♃',
-    callSign: 'JUPITER_LEO_9°',
+    callSign: 'JUPITER_LEO_13°',
     color: '#facc15',
     borderColor: 'border-[#facc15]/50',
     bgGlow: 'bg-[#facc15]/10',
     avatarBg: 'bg-[#facc15]/20 text-[#facc15]',
-    forceVector: 'Royal Expansion (129.0°)',
+    forceVector: 'Royal Magnanimity (133.0°)',
     quote:
-      'Half-measures will get you nowhere under this sky. Step fully into your presence and elevate everyone around you.',
+      'Even as the mutable axis dissolves outworn structures, keep your heart open, magnificent, and generous.',
   },
   saturn: {
     key: 'saturn',
-    name: 'Saturn (Rx) in Aries (15°)',
-    title: 'Discipline & Solitary Fire Delegate',
+    name: 'Saturn (Rx) in Aries (14°)',
+    title: 'Aries Delegate · Solitary Discipline & Structural Fire',
     planet: 'Saturn',
     element: 'fire',
     glyph: '♄',
-    callSign: 'SATURN_ARIES_15°',
+    callSign: 'SATURN_ARIES_14°',
     color: '#fb923c',
     borderColor: 'border-[#fb923c]/50',
     bgGlow: 'bg-[#fb923c]/10',
     avatarBg: 'bg-[#fb923c]/20 text-[#fb923c]',
-    forceVector: 'Structural Mastery (15.0°)',
+    forceVector: 'Pioneer Mastery (14.0°)',
     quote:
-      'Inspiration without discipline is just a flash in the pan. Build daily habits that can hold your fire.',
+      'Emotional dissolution requires structural resolve. Forge daily habits that anchor your spirit when the cosmic currents surge.',
   },
   uranus: {
     key: 'uranus',
-    name: 'Uranus in Gemini (5°)',
-    title: 'Lightning Breakthrough & Synthesis Delegate',
+    name: 'Uranus in Gemini (6°)',
+    title: 'Gemini Delegate · T-Square Apex & Lightning Breakthrough',
     planet: 'Uranus',
     element: 'air',
     glyph: '♅',
-    callSign: 'URANUS_GEMINI_5°',
+    callSign: 'URANUS_GEMINI_6°',
     color: '#38bdf8',
     borderColor: 'border-[#38bdf8]/50',
     bgGlow: 'bg-[#38bdf8]/10',
     avatarBg: 'bg-[#38bdf8]/20 text-[#38bdf8]',
-    forceVector: 'Cognitive Freedom (65.0°)',
+    forceVector: 'Cognitive Lightning (66.0°)',
     quote:
-      'Shatter the mental loops keeping you stuck. A single lightning insight can rewrite years of doubt.',
+      'Holding the apex of the T-Square between Pisces Moon and Virgo Sun, I deliver electric revelation. Expect lightning clarity to break the deadlock.',
   },
   neptune: {
     key: 'neptune',
     name: 'Neptune (Rx) in Aries (4°)',
-    title: 'Mystical Pioneer & Spiritual Vision Delegate',
+    title: 'Aries Delegate · Mystical Pioneer & Pisces Ruler',
     planet: 'Neptune',
     element: 'fire',
     glyph: '♆',
@@ -320,14 +320,14 @@ const BASKET_AGENTS_CONFIG: Record<
     borderColor: 'border-[#a855f7]/50',
     bgGlow: 'bg-[#a855f7]/10',
     avatarBg: 'bg-[#a855f7]/20 text-[#a855f7]',
-    forceVector: 'Pioneer Flame (4.0°)',
+    forceVector: 'Spiritual Vision (4.0°)',
     quote:
-      'Your intuition already knows the way. Stop waiting for logical permission to trust what your spirit feels.',
+      'As modern ruler of this Pisces eclipse, I dissolve the veil between your waking world and the infinite realm of archetypes.',
   },
   pluto: {
     key: 'pluto',
     name: 'Pluto (Rx) in Aquarius (4°)',
-    title: 'Self-Sovereign Power & Network Delegate',
+    title: 'Aquarius Delegate · Transformative Alchemy & Collective Rebirth',
     planet: 'Pluto',
     element: 'air',
     glyph: '♇',
@@ -336,9 +336,9 @@ const BASKET_AGENTS_CONFIG: Record<
     borderColor: 'border-[#b8fc4b]/50',
     bgGlow: 'bg-[#b8fc4b]/10',
     avatarBg: 'bg-[#b8fc4b]/20 text-[#b8fc4b]',
-    forceVector: 'Structural Transformation (304.0°)',
+    forceVector: 'Structural Rebirth (304.0°)',
     quote:
-      'Strip away the old masks that no longer fit. True personal power begins when you stop hiding who you are.',
+      'Surrender the outgrown identity. The eclipse across the Virgo-Pisces axis cleanses the collective stream so authentic sovereignty can rise.',
   },
   gregory: {
     key: 'gregory',
@@ -352,9 +352,9 @@ const BASKET_AGENTS_CONFIG: Record<
     borderColor: 'border-[#8B5CF6]/50',
     bgGlow: 'bg-[#8B5CF6]/10',
     avatarBg: 'bg-[#8B5CF6]/20 text-[#8B5CF6]',
-    forceVector: 'Alchemical Equilibrium (91.0°)',
+    forceVector: 'Alchemical Synthesis (91.0°)',
     quote:
-      'Welcome into the circle. Tomorrow’s total solar eclipse brings Sun and Moon together at 20° Leo, surrounded by our full council.',
+      'Welcome into the circle. The Lunar Eclipse in Pisces opposes the Virgo Sun, squared by Uranus in Gemini, surrounded by our full planetary council.',
   },
 }
 
@@ -380,26 +380,26 @@ const signToLongitude = (sign: string, degree: number): number => {
 
 const getInitialMessages = (phase: EclipseNarrativePhase): ChatMessage[] => {
   let gregoryContent =
-    'Welcome into the circle. Tomorrow’s Total Solar Eclipse brings the Sun and Moon together on the Main Stage at 20° Leo, surrounded by our full planetary council. Step in, attach your chart, or speak what’s on your mind.'
-  let sunContent =
-    'I’m standing here at full radiance. When the Moon steps over my face tomorrow, don’t shrink back—let your heart lead without waiting for permission.'
+    'Welcome into the circle. The Lunar Eclipse in Pisces brings the Moon at 5° Pisces and the Sun at 5° Virgo into sacred opposition on the Main Stage, squared by Uranus at 6° Gemini. Step in, attach your chart, or speak what is culminating in your life.'
   let moonContent =
-    'The Sun gives you radiance, but I give you depth. This totality shadow isn’t here to dim your fire—it’s here to show you what your soul actually hungers for.'
+    'I stand in deep Pisces, bathed in the Earth’s shadow. Let the emotional illusions wash away so you can touch the raw truth of what your spirit is ready to release.'
+  let sunContent =
+    'Directly across the axis in Virgo, I offer discernment and grounding. Surrender is not formlessness—let us distill your highest insights into daily, tangible truth.'
 
   if (phase === 'TOTALITY') {
     gregoryContent =
-      'Peak Totality is active right now! The Sun and Moon are locked at 20° Leo. The Black Sun coronation is underway in real time—speak your deepest truth into the portal.'
-    sunContent =
-      'Totality is here! My golden crown is veiled; let your raw heart-truth shine right now without hesitation.'
+      'Peak Eclipse is active right now! The 5° Pisces Moon and 5° Virgo Sun stand locked in direct opposition with Uranus in Gemini firing at the apex. Speak your deepest truth into the portal.'
     moonContent =
-      'We stand together in the center of the Black Sun. Look into the totality shadow and claim the subconscious power you’ve kept hidden.'
+      'The shadow crests across the lunar seas. Look into the deep waters of your intuition and claim the subconscious power you have held in reserve.'
+    sunContent =
+      'The opposition is exact. I anchor the light in sacred order so the intuitive flood becomes pure alchemical gold.'
   } else if (phase === 'POST_ECLIPSE') {
     gregoryContent =
-      'Totality has passed and the reborn solar light is emerging. Our council is here to help you integrate the truth revealed during the eclipse shadow.'
-    sunContent =
-      'The shadow has lifted and my light emerges reborn. Take the raw fire from this eclipse and build your legacy.'
+      'The peak eclipse shadow has integrated and the Virgo-Pisces axis settles into realignment. Our council is here to help you ground the revelations that surfaced during the eclipse.'
     moonContent =
-      'Totality has integrated. Ground the subconscious realizations you felt in the dark into your daily walk.'
+      'The waters are calm and clear once more. Ground the quiet realizations you felt in the shadow into your daily walk.'
+    sunContent =
+      'The axis is open. Take the clarity refined through this eclipse and organize your sacred purpose with devoted precision.'
   }
 
   return [
@@ -415,64 +415,64 @@ const getInitialMessages = (phase: EclipseNarrativePhase): ChatMessage[] => {
     },
     {
       id: 'msg-2',
-      agentKey: 'sun',
-      senderName: 'Sun in Leo (20°)',
-      senderRole: 'Main Stage · Solar Apex',
-      senderGlyph: '☉',
-      element: 'fire',
-      content: sunContent,
+      agentKey: 'moon',
+      senderName: 'Moon in Pisces (5°)',
+      senderRole: 'Main Stage · Deep Lunar Eclipse',
+      senderGlyph: '☽',
+      element: 'water',
+      content: moonContent,
       timestamp: '09:01 AM',
     },
     {
       id: 'msg-3',
-      agentKey: 'moon',
-      senderName: 'Moon in Leo (20°)',
-      senderRole: 'Main Stage · Eclipse Shadow',
-      senderGlyph: '☽',
-      element: 'fire',
-      content: moonContent,
+      agentKey: 'sun',
+      senderName: 'Sun in Virgo (5°)',
+      senderRole: 'Main Stage · Solar Polarity',
+      senderGlyph: '☉',
+      element: 'earth',
+      content: sunContent,
       timestamp: '09:02 AM',
     },
     {
       id: 'msg-4',
       agentKey: 'mercury',
-      senderName: 'Mercury in Leo (4°)',
-      senderRole: 'Leo Delegate · Mind Fire',
+      senderName: 'Mercury in Virgo (5°)',
+      senderRole: 'Virgo Delegate · Sacred Method',
       senderGlyph: '☿',
-      element: 'fire',
+      element: 'earth',
       content:
-        'Listen to them both. If you’ve been holding back your voice or over-analyzing your passions, this is your signal to speak up.',
+        'Listen to the synthesis of water and earth. If your thoughts have been scattered or overwhelmed, this axis gives you the exact tools to organize your intuition into mastery.',
       timestamp: '09:03 AM',
     },
     {
       id: 'msg-5',
-      agentKey: 'venus',
-      senderName: 'Venus in Libra (5°)',
-      senderRole: 'Libra Delegate · Harmonic Union',
-      senderGlyph: '♀',
+      agentKey: 'uranus',
+      senderName: 'Uranus in Gemini (6°)',
+      senderRole: 'Gemini Delegate · T-Square Apex',
+      senderGlyph: '♅',
       element: 'air',
       content:
-        'Passion is raw, but grace gives it staying power. Make sure whatever you build in this heat is something you can truly love.',
+        'I am squaring both Sun and Moon from 6° Gemini. Expect sudden cognitive breakthroughs—don’t try to force an old answer onto a new dimension.',
       timestamp: '09:04 AM',
     },
     {
       id: 'msg-6',
       agentKey: 'pluto',
       senderName: 'Pluto (Rx) in Aquarius (4°)',
-      senderRole: 'Aquarius Delegate · Shadow Alchemist',
+      senderRole: 'Aquarius Delegate · Transformative Alchemy',
       senderGlyph: '♇',
       element: 'air',
       content:
-        'Stripping away the noise is the only way forward. Stop clinging to old masks that no longer fit who you’re becoming.',
+        'Release what has finished its cycle. The Pisces eclipse dissolves old emotional attachments so that your true sovereignty can emerge unburdened.',
       timestamp: '09:05 AM',
     },
   ]
 }
 
 const PRESET_PROMPTS = [
-  'What is the 20° Leo Sun & Moon conjunction asking me to step into?',
-  'How do I balance creative courage with emotional depth during this eclipse?',
-  'What should I release as the totality shadow passes?',
+  'What is the 5° Pisces Moon & 5° Virgo Sun opposition asking me to release?',
+  'How does Uranus in Gemini at the T-square apex bring mental breakthrough?',
+  'How do I balance Virgo discernment with Pisces emotional surrender?',
 ]
 
 const scaleAlchmScore = (val?: number, fallback = 35): number => {
@@ -547,60 +547,62 @@ function generateSpontaneousCouncilResponse(
 
       switch (agentKey) {
         case 'sun':
-          return `Your ${sunSign} Sun and ${riseSign} Rising were made for this. Let the eclipse totality strip away whatever self-doubt is keeping you in the shadow.`
+          return `Your ${sunSign} Sun and ${riseSign} Rising provide the practical grounding needed for this Pisces eclipse. Use Virgo discernment to filter out whatever noise is confusing your direction.`
         case 'moon':
-          return `With your Moon in ${moonSign}, this eclipse shadow speaks straight to your gut instincts. Trust what your feelings are revealing to you today.`
+          return `With your Moon in ${moonSign}, this Pisces eclipse shadow touches your deepest emotional tides. Trust what your gut instincts are asking you to surrender.`
         case 'mercury':
-          return `Your ${sunSign} Sun and ${moonSign} Moon give your thoughts real weight. Speak what’s actually on your mind instead of keeping it safe.`
+          return `Your ${sunSign} Sun and ${moonSign} Moon bring great depth. Conjoined with the Sun in Virgo, I help you turn intuitive dreams into methodical action.`
         case 'venus':
-          return `Your ${sunSign} Sun brings so much warmth to your ${riseSign} path. Let this eclipse help you attract relationships that truly honor your worth.`
+          return `In Libra domicile, I remind you that real discernment preserves love. Let this eclipse help you attract relationships that honor your emotional truth.`
         case 'mars':
-          return `With your Moon in ${moonSign}, your instincts are razor sharp. Direct that drive toward protecting what truly matters.`
+          return `With your Moon in ${moonSign}, Mars in Cancer trines the eclipse waters to give you fierce, protective instinct. Act directly from what feels sacred.`
         case 'jupiter':
-          return `Your ${sunSign} Sun and ${riseSign} Rising have outgrown small spaces. Expand your vision and take the leap.`
+          return `Your ${sunSign} Sun and ${riseSign} Rising are expanding. Keep your vision generous and noble as the mutable axis clears old baggage.`
         case 'saturn':
-          return `Your ${sunSign} Sun has big dreams, but your ${moonSign} Moon needs a real foundation. Ground your eclipse intentions into daily practice.`
+          return `Your ${sunSign} Sun has big dreams, but spiritual visions require discipline. Build practical daily habits to anchor your eclipse insights.`
         case 'uranus':
-          return `Your ${sunSign} Sun is ready for a breakthrough. Stop repeating old mental habits and trust the sudden shift.`
+          return `From 6° Gemini squaring the eclipse axis, I bring sudden mental clarity. Stop repeating old mental habits and allow the breakthrough in.`
         case 'neptune':
-          return `Your ${moonSign} Moon holds deep intuitive vision. Stop waiting for logical proof—act on what your spirit knows.`
+          return `As modern ruler of Pisces, I see your spirit’s deep knowing. Stop waiting for logical approval—trust the quiet intuition that will not leave.`
         case 'pluto':
-          return `Your ${sunSign} Sun and ${moonSign} Moon are shedding old skin. Let go of past fears so your authentic strength can take root.`
+          return `Your ${sunSign} Sun and ${moonSign} Moon are shedding outworn cycles. Release the past with gratitude and step into your sovereign power.`
         case 'gregory':
-          return `Seeing your Sun in ${sunSign}, Moon in ${moonSign}, and ${riseSign} Rising step into our circle makes this eclipse alignment complete.`
+          return `Seeing your Sun in ${sunSign}, Moon in ${moonSign}, and ${riseSign} Rising enter our circle makes this Pisces Lunar Eclipse alignment complete.`
       }
     }
 
     if (
       promptLower.includes('eclipse') ||
       promptLower.includes('transform') ||
+      promptLower.includes('release') ||
+      promptLower.includes('pisces') ||
+      promptLower.includes('virgo') ||
       promptLower.includes('shadow') ||
-      promptLower.includes('leo') ||
       promptLower.includes('action')
     ) {
       switch (agentKey) {
         case 'sun':
-          return `Totality isn’t an ending—it’s a coronation. Look inside and reclaim the creative fire you’ve been hiding.`
+          return `Surrender isn’t chaotic loss—it’s sacred alchemy. Hold your core integrity while the outdated pieces wash away.`
         case 'moon':
-          return `The shadow shows you what lies behind your conscious pride. Embrace the darkness; it’s where your real strength is forged.`
+          return `The shadow is cleansing the emotional well. Let go of what is expired; your intuition knows exactly what to keep.`
         case 'mercury':
-          return `Write it down, say it out loud, and take one immediate step before this momentum fades.`
+          return `Write down what you’re releasing, structure your next step, and bring method to the magic.`
         case 'venus':
-          return `Real transformation happens when you align your drive with beauty and truth. Keep your connections genuine.`
+          return `Real harmony requires honest boundaries. When you respect your worth, you elevate every connection around you.`
         case 'mars':
-          return `Use this eclipse portal to set fierce, healthy boundaries and act directly from emotional truth.`
+          return `Use this eclipse portal to draw clean emotional boundaries and act decisively on what matters.`
         case 'jupiter':
-          return `Fortune favors the bold. Walk through this eclipse portal with open arms and noble confidence.`
+          return `Clear away the clutter so your spirit has room to expand. Trust the abundance waiting on the other side of release.`
         case 'saturn':
-          return `Don’t let eclipse excitement evaporate into noise. Build a solid discipline around what you care about.`
+          return `Don’t let eclipse emotional energy dissipate. Build an enduring daily discipline that supports your higher purpose.`
         case 'uranus':
-          return `Expect a sudden flash of clarity! The air trines are clearing out old mental fog.`
+          return `Expect an electric flash of clarity! The T-square from Gemini will shatter mental paralysis.`
         case 'neptune':
-          return `Listen to the quiet inner knowing that won't go away. Give your spiritual vision real form.`
+          return `Listen to the sacred whisper beneath the surface. Trust your dreams when the earthly noise quietens.`
         case 'pluto':
-          return `Let the outdated version of yourself burn away. True self-sovereignty begins when you stop pretending.`
+          return `Karmic patterns dissolve when you stop giving them your energy. Claim your rebirth right now.`
         case 'gregory':
-          return `Sun and Moon lead the way on the Main Stage, while every planet grounds this eclipse energy into real human transformation.`
+          return `Moon in Pisces and Sun in Virgo hold the portal, while every planetary delegate bridges cosmic truth into real transformation.`
       }
     }
   }
@@ -609,35 +611,39 @@ function generateSpontaneousCouncilResponse(
   if (narrativePhase === 'PRE_ECLIPSE') {
     switch (agentKey) {
       case 'sun':
-        return `The countdown ticks closer to 20° Leo. Gather your inner fire and prepare to stand in your full radiance.`
+        return `The countdown ticks toward the Virgo-Pisces alignment. Prepare your vessels and sharpen your discernment for the peak eclipse.`
       case 'moon':
-        return `As the countdown ticks down, pay close attention to the feelings rising beneath your conscious mind.`
+        return `As the countdown ticks down, feel the emotional tides rising in Pisces. Pay attention to what your soul is ready to release.`
       case 'mercury':
-        return `The portal is opening soon. Write down what you’re ready to declare before peak totality arrives.`
+        return `The axis is aligning. Write down what you need to clarify before peak eclipse arrives.`
+      case 'uranus':
+        return `The T-square tension is building. Get ready for a sudden flash of insight that clears old mental loops.`
       case 'saturn':
         return `Preparation is key. Cleanse your intentions now so you can hold the full peak alignment.`
     }
   } else if (narrativePhase === 'TOTALITY') {
     switch (agentKey) {
-      case 'sun':
-        return `Totality is live at 20° Leo! The solar crown is veiled; let your raw heart-truth shine without hesitation.`
       case 'moon':
-        return `We stand in the center of the Black Sun right now. Look into the totality shadow and claim your subconscious power.`
+        return `Peak eclipse is live across the Virgo-Pisces axis! The deep waters of Pisces are illuminated by the shadow—claim your subconscious wisdom.`
+      case 'sun':
+        return `The opposition is exact! Let Virgo discernment hold the space so your intuitive breakthroughs take solid form.`
+      case 'uranus':
+        return `The T-Square apex is firing at 6° Gemini! Breakthroughs and revelations are arriving in real time.`
       case 'pluto':
-        return `The old masks are dissolving in real time. Own your self-sovereignty in this exact moment.`
+        return `Old karmic knots are dissolving right now. Surrender the outworn and step into your sovereign truth.`
       case 'jupiter':
-        return `Peak totality is here! Do not shrink back—absorb the full magnitude of this alignment.`
+        return `Peak eclipse magnitude is here! Stand open-hearted in this cosmic clearing.`
     }
   } else if (narrativePhase === 'POST_ECLIPSE') {
     switch (agentKey) {
-      case 'sun':
-        return `The totality shadow has lifted and the solar crown is reborn! Take this eclipse fire and build your legacy.`
       case 'moon':
-        return `Totality has integrated. Ground the deep realizations revealed in the dark into your daily walk.`
+        return `The eclipse shadow has cleared. Ground the deep intuitive realizations you felt into your daily walk.`
+      case 'sun':
+        return `The axis is open and clear. Take the wisdom refined in the eclipse and build with renewed precision.`
       case 'mars':
-        return `The portal has passed. Now take immediate, instinctual action on what you discovered.`
+        return `The portal has cleared. Now take immediate, protective action on what you uncovered.`
       case 'venus':
-        return `Carry this reborn harmony forward. Let your relationships reflect your elevated self-worth.`
+        return `Carry this harmonic equilibrium forward. Let your daily habits and connections reflect your elevated truth.`
     }
   }
 
@@ -646,48 +652,48 @@ function generateSpontaneousCouncilResponse(
   switch (agentKey) {
     case 'sun':
       if (seed === 0)
-        return `${lastSpeakerName} is right about the depth, but don't forget your radiance. When you own your truth, you light up the room for everyone.`
+        return `${lastSpeakerName} is right about the emotional depth, but remember the power of discernment. When you bring order to your passions, they endure.`
       if (seed === 1)
-        return `Light and shadow aren't enemies—they are twin aspects of one sovereign heart. Step forward.`
-      return `Stop waiting for permission to shine. What you build out of this eclipse will define your next chapter.`
+        return `Surrender and structure aren't opposites—they are twin pillars of this Virgo-Pisces axis. Step forward with clarity.`
+      return `Virgo brings sacred order to the Pisces ocean. What you refine and release in this eclipse will clear the runway for your next chapter.`
 
     case 'moon':
       if (seed === 0)
-        return `The Sun speaks of radiance, but I see what you keep hidden. Trust what emerges when the glare fades.`
+        return `The Sun speaks of order, but I feel the ocean beneath it all. Trust what emerges when the rational mind surrenders.`
       if (seed === 1)
-        return `Your emotional depth is your superpower today. Feel it completely, then act.`
-      return `The totality shadow is complete. Let your quietest intuition guide your next move.`
+        return `Your emotional sensitivity is your superpower today. Feel the current completely, then act.`
+      return `The lunar shadow is complete. Let your quietest intuition guide your next move.`
 
     case 'mercury':
-      return `Building on what ${lastSpeakerName} said—turn that inner spark into clear words. Tell the world what you're here to do.`
+      return `Building on what ${lastSpeakerName} said—turn that inner knowing into clear, practical words. Tell the world what you're here to build.`
 
     case 'venus':
-      return `Strength without beauty turns hard. Bring harmony into your passion so it magnetizes the right people.`
+      return `In Libra domicile, I remind you that real discernment preserves love. Balance the emotional tide with exquisite grace.`
 
     case 'mars':
-      return `Protect your inner hearth first. Channel that eclipse drive into quiet, fierce commitment.`
+      return `Trining the Pisces Moon, I channel deep protective courage. Defend what is sacred and act from your gut.`
 
     case 'jupiter':
-      return `When the Lights command the sky like this, half-measures won't cut it. Go all in on what actually matters.`
+      return `When the Lights command the sky across the mutable axis, half-measures won't cut it. Go all in on what actually matters.`
 
     case 'saturn':
-      return `Fire is useless if it burns out in a day. Take that eclipse impulse and build an enduring discipline around it.`
+      return `Emotional dissolution requires structural resolve. Forge daily habits that anchor your spirit when the cosmic currents surge.`
 
     case 'uranus':
-      return `Stop trying to solve an old dilemma with the same mindset. Let the sudden breakthrough take over.`
+      return `Squaring both Sun and Moon from 6° Gemini, I deliver electric revelation. Expect lightning clarity to break the deadlock.`
 
     case 'neptune':
-      return `The mind wants answers, but your spirit already knows. Trust the quiet impulse that feels undeniable.`
+      return `The rational mind wants proof, but your spirit already knows. Trust the quiet impulse that feels undeniable.`
 
     case 'pluto':
-      return `Let the old mask burn away. Rebirth requires letting go of what you used to hide behind.`
+      return `Let the outdated identity dissolve. Rebirth requires letting go of what you used to hide behind.`
 
     case 'gregory':
       if (seed === 0)
-        return `Watching Sun and Moon lead this dialogue with every planet supporting reminds me why we're here—to bridge human life with cosmic truth.`
+        return `Watching Moon and Sun lead this Virgo-Pisces axis with Uranus sparking at the apex reminds me why we're here—to bridge human life with cosmic truth.`
       if (seed === 1)
         return `Every seeker bringing their chart context into this thread adds a living frequency to our collective awakening.`
-      return `Tomorrow's eclipse is an open doorway. Step in with courage and let your story unfold.`
+      return `The Pisces Lunar Eclipse is an open doorway. Step in with courage and let your story unfold.`
   }
 }
 
@@ -714,16 +720,16 @@ function OrbitalFreeBodyDiagram({
     }
   }
 
-  // Exact absolute degrees for August 12, 2026 Eclipse
+  // Exact absolute degrees for August 28, 2026 Pisces Lunar Eclipse
   const sunPos = getCoordinates(agents.sun.absoluteDegree)
-  const moonPos = getCoordinates(agents.moon.absoluteDegree + 1.5)
-  const mercuryPos = getCoordinates(agents.mercury.absoluteDegree)
+  const moonPos = getCoordinates(agents.moon.absoluteDegree)
+  const mercuryPos = getCoordinates(agents.mercury.absoluteDegree + 1.8)
   const venusPos = getCoordinates(agents.venus.absoluteDegree)
   const marsPos = getCoordinates(agents.mars.absoluteDegree)
   const jupiterPos = getCoordinates(agents.jupiter.absoluteDegree)
   const saturnPos = getCoordinates(agents.saturn.absoluteDegree)
   const uranusPos = getCoordinates(agents.uranus.absoluteDegree)
-  const neptunePos = getCoordinates(agents.neptune.absoluteDegree)
+  const neptunePos = getCoordinates(agents.neptune.absoluteDegree - 1.8)
   const plutoPos = getCoordinates(agents.pluto.absoluteDegree)
   const gregoryPos = getCoordinates(agents.gregory.absoluteDegree, radius - 25)
 
@@ -734,8 +740,8 @@ function OrbitalFreeBodyDiagram({
     pos: { x: number; y: number }
     cfg: BasketAgentConfig
   }> = [
-    { key: 'sun', pos: sunPos, cfg: agents.sun },
     { key: 'moon', pos: moonPos, cfg: agents.moon },
+    { key: 'sun', pos: sunPos, cfg: agents.sun },
     { key: 'mercury', pos: mercuryPos, cfg: agents.mercury },
     { key: 'venus', pos: venusPos, cfg: agents.venus },
     { key: 'mars', pos: marsPos, cfg: agents.mars },
@@ -748,18 +754,18 @@ function OrbitalFreeBodyDiagram({
   ]
 
   return (
-    <div className="flex flex-col items-center bg-[#050608] border border-[#fbbf24]/40 rounded-2xl p-4 relative overflow-hidden shadow-[0_0_30px_rgba(251,191,36,0.08)]">
-      <div className="absolute inset-0 bg-[radial-gradient(#fbbf24_1px,transparent_1px)] [background-size:16px_16px] opacity-10 pointer-events-none" />
+    <div className="flex flex-col items-center bg-[#050608] border border-[#38bdf8]/40 rounded-2xl p-4 relative overflow-hidden shadow-[0_0_30px_rgba(56,189,248,0.08)]">
+      <div className="absolute inset-0 bg-[radial-gradient(#38bdf8_1px,transparent_1px)] [background-size:16px_16px] opacity-10 pointer-events-none" />
 
       <div className="w-full flex items-center justify-between pb-3 mb-2 border-b border-[#424936]/40">
         <div className="flex items-center gap-2">
-          <Compass className="w-4 h-4 text-[#fbbf24]" />
+          <Compass className="w-4 h-4 text-[#38bdf8]" />
           <span className="font-headline-sm text-xs font-bold text-[#e0e4d2]">
-            Orbital Vector Field (Active Eclipse Axis)
+            Orbital Vector Field (Pisces Lunar Eclipse Axis)
           </span>
         </div>
-        <span className="font-mono-label text-[9px] px-2 py-0.5 rounded bg-[#fbbf24]/15 text-[#fbbf24] border border-[#fbbf24]/40 font-bold uppercase">
-          MAIN STAGE: 20° LEO
+        <span className="font-mono-label text-[9px] px-2 py-0.5 rounded bg-[#38bdf8]/15 text-[#38bdf8] border border-[#38bdf8]/40 font-bold uppercase">
+          MAIN STAGE: MOON 5° PISCES ☍ SUN 5° VIRGO
         </span>
       </div>
 
@@ -770,13 +776,17 @@ function OrbitalFreeBodyDiagram({
               <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.4" />
               <stop offset="100%" stopColor="#fbbf24" stopOpacity="0" />
             </radialGradient>
+            <radialGradient id="moonGlow" cx="50%" cy="50%" r="50%">
+              <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.4" />
+              <stop offset="100%" stopColor="#38bdf8" stopOpacity="0" />
+            </radialGradient>
             <radialGradient id="mainStageGlow" cx="50%" cy="50%" r="50%">
-              <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.25" />
-              <stop offset="100%" stopColor="#e2e8f0" stopOpacity="0" />
+              <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.3" />
+              <stop offset="100%" stopColor="#fbbf24" stopOpacity="0" />
             </radialGradient>
             <linearGradient id="eclipseAxisLine" x1="0%" y1="0%" x2="100%" y2="100%">
-              <stop offset="0%" stopColor="#fbbf24" stopOpacity="0.9" />
-              <stop offset="100%" stopColor="#b8fc4b" stopOpacity="0.9" />
+              <stop offset="0%" stopColor="#38bdf8" stopOpacity="0.9" />
+              <stop offset="100%" stopColor="#fbbf24" stopOpacity="0.9" />
             </linearGradient>
           </defs>
 
@@ -802,12 +812,22 @@ function OrbitalFreeBodyDiagram({
           <circle cx={center} cy={center} r={18} fill="url(#sunGlow)" />
           <circle cx={center} cy={center} r={5} fill="#fbbf24" />
 
-          {/* Main Stage Totality Highlight Arc at 20° Leo (140°) */}
+          {/* Main Stage Eclipse Highlights at Moon 5° Pisces (335°) & Sun 5° Virgo (155°) */}
+          <circle
+            cx={moonPos.x}
+            cy={moonPos.y}
+            r={24}
+            fill="url(#mainStageGlow)"
+            stroke="#38bdf8"
+            strokeWidth="1.5"
+            strokeDasharray="2 2"
+            className="animate-pulse"
+          />
           <circle
             cx={sunPos.x}
             cy={sunPos.y}
-            r={24}
-            fill="url(#mainStageGlow)"
+            r={22}
+            fill="url(#sunGlow)"
             stroke="#fbbf24"
             strokeWidth="1.5"
             strokeDasharray="2 2"
@@ -816,11 +836,12 @@ function OrbitalFreeBodyDiagram({
 
           {/* Zodiac Degree Markers */}
           {[
-            { label: 'SUN/MOON 20° LEO', deg: 140, col: '#fbbf24' },
-            { label: 'AQUARIUS 4°', deg: 304, col: '#b8fc4b' },
-            { label: 'ARIES 4°/15°', deg: 10, col: '#a855f7' },
-            { label: 'GEMINI 5°', deg: 65, col: '#38bdf8' },
-            { label: 'LIBRA 5°', deg: 185, col: '#f472b6' },
+            { label: 'MOON 5° PISCES', deg: 335, col: '#38bdf8' },
+            { label: 'SUN/MERCURY 5° VIRGO', deg: 155, col: '#fbbf24' },
+            { label: 'URANUS 6° GEMINI (T-SQ)', deg: 66, col: '#a3e635' },
+            { label: 'MARS 11° CANCER', deg: 101, col: '#ef4444' },
+            { label: 'VENUS 20° LIBRA', deg: 200, col: '#f472b6' },
+            { label: 'PLUTO 4° AQUARIUS', deg: 304, col: '#b8fc4b' },
           ].map(m => {
             const p = getCoordinates(m.deg, radius + 28)
             return (
@@ -841,51 +862,67 @@ function OrbitalFreeBodyDiagram({
           })}
 
           {/* Aspect Lines */}
+          {/* Main Opposition Axis: Moon (335°) <-> Sun (155°) */}
           <line
-            x1={sunPos.x}
-            y1={sunPos.y}
-            x2={plutoPos.x}
-            y2={plutoPos.y}
+            x1={moonPos.x}
+            y1={moonPos.y}
+            x2={sunPos.x}
+            y2={sunPos.y}
             stroke="url(#eclipseAxisLine)"
             strokeWidth="2.5"
             strokeDasharray="4 3"
           />
+          {/* T-Square Aspect Lines from Uranus (66°) to Sun & Moon */}
           <line
-            x1={sunPos.x}
-            y1={sunPos.y}
-            x2={saturnPos.x}
-            y2={saturnPos.y}
-            stroke="#fb923c"
+            x1={uranusPos.x}
+            y1={uranusPos.y}
+            x2={moonPos.x}
+            y2={moonPos.y}
+            stroke="#38bdf8"
             strokeWidth="1.5"
+            strokeDasharray="3 2"
             opacity="0.8"
           />
           <line
             x1={uranusPos.x}
             y1={uranusPos.y}
-            x2={plutoPos.x}
-            y2={plutoPos.y}
+            x2={sunPos.x}
+            y2={sunPos.y}
+            stroke="#fbbf24"
+            strokeWidth="1.5"
+            strokeDasharray="3 2"
+            opacity="0.8"
+          />
+          {/* Mars in Cancer Trine Moon in Pisces & Sextile Sun in Virgo */}
+          <line
+            x1={marsPos.x}
+            y1={marsPos.y}
+            x2={moonPos.x}
+            y2={moonPos.y}
             stroke="#38bdf8"
             strokeWidth="1.5"
-            opacity="0.7"
+            opacity="0.6"
           />
           <line
-            x1={neptunePos.x}
-            y1={neptunePos.y}
-            x2={jupiterPos.x}
-            y2={jupiterPos.y}
-            stroke="#a855f7"
+            x1={marsPos.x}
+            y1={marsPos.y}
+            x2={sunPos.x}
+            y2={sunPos.y}
+            stroke="#a3e635"
             strokeWidth="1.5"
-            opacity="0.7"
+            opacity="0.6"
           />
+          {/* Venus in Libra Trine Pluto in Aquarius */}
           <line
             x1={venusPos.x}
             y1={venusPos.y}
-            x2={uranusPos.x}
-            y2={uranusPos.y}
+            x2={plutoPos.x}
+            y2={plutoPos.y}
             stroke="#f472b6"
             strokeWidth="1.5"
             opacity="0.6"
           />
+          {/* Host Gregory connection */}
           <line
             x1={gregoryPos.x}
             y1={gregoryPos.y}
@@ -953,7 +990,7 @@ function OrbitalFreeBodyDiagram({
                 style={{ color: agents[activeAgent].color }}
               >
                 {agents[activeAgent].isMainStage && (
-                  <span className="px-1.5 py-0.2 rounded bg-[#fbbf24]/20 border border-[#fbbf24]/40 text-[#fbbf24] text-[9px] uppercase font-bold">
+                  <span className="px-1.5 py-0.2 rounded bg-[#38bdf8]/20 border border-[#38bdf8]/40 text-[#38bdf8] text-[9px] uppercase font-bold">
                     MAIN STAGE
                   </span>
                 )}
@@ -971,8 +1008,8 @@ function OrbitalFreeBodyDiagram({
         ) : (
           <div className="flex items-center justify-between text-xs text-[#8c947c] h-full">
             <span>Hover or click any planetary delegate node to inspect its vector</span>
-            <span className="font-mono-label text-[10px] text-[#fbbf24] font-bold">
-              TOTALITY HARMONY 100%
+            <span className="font-mono-label text-[10px] text-[#38bdf8] font-bold">
+              PISCES ECLIPSE HARMONY 100%
             </span>
           </div>
         )}
@@ -1044,7 +1081,7 @@ export function CurrentPromotionalThread({
 
   const skyContext = useMemo<SkyAndAlchmContext>(() => {
     const getPlanetSign = (pName: string) =>
-      positions.find(p => p.planet.toLowerCase() === pName.toLowerCase())?.sign || 'Leo'
+      positions.find(p => p.planet.toLowerCase() === pName.toLowerCase())?.sign || 'Virgo'
 
     const currentMonica =
       typeof monicaConstant === 'number' && Number.isFinite(monicaConstant) ? monicaConstant : null
@@ -1052,16 +1089,16 @@ export function CurrentPromotionalThread({
     return {
       monicaConstant: currentMonica,
       spirit: scaleAlchmScore(alchmQuantities?.spirit, 45),
-      essence: scaleAlchmScore(alchmQuantities?.essence, 38),
-      matter: scaleAlchmScore(alchmQuantities?.matter, 22),
-      substance: scaleAlchmScore(alchmQuantities?.substance, 30),
-      heat: scaleAlchmScore(alchmQuantities?.Heat, 65),
-      entropy: scaleAlchmScore(alchmQuantities?.Entropy, 18),
-      reactivity: scaleAlchmScore(alchmQuantities?.Reactivity, 88),
-      energy: scaleAlchmScore(alchmQuantities?.Energy, 98),
-      sunSign: 'Leo',
-      moonSign: 'Leo',
-      moonPhase: 'New Moon Eclipse / Totality',
+      essence: scaleAlchmScore(alchmQuantities?.essence, 42),
+      matter: scaleAlchmScore(alchmQuantities?.matter, 32),
+      substance: scaleAlchmScore(alchmQuantities?.substance, 28),
+      heat: scaleAlchmScore(alchmQuantities?.Heat, 55),
+      entropy: scaleAlchmScore(alchmQuantities?.Entropy, 22),
+      reactivity: scaleAlchmScore(alchmQuantities?.Reactivity, 84),
+      energy: scaleAlchmScore(alchmQuantities?.Energy, 92),
+      sunSign: 'Virgo',
+      moonSign: 'Pisces',
+      moonPhase: 'Full Moon Lunar Eclipse / Pisces Blood Moon',
       mercurySign: getPlanetSign('mercury'),
       marsSign: getPlanetSign('mars'),
       saturnSign: getPlanetSign('saturn'),
@@ -1072,51 +1109,51 @@ export function CurrentPromotionalThread({
     return {
       sun: {
         ...BASKET_AGENTS_CONFIG.sun,
-        sign: 'Leo',
-        degreeLabel: '20°',
-        absoluteDegree: signToLongitude('Leo', 20),
+        sign: 'Virgo',
+        degreeLabel: '5°',
+        absoluteDegree: signToLongitude('Virgo', 5),
       },
       moon: {
         ...BASKET_AGENTS_CONFIG.moon,
-        sign: 'Leo',
-        degreeLabel: '20°',
-        absoluteDegree: signToLongitude('Leo', 20),
+        sign: 'Pisces',
+        degreeLabel: '5°',
+        absoluteDegree: signToLongitude('Pisces', 5),
       },
       mercury: {
         ...BASKET_AGENTS_CONFIG.mercury,
-        sign: 'Leo',
-        degreeLabel: '4°',
-        absoluteDegree: signToLongitude('Leo', 4),
+        sign: 'Virgo',
+        degreeLabel: '5°',
+        absoluteDegree: signToLongitude('Virgo', 5),
       },
       venus: {
         ...BASKET_AGENTS_CONFIG.venus,
         sign: 'Libra',
-        degreeLabel: '5°',
-        absoluteDegree: signToLongitude('Libra', 5),
+        degreeLabel: '20°',
+        absoluteDegree: signToLongitude('Libra', 20),
       },
       mars: {
         ...BASKET_AGENTS_CONFIG.mars,
         sign: 'Cancer',
-        degreeLabel: '0°',
-        absoluteDegree: signToLongitude('Cancer', 0),
+        degreeLabel: '11°',
+        absoluteDegree: signToLongitude('Cancer', 11),
       },
       jupiter: {
         ...BASKET_AGENTS_CONFIG.jupiter,
         sign: 'Leo',
-        degreeLabel: '9°',
-        absoluteDegree: signToLongitude('Leo', 9),
+        degreeLabel: '13°',
+        absoluteDegree: signToLongitude('Leo', 13),
       },
       saturn: {
         ...BASKET_AGENTS_CONFIG.saturn,
         sign: 'Aries',
-        degreeLabel: '15°',
-        absoluteDegree: signToLongitude('Aries', 15),
+        degreeLabel: '14°',
+        absoluteDegree: signToLongitude('Aries', 14),
       },
       uranus: {
         ...BASKET_AGENTS_CONFIG.uranus,
         sign: 'Gemini',
-        degreeLabel: '5°',
-        absoluteDegree: signToLongitude('Gemini', 5),
+        degreeLabel: '6°',
+        absoluteDegree: signToLongitude('Gemini', 6),
       },
       neptune: {
         ...BASKET_AGENTS_CONFIG.neptune,
@@ -1153,9 +1190,9 @@ export function CurrentPromotionalThread({
     setIsAutonomousStreaming(true)
   }
 
-  // Sun and Moon take Main Stage 70% of the time!
+  // Moon and Sun take Main Stage across the Eclipse Axis 70% of the time!
   const getNextSpontaneousSpeaker = (lastKey: BasketAgentKey): BasketAgentKey => {
-    const mainStageKeys: BasketAgentKey[] = ['sun', 'moon']
+    const mainStageKeys: BasketAgentKey[] = ['moon', 'sun']
     const supportingKeys: BasketAgentKey[] = [
       'mercury',
       'venus',
@@ -1172,7 +1209,7 @@ export function CurrentPromotionalThread({
       const candidates = mainStageKeys.filter(k => k !== lastKey)
       return candidates.length > 0
         ? candidates[Math.floor(Math.random() * candidates.length)]
-        : 'sun'
+        : 'moon'
     } else {
       const candidates = supportingKeys.filter(k => k !== lastKey)
       return candidates[Math.floor(Math.random() * candidates.length)]
@@ -1260,8 +1297,8 @@ export function CurrentPromotionalThread({
     setInputPrompt('')
     setIsTyping(true)
 
-    // Sun or Moon leading response, with supporting planet responding after
-    const mainKeys: BasketAgentKey[] = ['sun', 'moon']
+    // Moon or Sun leading response across Eclipse Axis, with supporting delegate responding after
+    const mainKeys: BasketAgentKey[] = ['moon', 'sun']
     const supportingKeys: BasketAgentKey[] = [
       'mercury',
       'venus',
@@ -1281,9 +1318,9 @@ export function CurrentPromotionalThread({
 
     const secondAgentKey =
       selectedAgentFilter !== 'all'
-        ? mainKeys.find(k => k !== primaryAgentKey) || 'moon'
+        ? mainKeys.find(k => k !== primaryAgentKey) || 'sun'
         : Math.random() < 0.5
-          ? mainKeys.find(k => k !== primaryAgentKey) || 'moon'
+          ? mainKeys.find(k => k !== primaryAgentKey) || 'sun'
           : supportingKeys[Math.floor(Math.random() * supportingKeys.length)]
 
     const primaryCfg = agentsConfig[primaryAgentKey]
@@ -1365,9 +1402,9 @@ export function CurrentPromotionalThread({
   const padZero = (num: number) => num.toString().padStart(2, '0')
 
   return (
-    <div className="w-full relative glass-panel rounded-2xl border border-[#fbbf24]/50 p-5 md:p-8 bg-[#090b0e]/95 shadow-[0_0_50px_rgba(251,191,36,0.15)] overflow-hidden">
-      <div className="absolute -top-24 -left-24 w-80 h-80 bg-[#fbbf24]/15 rounded-full blur-3xl pointer-events-none" />
-      <div className="absolute -bottom-24 -right-24 w-80 h-80 bg-[#38bdf8]/10 rounded-full blur-3xl pointer-events-none" />
+    <div className="w-full relative glass-panel rounded-2xl border border-[#38bdf8]/50 p-5 md:p-8 bg-[#090b0e]/95 shadow-[0_0_50px_rgba(56,189,248,0.12)] overflow-hidden">
+      <div className="absolute -top-24 -left-24 w-80 h-80 bg-[#38bdf8]/15 rounded-full blur-3xl pointer-events-none" />
+      <div className="absolute -bottom-24 -right-24 w-80 h-80 bg-[#fbbf24]/10 rounded-full blur-3xl pointer-events-none" />
 
       {/* Top Banner Header with Countdown Clock Widget */}
       <div className="relative z-10 flex flex-col lg:flex-row lg:items-center justify-between gap-6 pb-6 border-b border-[#424936]/60">
@@ -1379,44 +1416,44 @@ export function CurrentPromotionalThread({
               <span className="w-2 h-2 rounded-full bg-current animate-ping" />
               {countdown.phaseBadgeText}
             </span>
-            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-[#e2e8f0]/15 border border-[#e2e8f0]/30 rounded-full text-[10px] font-mono-label tracking-wider text-[#e2e8f0]">
-              <Sun className="w-3 h-3 text-[#fbbf24]" /> MAIN STAGE: SUN & MOON AT 20° LEO
+            <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-[#38bdf8]/15 border border-[#38bdf8]/30 rounded-full text-[10px] font-mono-label tracking-wider text-[#38bdf8]">
+              <Sparkles className="w-3 h-3 text-[#38bdf8]" /> MAIN STAGE: MOON 5° PISCES ☍ SUN 5°
+              VIRGO
             </span>
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-[#8B5CF6]/15 border border-[#8B5CF6]/30 rounded-full text-[10px] font-mono-label tracking-wider text-[#8B5CF6]">
               <Cpu className="w-3 h-3" /> 10 PLANETARY DEGREE DELEGATES
             </span>
           </div>
           <h2 className="font-headline-lg text-2xl md:text-3xl font-bold text-[#e0e4d2] tracking-tight">
-            Current Promotion: <span className="text-[#fbbf24]">{countdown.phaseTitle}</span>
+            Current Promotion: <span className="text-[#38bdf8]">{countdown.phaseTitle}</span>
           </h2>
           <p className="font-body-md text-sm text-[#c2cab0] max-w-3xl mt-1 leading-relaxed">
-            Sun & Moon command the Main Stage at 20° Leo, surrounded by our full council of
-            planetary degree delegates tracking the eclipse in real time.
+            Moon in Pisces and Sun in Virgo command the Main Stage across the Lunar Eclipse axis,
+            squared by Uranus in Gemini at the T-square apex and supported by our full council of
+            planetary degree delegates.
           </p>
         </div>
 
         {/* Live Eclipse Countdown Widget */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-3 shrink-0">
-          <div className="bg-[#07090d] border border-[#fbbf24]/50 rounded-2xl p-3.5 flex items-center gap-3 shadow-[0_0_25px_rgba(251,191,36,0.12)]">
-            <div className="w-9 h-9 rounded-xl bg-[#fbbf24]/15 border border-[#fbbf24]/40 flex items-center justify-center text-[#fbbf24] shrink-0">
+          <div className="bg-[#07090d] border border-[#38bdf8]/50 rounded-2xl p-3.5 flex items-center gap-3 shadow-[0_0_25px_rgba(56,189,248,0.12)]">
+            <div className="w-9 h-9 rounded-xl bg-[#38bdf8]/15 border border-[#38bdf8]/40 flex items-center justify-center text-[#38bdf8] shrink-0">
               <Clock className="w-5 h-5 animate-pulse" />
             </div>
             <div>
               <div className="font-mono-label text-[9px] text-[#8c947c] tracking-widest uppercase">
-                {countdown.phase === 'POST_ECLIPSE'
-                  ? 'Time Post-Totality'
-                  : 'Countdown To Totality'}
+                {countdown.phase === 'POST_ECLIPSE' ? 'Time Post-Peak' : 'Countdown To Peak'}
               </div>
-              <div className="flex items-center gap-1.5 font-headline-lg text-lg font-bold text-[#fbbf24] tracking-wider mt-0.5">
-                <span className="bg-[#12161f] border border-[#fbbf24]/30 px-2 py-0.5 rounded-lg">
+              <div className="flex items-center gap-1.5 font-headline-lg text-lg font-bold text-[#38bdf8] tracking-wider mt-0.5">
+                <span className="bg-[#12161f] border border-[#38bdf8]/30 px-2 py-0.5 rounded-lg">
                   {padZero(countdown.hours)}h
                 </span>
                 <span>:</span>
-                <span className="bg-[#12161f] border border-[#fbbf24]/30 px-2 py-0.5 rounded-lg">
+                <span className="bg-[#12161f] border border-[#38bdf8]/30 px-2 py-0.5 rounded-lg">
                   {padZero(countdown.minutes)}m
                 </span>
                 <span>:</span>
-                <span className="bg-[#12161f] border border-[#fbbf24]/30 px-2 py-0.5 rounded-lg text-white">
+                <span className="bg-[#12161f] border border-[#38bdf8]/30 px-2 py-0.5 rounded-lg text-white">
                   {padZero(countdown.seconds)}s
                 </span>
               </div>
@@ -1426,9 +1463,9 @@ export function CurrentPromotionalThread({
           <div className="flex items-center gap-2">
             <button
               onClick={() => setShowInfoModal(!showInfoModal)}
-              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-3 border border-[#8c947c]/60 text-[#c2cab0] hover:text-[#fbbf24] hover:border-[#fbbf24]/40 rounded-xl font-mono-label text-[11px] tracking-wider transition-all active:scale-95 bg-white/5"
+              className="flex-1 sm:flex-initial flex items-center justify-center gap-1.5 px-3.5 py-3 border border-[#8c947c]/60 text-[#c2cab0] hover:text-[#38bdf8] hover:border-[#38bdf8]/40 rounded-xl font-mono-label text-[11px] tracking-wider transition-all active:scale-95 bg-white/5"
             >
-              <Info className="w-4 h-4 text-[#fbbf24]" />
+              <Info className="w-4 h-4 text-[#38bdf8]" />
               {showInfoModal ? 'Hide' : 'Analysis'}
             </button>
           </div>
@@ -1436,10 +1473,10 @@ export function CurrentPromotionalThread({
       </div>
 
       {showInfoModal && (
-        <div className="relative z-10 my-5 p-5 bg-[#0d1117] border border-[#fbbf24]/40 rounded-xl space-y-3 text-xs leading-relaxed text-[#c2cab0] animate-fadeIn">
+        <div className="relative z-10 my-5 p-5 bg-[#0d1117] border border-[#38bdf8]/40 rounded-xl space-y-3 text-xs leading-relaxed text-[#c2cab0] animate-fadeIn">
           <div className="flex justify-between items-start">
-            <h4 className="font-headline-sm text-sm text-[#fbbf24] font-bold flex items-center gap-2">
-              <Globe className="w-4 h-4" /> August 12, 2026 Total Solar Eclipse Totality Axis
+            <h4 className="font-headline-sm text-sm text-[#38bdf8] font-bold flex items-center gap-2">
+              <Globe className="w-4 h-4" /> August 28, 2026 Lunar Eclipse in Pisces Axis (Saros 138)
             </h4>
             <button
               onClick={() => setShowInfoModal(false)}
@@ -1449,12 +1486,13 @@ export function CurrentPromotionalThread({
             </button>
           </div>
           <p>
-            At peak totality (17:47 UTC on August 12, 2026), the{' '}
-            <strong>Sun and Moon align at 20° Leo</strong> on the Main Stage. Surrounding this axis,
-            delegates for Mercury (4° Leo), Venus (5° Libra), Mars (0° Cancer), Jupiter (9° Leo),
-            Saturn Rx (15° Aries), Uranus (5° Gemini), Neptune Rx (4° Aries), and Pluto Rx (4°
-            Aquarius) synthesize the celestial energy as the live countdown ticks forward into
-            totality and post-eclipse integration.
+            At peak eclipse (04:13 UTC on August 28, 2026), the{' '}
+            <strong>Moon at 5° Pisces opposes the Sun and Mercury at 5° Virgo</strong> on the Main
+            Stage, forming an intense <strong>T-Square to Uranus at 6° Gemini</strong> at the apex.
+            Surrounding this axis, delegates for Venus in domicile (20° Libra), Mars (11° Cancer,
+            trining the Moon), Jupiter (13° Leo), Saturn Rx (14° Aries), Neptune Rx (4° Aries, ruler
+            of Pisces), and Pluto Rx (4° Aquarius) synthesize the deep intuitive release and
+            practical discernment in real time.
           </p>
         </div>
       )}
