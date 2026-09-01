@@ -162,7 +162,7 @@ describe('Pentacles backend strategy', () => {
             occupant: identity('agent'),
             trick_number: 3,
             legal_card_ids: [11],
-            expires_at: new Date(Date.now() + 1_000).toISOString(),
+            expires_at: new Date(Date.now() + 7_000).toISOString(),
             resolved_at: null,
           },
         ],

@@ -65,6 +65,7 @@ const JING_COUNTERS: Record<string, string> = {
 }
 const JING_MOVES = Object.keys(JING_COUNTERS)
 const SAFE_CODEX_WORDS = ['STAR', 'SPELL', 'TAROT'] as const
+const WAR_TURN_MIN_REMAINING_MICROS = 8_000_000
 
 interface Placement {
   body: Planet
@@ -424,7 +425,7 @@ export function warTableIntents(
   world: PentaclesWorldState
 ): PentaclesAgentIntent[] {
   // Leave enough time for the reducer call after loading and scoring the live state.
-  const minimumDeadlineMicros = Date.now() * 1_000 + 5_000_000
+  const minimumDeadlineMicros = Date.now() * 1_000 + WAR_TURN_MIN_REMAINING_MICROS
   const handleByIdentity = new Map(
     world.agentCharts.map(agent => [
       pentaclesIdentity(agent.identity),
@@ -528,7 +529,10 @@ export class PentaclesAgentService {
     await cacheService.set(`pentacles:intent:${intent.intentId}`, true, ttl)
   }
 
-  private async withRetry(operation: () => Promise<void>): Promise<void> {
+  private async withRetry(
+    operation: () => Promise<void>,
+    shouldRetry: (error: unknown) => boolean = () => true
+  ): Promise<void> {
     let lastError: unknown
     for (let attempt = 0; attempt < 3; attempt += 1) {
       try {
@@ -536,10 +540,16 @@ export class PentaclesAgentService {
         return
       } catch (error) {
         lastError = error
+        if (!shouldRetry(error)) break
         if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 200 * 2 ** attempt))
       }
     }
     throw lastError
+  }
+
+  private isSettledWarTurnError(error: unknown): boolean {
+    const message = error instanceof Error ? error.message : String(error)
+    return message.includes('turn deadline passed') || message.includes('turn already resolved')
   }
 
   private async execute(
@@ -667,10 +677,18 @@ export class PentaclesAgentService {
           return true
         }
         try {
-          await this.withRetry(() => this.execute(intent, rosterByKey))
+          await this.withRetry(
+            () => this.execute(intent, rosterByKey),
+            error => intent.action !== 'war_table_card' || !this.isSettledWarTurnError(error)
+          )
           await this.markHandled(intent)
           result.executed += 1
         } catch (error) {
+          if (intent.action === 'war_table_card' && this.isSettledWarTurnError(error)) {
+            await this.markHandled(intent)
+            result.skipped += 1
+            return true
+          }
           result.failed += 1
           result.errors.push(
             `${intent.intentId}: ${error instanceof Error ? error.message : String(error)}`
@@ -687,8 +705,15 @@ export class PentaclesAgentService {
         dryRun || pendingWarIntents.length === 0
           ? [...pendingWarIntents, ...strategicIntents]
           : pendingWarIntents
-      for (const intent of sorted(initial).slice(0, maxActions)) {
-        await applyIntent(intent)
+      const applyBatch = async (intents: PentaclesAgentIntent[]): Promise<boolean> => {
+        const available = Math.max(0, maxActions - result.intents.length)
+        const outcomes = await Promise.all(intents.slice(0, available).map(applyIntent))
+        return outcomes.some(Boolean)
+      }
+      if (!dryRun && pendingWarIntents.length === 0) {
+        for (const intent of sorted(initial).slice(0, maxActions)) await applyIntent(intent)
+      } else {
+        await applyBatch(sorted(initial))
       }
 
       // An accepted answer immediately exposes the next NPC turn. Drain those
@@ -700,11 +725,7 @@ export class PentaclesAgentService {
           intent => !seen.has(intent.intentId)
         )
         if (next.length === 0) break
-        let progressed = false
-        for (const intent of next) {
-          if (result.intents.length >= maxActions) break
-          progressed = (await applyIntent(intent)) || progressed
-        }
+        const progressed = await applyBatch(next)
         if (!progressed) break
       }
     } catch (error) {
