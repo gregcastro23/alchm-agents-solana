@@ -4,7 +4,9 @@ WORKDIR /app
 
 COPY prisma ./prisma
 COPY backend/package.json backend/bun.lock ./backend/
-RUN cd backend && bun install --frozen-lockfile
+RUN cd backend \
+    && bun install --frozen-lockfile --ignore-scripts \
+    && bunx prisma generate --schema=../prisma/schema.prisma
 
 COPY backend/src ./backend/src
 
