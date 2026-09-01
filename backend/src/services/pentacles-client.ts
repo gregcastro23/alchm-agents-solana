@@ -115,6 +115,20 @@ export function pentaclesNumber(value: unknown): number {
   return Number.isFinite(result) ? result : 0
 }
 
+export function pentaclesTimestampMicros(value: unknown): number {
+  if (Array.isArray(value) && value.length === 1) return pentaclesTimestampMicros(value[0])
+  if (value && typeof value === 'object') {
+    return pentaclesTimestampMicros(
+      (value as Record<string, unknown>).__timestamp_micros_since_unix_epoch__
+    )
+  }
+  if (typeof value === 'string' && !/^\d+$/.test(value)) {
+    const milliseconds = Date.parse(value)
+    return Number.isFinite(milliseconds) ? milliseconds * 1_000 : 0
+  }
+  return pentaclesNumber(value)
+}
+
 function enumArg(value: string): Record<string, []> {
   return { [lowerFirst(value)]: [] }
 }

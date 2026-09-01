@@ -7,6 +7,7 @@ import {
   pentaclesEnum,
   pentaclesIdentity,
   pentaclesNumber,
+  pentaclesTimestampMicros,
   type PentaclesWorldState,
 } from './pentacles-client.js'
 
@@ -422,6 +423,8 @@ export function warTableIntents(
   rosterByHandle: Map<string, RosterAgent>,
   world: PentaclesWorldState
 ): PentaclesAgentIntent[] {
+  // Leave enough time for the reducer call after loading and scoring the live state.
+  const minimumDeadlineMicros = Date.now() * 1_000 + 5_000_000
   const handleByIdentity = new Map(
     world.agentCharts.map(agent => [
       pentaclesIdentity(agent.identity),
@@ -434,6 +437,7 @@ export function warTableIntents(
 
   return world.agentMeleeTurns
     .filter(turn => turn.resolved_at == null)
+    .filter(turn => pentaclesTimestampMicros(turn.expires_at) > minimumDeadlineMicros)
     .flatMap(turn => {
       const turnId = String(pentaclesNumber(turn.turn_id))
       const seatId = String(pentaclesNumber(turn.seat_id))

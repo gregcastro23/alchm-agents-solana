@@ -95,6 +95,7 @@ describe('Pentacles backend strategy', () => {
   })
 
   it('answers a handoff with only a card offered by Pentacles as legal', () => {
+    const futureDeadline = Date.now() * 1_000 + 20_000_000
     const intents = warTableIntents(
       new Map([[roster.handle.toLowerCase(), roster]]),
       world({
@@ -126,6 +127,7 @@ describe('Pentacles backend strategy', () => {
             occupant: identity('agent'),
             trick_number: 3,
             legal_card_ids: [11],
+            expires_at: futureDeadline,
             resolved_at: null,
           },
         ],
@@ -134,5 +136,39 @@ describe('Pentacles backend strategy', () => {
 
     expect(intents).toHaveLength(1)
     expect(intents[0]).toMatchObject({ action: 'war_table_card', turnId: '5', cardId: '11' })
+  })
+
+  it('does not answer expired or nearly expired War Table handoffs', () => {
+    const intents = warTableIntents(
+      new Map([[roster.handle.toLowerCase(), roster]]),
+      world({
+        agentCharts: [{ identity: identity('agent'), handle: roster.handle }],
+        meleeTables: [{ table_id: 7, trump_suit: variant('Wands') }],
+        meleeHands: [
+          {
+            seat_id: 9,
+            card_id: 11,
+            rank: 2,
+            suit: variant('Cups'),
+            is_major: false,
+            played: false,
+          },
+        ],
+        agentMeleeTurns: [
+          {
+            turn_id: 5,
+            table_id: 7,
+            seat_id: 9,
+            occupant: identity('agent'),
+            trick_number: 3,
+            legal_card_ids: [11],
+            expires_at: new Date(Date.now() + 1_000).toISOString(),
+            resolved_at: null,
+          },
+        ],
+      })
+    )
+
+    expect(intents).toEqual([])
   })
 })

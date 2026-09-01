@@ -92,6 +92,13 @@ tailwind.config.js
 
 # Backend (handled separately)
 backend/
+!backend/
+backend/*
+!backend/package.json
+!backend/bun.lock
+!backend/Dockerfile.controller
+!backend/src/
+!backend/src/**
 
 # Database
 *.db
