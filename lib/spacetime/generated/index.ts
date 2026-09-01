@@ -41,38 +41,76 @@ import AdminAgentCounterJingReducer from './admin_agent_counter_jing_reducer'
 import AdminAgentRecordStarStakeReducer from './admin_agent_record_star_stake_reducer'
 import AdminAgentRecordStarUnstakeReducer from './admin_agent_record_star_unstake_reducer'
 import AdminAgentResolveStarBattleReducer from './admin_agent_resolve_star_battle_reducer'
+import AdvanceMeleeReducer from './advance_melee_reducer'
+import AnswerAgentMeleeTurnReducer from './answer_agent_melee_turn_reducer'
 import AnswerDuelReducer from './answer_duel_reducer'
 import AnswerJingReducer from './answer_jing_reducer'
 import AnswerOracleReducer from './answer_oracle_reducer'
 import AnswerTraceReducer from './answer_trace_reducer'
 import AskOracleReducer from './ask_oracle_reducer'
+import AssertEsmsBridgeReadyReducer from './assert_esms_bridge_ready_reducer'
 import BackfillDecansReducer from './backfill_decans_reducer'
+import BindWalletAddressReducer from './bind_wallet_address_reducer'
+import BridgeEsmsCrosschainReducer from './bridge_esms_crosschain_reducer'
+import CancelStaleClaimReducer from './cancel_stale_claim_reducer'
 import CancelTradeReducer from './cancel_trade_reducer'
+import CaptureArConstellationReducer from './capture_ar_constellation_reducer'
 import CastJingReducer from './cast_jing_reducer'
 import CastWordReducer from './cast_word_reducer'
 import ClaimDuelTimeoutReducer from './claim_duel_timeout_reducer'
+import ClaimProfileReducer from './claim_profile_reducer'
 import CombineCardsReducer from './combine_cards_reducer'
 import CommitDuelReducer from './commit_duel_reducer'
+import CompleteEsmsBridgeReducer from './complete_esms_bridge_reducer'
 import ConfirmTradeReducer from './confirm_trade_reducer'
+import ConfirmYieldClaimReducer from './confirm_yield_claim_reducer'
 import CounterJingReducer from './counter_jing_reducer'
 import CreatePlayerReducer from './create_player_reducer'
+import DeletePlayerDataReducer from './delete_player_data_reducer'
+import DeployCardReducer from './deploy_card_reducer'
 import EnqueueDuelReducer from './enqueue_duel_reducer'
-import MarkStarYieldClaimedReducer from './mark_star_yield_claimed_reducer'
+import JoinMeleeQueueReducer from './join_melee_queue_reducer'
+import LeaveMeleeQueueReducer from './leave_melee_queue_reducer'
+import LockAnomalyReducer from './lock_anomaly_reducer'
+import OpenIdentityLinkReducer from './open_identity_link_reducer'
+import OpenMeleeRoundReducer from './open_melee_round_reducer'
+import PlayMeleeCardReducer from './play_melee_card_reducer'
 import ProposeTradeReducer from './propose_trade_reducer'
+import PurgeStaleAgentsReducer from './purge_stale_agents_reducer'
 import PushEphemerisReducer from './push_ephemeris_reducer'
+import RecordMeleePlayReducer from './record_melee_play_reducer'
 import RecordStarStakeReducer from './record_star_stake_reducer'
 import RecordStarUnstakeReducer from './record_star_unstake_reducer'
+import ReportServiceHealthReducer from './report_service_health_reducer'
+import RequestYieldClaimReducer from './request_yield_claim_reducer'
 import ResolveStarBattleReducer from './resolve_star_battle_reducer'
 import SeedAgentPlayerReducer from './seed_agent_player_reducer'
 import SetLoadoutReducer from './set_loadout_reducer'
 import SetLocationReducer from './set_location_reducer'
+import SiegeHorizonStarReducer from './siege_horizon_star_reducer'
+import StardexClaimConstellationReducer from './stardex_claim_constellation_reducer'
+import StardexFortifyNodeReducer from './stardex_fortify_node_reducer'
+import StrikeStarSingleReducer from './strike_star_single_reducer'
+import SubmitMeleeResultReducer from './submit_melee_result_reducer'
+import SyncEvmEventReducer from './sync_evm_event_reducer'
+import SyncSolanaEventReducer from './sync_solana_event_reducer'
+import SyncStardexEphemerisReducer from './sync_stardex_ephemeris_reducer'
 import TraceConstellationReducer from './trace_constellation_reducer'
+import TransferStarStakeReducer from './transfer_star_stake_reducer'
+import TriggerZoneFluxReducer from './trigger_zone_flux_reducer'
+import UpdateSeekerEnvironmentReducer from './update_seeker_environment_reducer'
+import VerifyEvmWalletBindingReducer from './verify_evm_wallet_binding_reducer'
+import VerifySolanaWalletBindingReducer from './verify_solana_wallet_binding_reducer'
 
 // Import all procedure arg schemas
 
 // Import all table schema definitions
 import AgentChartRow from './agent_chart_table'
+import AgentMeleeTurnRow from './agent_melee_turn_table'
+import AgentRestRow from './agent_rest_table'
+import ArConstellationCaptureRow from './ar_constellation_capture_table'
 import BattleRow from './battle_table'
+import BridgeTransferRow from './bridge_transfer_table'
 import CardRow from './card_table'
 import CometRow from './comet_table'
 import ConstellationRow from './constellation_table'
@@ -81,22 +119,33 @@ import ConstellationLineRow from './constellation_line_table'
 import ConstellationResolutionRow from './constellation_resolution_table'
 import ConstellationStarRow from './constellation_star_table'
 import DeckSlotRow from './deck_slot_table'
+import DeepSpaceCacheRow from './deep_space_cache_table'
 import DuelRow from './duel_table'
 import DuelChallengeRow from './duel_challenge_table'
 import DuelQueueRow from './duel_queue_table'
 import DuelRoundRow from './duel_round_table'
 import EphemerisRow from './ephemeris_table'
 import GameConfigRow from './game_config_table'
+import HorizonActionReceiptRow from './horizon_action_receipt_table'
 import JingCastRow from './jing_cast_table'
 import JingDuelRow from './jing_duel_table'
 import JingPoolRow from './jing_pool_table'
+import MeleeHandRow from './melee_hand_table'
+import MeleePlayRow from './melee_play_table'
+import MeleeQueueRow from './melee_queue_table'
+import MeleeSeatRow from './melee_seat_table'
+import MeleeTableRow from './melee_table_table'
+import MeleeTrickRow from './melee_trick_table'
 import NatalDecanRow from './natal_decan_table'
 import OracleCacheRow from './oracle_cache_table'
 import OracleReplyRow from './oracle_reply_table'
 import OracleRequestRow from './oracle_request_table'
 import PlayerRow from './player_table'
+import ProcessedTxRow from './processed_tx_table'
 import RoundParticipantRow from './round_participant_table'
 import RoundStateRow from './round_state_table'
+import SeekerStateRow from './seeker_state_table'
+import ServiceStatusRow from './service_status_table'
 import StarAgentRow from './star_agent_table'
 import StarNodeRow from './star_node_table'
 import StarStakeRow from './star_stake_table'
@@ -104,6 +153,8 @@ import StarStakePoolRow from './star_stake_pool_table'
 import TraceAttestationRow from './trace_attestation_table'
 import TraceIntentRow from './trace_intent_table'
 import TradeRow from './trade_table'
+import VerifiedEvmWalletRow from './verified_evm_wallet_table'
+import VerifiedSolanaWalletRow from './verified_solana_wallet_table'
 import WordDuelRow from './word_duel_table'
 import ZoneRow from './zone_table'
 
@@ -128,6 +179,85 @@ const tablesSchema = __schema({
     },
     AgentChartRow
   ),
+  agent_melee_turn: __table(
+    {
+      name: 'agent_melee_turn',
+      indexes: [
+        {
+          accessor: 'occupant',
+          name: 'agent_melee_turn_occupant_idx_btree',
+          algorithm: 'btree',
+          columns: ['occupant'],
+        },
+        {
+          accessor: 'seat_id',
+          name: 'agent_melee_turn_seat_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['seatId'],
+        },
+        {
+          accessor: 'table_id',
+          name: 'agent_melee_turn_table_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['tableId'],
+        },
+        {
+          accessor: 'turn_id',
+          name: 'agent_melee_turn_turn_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['turnId'],
+        },
+      ],
+      constraints: [
+        { name: 'agent_melee_turn_turn_id_key', constraint: 'unique', columns: ['turnId'] },
+      ],
+    },
+    AgentMeleeTurnRow
+  ),
+  agent_rest: __table(
+    {
+      name: 'agent_rest',
+      indexes: [
+        {
+          accessor: 'identity',
+          name: 'agent_rest_identity_idx_btree',
+          algorithm: 'btree',
+          columns: ['identity'],
+        },
+      ],
+      constraints: [
+        { name: 'agent_rest_identity_key', constraint: 'unique', columns: ['identity'] },
+      ],
+    },
+    AgentRestRow
+  ),
+  ar_constellation_capture: __table(
+    {
+      name: 'ar_constellation_capture',
+      indexes: [
+        {
+          accessor: 'capture_id',
+          name: 'ar_constellation_capture_capture_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['captureId'],
+        },
+        {
+          accessor: 'player',
+          name: 'ar_constellation_capture_player_idx_btree',
+          algorithm: 'btree',
+          columns: ['player'],
+        },
+      ],
+      constraints: [
+        {
+          name: 'ar_constellation_capture_capture_id_key',
+          constraint: 'unique',
+          columns: ['captureId'],
+        },
+      ],
+    },
+    ArConstellationCaptureRow
+  ),
   battle: __table(
     {
       name: 'battle',
@@ -142,6 +272,29 @@ const tablesSchema = __schema({
       constraints: [{ name: 'battle_battle_id_key', constraint: 'unique', columns: ['battleId'] }],
     },
     BattleRow
+  ),
+  bridge_transfer: __table(
+    {
+      name: 'bridge_transfer',
+      indexes: [
+        {
+          accessor: 'burn_tx_hash',
+          name: 'bridge_transfer_burn_tx_hash_idx_btree',
+          algorithm: 'btree',
+          columns: ['burnTxHash'],
+        },
+        {
+          accessor: 'player',
+          name: 'bridge_transfer_player_idx_btree',
+          algorithm: 'btree',
+          columns: ['player'],
+        },
+      ],
+      constraints: [
+        { name: 'bridge_transfer_burn_tx_hash_key', constraint: 'unique', columns: ['burnTxHash'] },
+      ],
+    },
+    BridgeTransferRow
   ),
   card: __table(
     {
@@ -292,6 +445,12 @@ const tablesSchema = __schema({
           columns: ['cardId'],
         },
         {
+          accessor: 'loadout',
+          name: 'deck_slot_loadout_idx_btree',
+          algorithm: 'btree',
+          columns: ['loadout'],
+        },
+        {
           accessor: 'owner',
           name: 'deck_slot_owner_idx_btree',
           algorithm: 'btree',
@@ -307,6 +466,23 @@ const tablesSchema = __schema({
       constraints: [{ name: 'deck_slot_slot_id_key', constraint: 'unique', columns: ['slotId'] }],
     },
     DeckSlotRow
+  ),
+  deep_space_cache: __table(
+    {
+      name: 'deep_space_cache',
+      indexes: [
+        {
+          accessor: 'cache_id',
+          name: 'deep_space_cache_cache_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['cacheId'],
+        },
+      ],
+      constraints: [
+        { name: 'deep_space_cache_cache_id_key', constraint: 'unique', columns: ['cacheId'] },
+      ],
+    },
+    DeepSpaceCacheRow
   ),
   duel: __table(
     {
@@ -356,6 +532,12 @@ const tablesSchema = __schema({
           algorithm: 'btree',
           columns: ['ticketId'],
         },
+        {
+          accessor: 'zone_id',
+          name: 'duel_queue_zone_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['zoneId'],
+        },
       ],
       constraints: [
         { name: 'duel_queue_ticket_id_key', constraint: 'unique', columns: ['ticketId'] },
@@ -404,6 +586,33 @@ const tablesSchema = __schema({
       constraints: [{ name: 'game_config_id_key', constraint: 'unique', columns: ['id'] }],
     },
     GameConfigRow
+  ),
+  horizon_action_receipt: __table(
+    {
+      name: 'horizon_action_receipt',
+      indexes: [
+        {
+          accessor: 'action_key',
+          name: 'horizon_action_receipt_action_key_idx_btree',
+          algorithm: 'btree',
+          columns: ['actionKey'],
+        },
+        {
+          accessor: 'intent_id',
+          name: 'horizon_action_receipt_intent_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['intentId'],
+        },
+      ],
+      constraints: [
+        {
+          name: 'horizon_action_receipt_action_key_key',
+          constraint: 'unique',
+          columns: ['actionKey'],
+        },
+      ],
+    },
+    HorizonActionReceiptRow
   ),
   jing_cast: __table(
     {
@@ -463,6 +672,150 @@ const tablesSchema = __schema({
       ],
     },
     JingPoolRow
+  ),
+  melee_hand: __table(
+    {
+      name: 'melee_hand',
+      indexes: [
+        {
+          accessor: 'hand_id',
+          name: 'melee_hand_hand_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['handId'],
+        },
+        {
+          accessor: 'seat_id',
+          name: 'melee_hand_seat_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['seatId'],
+        },
+        {
+          accessor: 'table_id',
+          name: 'melee_hand_table_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['tableId'],
+        },
+      ],
+      constraints: [{ name: 'melee_hand_hand_id_key', constraint: 'unique', columns: ['handId'] }],
+    },
+    MeleeHandRow
+  ),
+  melee_play: __table(
+    {
+      name: 'melee_play',
+      indexes: [
+        {
+          accessor: 'play_id',
+          name: 'melee_play_play_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['playId'],
+        },
+        {
+          accessor: 'table_id',
+          name: 'melee_play_table_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['tableId'],
+        },
+      ],
+      constraints: [{ name: 'melee_play_play_id_key', constraint: 'unique', columns: ['playId'] }],
+    },
+    MeleePlayRow
+  ),
+  melee_queue: __table(
+    {
+      name: 'melee_queue',
+      indexes: [
+        {
+          accessor: 'identity',
+          name: 'melee_queue_identity_idx_btree',
+          algorithm: 'btree',
+          columns: ['identity'],
+        },
+        {
+          accessor: 'zone_id',
+          name: 'melee_queue_zone_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['zoneId'],
+        },
+      ],
+      constraints: [
+        { name: 'melee_queue_identity_key', constraint: 'unique', columns: ['identity'] },
+      ],
+    },
+    MeleeQueueRow
+  ),
+  melee_seat: __table(
+    {
+      name: 'melee_seat',
+      indexes: [
+        {
+          accessor: 'occupant',
+          name: 'melee_seat_occupant_idx_btree',
+          algorithm: 'btree',
+          columns: ['occupant'],
+        },
+        {
+          accessor: 'seat_id',
+          name: 'melee_seat_seat_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['seatId'],
+        },
+        {
+          accessor: 'table_id',
+          name: 'melee_seat_table_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['tableId'],
+        },
+      ],
+      constraints: [{ name: 'melee_seat_seat_id_key', constraint: 'unique', columns: ['seatId'] }],
+    },
+    MeleeSeatRow
+  ),
+  melee_table: __table(
+    {
+      name: 'melee_table',
+      indexes: [
+        {
+          accessor: 'table_id',
+          name: 'melee_table_table_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['tableId'],
+        },
+        {
+          accessor: 'zone_id',
+          name: 'melee_table_zone_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['zoneId'],
+        },
+      ],
+      constraints: [
+        { name: 'melee_table_table_id_key', constraint: 'unique', columns: ['tableId'] },
+      ],
+    },
+    MeleeTableRow
+  ),
+  melee_trick: __table(
+    {
+      name: 'melee_trick',
+      indexes: [
+        {
+          accessor: 'table_id',
+          name: 'melee_trick_table_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['tableId'],
+        },
+        {
+          accessor: 'trick_id',
+          name: 'melee_trick_trick_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['trickId'],
+        },
+      ],
+      constraints: [
+        { name: 'melee_trick_trick_id_key', constraint: 'unique', columns: ['trickId'] },
+      ],
+    },
+    MeleeTrickRow
   ),
   natal_decan: __table(
     {
@@ -551,6 +904,23 @@ const tablesSchema = __schema({
     },
     PlayerRow
   ),
+  processed_tx: __table(
+    {
+      name: 'processed_tx',
+      indexes: [
+        {
+          accessor: 'tx_hash',
+          name: 'processed_tx_tx_hash_idx_btree',
+          algorithm: 'btree',
+          columns: ['txHash'],
+        },
+      ],
+      constraints: [
+        { name: 'processed_tx_tx_hash_key', constraint: 'unique', columns: ['txHash'] },
+      ],
+    },
+    ProcessedTxRow
+  ),
   round_participant: __table(
     {
       name: 'round_participant',
@@ -560,6 +930,12 @@ const tablesSchema = __schema({
           name: 'round_participant_id_idx_btree',
           algorithm: 'btree',
           columns: ['id'],
+        },
+        {
+          accessor: 'round_id',
+          name: 'round_participant_round_id_idx_btree',
+          algorithm: 'btree',
+          columns: ['roundId'],
         },
       ],
       constraints: [{ name: 'round_participant_id_key', constraint: 'unique', columns: ['id'] }],
@@ -582,6 +958,38 @@ const tablesSchema = __schema({
       ],
     },
     RoundStateRow
+  ),
+  seeker_state: __table(
+    {
+      name: 'seeker_state',
+      indexes: [
+        {
+          accessor: 'player',
+          name: 'seeker_state_player_idx_btree',
+          algorithm: 'btree',
+          columns: ['player'],
+        },
+      ],
+      constraints: [{ name: 'seeker_state_player_key', constraint: 'unique', columns: ['player'] }],
+    },
+    SeekerStateRow
+  ),
+  service_status: __table(
+    {
+      name: 'service_status',
+      indexes: [
+        {
+          accessor: 'service',
+          name: 'service_status_service_idx_btree',
+          algorithm: 'btree',
+          columns: ['service'],
+        },
+      ],
+      constraints: [
+        { name: 'service_status_service_key', constraint: 'unique', columns: ['service'] },
+      ],
+    },
+    ServiceStatusRow
   ),
   star_agent: __table(
     {
@@ -732,6 +1140,66 @@ const tablesSchema = __schema({
     },
     TradeRow
   ),
+  verified_evm_wallet: __table(
+    {
+      name: 'verified_evm_wallet',
+      indexes: [
+        {
+          accessor: 'evm_address',
+          name: 'verified_evm_wallet_evm_address_idx_btree',
+          algorithm: 'btree',
+          columns: ['evmAddress'],
+        },
+        {
+          accessor: 'identity',
+          name: 'verified_evm_wallet_identity_idx_btree',
+          algorithm: 'btree',
+          columns: ['identity'],
+        },
+      ],
+      constraints: [
+        {
+          name: 'verified_evm_wallet_evm_address_key',
+          constraint: 'unique',
+          columns: ['evmAddress'],
+        },
+        { name: 'verified_evm_wallet_identity_key', constraint: 'unique', columns: ['identity'] },
+      ],
+    },
+    VerifiedEvmWalletRow
+  ),
+  verified_solana_wallet: __table(
+    {
+      name: 'verified_solana_wallet',
+      indexes: [
+        {
+          accessor: 'identity',
+          name: 'verified_solana_wallet_identity_idx_btree',
+          algorithm: 'btree',
+          columns: ['identity'],
+        },
+        {
+          accessor: 'solana_pubkey',
+          name: 'verified_solana_wallet_solana_pubkey_idx_btree',
+          algorithm: 'btree',
+          columns: ['solanaPubkey'],
+        },
+      ],
+      constraints: [
+        {
+          name: 'verified_solana_wallet_identity_key',
+          constraint: 'unique',
+          columns: ['identity'],
+        },
+        {
+          name: 'verified_solana_wallet_solana_pubkey_key',
+          constraint: 'unique',
+          columns: ['solanaPubkey'],
+        },
+      ],
+    },
+    VerifiedSolanaWalletRow
+  ),
   word_duel: __table(
     {
       name: 'word_duel',
@@ -779,32 +1247,66 @@ const reducersSchema = __reducers(
   __reducerSchema('admin_agent_record_star_stake', AdminAgentRecordStarStakeReducer),
   __reducerSchema('admin_agent_record_star_unstake', AdminAgentRecordStarUnstakeReducer),
   __reducerSchema('admin_agent_resolve_star_battle', AdminAgentResolveStarBattleReducer),
+  __reducerSchema('advance_melee', AdvanceMeleeReducer),
+  __reducerSchema('answer_agent_melee_turn', AnswerAgentMeleeTurnReducer),
   __reducerSchema('answer_duel', AnswerDuelReducer),
   __reducerSchema('answer_jing', AnswerJingReducer),
   __reducerSchema('answer_oracle', AnswerOracleReducer),
   __reducerSchema('answer_trace', AnswerTraceReducer),
   __reducerSchema('ask_oracle', AskOracleReducer),
+  __reducerSchema('assert_esms_bridge_ready', AssertEsmsBridgeReadyReducer),
   __reducerSchema('backfill_decans', BackfillDecansReducer),
+  __reducerSchema('bind_wallet_address', BindWalletAddressReducer),
+  __reducerSchema('bridge_esms_crosschain', BridgeEsmsCrosschainReducer),
+  __reducerSchema('cancel_stale_claim', CancelStaleClaimReducer),
   __reducerSchema('cancel_trade', CancelTradeReducer),
+  __reducerSchema('capture_ar_constellation', CaptureArConstellationReducer),
   __reducerSchema('cast_jing', CastJingReducer),
   __reducerSchema('cast_word', CastWordReducer),
   __reducerSchema('claim_duel_timeout', ClaimDuelTimeoutReducer),
+  __reducerSchema('claim_profile', ClaimProfileReducer),
   __reducerSchema('combine_cards', CombineCardsReducer),
   __reducerSchema('commit_duel', CommitDuelReducer),
+  __reducerSchema('complete_esms_bridge', CompleteEsmsBridgeReducer),
   __reducerSchema('confirm_trade', ConfirmTradeReducer),
+  __reducerSchema('confirm_yield_claim', ConfirmYieldClaimReducer),
   __reducerSchema('counter_jing', CounterJingReducer),
   __reducerSchema('create_player', CreatePlayerReducer),
+  __reducerSchema('delete_player_data', DeletePlayerDataReducer),
+  __reducerSchema('deploy_card', DeployCardReducer),
   __reducerSchema('enqueue_duel', EnqueueDuelReducer),
-  __reducerSchema('mark_star_yield_claimed', MarkStarYieldClaimedReducer),
+  __reducerSchema('join_melee_queue', JoinMeleeQueueReducer),
+  __reducerSchema('leave_melee_queue', LeaveMeleeQueueReducer),
+  __reducerSchema('lock_anomaly', LockAnomalyReducer),
+  __reducerSchema('open_identity_link', OpenIdentityLinkReducer),
+  __reducerSchema('open_melee_round', OpenMeleeRoundReducer),
+  __reducerSchema('play_melee_card', PlayMeleeCardReducer),
   __reducerSchema('propose_trade', ProposeTradeReducer),
+  __reducerSchema('purge_stale_agents', PurgeStaleAgentsReducer),
   __reducerSchema('push_ephemeris', PushEphemerisReducer),
+  __reducerSchema('record_melee_play', RecordMeleePlayReducer),
   __reducerSchema('record_star_stake', RecordStarStakeReducer),
   __reducerSchema('record_star_unstake', RecordStarUnstakeReducer),
+  __reducerSchema('report_service_health', ReportServiceHealthReducer),
+  __reducerSchema('request_yield_claim', RequestYieldClaimReducer),
   __reducerSchema('resolve_star_battle', ResolveStarBattleReducer),
   __reducerSchema('seed_agent_player', SeedAgentPlayerReducer),
   __reducerSchema('set_loadout', SetLoadoutReducer),
   __reducerSchema('set_location', SetLocationReducer),
-  __reducerSchema('trace_constellation', TraceConstellationReducer)
+  __reducerSchema('siege_horizon_star', SiegeHorizonStarReducer),
+  __reducerSchema('stardex_claim_constellation', StardexClaimConstellationReducer),
+  __reducerSchema('stardex_fortify_node', StardexFortifyNodeReducer),
+  __reducerSchema('strike_star_single', StrikeStarSingleReducer),
+  __reducerSchema('submit_melee_result', SubmitMeleeResultReducer),
+  __reducerSchema('sync_evm_event', SyncEvmEventReducer),
+  __reducerSchema('sync_solana_event', SyncSolanaEventReducer),
+  __reducerSchema('sync_stardex_ephemeris', SyncStardexEphemerisReducer),
+  __reducerSchema('trace_constellation', TraceConstellationReducer),
+  __reducerSchema('transfer_star_stake', TransferStarStakeReducer),
+  __reducerSchema('trigger_zone_flux', TriggerZoneFluxReducer),
+  __reducerSchema('update_seeker_environment', UpdateSeekerEnvironmentReducer),
+  __reducerSchema('verify_evm_wallet_binding', VerifyEvmWalletBindingReducer),
+  __reducerSchema('verify_solana_wallet_binding', VerifySolanaWalletBindingReducer)
 )
 
 /** The schema information for all procedures in this module. This is defined the same way as the procedures would have been defined in the server. */

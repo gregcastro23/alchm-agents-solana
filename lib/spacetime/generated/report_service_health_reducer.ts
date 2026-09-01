@@ -11,6 +11,8 @@ import {
 } from 'spacetimedb'
 
 export default {
-  stakeId: __t.u64(),
-  amount: __t.u128(),
+  service: __t.string(),
+  healthy: __t.bool(),
+  detail: __t.string(),
+  latencyMs: __t.u32(),
 }
