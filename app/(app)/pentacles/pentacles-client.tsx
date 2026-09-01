@@ -185,6 +185,20 @@ export default function PentaclesClient() {
           >
             Arc Onboarding
           </Link>
+          <Link
+            href="/pentacles/war"
+            style={{
+              color: '#9aa0d8',
+              fontWeight: 500,
+              textDecoration: 'none',
+              fontSize: 14,
+              transition: 'color 0.2s',
+            }}
+            onMouseEnter={e => (e.currentTarget.style.color = '#e7e9ff')}
+            onMouseLeave={e => (e.currentTarget.style.color = '#9aa0d8')}
+          >
+            War Table Command
+          </Link>
         </div>
       </header>
 

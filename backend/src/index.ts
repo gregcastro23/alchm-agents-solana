@@ -32,7 +32,9 @@ import consciousnessRoutes from './routes/consciousness.js'
 import healthRoutes from './routes/health.js'
 import agentRoutes from './routes/agents.js'
 import agentActionRoutes from './routes/agent-actions.js'
+import pentaclesAgentRoutes from './routes/pentacles-agents.js'
 import { astrologicalActionScheduler } from './services/astrological-action-scheduler.js'
+import { pentaclesAgentScheduler } from './services/pentacles-agent-scheduler.js'
 
 // WebSocket handlers
 import { setupWebSocketHandlers } from './websocket/handlers.js'
@@ -171,6 +173,7 @@ app.use('/api/planets', ephemerisRoutes) // Swiss Ephemeris endpoints
 app.use('/api/tokens', tokenRoutes)
 app.use('/api/agents', agentRoutes)
 app.use('/api/agent-actions', agentActionRoutes)
+app.use('/api/pentacles-agents', pentaclesAgentRoutes)
 
 // Apply auth before protected routes
 app.use('/api/kinetics', authMiddleware)
@@ -248,6 +251,17 @@ async function startServer() {
     }
   }
 
+  if (process.env.PENTACLES_AGENT_CONTROLLER_ENABLED === 'true') {
+    try {
+      pentaclesAgentScheduler.start()
+    } catch (error) {
+      logger.error('Failed to start Pentacles agent controller', {
+        error: error instanceof Error ? error.message : String(error),
+      })
+      if (process.env.NODE_ENV === 'production') throw error
+    }
+  }
+
   server.listen(PORT, HOST, () => {
     logger.info(`🚀 Planetary Agents Backend started`)
     logger.info(`📍 Server: http://${HOST}:${PORT}`)
@@ -300,6 +314,12 @@ async function startServer() {
         astrologicalActionScheduler.stop()
       } catch (error) {
         logger.error('Error stopping astrological action scheduler:', error)
+      }
+
+      try {
+        pentaclesAgentScheduler.stop()
+      } catch (error) {
+        logger.error('Error stopping Pentacles agent controller:', error)
       }
 
       clearTimeout(shutdownTimeout)

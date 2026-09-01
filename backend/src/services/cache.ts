@@ -180,6 +180,66 @@ class CacheService {
     }
   }
 
+  /** Atomic best-effort lease used to keep periodic workers single-flight. */
+  async acquireLock(key: string, owner: string, ttlMs: number): Promise<boolean> {
+    try {
+      if (this.redisClient && this.isRedisConnected) {
+        const result = await this.redisClient.set(key, owner, { NX: true, PX: ttlMs })
+        return result === 'OK'
+      }
+
+      const existing = this.memoryCache.get(key)
+      if (existing && existing.expiresAt > Date.now()) return false
+      this.memoryCache.set(key, { value: owner, expiresAt: Date.now() + ttlMs })
+      return true
+    } catch (error) {
+      logger.error('Cache acquire lock error:', error)
+      return false
+    }
+  }
+
+  /** Extend only a live lease still owned by this worker instance. */
+  async renewLock(key: string, owner: string, ttlMs: number): Promise<boolean> {
+    try {
+      if (this.redisClient && this.isRedisConnected) {
+        const renewed = await this.redisClient.eval(
+          "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('pexpire', KEYS[1], ARGV[2]) else return 0 end",
+          { keys: [key], arguments: [owner, String(ttlMs)] }
+        )
+        return Number(renewed) === 1
+      }
+
+      const existing = this.memoryCache.get(key)
+      if (existing?.value !== owner || existing.expiresAt <= Date.now()) return false
+      existing.expiresAt = Date.now() + ttlMs
+      return true
+    } catch (error) {
+      logger.error('Cache renew lock error:', error)
+      return false
+    }
+  }
+
+  /** Release only the lease owned by this worker instance. */
+  async releaseLock(key: string, owner: string): Promise<boolean> {
+    try {
+      if (this.redisClient && this.isRedisConnected) {
+        const released = await this.redisClient.eval(
+          "if redis.call('get', KEYS[1]) == ARGV[1] then return redis.call('del', KEYS[1]) else return 0 end",
+          { keys: [key], arguments: [owner] }
+        )
+        return Number(released) === 1
+      }
+
+      const existing = this.memoryCache.get(key)
+      if (existing?.value !== owner) return false
+      this.memoryCache.delete(key)
+      return true
+    } catch (error) {
+      logger.error('Cache release lock error:', error)
+      return false
+    }
+  }
+
   async flush(): Promise<boolean> {
     try {
       // Try Redis first if available
@@ -223,6 +283,10 @@ class CacheService {
 
   isConnected(): boolean {
     return this.isRedisConnected || this.memoryCache.size >= 0
+  }
+
+  isDistributed(): boolean {
+    return this.redisClient !== null && this.isRedisConnected
   }
 
   getStats(): {

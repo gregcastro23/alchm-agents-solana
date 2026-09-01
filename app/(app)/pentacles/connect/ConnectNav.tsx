@@ -40,6 +40,14 @@ export default function ConnectNav() {
         Your Portfolio
       </Link>
       <span style={{ color: '#ffd76a', fontWeight: 600, fontSize: 14 }}>Arc Onboarding</span>
+      <Link
+        href="/pentacles/war"
+        style={linkStyle}
+        onMouseEnter={e => (e.currentTarget.style.color = '#e7e9ff')}
+        onMouseLeave={e => (e.currentTarget.style.color = '#9aa0d8')}
+      >
+        War Table Command
+      </Link>
     </div>
   )
 }

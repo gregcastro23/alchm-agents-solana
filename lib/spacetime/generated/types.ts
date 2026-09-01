@@ -30,6 +30,42 @@ export const AgentChart = __t.object('AgentChart', {
 })
 export type AgentChart = __Infer<typeof AgentChart>
 
+export const AgentMeleeTurn = __t.object('AgentMeleeTurn', {
+  turnId: __t.u64(),
+  tableId: __t.u64(),
+  seatId: __t.u64(),
+  occupant: __t.identity(),
+  trickNumber: __t.u8(),
+  legalCardIds: __t.array(__t.u64()),
+  requestedAt: __t.timestamp(),
+  expiresAt: __t.timestamp(),
+  selectedCardId: __t.option(__t.u64()),
+  answeredAt: __t.option(__t.timestamp()),
+  resolvedAt: __t.option(__t.timestamp()),
+  fallbackUsed: __t.bool(),
+})
+export type AgentMeleeTurn = __Infer<typeof AgentMeleeTurn>
+
+export const AgentRest = __t.object('AgentRest', {
+  identity: __t.identity(),
+  restedAtRound: __t.u64(),
+})
+export type AgentRest = __Infer<typeof AgentRest>
+
+export const ArConstellationCapture = __t.object('ArConstellationCapture', {
+  captureId: __t.u64(),
+  player: __t.identity(),
+  constellationId: __t.u16(),
+  zoneId: __t.u8(),
+  precisionScore: __t.u8(),
+  azimuthDeg: __t.u32(),
+  altitudeDeg: __t.i32(),
+  tokensHarvested: __t.u64(),
+  capturedAt: __t.timestamp(),
+  expiresAt: __t.timestamp(),
+})
+export type ArConstellationCapture = __Infer<typeof ArConstellationCapture>
+
 export const Battle = __t.object('Battle', {
   battleId: __t.u64(),
   starId: __t.u32(),
@@ -49,6 +85,41 @@ export const BattleLog = __t.object('BattleLog', {
 })
 export type BattleLog = __Infer<typeof BattleLog>
 
+// The tagged union or sum type for the algebraic type `BridgeChain`.
+export const BridgeChain = __t.enum('BridgeChain', [
+  'EvmBaseSepolia',
+  'SolanaToken2022',
+  'EvmBaseMainnet',
+  'SolanaMainnetToken2022',
+])
+export type BridgeChain = __Infer<typeof BridgeChain>
+
+// The tagged union or sum type for the algebraic type `BridgeStatus`.
+export const BridgeStatus = __t.enum('BridgeStatus', ['PendingMint', 'Completed'])
+export type BridgeStatus = __Infer<typeof BridgeStatus>
+
+export const BridgeTransfer = __t.object('BridgeTransfer', {
+  burnTxHash: __t.string(),
+  player: __t.identity(),
+  get sourceChain() {
+    return BridgeChain
+  },
+  get targetChain() {
+    return BridgeChain
+  },
+  sourceAddress: __t.string(),
+  targetAddress: __t.string(),
+  elementId: __t.u8(),
+  amount: __t.u128(),
+  get status() {
+    return BridgeStatus
+  },
+  destinationTxHash: __t.option(__t.string()),
+  createdAt: __t.timestamp(),
+  updatedAt: __t.timestamp(),
+})
+export type BridgeTransfer = __Infer<typeof BridgeTransfer>
+
 export const Card = __t.object('Card', {
   cardId: __t.u64(),
   owner: __t.identity(),
@@ -64,12 +135,20 @@ export const Card = __t.object('Card', {
     return Planet
   },
   inverted: __t.bool(),
-  isTrump: __t.bool(),
+  isMajor: __t.bool(),
   level: __t.u8(),
   mintedAt: __t.timestamp(),
   letter: __t.u8(),
 })
 export type Card = __Infer<typeof Card>
+
+export const ClaimGrant = __t.object('ClaimGrant', {
+  codeHash: __t.string(),
+  oldIdentity: __t.identity(),
+  createdAt: __t.timestamp(),
+  expiresAt: __t.timestamp(),
+})
+export type ClaimGrant = __Infer<typeof ClaimGrant>
 
 // The tagged union or sum type for the algebraic type `CombatModel`.
 export const CombatModel = __t.enum('CombatModel', ['LaneSkirmish', 'AutoSiege'])
@@ -150,6 +229,18 @@ export const DeckSlot = __t.object('DeckSlot', {
   },
 })
 export type DeckSlot = __Infer<typeof DeckSlot>
+
+export const DeepSpaceCache = __t.object('DeepSpaceCache', {
+  cacheId: __t.u64(),
+  centerX: __t.f64(),
+  centerY: __t.f64(),
+  centerZ: __t.f64(),
+  esmsYield: __t.u32(),
+  encryptionStatus: __t.u8(),
+  activeSeekers: __t.u32(),
+  createdAt: __t.timestamp(),
+})
+export type DeepSpaceCache = __Infer<typeof DeepSpaceCache>
 
 export const Duel = __t.object('Duel', {
   duelId: __t.u64(),
@@ -235,6 +326,14 @@ export const GameConfig = __t.object('GameConfig', {
 })
 export type GameConfig = __Infer<typeof GameConfig>
 
+export const HorizonActionReceipt = __t.object('HorizonActionReceipt', {
+  actionKey: __t.string(),
+  intentId: __t.u64(),
+  txHash: __t.string(),
+  processedAt: __t.timestamp(),
+})
+export type HorizonActionReceipt = __Infer<typeof HorizonActionReceipt>
+
 // The tagged union or sum type for the algebraic type `HouseSystem`.
 export const HouseSystem = __t.enum('HouseSystem', ['Placidus', 'WholeSign'])
 export type HouseSystem = __Infer<typeof HouseSystem>
@@ -310,6 +409,97 @@ export type JingState = __Infer<typeof JingState>
 // The tagged union or sum type for the algebraic type `Loadout`.
 export const Loadout = __t.enum('Loadout', ['Active', 'Defense', 'Bench'])
 export type Loadout = __Infer<typeof Loadout>
+
+export const MeleeHand = __t.object('MeleeHand', {
+  handId: __t.u64(),
+  tableId: __t.u64(),
+  seatId: __t.u64(),
+  cardId: __t.u64(),
+  get suit() {
+    return Suit
+  },
+  rank: __t.u8(),
+  isMajor: __t.bool(),
+  inverted: __t.bool(),
+  played: __t.bool(),
+})
+export type MeleeHand = __Infer<typeof MeleeHand>
+
+export const MeleePlay = __t.object('MeleePlay', {
+  playId: __t.u64(),
+  tableId: __t.u64(),
+  trickNumber: __t.u8(),
+  seatId: __t.u64(),
+  cardId: __t.u64(),
+  isMajor: __t.bool(),
+  rank: __t.u8(),
+  get suit() {
+    return Suit
+  },
+  playedAt: __t.timestamp(),
+})
+export type MeleePlay = __Infer<typeof MeleePlay>
+
+export const MeleeQueue = __t.object('MeleeQueue', {
+  identity: __t.identity(),
+  zoneId: __t.u8(),
+  get faction() {
+    return Planet
+  },
+  queuedAt: __t.timestamp(),
+})
+export type MeleeQueue = __Infer<typeof MeleeQueue>
+
+export const MeleeSeat = __t.object('MeleeSeat', {
+  seatId: __t.u64(),
+  tableId: __t.u64(),
+  occupant: __t.identity(),
+  get faction() {
+    return Planet
+  },
+  isHuman: __t.bool(),
+  claim: __t.u16(),
+  counters: __t.u16(),
+  meldsValue: __t.u16(),
+  score: __t.u16(),
+})
+export type MeleeSeat = __Infer<typeof MeleeSeat>
+
+// The tagged union or sum type for the algebraic type `MeleeState`.
+export const MeleeState = __t.enum('MeleeState', ['Mustering', 'Seated', 'Resolved'])
+export type MeleeState = __Infer<typeof MeleeState>
+
+export const MeleeTable = __t.object('MeleeTable', {
+  tableId: __t.u64(),
+  zoneId: __t.u8(),
+  roundIndex: __t.u64(),
+  get trumpSuit() {
+    return Suit
+  },
+  get state() {
+    return MeleeState
+  },
+  seatCount: __t.u8(),
+  ladderRaw: __t.string(),
+  openedAt: __t.timestamp(),
+  resolvedAt: __t.option(__t.timestamp()),
+})
+export type MeleeTable = __Infer<typeof MeleeTable>
+
+export const MeleeTrick = __t.object('MeleeTrick', {
+  trickId: __t.u64(),
+  tableId: __t.u64(),
+  trickNumber: __t.u8(),
+  leaderSeat: __t.u64(),
+  get ledSuit() {
+    return __t.option(Suit)
+  },
+  winnerSeat: __t.u64(),
+  counters: __t.u16(),
+  excuseSeat: __t.option(__t.u64()),
+  resolvedAt: __t.timestamp(),
+})
+export type MeleeTrick = __Infer<typeof MeleeTrick>
 
 export const NatalChart = __t.object('NatalChart', {
   identity: __t.identity(),
@@ -424,6 +614,8 @@ export const Player = __t.object('Player', {
   lastActive: __t.timestamp(),
   tokens: __t.u64(),
   wordWins: __t.u32(),
+  evmAddress: __t.option(__t.string()),
+  solanaPubkey: __t.option(__t.string()),
 })
 export type Player = __Infer<typeof Player>
 
@@ -434,6 +626,14 @@ export const PlayerLocation = __t.object('PlayerLocation', {
   updatedAt: __t.timestamp(),
 })
 export type PlayerLocation = __Infer<typeof PlayerLocation>
+
+export const ProcessedTx = __t.object('ProcessedTx', {
+  txHash: __t.string(),
+  chain: __t.string(),
+  eventType: __t.string(),
+  processedAt: __t.timestamp(),
+})
+export type ProcessedTx = __Infer<typeof ProcessedTx>
 
 export const RoundParticipant = __t.object('RoundParticipant', {
   id: __t.u64(),
@@ -460,6 +660,43 @@ export const RoundTimer = __t.object('RoundTimer', {
 })
 export type RoundTimer = __Infer<typeof RoundTimer>
 
+export const SeatResult = __t.object('SeatResult', {
+  seatId: __t.u64(),
+  counters: __t.u16(),
+  meldsValue: __t.u16(),
+  tookFinalTrick: __t.bool(),
+})
+export type SeatResult = __Infer<typeof SeatResult>
+
+export const SeatSpec = __t.object('SeatSpec', {
+  get faction() {
+    return Planet
+  },
+  occupant: __t.identity(),
+  claim: __t.u16(),
+})
+export type SeatSpec = __Infer<typeof SeatSpec>
+
+export const SeekerState = __t.object('SeekerState', {
+  player: __t.identity(),
+  isIndoor: __t.bool(),
+  x: __t.f64(),
+  y: __t.f64(),
+  z: __t.f64(),
+  activeLayer: __t.u8(),
+  lastUpdated: __t.timestamp(),
+})
+export type SeekerState = __Infer<typeof SeekerState>
+
+export const ServiceStatus = __t.object('ServiceStatus', {
+  service: __t.string(),
+  healthy: __t.bool(),
+  detail: __t.string(),
+  latencyMs: __t.u32(),
+  updatedAt: __t.timestamp(),
+})
+export type ServiceStatus = __Infer<typeof ServiceStatus>
+
 export const SkyTickTimer = __t.object('SkyTickTimer', {
   scheduledId: __t.u64(),
   scheduledAt: __t.scheduleAt(),
@@ -482,6 +719,14 @@ export const StarNode = __t.object('StarNode', {
   ra: __t.f64(),
   dec: __t.f64(),
   magnitude: __t.f32(),
+  constellation: __t.string(),
+  zodiacSign: __t.string(),
+  eclipticDeg: __t.u8(),
+  eclipticMin: __t.u8(),
+  eclipticSec: __t.u8(),
+  refractedAlt: __t.f32(),
+  azimuth: __t.f32(),
+  horizonState: __t.string(),
   get heldBy() {
     return __t.option(Planet)
   },
@@ -498,6 +743,8 @@ export const StarStake = __t.object('StarStake', {
   shares: __t.u128(),
   accruedEssence: __t.u128(),
   claimedEssence: __t.u128(),
+  pendingEssence: __t.u128(),
+  claimNonce: __t.u64(),
   stakedAt: __t.timestamp(),
   lastAccrualAt: __t.timestamp(),
 })
@@ -558,6 +805,22 @@ export type Trade = __Infer<typeof Trade>
 export const TradeState = __t.enum('TradeState', ['Open', 'Committed', 'Cancelled'])
 export type TradeState = __Infer<typeof TradeState>
 
+export const VerifiedEvmWallet = __t.object('VerifiedEvmWallet', {
+  identity: __t.identity(),
+  evmAddress: __t.string(),
+  proofHash: __t.string(),
+  verifiedAt: __t.timestamp(),
+})
+export type VerifiedEvmWallet = __Infer<typeof VerifiedEvmWallet>
+
+export const VerifiedSolanaWallet = __t.object('VerifiedSolanaWallet', {
+  identity: __t.identity(),
+  solanaPubkey: __t.string(),
+  proofHash: __t.string(),
+  verifiedAt: __t.timestamp(),
+})
+export type VerifiedSolanaWallet = __Infer<typeof VerifiedSolanaWallet>
+
 export const WordDuel = __t.object('WordDuel', {
   duelId: __t.u64(),
   player: __t.identity(),
@@ -592,6 +855,11 @@ export const Zone = __t.object('Zone', {
   },
   control: __t.i32(),
   updatedAt: __t.timestamp(),
+  inFlux: __t.bool(),
+  fluxLevel: __t.u8(),
+  fluxConstellation: __t.option(__t.u16()),
+  fluxTriggeredBy: __t.option(__t.identity()),
+  fluxExpiresAt: __t.option(__t.timestamp()),
 })
 export type Zone = __Infer<typeof Zone>
 
