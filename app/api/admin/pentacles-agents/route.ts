@@ -4,6 +4,7 @@ import { adminErrorResponse, requireAdmin } from '@/lib/admin-auth'
 export const dynamic = 'force-dynamic'
 
 const BACKEND_URL =
+  process.env.PENTACLES_CONTROLLER_URL ||
   process.env.NEXT_PUBLIC_BACKEND_URL ||
   process.env.BACKEND_URL ||
   'https://api.agents.alchm.kitchen'
