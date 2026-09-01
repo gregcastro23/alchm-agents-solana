@@ -3,14 +3,12 @@ FROM oven/bun:1.3.13
 WORKDIR /app
 
 COPY prisma ./prisma
-COPY backend/package.json backend/bun.lock ./backend/
-RUN cd backend \
-    && bun install --frozen-lockfile --ignore-scripts \
-    && bunx prisma generate --schema=../prisma/schema.prisma
+COPY backend/package.json backend/bun.lock ./
+RUN bun install --frozen-lockfile --ignore-scripts \
+    && bunx prisma generate --schema=prisma/schema.prisma
 
-COPY backend/src ./backend/src
+COPY backend/src ./src
 
-WORKDIR /app/backend
 ENV NODE_ENV=production
 
 EXPOSE 8000
