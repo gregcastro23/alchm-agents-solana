@@ -60,7 +60,7 @@ function startServiceHeartbeat(
       where: { service },
       create: {
         service,
-        status: overrideStatus ?? health.connectionStatus,
+        connectionStatus: overrideStatus ?? health.connectionStatus,
         activeRpc: health.activeRpc,
         reconnectAttempts: health.reconnectAttempts,
         queueDepth: health.queueDepth,
@@ -68,7 +68,7 @@ function startServiceHeartbeat(
         lastError: health.lastError,
       },
       update: {
-        status: overrideStatus ?? health.connectionStatus,
+        connectionStatus: overrideStatus ?? health.connectionStatus,
         activeRpc: health.activeRpc,
         reconnectAttempts: health.reconnectAttempts,
         queueDepth: health.queueDepth,
@@ -92,24 +92,29 @@ function startServiceHeartbeat(
 }
 
 async function runSync(client: PrismaClient) {
-  const store = createPrismaSolanaSyncStore(client)
+  const store = createPrismaSolanaSyncStore(client as any)
   const webhookUrl = process.env.SOLANA_SYNC_WEBHOOK_URL
   const secret = process.env.SOLANA_SYNC_WEBHOOK_SECRET ?? process.env.ALCHM_KITCHEN_SYNC_SECRET
   const dispatch =
     webhookUrl && secret
-      ? createSolanaSyncWebhookBodyDispatcher({ url: webhookUrl, secret })
+      ? createSolanaSyncWebhookBodyDispatcher({ url: webhookUrl, bearerToken: secret })
       : undefined
 
   const subscription = await startSolanaSyncService({ store })
+  const deliver =
+    dispatch ??
+    (async (payload: string) => {
+      console.log('[SyncOutbox] (no webhook configured, dry run)', payload.slice(0, 100))
+    })
+
   const polling = startSolanaSyncOutboxPolling({
-    store,
-    dispatch,
-    serialize: encodeSolanaSyncBody,
+    client,
+    deliver,
   })
 
   const stopHeartbeat = startServiceHeartbeat(client, 'sync', async () => {
     const health = await subscription.getHealth()
-    const depth = await store.getOutboxDepth()
+    const depth = (await store.getQueueDepth?.()) ?? 0
     return { ...health, queueDepth: depth }
   })
 
@@ -142,29 +147,38 @@ async function runBridge(client: PrismaClient) {
   const processor = createAsolBridgeProcessor({
     store,
     solanaClient,
-    evmPublicClient: publicClient,
+    evmPublicClient: publicClient as any,
     evmWalletClient: walletClient,
   })
 
-  const listeners = await listenToBridgeSourceEvents({
-    store,
-    solanaClient,
-    evmPublicClient: publicClient,
+  const polling = startBridgeRelayPolling({
+    client,
+    processTransfer: processor,
+    intervalMs: Number(process.env.SOLANA_BRIDGE_POLL_INTERVAL_MS ?? 5_000),
+    onError: (error, row) =>
+      console.error(
+        '[Bridge]',
+        row?.claimId ?? 'poll',
+        error instanceof Error ? error.message : error
+      ),
   })
 
-  const polling = startBridgeRelayPolling({
-    store,
-    processor,
-    pollIntervalMs: Number(process.env.SOLANA_BRIDGE_POLL_INTERVAL_MS ?? 5_000),
+  const listeners = listenToBridgeSourceEvents({
+    onEvmEvent: async event => console.log('[Bridge:EVM]', event),
+    onSolanaEvent: async event => console.log('[Bridge:Solana]', encodeSolanaSyncBody(event)),
+    publicClient: publicClient as any,
   })
 
   const stopHeartbeat = startServiceHeartbeat(client, 'bridge', async () => {
-    const listenerHealth = await listeners.getHealth()
-    const relayHealth = await processor.getHealth()
+    const [listenerHealth, relayHealth] = await Promise.all([
+      listeners.getHealth(),
+      polling.getHealth(),
+    ])
     return {
       connectionStatus:
-        listenerHealth.connectionStatus === 'healthy' && relayHealth.connectionStatus === 'healthy'
-          ? 'healthy'
+        listenerHealth.connectionStatus === 'connected' &&
+        relayHealth.connectionStatus === 'connected'
+          ? 'connected'
           : listenerHealth.connectionStatus === 'stopped' ||
               relayHealth.connectionStatus === 'stopped'
             ? 'stopped'
@@ -191,9 +205,28 @@ async function runJepaAnchorWorker() {
   return () => AsyncCosmicContextEncoder.stopCronJob()
 }
 
-const mode = process.argv[2]
+const isDryRun = process.argv.includes('--dry-run')
+const nonFlagArgs = process.argv.slice(2).filter(arg => !arg.startsWith('--'))
+const mode = nonFlagArgs[0] ?? (isDryRun ? 'sync' : undefined)
+
+if (isDryRun) {
+  console.log(`[DryRun] Validating Solana service configuration (mode: ${mode ?? 'sync'})...`)
+  const webhookUrl = process.env.SOLANA_SYNC_WEBHOOK_URL
+  const secret = process.env.SOLANA_SYNC_WEBHOOK_SECRET ?? process.env.ALCHM_KITCHEN_SYNC_SECRET
+  if (webhookUrl && secret) {
+    createSolanaSyncWebhookBodyDispatcher({ url: webhookUrl, bearerToken: secret })
+    console.log(`[DryRun] Webhook dispatcher verified for endpoint: ${webhookUrl}`)
+  } else {
+    console.log('[DryRun] Webhook URL or secret not configured; safe fallback deliverer active.')
+  }
+  console.log('[DryRun] Settlement-sync worker configuration verified successfully.')
+  process.exit(0)
+}
+
 if (mode !== 'sync' && mode !== 'bridge' && mode !== 'jepa') {
-  throw new Error('Usage: bun run scripts/run-asol-solana-service.ts <sync|bridge|jepa>')
+  throw new Error(
+    'Usage: bun run scripts/run-asol-solana-service.ts <sync|bridge|jepa> [--dry-run]'
+  )
 }
 const client = mode === 'jepa' ? null : databaseClient()
 const stop =

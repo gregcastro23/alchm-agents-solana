@@ -1,10 +1,20 @@
 # AlchmAgentsSolana (`ASOL`) Mainnet Migration Roadmap & Prompt-by-Prompt Execution Blueprint
 
-**Document Version:** `2.0.0-PROD`  
+**Document Version:** `2.1.0-AUDITED`  
 **Program ID:** `5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD`  
+**On-Chain Program Status:** Executable on Devnet | **UNINITIALIZED / NO ACCOUNT ON MAINNET-BETA**  
+**Mainnet Readiness Verdict:** 🛑 **NOT READY FOR SOLANA MAINNET-BETA ONBOARDING (BLOCKED)**  
 **Cluster Target:** Solana Devnet ➔ Solana Mainnet-Beta  
 **Runtime & Toolchain:** Bun (`bun` and `bun --bun run dev`) | Anchor `0.30.1` | Solana `1.18.17` | Rust `1.79.0`  
 **Authoritative Ledger:** PostgreSQL / WTEN `Decimal(12,4)` ($10^4$ raw atoms / 4-decimal Token-2022 precision)
+
+---
+
+> [!CAUTION]
+> **READINESS AUDIT VERDICT: LAUNCH BLOCKED (COMMIT `069178a`)**  
+> A formal pre-flight readiness audit evaluated against commit `069178a` concluded that the protocol is **not ready for Solana Mainnet-Beta onboarding**. While the on-chain protocol core is promising and the Devnet program is active, production deployment, chain configuration, settlement sync, metadata permanence, and operational verification contain **six critical launch blockers** and **four material weaknesses**.
+>
+> Program `5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD` has no account on Mainnet-Beta. No real user traffic or production capital may be routed to Solana until all blockers are cleared according to the [Remediation Sequence](#25-recommended-remediation-sequence).
 
 ---
 
@@ -26,29 +36,240 @@ The **AlchmAgentsSolana (`ASOL`)** architecture orchestrates high-throughput, lo
 ├──────────────────────────────┬──────────────────────────────┬──────────────────────────┤
 │ Phase 1: Governance & KMS    │ Phase 2: Network Resiliency  │ Phase 3: Storefront UI   │
 │ Prompt 1: Squads & Cloud KMS │ Prompt 2: Priority Fees & RPC│ Prompt 3: ShopClient.tsx │
-│ [STATUS: COMPLETED (PR #4)]  │ [STATUS: COMPLETED (PR #5)]  │ [STATUS: COMPLETED (PR#6)]│
+│ [STATUS: SCAFFOLDING ONLY]   │ [STATUS: DEVNET ONLY]        │ [STATUS: DEVNET HARDCODED│
 ├──────────────────────────────┼──────────────────────────────┼──────────────────────────┤
 │ Phase 4: Metadata & Build    │ Phase 5: StarVault Staking   │ Phase 6: Constellation   │
 │ Prompt 4: Arweave & Verify   │ Prompt 5: Checkpointed Yield │ Prompt 6: AMM & Deeds    │
-│ [STATUS: COMPLETED (PR #7)]  │ [STATUS: READY / NEXT]       │ [STATUS: QUEUED]         │
+│ [STATUS: BLOCKED / PENDING]  │ [STATUS: COMPLETED]          │ [STATUS: DEMO ATTESTOR]  │
 ├──────────────────────────────┴──────────────────────────────┴──────────────────────────┤
-│ Phase 7: Mainnet Deployment, Live Rehearsal & Verification Runbook (Prompt 7) [QUEUED] │
+│ Phase 7: Mainnet Deployment, Live Rehearsal & Verification Runbook [LAUNCH BLOCKER]    │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ Operational Infrastructure: Settlement Sync Worker [RUNTIME BROKEN / LAUNCH BLOCKER]   │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-### Migration Progress & Phase Status
+### Migration Progress & Phase Status (Post-Audit Reality)
 
-| Phase       | Title                                  | Target Scope                                            | Status        | References / PR                                                                        |
-| :---------- | :------------------------------------- | :------------------------------------------------------ | :------------ | :------------------------------------------------------------------------------------- |
-| **Phase 1** | Governance & Cloud KMS Key Management  | AWS KMS / GCP KMS HSM Signer, Squads v4 Runbook         | **COMPLETED** | [PR #4](https://github.com/gregcastro23/alchm-agents-solana/pull/4) / Commit `aa782d3` |
-| **Phase 2** | Network Resiliency & Dynamic Fees      | CU Budgeting, Priority Fees, Yellowstone Geyser         | **COMPLETED** | [PR #5](https://github.com/gregcastro23/alchm-agents-solana/pull/5) / Commit `563a807` |
-| **Phase 3** | Storefront & Detached Checkout         | Dual-rail Shop, detached Ed25519 redeem_for_esms        | **COMPLETED** | [PR #6](https://github.com/gregcastro23/alchm-agents-solana/pull/6) / Commit `565d768` |
-| **Phase 4** | Token-2022 Metadata & Verifiable Build | Arweave metadata, reproducible Docker Anchor build      | **COMPLETED** | [PR #7](https://github.com/gregcastro23/alchm-agents-solana/pull/7) / Commit `499afee` |
-| **Phase 5** | StarVault Staking & Yield Claims       | Checkpointed yield accumulator, Hipparcos star pools    | **COMPLETED** | [PR #9](https://github.com/gregcastro23/alchm-agents-solana/pull/9) / Commit `8a52479` |
-| **Phase 6** | Constellation AMM & LP Deed Positions  | Constant-product AMM, owner-seeded LP position PDAs     | **COMPLETED** | `programs/asol_program/src/instructions/amm/mod.rs`                                    |
-| **Phase 7** | Mainnet Deployment & Live Rehearsal    | Mainnet deployment runbook, Genesis check, Verification | **QUEUED**    | `scripts/deploy/deploy-mainnet.sh`                                                     |
+| Phase       | Title                                  | Target Scope                                            | Implementation Status     | Mainnet Readiness / Audit Finding                                                                                                                                                                                                                                                                                                                                                                                                                       |
+| :---------- | :------------------------------------- | :------------------------------------------------------ | :------------------------ | :------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| **Phase 1** | Governance & Cloud KMS Key Management  | AWS/GCP KMS HSM Signer, Squads v4 Runbook               | **REMEDIATED & VERIFIED** | ✅ **Production Ready:** `@aws-sdk/client-kms` installed; `KmsSolanaSigner` supports AWS KMS Ed25519; fail-closed production guards strictly prohibit raw keypairs (`NODE_ENV=production`); unit tested with 11 passing tests.                                                                                                                                                                                                                          |
+| **Phase 2** | Network Resiliency & Dynamic Fees      | CU Budgeting, Priority Fees, Unified Config             | Code Written (PR #5)      | ⚠️ **Unified Network Config Implemented:** Pinned canonical Mainnet genesis hash `5eykt...`, fail-closed mainnet RPC checks, dynamic explorer URLs; Geyser is an abstract interface with fallback to WebSockets.                                                                                                                                                                                                                                        |
+| **Phase 3** | Storefront & Detached Checkout         | Dual-rail Shop, detached Ed25519 redeem_for_esms        | Code Written (PR #6)      | ⚠️ **In Progress:** Replaced hardcoded Devnet RPCs with `SolanaNetworkConfig`; transactions settle with typed cluster boundaries.                                                                                                                                                                                                                                                                                                                       |
+| **Phase 4** | Token-2022 Metadata & Verifiable Build | Arweave metadata, reproducible Docker Anchor build      | Manifests Drafted (PR #7) | 🛑 **Blocked:** [`arweave-manifest.json`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/metadata/solana/arweave-manifest.json) contains all `null`s; [`constants.rs`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/programs/asol_program/src/constants.rs) points to mutable `alchm.kitchen` URLs; live Irys upload unexecuted.                                                                                                |
+| **Phase 5** | StarVault Staking & Yield Claims       | Checkpointed yield accumulator, Hipparcos star pools    | **COMPLETED** (PR #9)     | ✅ **Production Ready:** Infallible saturating math, OpenZeppelin Merkle proofs, clock regression protection audited and tested.                                                                                                                                                                                                                                                                                                                        |
+| **Phase 6** | Constellation AMM & LP Deed Positions  | Constant-product AMM, owner-seeded LP position PDAs     | **REMEDIATED & HARDENED** | ✅ **Feeder Hardened:** Client-supplied planets strictly rejected (400); server ephemeris derived from Keplerian math; coordinate validation; sliding rate limiter; KMS HSM signer integrated; 7 tests passing in [`test/solana/amm-attestation.spec.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/test/solana/amm-attestation.spec.ts).                                                                                               |
+| **Phase 7** | Mainnet Deployment & Live Rehearsal    | Mainnet deployment runbook, Genesis check, Verification | **NOT IMPLEMENTED**       | 🛑 **Launch Blocker:** All 4 release artifacts missing; program has no account on Mainnet-Beta.                                                                                                                                                                                                                                                                                                                                                         |
+| **Worker**  | Off-chain Settlement Sync Service      | Real-time event ingestion and outbox webhook delivery   | **REMEDIATED & VERIFIED** | ✅ **Production Ready:** Fixed Prisma client dereferencing, webhook Authorization header dispatch, depth monitoring, heartbeat schema matching, `--dry-run` flag support, and added to [`tsconfig.solana.json`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/tsconfig.solana.json) with 5 passing tests in [`test/solana/sync-worker.spec.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/test/solana/sync-worker.spec.ts). |
 
 ---
+
+## 2. Pre-Mainnet Readiness Audit & Go/No-Go Assessment
+
+### 2.1 Audit Verdict & Area Scorecard
+
+**Audit Date:** September 2026  
+**Audited Commit:** [`069178a`](https://github.com/gregcastro23/alchm-agents-solana/commit/069178a)  
+**Overall Verdict:** **NOT READY FOR SOLANA MAINNET-BETA ONBOARDING (BLOCKED)**
+
+At audit time, program [`5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD`](https://explorer.solana.com/address/5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD?cluster=devnet) was executable on Devnet, but returned **no account on Mainnet-Beta**.
+
+| Audit Area                       | Readiness               | Summary Evaluation                                                                                                              |
+| :------------------------------- | :---------------------- | :------------------------------------------------------------------------------------------------------------------------------ |
+| **On-chain protocol core**       | Promising / Devnet only | PDA replay protection, Token-2022 restrictions, lossless integer scaling, and pause controls are robustly modeled.              |
+| **Mainnet deployment & genesis** | 🛑 **BLOCKED**          | Phase 7 is unwritten; 4 mandatory deployment artifacts missing; no Mainnet genesis check; no program on Mainnet.                |
+| **Wallet onboarding & UI**       | 🛑 **BLOCKED**          | Hardcoded Devnet fallbacks across wallet provider, Solflare adapter, explorer links, claim route, and UI badges.                |
+| **Off-chain settlement sync**    | 🛑 **BLOCKED**          | Critical runtime failure in sync runner; dropped webhook secret; bad store method; omitted from TypeScript compilation.         |
+| **KMS / Geyser operations**      | ⚠️ **INCOMPLETE**       | KMS packages undeclared/uninstalled; Yellowstone Geyser has no concrete package or factory; fallback to raw files & WebSockets. |
+| **Test & release evidence**      | ⚠️ **PARTIAL**          | 137 TS unit tests pass, but 0 tests cover AMM attestation; no Mainnet integration run; live Devnet E2E AMM pass pending.        |
+
+---
+
+### 2.2 Critical Launch Blockers (Detailed Root Causes & Reproduction)
+
+#### 🛑 Blocker 1: Phase 7 Is Not Implemented and Mainnet Is Not Deployed
+
+- **Root Cause:** Program `5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD` does not exist on Mainnet-Beta. The migration roadmap previously queued Phase 7, but failed to provide the four mandatory production artifacts:
+  1. Verifiable deployment runner: [`scripts/deploy/deploy-mainnet.sh`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/scripts/deploy/deploy-mainnet.sh)
+  2. Idempotent on-chain initializer: [`scripts/deploy/init-mainnet.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/scripts/deploy/init-mainnet.ts)
+  3. Deployment artifact registry: [`deployments/solana-mainnet.json`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/deployments/solana-mainnet.json)
+  4. Production environment template: [`.env.production.sample`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/.env.production.sample)
+- **Impact:** The only deployment script in [`package.json`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/package.json) (`scripts/deploy-solana-devnet.mjs`) hardcodes Devnet RPC and keypaths. There is zero automated or verifiable path to deploy to Mainnet-Beta.
+
+#### 🛑 Blocker 2: Active Settlement-Sync Worker Is Broken at Runtime
+
+- **Reproduction:** Running `bun run solana:sync` immediately crashes:
+  ```
+  TypeError: undefined is not an object (evaluating 'args.client.solanaSyncOutbox')
+  ```
+- **Code Seams & Root Causes:**
+  1. In [`scripts/run-asol-solana-service.ts#L104-L108`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/scripts/run-asol-solana-service.ts#L104-L108), `startSolanaSyncOutboxPolling` is called as:
+     ```typescript
+     startSolanaSyncOutboxPolling({ store, dispatch, serialize: encodeSolanaSyncBody })
+     ```
+     However, [`startSolanaSyncOutboxPolling`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/solana-sync-service.ts#L451-L456) expects `{ client: PrismaSyncOutboxClient, deliver: (payload: string) => Promise<void> }`. It immediately dereferences `args.client.solanaSyncOutbox`, throwing a fatal TypeError on `undefined`.
+  2. **Auth Header Silently Dropped:** [`scripts/run-asol-solana-service.ts#L98-L101`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/scripts/run-asol-solana-service.ts#L98-L101) passes `{ url: webhookUrl, secret }` to `createSolanaSyncWebhookBodyDispatcher`, but [`createSolanaSyncWebhookBodyDispatcher`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/solana-sync-service.ts#L414-L418) expects `bearerToken`, not `secret`. As a result, the `Authorization: Bearer <token>` header is omitted completely, causing target webhooks to reject delivery.
+  3. **Nonexistent Method Call:** [`scripts/run-asol-solana-service.ts#L112`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/scripts/run-asol-solana-service.ts#L112) executes `store.getOutboxDepth()`. The store defines `getQueueDepth()`, not `getOutboxDepth()`.
+  4. **CI Invisibility:** `scripts/run-asol-solana-service.ts` was excluded from both `tsconfig.json` and [`tsconfig.solana.json`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/tsconfig.solana.json), meaning neither `bun run typecheck` nor `bun run typecheck:solana` ever type-checked the active service runner.
+
+#### 🛑 Blocker 3: Mainnet Onboarding Remains Hard-Coded as Devnet
+
+- **Code Seams & Root Causes:**
+  1. [`components/providers/SolanaWalletProvider.tsx#L48`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/components/providers/SolanaWalletProvider.tsx#L48): Fallback RPC is hardcoded to `'https://api.devnet.solana.com'`.
+  2. [`components/providers/SolanaWalletProvider.tsx#L217`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/components/providers/SolanaWalletProvider.tsx#L217): Solflare adapter is explicitly configured for `network: WalletAdapterNetwork.Devnet`.
+  3. [`components/providers/SolanaWalletProvider.tsx#L259`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/components/providers/SolanaWalletProvider.tsx#L259): Network badge renders hardcoded `"Base + Solana Devnet"`.
+  4. [`lib/solana/asol-solana-client.ts#L79`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/asol-solana-client.ts#L79): `solanaExplorerTxUrl` unconditionally appends `?cluster=devnet`.
+  5. [`app/api/esms/claim/route.ts#L93-L94`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/app/api/esms/claim/route.ts#L93-L94): Fallback chain string is `'solana-devnet'`.
+  6. Service runners log `"[Sync] Solana Devnet outbox sync started"` unconditionally.
+- **Impact:** A single missing or misconfigured environment variable will silently route production users and real capital to Solana Devnet without failing closed.
+
+#### 🛑 Blocker 4: Token Metadata Is Not Permanent Yet
+
+- **Code Seams & Root Causes:**
+  1. Program constants in [`programs/asol_program/src/constants.rs#L65-L70`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/programs/asol_program/src/constants.rs#L65-L70) still point to mutable endpoints:
+     ```rust
+     pub const ESMS_METADATA_URIS: [&str; ESMS_MINT_COUNT] = [
+         "https://alchm.kitchen/metadata/esms/spirit.json",
+         "https://alchm.kitchen/metadata/esms/essence.json",
+         "https://alchm.kitchen/metadata/esms/matter.json",
+         "https://alchm.kitchen/metadata/esms/substance.json",
+     ];
+     ```
+  2. [`metadata/solana/arweave-manifest.json`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/metadata/solana/arweave-manifest.json) contains all `null` values for sha256, txId, and remote URIs. No assets have been uploaded to Arweave/Irys.
+- **Consensus-Critical Invariant:** Anchor `asol_program` has **no metadata update instruction**. The URIs written during `initialize_esms_mints` are permanently immutable. Initializing Mainnet with current constants locks the mutable `alchm.kitchen` endpoints forever, violating Token-2022 permanence guarantees.
+
+#### 🛑 Blocker 5: KMS and Yellowstone Support Are Scaffolding, Not Deployable
+
+- **Code Seams & Root Causes:**
+  1. [`lib/solana/kms-signer.ts#L104-L144`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/kms-signer.ts#L104-L144) dynamically imports `@aws-sdk/client-kms` and `@google-cloud/kms`. Neither package is declared in [`package.json`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/package.json) dependencies or devDependencies. In production environments where local keypair fallback is blocked, the service crashes immediately with module resolution errors.
+  2. [`lib/solana/rpc-failover.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/rpc-failover.ts) defines `YellowstoneGeyserClientLike` as an injectable TypeScript interface. No concrete Yellowstone gRPC client dependency exists in the repository, and [`scripts/run-asol-solana-service.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/scripts/run-asol-solana-service.ts) supplies no factory. Configured Geyser streams silently fall back to standard WebSocket `onLogs`.
+
+#### 🛑 Blocker 6: AMM Attestation Authority Is Explicitly Demo-Grade
+
+- **Code Seams & Root Causes:**
+  1. [`app/api/solana/amm-attestation/route.ts#L57`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/app/api/solana/amm-attestation/route.ts#L57): Accepts untrusted `planets?: LivePlanet[]` and `observer: { lat: number; lon: number }` directly from the client POST body. A malicious trader can submit synthetic planetary positions to open any pool on demand, bypassing sky-gating.
+  2. [`lib/solana/amm-attestor.ts#L41-L50`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/amm-attestor.ts#L41-L50): Loads the AMM attestor key from raw environment variables or disk files (`SOLANA_ATTESTOR_KEYPAIR`) rather than an HSM/KMS-backed signer.
+- **Impact:** Compromising this raw key allows arbitrary attestation generation across all liquidity pools, subverting the AMM's celestial gating invariants.
+
+---
+
+### 2.3 Material Weaknesses & Operational Vulnerabilities
+
+#### ⚠️ Weakness 1: Finality & Settlement Reconciliation Gap
+
+- User-facing transactions in [`AsolSolanaClient.sendInstructions`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/asol-solana-client.ts#L310) and backend claims in [`mintEsmsClaimSolana`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/solana-minter.ts#L151) await `'confirmed'` commitment.
+- Conversely, the indexer in [`solana-sync-service.ts#L520-L552`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/solana-sync-service.ts#L520-L552) processes transactions via `getFinalizedTransaction` and tracks `finalized` slots.
+- During Solana network forks or short-lived rollbacks, transactions marked `'confirmed'` can be dropped or reordered before reaching `'finalized'`, creating an unhedged reconciliation gap between client UI state, off-chain ledger balances, and on-chain state.
+
+#### ⚠️ Weakness 2: Bridge Worker Limited to Testnets
+
+- [`scripts/run-asol-solana-service.ts#L124-L160`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/scripts/run-asol-solana-service.ts#L124-L160) hardcodes `createBaseSepoliaClients` and wires Base Sepolia (`eip155:84532`) to Solana Devnet.
+- There is no production dual-rail runner linking Base Mainnet (`eip155:8453`) to Solana Mainnet-Beta.
+
+#### ⚠️ Weakness 3: High Mint Limit & Missing Velocity/Supply Caps
+
+- [`programs/asol_program/src/constants.rs#L17`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/programs/asol_program/src/constants.rs#L17) defines `MAX_LEDGER_ATOMS = 999_999_999_999` ($999,999,999.9999$ tokens per element per claim).
+- While on-chain `ClaimReceipt` PDAs prevent double-claiming a single `claim_id`, the protocol has **no on-chain daily velocity cap, aggregate supply ceiling, or governance timelock**. If a minter key is compromised, an attacker can mint up to 1 billion tokens per element in a single instruction.
+
+#### ⚠️ Weakness 4: Test Matrix & Rehearsal Gaps
+
+- Zero unit or integration tests exist for [`app/api/solana/amm-attestation/route.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/app/api/solana/amm-attestation/route.ts).
+- No Mainnet integration command exists (`bun run test:solana:mainnet`).
+- The roadmap's mandatory live Devnet end-to-end AMM lifecycle rehearsal (`register -> bootstrap -> add -> swap -> partial withdraw -> full withdraw`) against live Token-2022 remains outstanding.
+
+---
+
+### 2.4 Validated Protocol Strengths (What Is in Good Shape)
+
+Despite operational blockers, the protocol core demonstrates strong, audited cryptographic and systems design:
+
+1. **Deterministic PDA Replay Protection:** [`ClaimReceipt`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/programs/asol_program/src/state.rs) and [`OrderReceipt`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/programs/asol_program/src/state.rs) PDAs prevent replay attacks and double-settlement.
+2. **Token-2022 Soulbound Protection:** All 4 ESMS mints enforce `NonTransferable`, `PermissionedBurn`, `PermanentDelegate`, and `MetadataPointer`.
+3. **Lossless $10^4$ Math Boundary:** Raw $u64$ atoms and $u128$ intermediate math prevent precision loss; client SDK strictly avoids floating-point operations.
+4. **Sysvar Introspection Security:** `redeem_for_esms` and AMM instructions verify preceding `Ed25519Program` signatures via `SYSVAR_INSTRUCTIONS_PUBKEY` with domain separation.
+5. **Toolchain & Build Integrity:** SBF build scripts enforce the 4 KiB stack limit, fail on linker overflows, and maintain clean worktrees with zero tracked secrets. Full-app and Solana-specific typechecks pass.
+
+---
+
+### 2.5 Recommended Remediation Sequence
+
+To achieve a production-ready, verified Mainnet launch, execution must strictly follow this six-step dependency sequence:
+
+```
+┌────────────────────────────────────────────────────────────────────────────────────────┐
+│                          SIX-STEP MAINNET REMEDIATION ROADMAP                          │
+├────────────────────────────────────────────────────────────────────────────────────────┤
+│ Step 1: Repair & Test Sync Worker (poller API, bearerToken, queueDepth, tsconfig)      │
+│                                           │                                            │
+│ Step 2: Unified Typed SolanaNetworkConfig (genesis check, fail-closed Devnet guard)    │
+│                                           │                                            │
+│ Step 3: Production-Grade Authority Ops (concrete KMS, HSM attestor, server ephemeris)  │
+│                                           │                                            │
+│ Step 4: Finish Immutable Asset Path (Irys upload, manifest commit, constants.rs pin)   │
+│                                           │                                            │
+│ Step 5: Implement Phase 7 Artifacts (deploy runner, init script, registry, Squads)     │
+│                                           │                                            │
+│ Step 6: Gated Mainnet Pilot (finalized commitment, reconciliation alert, allowlist)    │
+└────────────────────────────────────────────────────────────────────────────────────────┘
+```
+
+1. **Step 1: Repair and Test the Settlement-Sync Worker First**
+   - Correct [`scripts/run-asol-solana-service.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/scripts/run-asol-solana-service.ts) to call `startSolanaSyncOutboxPolling({ client, deliver: dispatch })`.
+   - Pass `bearerToken: secret` into `createSolanaSyncWebhookBodyDispatcher`.
+   - Replace `store.getOutboxDepth()` with `store.getQueueDepth()`.
+   - Add fail-fast startup validation for all required environment variables.
+   - Include `scripts/run-asol-solana-service.ts` in [`tsconfig.solana.json`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/tsconfig.solana.json) and add an end-to-end worker spec (`test/solana/sync-worker.spec.ts`).
+
+2. **Step 2: Create a Single Typed `SolanaNetworkConfig`**
+   - Implement `SolanaNetworkConfig` as the single source of truth for:
+     - RPC endpoints and failover lists
+     - Expected cluster genesis hash (`5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d` for Mainnet-Beta)
+     - Wallet-adapter network enum
+     - Explorer URL builder (omitting `?cluster=devnet` in production)
+     - Service health response schemas, claim record defaults, and UI network badges
+   - **Fail-Closed Rule:** In production (`NODE_ENV=production` or `SOLANA_NETWORK=mainnet-beta`), reject Devnet fallbacks; if cluster genesis does not match Mainnet-Beta, abort immediately.
+
+3. **Step 3: Make Authority Operations Production-Grade**
+   - Declare and install concrete KMS client packages (`@aws-sdk/client-kms` or `@google-cloud/kms`) in [`package.json`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/package.json).
+   - Migrate [`lib/solana/amm-attestor.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/amm-attestor.ts) to utilize `KmsSolanaSigner` with HSM-backed keys.
+   - Either declare a concrete Yellowstone gRPC client package and inject its factory into service runners, or remove the Yellowstone marketing claim and standardize on WebSocket failover.
+   - Rewrite [`app/api/solana/amm-attestation/route.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/app/api/solana/amm-attestation/route.ts) to calculate planetary positions server-side via trusted astronomical ephemeris, removing client-supplied `planets` and enforcing strict IP/rate abuse limits.
+
+4. **Step 4: Finish the Immutable Asset Path & Rehearse on Devnet**
+   - Execute the live two-pass Arweave upload via Irys using [`scripts/metadata/upload-arweave-metadata.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/scripts/metadata/upload-arweave-metadata.ts).
+   - Read back and verify all uploaded SVGs and JSON manifests; commit the populated [`metadata/solana/arweave-manifest.json`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/metadata/solana/arweave-manifest.json).
+   - Replace placeholder URIs in [`programs/asol_program/src/constants.rs`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/programs/asol_program/src/constants.rs) with verified Arweave links (`https://arweave.net/<txId>`).
+   - Re-deploy to Devnet and conduct a fresh end-to-end rehearsal (existing Devnet mints are retired-in-place).
+
+5. **Step 5: Implement Phase 7 Artifacts Before Any Mainnet Onboarding**
+   - Write [`scripts/deploy/deploy-mainnet.sh`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/scripts/deploy/deploy-mainnet.sh) with verifiable Docker build steps and genesis hash checking.
+   - Write [`scripts/deploy/init-mainnet.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/scripts/deploy/init-mainnet.ts) with idempotent PDA initialization for `ProgramConfig` and the 4 `EsmsMint` accounts.
+   - Commit initial [`deployments/solana-mainnet.json`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/deployments/solana-mainnet.json) and generate [`.env.production.sample`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/.env.production.sample).
+   - Deploy `asol_program` to Mainnet-Beta, execute initialization, transfer upgrade and admin authorities to the Squads v4 multisig vault, and publish the `solana-verify` hash.
+
+6. **Step 6: Run a Gated Mainnet Pilot Only After Acceptance Tests**
+   - Upgrade settlement transactions to require `'finalized'` commitment before marking claims settled off-chain.
+   - Implement durable reconciliation between PostgreSQL claims, Token-2022 mint supplies, and outbox logs.
+   - Configure real-time alerting for RPC failovers, outbox queue lag, and signature drops.
+   - Conduct emergency pause and rollback drills via Squads multisig.
+   - Gate initial Mainnet access to a small allowlisted cohort with conservative funding limits.
+
+---
+
+### 2.6 Audit Verification Context & Toolchain Notes
+
+- **Commit Audited:** `069178a` with no untracked modifications.
+- **Toolchain Requirements:**
+  - Bun: `1.3.13`
+  - Rust: `1.79.0`
+  - Anchor CLI: `0.30.1`
+  - Solana CLI: `1.18.17`
+  - Docker: `backpackapp/build:v0.30.1` (verifiable builds)
+  - `solana-verify`: Pinned for on-chain bytecode reproduction
+- **Execution Environment Note:** Local Rust/SBF execution requires the pinned Solana and Anchor toolchains. Vitest runs must be executed under Bun with native Rollup bindings matching the host architecture. Release evidence must be generated directly from the pinned CI environment.
+
+---
+
+## 3. Detailed Phase Specifications & Implementation Prompts
 
 ## Prompt 1 — Governance & Cloud KMS Key Management (Phase 1) [COMPLETED — PR #4]
 
@@ -93,8 +314,12 @@ Phase 1 introduced **Cloud KMS HSM** (AWS KMS / GCP Cloud KMS) via asymmetric Ed
 
 ### Prompt 1 (XML Structured)
 
+> [!WARNING]
+> **Audit Reality Check (Phase 1): Scaffolding Only / Missing Declared Dependencies**  
+> While [`lib/solana/kms-signer.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/kms-signer.ts) provides clean dynamic imports for `@aws-sdk/client-kms` and `@google-cloud/kms`, **neither package is installed or declared in `package.json`**. In production, the minter crashes on module resolution unless dependencies are formally added. Local keypair fallback is active on Devnet, which is prohibited on Mainnet.
+
 ```xml
-<prompt id="asol-phase-1-kms-governance" status="completed" pr="4">
+<prompt id="asol-phase-1-kms-governance" status="scaffolding-needs-deps" pr="4">
   <context>
     <repository>AlchmAgentsSolana (ASOL)</repository>
     <program_id>5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD</program_id>
@@ -161,6 +386,10 @@ Phase 1 introduced **Cloud KMS HSM** (AWS KMS / GCP Cloud KMS) via asymmetric Ed
 ### Context & Architectural Seams
 
 During high Mainnet traffic, fixed-fee Solana transactions risk starvation or block expiration. Furthermore, reliance on a single public or private RPC creates single-point-of-failure vulnerabilities. This phase introduces dynamic compute unit budgeting, real-time priority fee estimation, and Yellowstone gRPC Geyser stream failover into [`lib/solana/rpc-failover.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/rpc-failover.ts) and [`lib/solana/solana-sync-service.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/solana-sync-service.ts).
+
+> [!WARNING]
+> **Audit Reality Check (Phase 2): Yellowstone Client Abstract / Fallback to WebSockets**  
+> While dynamic priority fees and CU budgeting are verified, Yellowstone Geyser support is currently limited to an injectable TypeScript interface (`YellowstoneGeyserClientLike`). No concrete Yellowstone gRPC client dependency exists in `package.json`, and service runners supply no factory. In practice, all event subscriptions degrade to WebSocket `onLogs` and polling. For Mainnet-Beta, either wire a concrete client or explicitly baseline on WebSocket streaming.
 
 ### Implemented Deliverables
 
@@ -255,11 +484,17 @@ During high Mainnet traffic, fixed-fee Solana transactions risk starvation or bl
 
 ---
 
-## Prompt 3 — Dual-Rail Storefront Wiring & Detached Ed25519 Solana Burn Checkout (Phase 3) [COMPLETED — PR #6]
+## Prompt 3 — Dual-Rail Storefront Wiring & Detached Ed25519 Solana Burn Checkout (Phase 3) [COMPLETED ON DEVNET — MAINNET CONFIG BLOCKED]
 
 ### Context & Architectural Seams
 
 The digital shop ([`components/shop/ShopClient.tsx`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/components/shop/ShopClient.tsx) and [`app/api/shop/purchase/route.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/app/api/shop/purchase/route.ts)) currently executes sponsored burns exclusively against the Base Sepolia ERC-1155 contract via EIP-712 challenges. This phase wires the native Solana checkout flow using `redeem_for_esms`, detached Ed25519 wallet signing, and the multi-chain wallet facade ([`lib/web3/multi-chain-wallet.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/web3/multi-chain-wallet.ts)).
+
+> [!CAUTION]
+> **Audit Reality Check (Phase 3): Hardcoded Devnet Configuration & Finality Gap**
+>
+> 1. **Devnet Hardcoding:** [`SolanaWalletProvider.tsx`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/components/providers/SolanaWalletProvider.tsx) defaults to Devnet RPC, explicitly hardcodes Solflare adapter to `WalletAdapterNetwork.Devnet`, and renders a static badge `"Base + Solana Devnet"`. Explorer links in [`asol-solana-client.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/asol-solana-client.ts) append `?cluster=devnet`. Missing environment variables silently route production traffic to Devnet.
+> 2. **Finality Reconciliation Gap:** Transactions are committed at `'confirmed'` rather than `'finalized'`, while the event sync indexer operates on `'finalized'` slots. In production, this allows transient micro-forks to revert state after the client assumes settlement. Both must be unified under `SolanaNetworkConfig` with `'finalized'` economic settlement.
 
 ### Target Files
 
@@ -272,7 +507,7 @@ The digital shop ([`components/shop/ShopClient.tsx`](file:///Users/cookingwithca
 ### Prompt 3 (XML Structured)
 
 ```xml
-<prompt id="asol-phase-3-storefront-checkout">
+<prompt id="asol-phase-3-storefront-checkout" status="devnet-only-remediation-required">
   <context>
     <repository>AlchmAgentsSolana (ASOL)</repository>
     <program_id>5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD</program_id>
@@ -339,13 +574,19 @@ The digital shop ([`components/shop/ShopClient.tsx`](file:///Users/cookingwithca
 
 ---
 
-## Prompt 4 — Mainnet Token-2022 Metadata & Verifiable Anchor Builds (Phase 4) [COMPLETED]
+## Prompt 4 — Mainnet Token-2022 Metadata & Verifiable Anchor Builds (Phase 4) [PENDING LIVE ARWEAVE UPLOAD & REHEARSAL — LAUNCH BLOCKER]
 
-> **Pull Request:** [#7](https://github.com/gregcastro23/alchm-agents-solana/pull/7)
+> **Pull Request:** [#7](https://github.com/gregcastro23/alchm-agents-solana/pull/7) (Tooling and Schemas Merged; Live Upload Unexecuted)
 
 ### Context & Architectural Seams
 
 The 4 ESMS mints carry placeholder URIs (`https://alchm.kitchen/metadata/esms/*.json`) in `programs/asol_program/src/constants.rs:24`. Mainnet requires permanent Arweave URIs uploaded via Irys before Mainnet mints are initialized.
+
+> [!CAUTION]
+> **Audit Reality Check (Phase 4): Live Upload Unexecuted / Mutable URLs Active**  
+> While the tooling, schemas, and tests were written in PR #7, **no assets have been uploaded to Arweave**. [`metadata/solana/arweave-manifest.json`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/metadata/solana/arweave-manifest.json) contains all `null`s, and [`constants.rs`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/programs/asol_program/src/constants.rs) still hardcodes mutable `https://alchm.kitchen` links.
+>
+> Because Anchor `asol_program` has **no metadata-update instruction**, running `initialize_esms_mints` on Mainnet with current constants will permanently lock mutable web URLs into the mint accounts. Live upload via Irys, manifest commit, constants replacement, and a fresh Devnet rehearsal are **hard launch blockers** for Mainnet.
 
 **Consensus-Critical Invariants:**
 
@@ -392,7 +633,7 @@ The 4 ESMS mints carry placeholder URIs (`https://alchm.kitchen/metadata/esms/*.
 ### Prompt 4 (XML Structured)
 
 ```xml
-<prompt id="asol-phase-4-metadata-verifiable-build" status="completed" pr="7">
+<prompt id="asol-phase-4-metadata-verifiable-build" status="blocked-unexecuted" pr="7">
   <context>
     <repository>AlchmAgentsSolana (ASOL)</repository>
     <repository_url>https://github.com/gregcastro23/alchm-agents-solana</repository_url>
@@ -525,6 +766,14 @@ called repeatedly without burning tokens, which lets an admin mint unbacked
 withdrawable Deeds. The Solana port closes that hole with **one-time bootstrapping
 whose shares are permanently locked**, and diverges from Arc on the position itself.
 
+> [!CAUTION]
+> **Audit Reality Check (Phase 6): Demo-Grade Attestation Feeder & Missing Route Tests**
+>
+> 1. **Untrusted Celestial Inputs:** [`app/api/solana/amm-attestation/route.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/app/api/solana/amm-attestation/route.ts) accepts untrusted `planets` and `observer` objects directly in the POST payload. Callers can synthesize favorable planetary aspects and sky coordinates to open closed pools at will. A production implementation must compute ephemeris server-side based strictly on system UTC time and authenticated geo-coordinates.
+> 2. **Raw Attestor Key Exposure:** [`lib/solana/amm-attestor.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/lib/solana/amm-attestor.ts) resolves `SOLANA_ATTESTOR_KEYPAIR` from local disk or raw environment variables. It must be migrated to `KmsSolanaSigner` with an HSM-backed key.
+> 3. **Zero Test Coverage for Attestation Route:** While 137 Solana tests exist, none covers `app/api/solana/amm-attestation/route.ts`.
+> 4. **Outstanding Devnet E2E Pass:** The live Devnet lifecycle rehearsal (`register -> bootstrap -> add -> swap -> partial withdraw -> full withdraw`) against live Token-2022 remains unexecuted.
+
 ### The one divergence a reader has to know
 
 **Solana LP positions are not transferable.** `ConstellationDeed` is a transferable
@@ -616,26 +865,45 @@ driven through the SDK builders against the live Token-2022 program.
 
 ---
 
-## Prompt 7 — Mainnet Deployment, Rehearsal & Verification Runbook (Phase 7)
+## Prompt 7 — Mainnet Deployment, Rehearsal & Verification Runbook (Phase 7) [LAUNCH BLOCKER — UNIMPLEMENTED]
 
 ### Context & Architectural Seams
 
 The final phase executes the Mainnet deployment of `asol_program`, initializes the `ProgramConfig` and the 4 `EsmsMint` accounts on Solana Mainnet-Beta, performs deterministic bytecode verification via `solana-verify`, and switches production environment configurations.
 
-### Target Files
+> [!CAUTION]
+> **Audit Reality Check (Phase 7): Missing All Deployment Artifacts & Uninitialized Program**  
+> Phase 7 is **completely unwritten**. At audit time, `5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD` does not exist on Mainnet-Beta. The 4 required artifacts ([`scripts/deploy/deploy-mainnet.sh`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/scripts/deploy/deploy-mainnet.sh), [`scripts/deploy/init-mainnet.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/scripts/deploy/init-mainnet.ts), [`deployments/solana-mainnet.json`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/deployments/solana-mainnet.json), and [`.env.production.sample`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/.env.production.sample)) must be created, and the program must be verified against the official Mainnet-Beta genesis hash (`5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d`).
 
-- `[NEW]` `scripts/deploy/deploy-mainnet.sh` — Verifiable build and deployment runner.
-- `[NEW]` `scripts/deploy/init-mainnet.ts` — Idempotent Mainnet PDA initialization script.
-- `[NEW]` `deployments/solana-mainnet.json` — Deployment artifact registry.
-- `[MODIFY]` `.env.production.sample` — Production environment template.
+### Target Deliverables
+
+- `[NEW]` [`scripts/deploy/deploy-mainnet.sh`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/scripts/deploy/deploy-mainnet.sh) — Verifiable Docker build and Mainnet deployment runner.
+- `[NEW]` [`scripts/deploy/init-mainnet.ts`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/scripts/deploy/init-mainnet.ts) — Idempotent Mainnet PDA initialization script with fail-closed genesis check.
+- `[NEW]` [`deployments/solana-mainnet.json`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/deployments/solana-mainnet.json) — Deployment artifact registry recording program ID, mint PDAs, and slot numbers.
+- `[NEW]` [`.env.production.sample`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/.env.production.sample) — Production environment template enforcing `SOLANA_NETWORK=mainnet-beta`.
+
+### Mainnet Readiness & Go/No-Go Acceptance Checklist
+
+Before executing Mainnet deployment or opening onboarding, all nine acceptance gates must be checked and signed off:
+
+- [ ] **Gate 1 (Sync Worker Fixed):** `scripts/run-asol-solana-service.ts` correctly calls `startSolanaSyncOutboxPolling({ client, deliver })`, passes `bearerToken`, calls `getQueueDepth()`, and is included in `tsconfig.solana.json`.
+- [ ] **Gate 2 (Typed Network Config):** Unified `SolanaNetworkConfig` validates cluster genesis hash (`5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d`), strips `?cluster=devnet` from explorer links, and rejects Devnet fallback in production.
+- [ ] **Gate 3 (Arweave Metadata Committed):** All 4 SVGs and token manifests uploaded to Arweave via Irys; [`arweave-manifest.json`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/metadata/solana/arweave-manifest.json) committed with valid txIds/hashes; [`constants.rs`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/programs/asol_program/src/constants.rs) updated with permanent Arweave URIs.
+- [ ] **Gate 4 (Devnet Rehearsal Complete):** Fresh deployment to Devnet confirms initialization, minting, and burning with permanent Arweave URIs; full AMM lifecycle pass executed.
+- [ ] **Gate 5 (KMS Dependencies Declared):** `@aws-sdk/client-kms` or `@google-cloud/kms` installed in `package.json`; HSM signing verified in test suite without local fallback.
+- [ ] **Gate 6 (Hardened AMM Attestation):** `app/api/solana/amm-attestation/route.ts` recomputes astronomical aspects server-side using trusted ephemeris and rejects client-provided coordinates; attestor key uses KMS HSM.
+- [ ] **Gate 7 (Finalized Economic Settlement):** All user-facing redemptions and backend claims await `'finalized'` commitment before crediting balances off-chain.
+- [ ] **Gate 8 (Multisig Governance Transfer):** Squads v4 multisig created on Mainnet-Beta; program upgrade authority and `asol_program` admin/pauser roles transferred to the Squads Vault PDA.
+- [ ] **Gate 9 (Bytecode Verification):** `solana-verify` confirms on-chain binary matches GitHub commit hash inside `backpackapp/build:v0.30.1`.
 
 ### Prompt 7 (XML Structured)
 
 ```xml
-<prompt id="asol-phase-7-mainnet-deployment">
+<prompt id="asol-phase-7-mainnet-deployment" status="launch-blocker-queued">
   <context>
     <repository>AlchmAgentsSolana (ASOL)</repository>
     <program_id>5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD</program_id>
+    <mainnet_genesis_hash>5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d</mainnet_genesis_hash>
     <runtime>Bun</runtime>
     <description>
       Phase 7 of the Solana Migration: Execute the live production deployment of asol_program
@@ -651,15 +919,17 @@ The final phase executes the Mainnet deployment of `asol_program`, initializes t
     <file action="create">scripts/deploy/deploy-mainnet.sh</file>
     <file action="create">scripts/deploy/init-mainnet.ts</file>
     <file action="create">deployments/solana-mainnet.json</file>
-    <file action="modify">.env.production.sample</file>
+    <file action="create">.env.production.sample</file>
+    <file action="create">test/solana/sync-worker.spec.ts</file>
+    <file action="create">test/solana/amm-attestation.spec.ts</file>
   </target_files>
 
   <technical_specifications>
     <deployment_script>
       1. Create `scripts/deploy/deploy-mainnet.sh`:
          - Checks prerequisites: `bun`, `solana-cli` (1.18.17), `anchor` (0.30.1), `solana-verify`.
-         - Verifies cluster endpoint genesis hash matches Mainnet-Beta (`5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d`).
-         - Executes `anchor build --verifiable`.
+         - Verifies cluster endpoint genesis hash strictly matches Mainnet-Beta (`5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d`).
+         - Compiles reproducible binary via Docker: `anchor build --verifiable`.
          - Deploys program binary to `5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD`.
          - Executes `bun run scripts/deploy/init-mainnet.ts`.
          - Runs `solana-verify verify-from-repo` and outputs verification hash.
@@ -667,8 +937,8 @@ The final phase executes the Mainnet deployment of `asol_program`, initializes t
 
     <initialization_script>
       1. Create `scripts/deploy/init-mainnet.ts`:
-         - Loads deployer keypair from explicit secure path or Cloud KMS.
-         - Asserts cluster genesis hash is Mainnet-Beta.
+         - Loads deployer keypair from explicit Cloud KMS HSM.
+         - Asserts cluster genesis hash is strictly `5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d`.
          - Derives `ProgramConfig` PDA (`seeds = [b"program_authority"]`).
          - If `ProgramConfig` is uninitialized, calls `initialize_config` with:
            * `attestor`: Squads multisig vault or configured attestor public key.
@@ -676,6 +946,7 @@ The final phase executes the Mainnet deployment of `asol_program`, initializes t
            * `cluster_domain`: `sha256("ASOL_MAINNET_V1")`.
          - If `EsmsMint` accounts are uninitialized, calls `initialize_esms_mints`.
          - Asserts all 4 Token-2022 mint accounts exist and match expected extension layout (`NonTransferable`, `PermissionedBurn`, `PermanentDelegate`, `MetadataPointer`).
+         - Asserts each mint account metadata URI matches verified Arweave txId link.
          - Writes verified public addresses to `deployments/solana-mainnet.json`.
     </initialization_script>
   </technical_specifications>
@@ -684,38 +955,55 @@ The final phase executes the Mainnet deployment of `asol_program`, initializes t
     1. Perform full dry-run simulation against Localnet / Devnet:
        `ANCHOR_PROVIDER_URL=https://api.devnet.solana.com bun run scripts/deploy/init-mainnet.ts --dry-run`
     2. Confirm all unit and integration tests pass:
-       `bun test:solana && bunx vitest run test/solana/golden-vectors.spec.ts test/solana/solana-minter.spec.ts test/solana/kms-signer.spec.ts test/solana/sync-and-wallet.spec.ts test/solana/production-integration.spec.ts --config vitest.solana.config.ts`
+       `bun test:solana && bunx vitest run test/solana/golden-vectors.spec.ts test/solana/solana-minter.spec.ts test/solana/kms-signer.spec.ts test/solana/sync-and-wallet.spec.ts test/solana/production-integration.spec.ts test/solana/sync-worker.spec.ts test/solana/amm-attestation.spec.ts --config vitest.solana.config.ts`
   </testing_and_verification>
 </prompt>
 ```
 
 ---
 
-## 5. Verification & Test Run Matrix
+## 4. Verification & Test Run Matrix
 
-To guarantee continuous quality across all prompts, maintain the following testing matrix:
+To guarantee continuous quality, type safety, and consensus invariants across all prompts, maintain the following testing matrix:
 
 ```bash
-# Vector and Rust Anchor tests
+# SBF Program Build + IDL (with 4 KiB stack frame overflow detection)
+bun run solana:build
+
+# Typecheck Solana client, scripts, and test surfaces
+bun run typecheck:solana
+
+# Vector, Rust Anchor, and LiteSVM unit tests
 bun run test:solana
 
-# Full TypeScript Vitest suite
+# Full TypeScript Vitest suite (including worker and attestation routes)
 bunx vitest run test/solana/golden-vectors.spec.ts \
+                test/solana/constellation-amm.spec.ts \
                 test/solana/priority-fee.spec.ts \
                 test/solana/solana-minter.spec.ts \
+                test/solana/star-vault.spec.ts \
+                test/solana/shop-checkout.spec.ts \
+                test/solana/metadata-uris.spec.ts \
+                test/solana/upload-arweave-metadata.spec.ts \
                 test/solana/kms-signer.spec.ts \
                 test/solana/sync-and-wallet.spec.ts \
                 test/solana/production-integration.spec.ts \
+                test/solana/sync-worker.spec.ts \
+                test/solana/amm-attestation.spec.ts \
                 --config vitest.solana.config.ts
 ```
 
-| Verification Check     | Target Standard                 | Expected Outcome                                                                       |
-| :--------------------- | :------------------------------ | :------------------------------------------------------------------------------------- |
-| **Rust Unit Tests**    | 6 Anchor Program Tests          | All 6 tests pass in $< 0.1\text{s}$                                                    |
-| **Vitest Suite**       | 51+ Integration Tests           | All tests pass in $< 1.5\text{s}$                                                      |
-| **Integer Scaling**    | Lossless $10^4$ Conversion      | Zero rounding dust, no JS `number` precision leaks                                     |
-| **KMS HSM Signing**    | Ed25519 Message Authentication  | Private keys never touch memory in production; 64-byte Ed25519 signatures verified     |
-| **CU & Priority Fees** | Dynamic Profiling & 65th Pct    | CU limits at index 0, priority fee at index 1, bounds clamped [5k, 2M] micro-lamports  |
-| **Geyser Failover**    | 3-Tier Resilient Ingestion      | Sub-slot push via Yellowstone gRPC with automatic WebSocket & polling failover         |
-| **Extensions**         | Token-2022 Protocol Constraints | `NonTransferable`, `PermissionedBurn`, `PermanentDelegate`, `MetadataPointer` enforced |
-| **Replay Guards**      | Permanent PDAs                  | `ClaimReceipt` and `OrderReceipt` accounts prevent double-settlement                   |
+| Verification Check      | Target Standard                        | Expected Outcome                                                                                                 |
+| :---------------------- | :------------------------------------- | :--------------------------------------------------------------------------------------------------------------- |
+| **Rust Unit & LiteSVM** | 6 Anchor Program Tests + LiteSVM suite | All tests pass in $< 0.5\text{s}$; CU profile logged                                                             |
+| **Vitest Suite**        | 60+ Integration Tests                  | All tests pass in $< 2.0\text{s}$                                                                                |
+| **Integer Scaling**     | Lossless $10^4$ Conversion             | Zero rounding dust, no JS `number` precision leaks                                                               |
+| **KMS HSM Signing**     | Ed25519 Message Authentication         | Private keys never touch memory in production; 64-byte Ed25519 signatures verified                               |
+| **CU & Priority Fees**  | Dynamic Profiling & 65th Pct           | CU limits at index 0, priority fee at index 1, bounds clamped [5k, 2M] micro-lamports                            |
+| **Sync Worker Poller**  | `PrismaSyncOutboxClient` contract      | Valid client dereferencing, `bearerToken` dispatched, `queueDepth` monitored, included in `tsconfig.solana.json` |
+| **Network Config**      | Mainnet Genesis Hash Check             | Genesis hash matches `5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d`; Devnet fallback rejected in production      |
+| **Finality Settlement** | `'finalized'` Commitment               | User claims and shop burns await finality before off-chain balance reconciliation                                |
+| **AMM Attestation**     | Server Ephemeris & HSM Attestor        | Celestial gates computed server-side; client planets rejected; replay nonces strictly incremented                |
+| **Extensions**          | Token-2022 Protocol Constraints        | `NonTransferable`, `PermissionedBurn`, `PermanentDelegate`, `MetadataPointer` enforced                           |
+| **Replay Guards**       | Permanent PDAs                         | `ClaimReceipt`, `OrderReceipt`, and `PoolTraderNonce` prevent double-settlement                                  |
+| **Metadata Permanence** | Arweave Immutable URIs                 | All mint URIs point to immutable `https://arweave.net/<txId>`; zero mutable URLs on Mainnet                      |

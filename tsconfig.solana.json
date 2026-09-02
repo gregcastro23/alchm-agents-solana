@@ -9,7 +9,8 @@
     "lib/solana/**/*.ts",
     "test/solana/**/*.ts",
     "app/api/solana/**/*.ts",
-    "scripts/deploy-solana-devnet.mjs"
+    "scripts/deploy-solana-devnet.mjs",
+    "scripts/run-asol-solana-service.ts"
   ],
   "exclude": ["node_modules", "**/*.js"]
 }

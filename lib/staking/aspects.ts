@@ -9,6 +9,7 @@
 
 import { ELEMENT_BY_SIGN, ELEMENT_TO_ESMS, ZODIAC_SIGNS, type ZodiacSign } from './elements'
 import type { Element, EsmsId, LivePlanet, PlanetName } from './types'
+import { calculateAllPlanets } from '@/lib/enhanced-astronomical-calculator'
 
 export type AspectName = 'conjunction' | 'sextile' | 'square' | 'trine' | 'opposition'
 
@@ -34,7 +35,32 @@ export interface PlanetLong {
   sign: string
 }
 
-export function planetLongitudes(planets: LivePlanet[]): PlanetLong[] {
+/**
+ * Computes server-side live planetary positions using the trusted Keplerian/VSOP87 ephemeris.
+ */
+export function livePlanetsFromDate(date: Date | number = new Date()): LivePlanet[] {
+  const at = typeof date === 'number' ? new Date(date) : date
+  const chart = calculateAllPlanets({
+    year: at.getUTCFullYear(),
+    month: at.getUTCMonth() + 1,
+    day: at.getUTCDate(),
+    hour: at.getUTCHours(),
+    minute: at.getUTCMinutes(),
+    second: at.getUTCSeconds(),
+    latitude: 0,
+    longitude: 0,
+  })
+
+  return Object.entries(chart.planets).map(([name, pos]) => ({
+    planet: name as PlanetName,
+    sign: pos.sign,
+    degree: pos.signDegree,
+    retrograde: pos.retrograde,
+  }))
+}
+
+export function planetLongitudes(input: LivePlanet[] | Date | number = new Date()): PlanetLong[] {
+  const planets = Array.isArray(input) ? input : livePlanetsFromDate(input)
   return planets.map(p => {
     const si = ZODIAC_SIGNS.indexOf(p.sign as ZodiacSign)
     const longitude = si >= 0 ? si * 30 + p.degree : 0
@@ -99,8 +125,8 @@ const orbFor = (name: AspectName) => ASPECTS.find(a => a.name === name)?.orb ?? 
  * Favorable aspects between planets in *different* elements open an element-pair pool.
  * A Spirit↔Matter pool needs e.g. Sun (Fire) favorably aspecting Mercury (Earth).
  */
-export function aspectPools(planets: LivePlanet[]): ElementPool[] {
-  const longs = planetLongitudes(planets)
+export function aspectPools(input: LivePlanet[] | Date | number = new Date()): ElementPool[] {
+  const longs = planetLongitudes(input)
   const aspects = detectAspects(longs).filter(a => a.favorable && a.elemA !== a.elemB)
   return aspects.map(a => ({
     ids: [ELEMENT_TO_ESMS[a.elemA], ELEMENT_TO_ESMS[a.elemB]] as [EsmsId, EsmsId],

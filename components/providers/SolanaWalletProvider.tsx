@@ -43,9 +43,11 @@ import {
   formatEvmEsmsAmount,
 } from '@/lib/solana/base-sepolia-esms'
 import { formatEsmsRawAmount } from '@/lib/solana/esms'
+import { getSolanaNetworkConfig } from '@/lib/solana/network-config'
 import { useToast } from '@/hooks/use-toast'
 
-const RPC_URL = process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? 'https://api.devnet.solana.com'
+const networkConfig = getSolanaNetworkConfig()
+const RPC_URL = networkConfig.rpcUrls[0]
 const ESMS_KEYS = ['spirit', 'essence', 'matter', 'substance'] as const
 
 export type EsmsBalanceMap = Record<(typeof ESMS_KEYS)[number], string>
@@ -214,7 +216,7 @@ export function SolanaWalletProvider({ children }: { children: ReactNode }) {
   const wallets = useMemo(
     () => [
       new PhantomWalletAdapter(),
-      new SolflareWalletAdapter({ network: WalletAdapterNetwork.Devnet }),
+      new SolflareWalletAdapter({ network: networkConfig.walletNetwork }),
     ],
     []
   )
@@ -251,12 +253,13 @@ export function SolanaWalletConnectButton({ compact = false }: { compact?: boole
 }
 
 export function DualChainNetworkBadge() {
+  const label = networkConfig.networkBadgeLabel
   return (
     <span
       className="rounded-full border border-violet-400/30 bg-violet-950/40 px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-violet-200 hover:bg-violet-900/50"
-      aria-label="Base Sepolia and Solana Devnet"
+      aria-label={label}
     >
-      Base + Solana Devnet
+      {label}
     </span>
   )
 }

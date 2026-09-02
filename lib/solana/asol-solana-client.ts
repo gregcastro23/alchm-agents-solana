@@ -32,9 +32,10 @@ import {
   resolveComputeUnitLimit,
   type PriorityFeeOptions,
 } from '@/lib/solana/priority-fee'
+import { getSolanaNetworkConfig } from '@/lib/solana/network-config'
 
 const MAX_U64 = (1n << 64n) - 1n
-const DEFAULT_RPC = 'https://api.devnet.solana.com'
+const DEFAULT_RPC = getSolanaNetworkConfig().rpcUrls[0]
 
 export type EsmsAmounts = readonly [bigint, bigint, bigint, bigint]
 
@@ -76,8 +77,10 @@ export const ASOL_SOLANA_TRANSACTION_CONFIRMED_EVENT = 'asol:solana-transaction-
 export const AAE_SOLANA_TRANSACTION_CONFIRMED_EVENT = ASOL_SOLANA_TRANSACTION_CONFIRMED_EVENT
 
 export function solanaExplorerTransactionUrl(signature: string): string {
-  return `https://explorer.solana.com/tx/${encodeURIComponent(signature)}?cluster=devnet`
+  return getSolanaNetworkConfig().buildExplorerTxUrl(signature)
 }
+
+export const solanaExplorerTxUrl = solanaExplorerTransactionUrl
 
 /**
  * Thin Anchor client for AlchmAgentsSolana (ASOL). Chain state stays

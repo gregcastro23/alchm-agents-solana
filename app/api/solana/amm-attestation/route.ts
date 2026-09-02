@@ -39,10 +39,12 @@ import {
   getPoolTraderNonceAddress,
 } from '@/lib/solana/constellation-amm'
 import { ammAttestorPublicKey, signAmmVisibilityAttestation } from '@/lib/solana/amm-attestor'
-import { aspectPools, planetLongitudes } from '@/lib/staking/aspects'
+import * as aspects from '@/lib/staking/aspects'
 import { eclipticToHorizontal } from '@/lib/staking/astro'
 import { poolIdForPair } from '@/lib/solana/constellation-amm'
 import type { EsmsId, LivePlanet } from '@/lib/staking/types'
+
+import { getSolanaNetworkConfig } from '@/lib/solana/network-config'
 
 export const runtime = 'nodejs'
 
@@ -54,7 +56,34 @@ interface AmmAttestationRequest {
   poolId: number
   op: 'add_liquidity' | 'swap'
   observer: { lat: number; lon: number }
-  planets?: LivePlanet[]
+}
+
+interface RateLimitEntry {
+  count: number
+  resetAt: number
+}
+const rateLimits = new Map<string, RateLimitEntry>()
+
+export function checkAttestationRateLimit(
+  trader: string,
+  limit = 20,
+  windowMs = 10_000
+): { allowed: boolean; remaining: number } {
+  const now = Date.now()
+  const entry = rateLimits.get(trader)
+  if (!entry || now > entry.resetAt) {
+    rateLimits.set(trader, { count: 1, resetAt: now + windowMs })
+    return { allowed: true, remaining: limit - 1 }
+  }
+  if (entry.count >= limit) {
+    return { allowed: false, remaining: 0 }
+  }
+  entry.count += 1
+  return { allowed: true, remaining: limit - entry.count }
+}
+
+export function resetAttestationRateLimits(): void {
+  rateLimits.clear()
 }
 
 function pairLabel(poolId: number): string {
@@ -64,14 +93,25 @@ function pairLabel(poolId: number): string {
 }
 
 export async function POST(req: Request) {
-  let body: AmmAttestationRequest
+  let body: Record<string, unknown>
   try {
-    body = (await req.json()) as AmmAttestationRequest
+    body = (await req.json()) as Record<string, unknown>
   } catch {
     return NextResponse.json({ error: 'invalid JSON' }, { status: 400 })
   }
 
-  const { trader, poolId, op, observer, planets = [] } = body ?? {}
+  // Security Gate: Reject client-supplied planets to prevent forging astronomical gates
+  if ('planets' in body) {
+    return NextResponse.json(
+      {
+        error:
+          'Client-supplied planets are rejected for security. Planetary positions are calculated server-side via trusted astronomical ephemeris.',
+      },
+      { status: 400 }
+    )
+  }
+
+  const { trader, poolId, op, observer } = body as unknown as AmmAttestationRequest
 
   let traderKey: PublicKey
   try {
@@ -93,8 +133,30 @@ export async function POST(req: Request) {
   if (op !== 'add_liquidity' && op !== 'swap') {
     return NextResponse.json({ error: '`op` must be "add_liquidity" or "swap"' }, { status: 400 })
   }
-  if (!observer || typeof observer.lat !== 'number' || typeof observer.lon !== 'number') {
-    return NextResponse.json({ error: '`observer` lat/lon required' }, { status: 400 })
+  if (
+    !observer ||
+    typeof observer.lat !== 'number' ||
+    !Number.isFinite(observer.lat) ||
+    observer.lat < -90 ||
+    observer.lat > 90 ||
+    typeof observer.lon !== 'number' ||
+    !Number.isFinite(observer.lon) ||
+    observer.lon < -180 ||
+    observer.lon > 180
+  ) {
+    return NextResponse.json(
+      { error: 'Valid observer coordinates required: lat in [-90, 90], lon in [-180, 180]' },
+      { status: 400 }
+    )
+  }
+
+  // Abuse control: In-memory sliding rate limiter per trader
+  const rateLimit = checkAttestationRateLimit(traderKey.toBase58())
+  if (!rateLimit.allowed) {
+    return NextResponse.json(
+      { error: 'Too many attestation requests. Rate limit exceeded, please retry shortly.' },
+      { status: 429 }
+    )
   }
 
   const attestor = ammAttestorPublicKey()
@@ -102,18 +164,19 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         error:
-          'Solana attestor key not configured (set SOLANA_ATTESTOR_KEYPAIR). ' +
+          'Solana attestor key not configured (set SOLANA_ATTESTOR_KEYPAIR or AWS_KMS_KEY_ID). ' +
           'ARC_ATTESTOR_PRIVATE_KEY is secp256k1 and cannot sign for this path.',
       },
       { status: 503 }
     )
   }
 
-  // Gate 1: a favorable aspect must currently form this pair.
+  // Gate 1: a favorable aspect must currently form this pair via server-side trusted ephemeris.
+  const now = new Date()
   const pair = CONSTELLATION_PAIRS[poolId]
-  const active = aspectPools(planets).some(
-    pool => poolIdForPair(pool.ids[0] as EsmsId, pool.ids[1] as EsmsId) === poolId
-  )
+  const active = aspects
+    .aspectPools(now)
+    .some(pool => poolIdForPair(pool.ids[0] as EsmsId, pool.ids[1] as EsmsId) === poolId)
   if (!active) {
     return NextResponse.json(
       {
@@ -125,24 +188,22 @@ export async function POST(req: Request) {
     )
   }
 
-  // Gate 2: the sky must be risen.
-  const now = new Date()
-  const visibleStars = planetLongitudes(planets).filter(
-    longitude => eclipticToHorizontal(longitude.longitude, observer, now).visible
-  ).length
+  // Gate 2: the sky must be risen (computed server-side).
+  const visibleStars = aspects
+    .planetLongitudes(now)
+    .filter(longitude => eclipticToHorizontal(longitude.longitude, observer, now).visible).length
   if (visibleStars === 0) {
     return NextResponse.json({ error: 'no bodies risen — sky is set' }, { status: 409 })
   }
 
   // The trader's single-use, per-(pool, trader) nonce, read from chain.
-  const rpcUrl =
-    process.env.SOLANA_RPC_URL ??
-    process.env.NEXT_PUBLIC_SOLANA_RPC_URL ??
-    'https://api.devnet.solana.com'
+  const networkConfig = getSolanaNetworkConfig()
+  const rpcUrl = networkConfig.rpcUrls[0]
   let nonce: bigint
   try {
     const connection = new Connection(rpcUrl, 'confirmed')
-    nonce = await fetchPoolTraderNonce(connection, poolId, traderKey)
+    const rawNonce = await fetchPoolTraderNonce(connection, poolId, traderKey)
+    nonce = BigInt(rawNonce ?? 0n)
   } catch (error) {
     return NextResponse.json(
       { error: `failed to read PoolTraderNonce: ${(error as Error).message}` },
@@ -177,7 +238,7 @@ export async function POST(req: Request) {
   const deadline = BigInt(Math.floor(now.getTime() / 1000) + ATTESTATION_TTL_SECONDS)
   const opCode = op === 'swap' ? AMM_OP_SWAP : AMM_OP_ADD_LIQUIDITY
 
-  const signed = signAmmVisibilityAttestation({
+  const signed = await signAmmVisibilityAttestation({
     clusterDomain,
     trader: traderKey,
     poolId,
