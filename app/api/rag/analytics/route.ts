@@ -47,7 +47,9 @@ interface LogQueryRequest {
  * POST /api/rag/analytics - Log a RAG query
  */
 export async function POST(request: NextRequest) {
-  const access = await requireUserOrService(request)
+  // Public gallery chat may be used before sign-in. The CUID returned below,
+  // paired with the browser session id, is the anonymous feedback capability.
+  const access = await requireUserOrService(request, { allowAnonymous: true })
   if (!access.ok) return access.response
 
   try {
@@ -80,7 +82,8 @@ export async function POST(request: NextRequest) {
         sessionId: body.sessionId,
         // Browser input never chooses the stored identity. Service callers may
         // supply one when importing server-side telemetry.
-        userId: access.kind === 'user' ? access.user.id : body.userId,
+        userId:
+          access.kind === 'user' ? access.user.id : access.kind === 'service' ? body.userId : null,
         modelUsed: body.modelUsed,
         temperature: body.temperature,
         metadata: body.metadata,
@@ -202,12 +205,25 @@ export async function GET(request: NextRequest) {
       where: { ...where, ragUsed: true },
     })
 
+    const dataStatus = stats._count.id > 0 ? ('ok' as const) : ('empty' as const)
+    const healthStatus =
+      dataStatus === 'empty'
+        ? ('empty' as const)
+        : successCount / stats._count.id >= 0.95
+          ? ('excellent' as const)
+          : successCount / stats._count.id >= 0.8
+            ? ('good' as const)
+            : successCount / stats._count.id >= 0.6
+              ? ('fair' as const)
+              : ('poor' as const)
+
     return NextResponse.json({
       contract: {
         version: 1,
         generatedAt: new Date().toISOString(),
         source: 'postgres',
-        status: 'ok',
+        status: dataStatus,
+        healthStatus,
         content: 'redacted',
       },
       queries: queries.map(q => ({

@@ -160,11 +160,6 @@ export default function UserAdministrationPanel({
         }
         if (payload.unchanged) {
           setMutationNotice(payload.message)
-        } else if (payload.audit && payload.audit.recorded === false) {
-          // The change applied; the trail did not. Say both.
-          setMutationNotice(
-            `Updated ${payload.changed.join(', ')} — but the change was NOT recorded in the audit log (${payload.audit.reason}).`
-          )
         } else {
           setMutationNotice(`Updated ${payload.changed.join(', ')} and recorded to the audit log.`)
         }

@@ -48,6 +48,12 @@ describe('admin-adjacent operations authorization', () => {
   beforeEach(() => {
     vi.clearAllMocks()
     getServerSessionMock.mockResolvedValue(null)
+    db.users.findFirst.mockResolvedValue({
+      id: 'admin-1',
+      email: 'ops@example.com',
+      name: 'Ops',
+      role: 'admin',
+    } as never)
     db.admin_audit_log.create.mockResolvedValue({ id: 'audit-1' } as never)
   })
 
@@ -160,6 +166,21 @@ describe('admin-adjacent operations authorization', () => {
     expect(getServerSessionMock).not.toHaveBeenCalled()
   })
 
+  it('does not treat the kitchen sync credential as admin-adjacent service auth', async () => {
+    vi.stubEnv('ALCHM_KITCHEN_SYNC_SECRET', 'sync-secret')
+    const { DELETE } = await import('@/app/api/rag/cache/route')
+
+    const response = await DELETE(
+      request('/api/rag/cache', {
+        method: 'DELETE',
+        headers: { 'x-sync-secret': 'sync-secret' },
+      })
+    )
+
+    expect(response.status).toBe(401)
+    expect(ragCache.clear).not.toHaveBeenCalled()
+  })
+
   it('does not mutate RAG cache when the mandatory audit write fails', async () => {
     vi.stubEnv('INTERNAL_API_SECRET', 'service-secret')
     db.admin_audit_log.create.mockRejectedValue(new Error('audit unavailable'))
@@ -261,7 +282,8 @@ describe('admin-adjacent operations authorization', () => {
     expect((await response.json()).error).toContain('audit')
   })
 
-  it('requires an authenticated user to persist a RAG query', async () => {
+  it('allows anonymous gallery chat to persist a redacted-linkable RAG query', async () => {
+    db.rAGQuery.create.mockResolvedValue({ id: 'anonymous-query-1', sources: [] } as never)
     const { POST } = await import('@/app/api/rag/analytics/route')
 
     const response = await POST(
@@ -272,8 +294,11 @@ describe('admin-adjacent operations authorization', () => {
       })
     )
 
-    expect(response.status).toBe(401)
-    expect(db.rAGQuery.create).not.toHaveBeenCalled()
+    expect(response.status).toBe(200)
+    expect(await response.json()).toMatchObject({ success: true, queryId: 'anonymous-query-1' })
+    expect(db.rAGQuery.create).toHaveBeenCalledWith(
+      expect.objectContaining({ data: expect.objectContaining({ userId: null }) })
+    )
   })
 
   it('uses the signed-in user identity and returns the persisted RAG query ID', async () => {
@@ -392,5 +417,47 @@ describe('admin-adjacent operations authorization', () => {
     expect(db.rAGFeedback.create).toHaveBeenCalledWith({
       data: expect.objectContaining({ queryId: 'db-query-1', userId: 'user-1' }),
     })
+  })
+
+  it('returns feedback metadata without identifiers or comments', async () => {
+    getServerSessionMock.mockResolvedValue({
+      user: { id: 'admin-1', email: 'ops@example.com', role: 'admin' },
+      expires: new Date(Date.now() + 60_000).toISOString(),
+    } as never)
+    db.rAGFeedback.findMany.mockResolvedValue([
+      {
+        timestamp: new Date('2026-09-01T12:00:00.000Z'),
+        agentId: 'agent-1',
+        thumbsUp: true,
+        starRating: 5,
+        sourcesHelpful: true,
+      },
+    ] as never)
+    db.rAGFeedback.count.mockResolvedValue(1)
+    db.rAGFeedback.aggregate.mockResolvedValue({
+      _avg: { starRating: 5 },
+      _count: { id: 1, thumbsUp: 1, starRating: 1 },
+    } as never)
+    const { GET } = await import('@/app/api/rag/feedback/route')
+
+    const response = await GET(request('/api/rag/feedback'))
+    const body = await response.json()
+
+    expect(response.status).toBe(200)
+    expect(body.feedback[0]).toEqual({
+      timestamp: '2026-09-01T12:00:00.000Z',
+      agentId: 'agent-1',
+      thumbsUp: true,
+      starRating: 5,
+      sourcesHelpful: true,
+    })
+    expect(db.rAGFeedback.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        select: expect.not.objectContaining({
+          userId: expect.anything(),
+          comment: expect.anything(),
+        }),
+      })
+    )
   })
 })

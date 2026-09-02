@@ -165,7 +165,7 @@ export default function RAGAnalyticsPage() {
       )}
 
       {/* System Health Banner */}
-      {analytics && analytics.errorRate > 0.5 && (
+      {analytics && analytics.healthStatus === 'poor' && (
         <Card className="border-yellow-200 bg-yellow-50/50">
           <CardContent className="pt-6">
             <div className="flex items-start gap-3">

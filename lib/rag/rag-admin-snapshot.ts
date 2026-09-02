@@ -20,7 +20,8 @@ type RagSnapshotPayload = {
     version: 1
     generatedAt: string
     source: 'postgres'
-    status: 'ok'
+    status: 'ok' | 'empty' | 'degraded'
+    healthStatus: 'excellent' | 'good' | 'fair' | 'poor' | 'empty'
     content: 'redacted'
   }
   queries: RagSnapshotQuery[]
@@ -84,7 +85,8 @@ function isPayload(value: unknown): value is RagSnapshotPayload {
   const payload = value as Partial<RagSnapshotPayload>
   return (
     payload.contract?.version === 1 &&
-    payload.contract.status === 'ok' &&
+    ['ok', 'empty', 'degraded'].includes(payload.contract.status) &&
+    typeof payload.contract.healthStatus === 'string' &&
     payload.contract.content === 'redacted' &&
     Array.isArray(payload.queries) &&
     Boolean(payload.stats)
@@ -118,6 +120,8 @@ export function parseRagAdminSnapshot(value: unknown): RagAdminSnapshot {
     generatedAt: value.contract.generatedAt,
     recentLogs,
     analytics: {
+      dataStatus: value.contract.status,
+      healthStatus: value.contract.healthStatus,
       totalQueries: stats.totalQueries,
       ragEnabledQueries: Math.round(stats.totalQueries * stats.ragUsageRate),
       ragUsageRate: stats.ragUsageRate,

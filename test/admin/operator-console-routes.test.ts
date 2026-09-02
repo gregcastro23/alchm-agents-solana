@@ -40,6 +40,7 @@ vi.mock('@/lib/db', () => {
 
   return {
     prisma: {
+      $transaction: vi.fn(),
       $queryRaw: vi.fn(),
       users: delegate(),
       tokenBalance: delegate(),
@@ -66,6 +67,7 @@ vi.mock('@/lib/db', () => {
 
 const getServerSessionMock = vi.mocked(getServerSession)
 const db = prisma as unknown as Record<string, Record<string, ReturnType<typeof vi.fn>>> & {
+  $transaction: ReturnType<typeof vi.fn>
   $queryRaw: ReturnType<typeof vi.fn>
 }
 
@@ -78,6 +80,8 @@ function signInAs(role: string, email = 'ops@example.com', id = 'admin-1') {
     user: { id, email, name: 'Ops', role },
     expires: new Date(Date.now() + 60_000).toISOString(),
   } as never)
+  db.users.findFirst.mockResolvedValue({ id, email, name: 'Ops', role } as never)
+  db.$transaction.mockImplementation(async (callback: (tx: typeof db) => unknown) => callback(db))
 }
 
 /** Minimal stand-in for a Prisma Decimal — what the driver actually hands back. */
@@ -88,7 +92,10 @@ function decimal(value: number) {
 // ─────────────────────────────────────────────────────────────────────────────
 
 describe('operator console — admin gate', () => {
-  beforeEach(() => vi.clearAllMocks())
+  beforeEach(() => {
+    vi.clearAllMocks()
+    db.$transaction.mockImplementation(async (callback: (tx: typeof db) => unknown) => callback(db))
+  })
 
   const routes: Array<[string, string]> = [
     ['/api/admin/economy', '@/app/api/admin/economy/route'],

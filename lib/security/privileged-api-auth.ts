@@ -3,7 +3,7 @@ import 'server-only'
 import { NextResponse } from 'next/server'
 import { auth, type SessionUser } from '@/lib/auth'
 import { adminErrorResponse, requireAdmin, type AdminAuthSuccess } from '@/lib/admin-auth'
-import { hasInternalApiSecret } from '@/lib/security/internal-auth'
+import { hasPrivilegedInternalApiSecret } from '@/lib/security/internal-auth'
 import type { AdminAuditActor } from '@/lib/admin/audit'
 
 type AccessFailure = {
@@ -19,6 +19,7 @@ export type AdminOrServiceAccess =
 export type UserOrServiceAccess =
   | { ok: true; kind: 'user'; user: SessionUser }
   | { ok: true; kind: 'service'; source: 'internal-secret' }
+  | { ok: true; kind: 'anonymous' }
   | AccessFailure
 
 export type AdminRequestAccess = { ok: true; admin: AdminAuthSuccess } | AccessFailure
@@ -64,7 +65,7 @@ function invalidOrigin(): AccessFailure {
 
 /** Authorize an operator session or a server-to-server credential. */
 export async function requireAdminOrService(request: Request): Promise<AdminOrServiceAccess> {
-  if (hasInternalApiSecret(request)) {
+  if (hasPrivilegedInternalApiSecret(request)) {
     return { ok: true, kind: 'service', source: 'internal-secret' }
   }
 
@@ -98,13 +99,20 @@ export async function requireAdminRequest(request: Request): Promise<AdminReques
 }
 
 /** Authorize a signed-in product user or a server-to-server credential. */
-export async function requireUserOrService(request: Request): Promise<UserOrServiceAccess> {
-  if (hasInternalApiSecret(request)) {
+export async function requireUserOrService(
+  request: Request,
+  options: { allowAnonymous?: boolean } = {}
+): Promise<UserOrServiceAccess> {
+  if (hasPrivilegedInternalApiSecret(request)) {
     return { ok: true, kind: 'service', source: 'internal-secret' }
   }
 
   const session = await auth()
   if (!session?.user?.id) {
+    if (options.allowAnonymous) {
+      if (!hasValidMutationOrigin(request)) return invalidOrigin()
+      return { ok: true, kind: 'anonymous' }
+    }
     return {
       ok: false,
       response: NextResponse.json({ error: 'Authentication required' }, { status: 401 }),

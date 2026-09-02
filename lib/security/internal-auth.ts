@@ -14,8 +14,7 @@ import { timingSafeEqual } from 'node:crypto'
  * fail-open on a missing secret — that turns a misconfigured env into an open
  * privileged endpoint.
  */
-export function hasInternalApiSecret(request: Request): boolean {
-  const secret = process.env.INTERNAL_API_SECRET || process.env.ALCHM_KITCHEN_SYNC_SECRET
+function matchesSecret(request: Request, secret: string | undefined): boolean {
   if (!secret) return false
   const authToken = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim()
   const syncToken = request.headers.get('x-sync-secret') || ''
@@ -26,4 +25,17 @@ export function hasInternalApiSecret(request: Request): boolean {
     const expected = Buffer.from(secret)
     return actual.length === expected.length && timingSafeEqual(actual, expected)
   })
+}
+
+/** The shared kitchen sync credential is intentionally separate from admin-adjacent service auth. */
+export function hasInternalApiSecret(request: Request): boolean {
+  return matchesSecret(
+    request,
+    process.env.INTERNAL_API_SECRET || process.env.ALCHM_KITCHEN_SYNC_SECRET
+  )
+}
+
+/** Admin-adjacent routes accept only the dedicated internal service credential. */
+export function hasPrivilegedInternalApiSecret(request: Request): boolean {
+  return matchesSecret(request, process.env.INTERNAL_API_SECRET)
 }

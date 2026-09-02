@@ -26,6 +26,8 @@ export interface RAGQueryLog {
 }
 
 export interface RAGAnalytics {
+  dataStatus: 'ok' | 'empty' | 'degraded'
+  healthStatus: 'excellent' | 'good' | 'fair' | 'poor' | 'empty'
   totalQueries: number
   ragEnabledQueries: number
   ragUsageRate: number
@@ -79,6 +81,8 @@ export class RAGAnalyticsManager {
   ): Promise<string | null> {
     if (typeof window === 'undefined') return null
 
+    const controller = new AbortController()
+    const timeout = setTimeout(() => controller.abort(), 2500)
     try {
       const response = await fetch('/api/rag/analytics', {
         method: 'POST',
@@ -87,6 +91,7 @@ export class RAGAnalyticsManager {
           ...log,
           sources,
         }),
+        signal: controller.signal,
       })
 
       if (!response.ok) {
@@ -102,6 +107,8 @@ export class RAGAnalyticsManager {
     } catch (error) {
       console.warn('[RAGAnalytics] Database persistence failed:', error)
       return null
+    } finally {
+      clearTimeout(timeout)
     }
   }
 
@@ -194,6 +201,17 @@ export class RAGAnalyticsManager {
     }))
 
     return {
+      dataStatus: totalQueries > 0 ? 'ok' : 'empty',
+      healthStatus:
+        totalQueries === 0
+          ? 'empty'
+          : successfulQueries / totalQueries >= 0.95
+            ? 'excellent'
+            : successfulQueries / totalQueries >= 0.8
+              ? 'good'
+              : successfulQueries / totalQueries >= 0.6
+                ? 'fair'
+                : 'poor',
       totalQueries,
       ragEnabledQueries,
       ragUsageRate: totalQueries > 0 ? ragEnabledQueries / totalQueries : 0,

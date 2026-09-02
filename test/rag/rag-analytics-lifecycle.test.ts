@@ -47,6 +47,7 @@ describe('RAG analytics query lifecycle', () => {
         generatedAt: '2026-09-01T12:00:00.000Z',
         source: 'postgres',
         status: 'ok',
+        healthStatus: 'good',
         content: 'redacted',
       },
       queries: [
@@ -79,10 +80,38 @@ describe('RAG analytics query lifecycle', () => {
 
     expect(snapshot.analytics.totalQueries).toBe(10)
     expect(snapshot.analytics.ragEnabledQueries).toBe(6)
+    expect(snapshot.analytics.healthStatus).toBe('good')
     expect(snapshot.recentLogs[0]).toMatchObject({
       id: 'db-query-1',
       query: '[redacted]',
       sessionId: '[redacted]',
     })
+  })
+
+  it('marks an empty server snapshot as empty instead of failed', () => {
+    const snapshot = parseRagAdminSnapshot({
+      contract: {
+        version: 1,
+        generatedAt: '2026-09-01T12:00:00.000Z',
+        source: 'postgres',
+        status: 'empty',
+        healthStatus: 'empty',
+        content: 'redacted',
+      },
+      queries: [],
+      stats: {
+        totalQueries: 0,
+        ragUsageRate: 0,
+        successRate: 0,
+        avgRetrievalTime: 0,
+        avgGenerationTime: 0,
+        avgTotalTime: 0,
+        avgRelevance: 0,
+        totalSources: 0,
+      },
+    })
+
+    expect(snapshot.analytics.dataStatus).toBe('empty')
+    expect(snapshot.analytics.healthStatus).toBe('empty')
   })
 })

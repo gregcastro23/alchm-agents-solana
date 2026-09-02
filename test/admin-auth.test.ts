@@ -61,4 +61,18 @@ describe('admin auth helpers', () => {
       status: 403,
     })
   })
+
+  it('does not trust a stale admin role embedded in the session token', async () => {
+    users.findFirst.mockResolvedValueOnce({
+      id: 'admin-1',
+      email: 'ops@example.com',
+      name: 'Ops',
+      role: 'user',
+    } as never)
+
+    await expect(
+      requireAdmin({ id: 'admin-1', email: 'ops@example.com', role: 'admin' })
+    ).resolves.toMatchObject({ ok: false, status: 403 })
+    expect(users.findFirst).toHaveBeenCalledOnce()
+  })
 })

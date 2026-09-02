@@ -25,7 +25,7 @@ interface SubmitFeedbackRequest {
  * POST /api/rag/feedback - Submit user feedback on RAG response
  */
 export async function POST(request: NextRequest) {
-  const access = await requireUserOrService(request)
+  const access = await requireUserOrService(request, { allowAnonymous: true })
   if (!access.ok) return access.response
 
   try {
@@ -71,6 +71,12 @@ export async function POST(request: NextRequest) {
         { status: 403 }
       )
     }
+    if (access.kind === 'anonymous' && query.userId !== null) {
+      return NextResponse.json(
+        { error: 'Feedback query is owned by a signed-in user' },
+        { status: 403 }
+      )
+    }
 
     // Create feedback only after the foreign-key target and ownership match.
     const feedback = await prisma.rAGFeedback.create({
@@ -78,7 +84,8 @@ export async function POST(request: NextRequest) {
         queryId: body.queryId,
         agentId: body.agentId,
         sessionId: body.sessionId,
-        userId: access.kind === 'user' ? access.user.id : body.userId,
+        userId:
+          access.kind === 'user' ? access.user.id : access.kind === 'service' ? body.userId : null,
         thumbsUp: body.thumbsUp,
         starRating: body.starRating,
         sourcesHelpful: body.sourcesHelpful || false,
@@ -137,9 +144,17 @@ export async function GET(request: NextRequest) {
       if (endDate) where.timestamp.lte = new Date(endDate)
     }
 
-    // Fetch feedback records
+    // Return only operational metadata. Comments, query/session IDs, and user
+    // IDs are retained in Postgres but are not part of the default console API.
     const feedback = await prisma.rAGFeedback.findMany({
       where,
+      select: {
+        timestamp: true,
+        agentId: true,
+        thumbsUp: true,
+        starRating: true,
+        sourcesHelpful: true,
+      },
       orderBy: {
         timestamp: 'desc',
       },
@@ -175,10 +190,7 @@ export async function GET(request: NextRequest) {
     })
 
     return NextResponse.json({
-      feedback: feedback.map(f => ({
-        ...f,
-        timestamp: f.timestamp.toISOString(),
-      })),
+      feedback: feedback.map(f => ({ ...f, timestamp: f.timestamp.toISOString() })),
       pagination: {
         total: totalCount,
         limit,

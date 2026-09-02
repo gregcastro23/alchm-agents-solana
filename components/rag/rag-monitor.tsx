@@ -100,9 +100,10 @@ export function RAGMonitor({
   }
 
   const getHealthStatus = () => {
-    if (analytics.successRate >= 0.95) return { color: 'green', label: 'Excellent' }
-    if (analytics.successRate >= 0.8) return { color: 'blue', label: 'Good' }
-    if (analytics.successRate >= 0.6) return { color: 'yellow', label: 'Fair' }
+    if (analytics.healthStatus === 'empty') return { color: 'gray', label: 'No data' }
+    if (analytics.healthStatus === 'excellent') return { color: 'green', label: 'Excellent' }
+    if (analytics.healthStatus === 'good') return { color: 'blue', label: 'Good' }
+    if (analytics.healthStatus === 'fair') return { color: 'yellow', label: 'Fair' }
     return { color: 'red', label: 'Poor' }
   }
 
@@ -238,7 +239,7 @@ export function RAGMonitor({
       </Card>
 
       {/* Known Issues Alert */}
-      {analytics.errorRate > 0.5 && (
+      {analytics.healthStatus === 'poor' && (
         <Card className="md:col-span-2 lg:col-span-4 border-yellow-200 bg-yellow-50/50">
           <CardContent className="pt-6">
             <div className="flex items-start gap-3">

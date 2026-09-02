@@ -22,7 +22,7 @@ export type AdminSessionUser = AdminIdentity & {
 export type AdminAuthSuccess = {
   ok: true
   user: AdminSessionUser
-  source: 'session-role' | 'db-role'
+  source: 'db-role'
 }
 
 export type AdminAuthFailure = {
@@ -93,10 +93,6 @@ export async function requireAdmin(
       error: 'Authentication required',
       user,
     }
-  }
-
-  if (user?.role === 'admin') {
-    return { ok: true, user, source: 'session-role' }
   }
 
   try {
