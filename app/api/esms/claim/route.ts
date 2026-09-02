@@ -7,6 +7,7 @@ import { syncDebitToAlchm } from '@/lib/alchm-debit-sync'
 import { mintEsmsClaim } from '@/lib/esms-chain/minter'
 import { readEsmsClaimed } from '@/lib/esms-chain/contract'
 import { mintEsmsClaimSolana } from '@/lib/solana/solana-minter'
+import { getSolanaNetworkConfig } from '@/lib/solana/network-config'
 
 export const dynamic = 'force-dynamic'
 
@@ -87,11 +88,12 @@ export async function POST(request: NextRequest) {
 
   const claimId = (existingClaim?.id || keccak256(toHex(`${userId}:${randomUUID()}`))) as Hex
   const targetWallet = body.walletAddress || existingClaim?.walletAddress || user.walletAddress
+  const solanaNetworkName = `solana-${getSolanaNetworkConfig().network}`
   const network =
     existingClaim?.network ||
     (body.chainNamespace === 'solana'
-      ? 'solana-devnet'
-      : process.env.NEXT_PUBLIC_ESMS_CHAIN || 'solana-devnet')
+      ? solanaNetworkName
+      : process.env.NEXT_PUBLIC_ESMS_CHAIN || solanaNetworkName)
   const amountStrings = {
     spirit: String(amounts.spirit),
     essence: String(amounts.essence),
@@ -164,7 +166,7 @@ export async function POST(request: NextRequest) {
       ok: true,
       claimId,
       txHash,
-      network: isSolana ? 'solana-devnet' : network,
+      network: isSolana ? solanaNetworkName : network,
     })
   } catch (err) {
     // Off-chain debit already applied — leave status 'debited' for retry; the on-chain

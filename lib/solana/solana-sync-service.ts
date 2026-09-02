@@ -454,38 +454,41 @@ export function startSolanaSyncOutboxPolling(args: {
   intervalMs?: number
   batchSize?: number
 }): { tick(): Promise<void>; stop(): void } {
-  let active = false
+  let inFlight: Promise<void> | null = null
   let stopped = false
-  const tick = async () => {
-    if (active || stopped) return
-    active = true
-    try {
-      const rows = await args.client.solanaSyncOutbox.findMany({
-        where: { deliveredAt: null },
-        orderBy: { createdAt: 'asc' },
-        take: args.batchSize ?? 100,
-      })
-      for (const row of rows) {
-        try {
-          await args.deliver(row.payload)
-          await args.client.solanaSyncOutbox.update({
-            where: { id: row.id },
-            data: { deliveredAt: new Date(), attempts: { increment: 1 }, lastError: null },
-          })
-        } catch (error) {
-          await args.client.solanaSyncOutbox.update({
-            where: { id: row.id },
-            data: {
-              attempts: { increment: 1 },
-              lastError: error instanceof Error ? error.message : String(error),
-            },
-          })
-          break
+  const tick = async (): Promise<void> => {
+    if (stopped) return
+    if (inFlight) return inFlight
+    inFlight = (async () => {
+      try {
+        const rows = await args.client.solanaSyncOutbox.findMany({
+          where: { deliveredAt: null },
+          orderBy: { createdAt: 'asc' },
+          take: args.batchSize ?? 100,
+        })
+        for (const row of rows) {
+          try {
+            await args.deliver(row.payload)
+            await args.client.solanaSyncOutbox.update({
+              where: { id: row.id },
+              data: { deliveredAt: new Date(), attempts: { increment: 1 }, lastError: null },
+            })
+          } catch (error) {
+            await args.client.solanaSyncOutbox.update({
+              where: { id: row.id },
+              data: {
+                attempts: { increment: 1 },
+                lastError: error instanceof Error ? error.message : String(error),
+              },
+            })
+            break
+          }
         }
+      } finally {
+        inFlight = null
       }
-    } finally {
-      active = false
-    }
+    })()
+    return inFlight
   }
   const timer = setInterval(() => void tick(), args.intervalMs ?? 2_000)
   void tick()

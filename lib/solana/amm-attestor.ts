@@ -16,15 +16,15 @@
 import { readFileSync } from 'node:fs'
 import { Keypair, PublicKey } from '@solana/web3.js'
 import bs58 from 'bs58'
-import nacl from 'tweetnacl'
 
 import {
   AMM_VISIBILITY_MESSAGE_BYTES,
   buildAmmVisibilityAuthorizationMessage,
   type AmmVisibilityAuthorizationArgs,
 } from '@/lib/solana/constellation-amm'
+import { KmsSolanaSigner, getSolanaServiceSigner } from '@/lib/solana/kms-signer'
 
-let cached: Keypair | null | undefined
+let cachedKeypair: Keypair | null | undefined
 
 function parseSecret(raw: string): Uint8Array {
   const trimmed = raw.trim()
@@ -34,14 +34,23 @@ function parseSecret(raw: string): Uint8Array {
   return bs58.decode(trimmed)
 }
 
-/** The configured attestor, or `null` when the env var is unset. */
+/** The raw configured attestor keypair (strictly disabled in production). */
 export function ammAttestorKeypair(): Keypair | null {
-  if (cached !== undefined) return cached
+  if (
+    process.env.NODE_ENV === 'production' &&
+    process.env.SOLANA_ALLOW_LOCAL_PAYER_IN_PROD !== 'true'
+  ) {
+    throw new Error(
+      'Raw keypair fallback is prohibited in production environments. Use Cloud KMS signer instead.'
+    )
+  }
+
+  if (cachedKeypair !== undefined) return cachedKeypair
 
   const configured = process.env.SOLANA_ATTESTOR_KEYPAIR?.trim()
   if (!configured) {
-    cached = null
-    return cached
+    cachedKeypair = null
+    return cachedKeypair
   }
 
   let raw = configured
@@ -62,18 +71,84 @@ export function ammAttestorKeypair(): Keypair | null {
   if (bytes.length !== 64) {
     throw new Error(`SOLANA_ATTESTOR_KEYPAIR must be 64 bytes, received ${bytes.length}`)
   }
-  cached = Keypair.fromSecretKey(bytes)
-  return cached
+  cachedKeypair = Keypair.fromSecretKey(bytes)
+  return cachedKeypair
+}
+
+/**
+ * Resolves the AMM attestor signer.
+ * Prioritizes dedicated AMM KMS keys, falls back to general Solana KMS service signer,
+ * and allows local keypair only in development/test.
+ */
+export function getAmmAttestorSigner(): KmsSolanaSigner | null {
+  const awsKeyId =
+    process.env.SOLANA_ATTESTOR_KMS_KEY_ID ??
+    process.env.AWS_KMS_KEY_ID ??
+    process.env.SOLANA_AWS_KMS_KEY_ID
+  const gcpKeyName =
+    process.env.SOLANA_ATTESTOR_GCP_KMS_KEY_NAME ??
+    process.env.GCP_KMS_KEY_NAME ??
+    process.env.SOLANA_GCP_KMS_KEY_NAME
+  const pubKey =
+    process.env.SOLANA_ATTESTOR_PUBLIC_KEY ??
+    process.env.SOLANA_SERVICE_PUBLIC_KEY ??
+    process.env.SOLANA_KMS_PUBLIC_KEY
+
+  if (awsKeyId) {
+    if (!pubKey) {
+      throw new Error(
+        'AWS KMS configured for AMM attestor but SOLANA_ATTESTOR_PUBLIC_KEY / SOLANA_SERVICE_PUBLIC_KEY is missing'
+      )
+    }
+    return new KmsSolanaSigner({
+      provider: 'aws',
+      keyId: awsKeyId,
+      publicKey: new PublicKey(pubKey),
+    })
+  }
+
+  if (gcpKeyName) {
+    if (!pubKey) {
+      throw new Error(
+        'GCP KMS configured for AMM attestor but SOLANA_ATTESTOR_PUBLIC_KEY / SOLANA_SERVICE_PUBLIC_KEY is missing'
+      )
+    }
+    return new KmsSolanaSigner({
+      provider: 'gcp',
+      keyId: gcpKeyName,
+      publicKey: new PublicKey(pubKey),
+    })
+  }
+
+  // Non-KMS fallback check
+  if (
+    process.env.NODE_ENV === 'production' &&
+    process.env.SOLANA_ALLOW_LOCAL_PAYER_IN_PROD !== 'true'
+  ) {
+    throw new Error(
+      'Cloud KMS signer (AWS_KMS_KEY_ID or GCP_KMS_KEY_NAME) is required for AMM attestations in production environments. Raw keypair fallback is prohibited.'
+    )
+  }
+
+  const keypair = ammAttestorKeypair()
+  if (!keypair) return null
+
+  return new KmsSolanaSigner({
+    provider: 'local',
+    publicKey: keypair.publicKey,
+    keypair,
+  })
 }
 
 /** The attestor's public key, or `null` if no key is configured. */
 export function ammAttestorPublicKey(): PublicKey | null {
-  return ammAttestorKeypair()?.publicKey ?? null
+  const signer = getAmmAttestorSigner()
+  return signer?.publicKey ?? null
 }
 
 /** Test seam: forget the memoised keypair after changing the environment. */
 export function resetAmmAttestorCache(): void {
-  cached = undefined
+  cachedKeypair = undefined
 }
 
 export interface SignedAmmVisibility {
@@ -83,24 +158,28 @@ export interface SignedAmmVisibility {
 }
 
 /**
- * Signs the canonical 170-byte preimage. The signature is carried by an Ed25519
- * precompile instruction placed immediately before the AMM instruction; the program
- * reads it from the instructions sysvar at `current_index - 1`.
+ * Signs the canonical 170-byte preimage using Cloud KMS or local test keypair.
+ * The signature is carried by an Ed25519 precompile instruction placed immediately
+ * before the AMM instruction; the program reads it from the instructions sysvar
+ * at `current_index - 1`.
  */
-export function signAmmVisibilityAttestation(
+export async function signAmmVisibilityAttestation(
   args: AmmVisibilityAuthorizationArgs
-): SignedAmmVisibility {
-  const keypair = ammAttestorKeypair()
-  if (!keypair) {
-    throw new Error('SOLANA_ATTESTOR_KEYPAIR is not set — cannot sign AMM visibility attestations')
+): Promise<SignedAmmVisibility> {
+  const signer = getAmmAttestorSigner()
+  if (!signer) {
+    throw new Error(
+      'Solana AMM attestor key is not configured — cannot sign AMM visibility attestations'
+    )
   }
   const message = buildAmmVisibilityAuthorizationMessage(args)
   if (message.length !== AMM_VISIBILITY_MESSAGE_BYTES) {
     throw new Error(`refusing to sign a ${message.length}-byte preimage`)
   }
+  const signature = await signer.signMessage(message)
   return {
     message,
-    signature: nacl.sign.detached(message, keypair.secretKey),
-    attestor: keypair.publicKey,
+    signature,
+    attestor: signer.publicKey,
   }
 }
