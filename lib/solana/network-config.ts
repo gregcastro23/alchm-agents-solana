@@ -5,6 +5,8 @@ export type SolanaNetwork = 'mainnet-beta' | 'devnet' | 'localnet'
 export const SOLANA_MAINNET_GENESIS_HASH = '5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d'
 export const SOLANA_DEVNET_GENESIS_HASH = 'EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG'
 
+export type SolanaCommitment = 'processed' | 'confirmed' | 'finalized'
+
 export interface SolanaNetworkConfig {
   network: SolanaNetwork
   isMainnet: boolean
@@ -13,6 +15,7 @@ export interface SolanaNetworkConfig {
   walletNetwork: WalletAdapterNetwork
   explorerClusterParam: string
   networkBadgeLabel: string
+  commitment: SolanaCommitment
   buildExplorerTxUrl(signature: string): string
   assertGenesisHash(actualGenesisHash: string): void
 }
@@ -28,12 +31,17 @@ export interface SolanaNetworkConfig {
 export function getSolanaNetworkConfig(
   customEnv?: NodeJS.ProcessEnv | Record<string, string | undefined>
 ): SolanaNetworkConfig {
-  const env = customEnv ?? process.env
-  const nodeEnv = env.NODE_ENV ?? 'development'
+  const nodeEnv = customEnv
+    ? (customEnv.NODE_ENV ?? 'development')
+    : (process.env.NODE_ENV ?? 'development')
   const isProd = nodeEnv === 'production'
 
-  // Resolve targeted network
-  const configuredNetwork = (env.SOLANA_NETWORK ?? env.NEXT_PUBLIC_SOLANA_NETWORK ?? '')
+  // Resolve targeted network with explicit reads for Next.js compiler static inlining
+  const configuredNetwork = (
+    customEnv
+      ? (customEnv.SOLANA_NETWORK ?? customEnv.NEXT_PUBLIC_SOLANA_NETWORK ?? '')
+      : (process.env.SOLANA_NETWORK ?? process.env.NEXT_PUBLIC_SOLANA_NETWORK ?? '')
+  )
     .toLowerCase()
     .trim()
 
@@ -54,22 +62,33 @@ export function getSolanaNetworkConfig(
   }
 
   // Prevent devnet in production
-  if (isProd && network === 'devnet' && env.SOLANA_ALLOW_DEVNET_IN_PROD !== 'true') {
+  const allowDevnetInProd = customEnv
+    ? customEnv.SOLANA_ALLOW_DEVNET_IN_PROD
+    : process.env.SOLANA_ALLOW_DEVNET_IN_PROD
+  if (isProd && network === 'devnet' && allowDevnetInProd !== 'true') {
     throw new Error(
       'Devnet is prohibited in production. Configure SOLANA_NETWORK=mainnet-beta and private Mainnet RPCs.'
     )
   }
 
-  // Resolve RPC URLs
-  const rpcListRaw =
-    env.SOLANA_RPC_URLS ??
-    env.SOLANA_RPC_URL ??
-    env.NEXT_PUBLIC_SOLANA_RPC_URL ??
-    (network === 'mainnet-beta'
-      ? ''
-      : network === 'localnet'
-        ? 'http://127.0.0.1:8899'
-        : 'https://api.devnet.solana.com')
+  // Resolve RPC URLs with explicit reads
+  const rpcListRaw = customEnv
+    ? (customEnv.SOLANA_RPC_URLS ??
+      customEnv.SOLANA_RPC_URL ??
+      customEnv.NEXT_PUBLIC_SOLANA_RPC_URL ??
+      (network === 'mainnet-beta'
+        ? ''
+        : network === 'localnet'
+          ? 'http://127.0.0.1:8899'
+          : 'https://api.devnet.solana.com'))
+    : (process.env.SOLANA_RPC_URLS ??
+      process.env.SOLANA_RPC_URL ??
+      process.env.NEXT_PUBLIC_SOLANA_RPC_URL ??
+      (network === 'mainnet-beta'
+        ? ''
+        : network === 'localnet'
+          ? 'http://127.0.0.1:8899'
+          : 'https://api.devnet.solana.com'))
 
   const rpcUrls = rpcListRaw
     .split(',')
@@ -90,6 +109,16 @@ export function getSolanaNetworkConfig(
   const walletNetwork = isMainnet ? WalletAdapterNetwork.Mainnet : WalletAdapterNetwork.Devnet
   const explorerClusterParam = isMainnet ? '' : 'cluster=devnet'
   const networkBadgeLabel = isMainnet ? 'Base + Solana Mainnet' : 'Base + Solana Devnet'
+
+  const rawCommitment = (customEnv ? customEnv.SOLANA_COMMITMENT : process.env.SOLANA_COMMITMENT)
+    ?.trim()
+    .toLowerCase()
+  const commitment: SolanaCommitment =
+    rawCommitment === 'finalized' || rawCommitment === 'confirmed' || rawCommitment === 'processed'
+      ? (rawCommitment as SolanaCommitment)
+      : isMainnet
+        ? 'finalized'
+        : 'confirmed'
 
   const buildExplorerTxUrl = (signature: string): string => {
     const encoded = encodeURIComponent(signature)
@@ -114,6 +143,7 @@ export function getSolanaNetworkConfig(
     walletNetwork,
     explorerClusterParam,
     networkBadgeLabel,
+    commitment,
     buildExplorerTxUrl,
     assertGenesisHash,
   }

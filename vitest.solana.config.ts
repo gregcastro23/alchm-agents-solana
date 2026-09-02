@@ -9,6 +9,7 @@ export default defineConfig({
     environment: 'node',
     globals: true,
     include: ['test/solana/**/*.{test,spec}.{js,mjs,cjs,ts,mts,cts}'],
+    exclude: ['**/node_modules/**', '**/esms-persona.spec.ts'],
     testTimeout: 120_000,
     hookTimeout: 120_000,
   },

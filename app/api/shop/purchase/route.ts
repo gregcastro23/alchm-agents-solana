@@ -286,6 +286,26 @@ export async function POST(request: Request) {
 
     // Submit sponsored redeem via backend service signer
     const executingClient = new AsolSolanaClient({ connection, wallet: serviceSigner })
+
+    // Pre-flight check: if already redeemed on Solana, grant entitlement and return immediately
+    try {
+      if (await executingClient.hasOrderReceipt(orderIdBytes, 'confirmed')) {
+        await grantPurchase({ userId, item, orderId })
+        return NextResponse.json({
+          ok: true,
+          itemId: item.id,
+          orderId,
+          reconciled: true,
+          rail: 'solana',
+        })
+      }
+    } catch (preflightErr) {
+      console.warn(
+        '[api/shop/purchase] Solana pre-flight order receipt check failed (continuing):',
+        preflightErr
+      )
+    }
+
     try {
       const burnTx = await executingClient.redeemForEsms({
         orderId: orderIdBytes,
@@ -305,6 +325,24 @@ export async function POST(request: Request) {
       })
     } catch (err) {
       console.error('[api/shop/purchase] Solana sponsored burn failed (retryable):', err)
+      // Post-failure recovery check: verify if the burn actually landed on-chain
+      try {
+        if (await executingClient.hasOrderReceipt(orderIdBytes, 'confirmed')) {
+          await grantPurchase({ userId, item, orderId })
+          return NextResponse.json({
+            ok: true,
+            itemId: item.id,
+            orderId,
+            reconciled: true,
+            rail: 'solana',
+          })
+        }
+      } catch (recoveryErr) {
+        console.warn(
+          '[api/shop/purchase] Solana post-failure order receipt recovery check failed:',
+          recoveryErr
+        )
+      }
       return NextResponse.json(
         {
           error: 'On-chain ESMS burn on Solana failed — retry shortly.',

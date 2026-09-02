@@ -1,6 +1,7 @@
 #!/usr/bin/env bun
 import { createHash } from 'node:crypto'
 import { promises as fs } from 'node:fs'
+import fsSync from 'node:fs'
 import path from 'node:path'
 import prettier from 'prettier'
 import { getSolanaServiceSigner } from '@/lib/solana/kms-signer'
@@ -38,12 +39,14 @@ export function computeSha256(data: Buffer | Uint8Array | string): string {
   return createHash('sha256').update(buf).digest('hex')
 }
 
-export function computeMetadataValueLen(mintId: number, uriLen: number): number {
-  return METADATA_BASE_LEN + ESMS_NAMES[mintId].length + ESMS_SYMBOLS[mintId].length + uriLen
+export function computeTotalMintAccountLen(elementIndex: number, uriLen: number): number {
+  return FIXED_ACCOUNT_LEN + TLV_HEADER_LEN + computeMetadataValueLen(elementIndex, uriLen)
 }
 
-export function computeTotalMintAccountLen(mintId: number, uriLen: number): number {
-  return FIXED_ACCOUNT_LEN + TLV_HEADER_LEN + computeMetadataValueLen(mintId, uriLen)
+export function computeMetadataValueLen(elementIndex: number, uriLen: number): number {
+  return (
+    METADATA_BASE_LEN + ESMS_NAMES[elementIndex].length + ESMS_SYMBOLS[elementIndex].length + uriLen
+  )
 }
 
 export function calculateRentExemptLamports(accountLen: number): bigint {
@@ -81,6 +84,29 @@ export interface UploadOptions {
   workspaceRoot?: string
   rpcUrl?: string
   allowLocalPayer?: boolean
+  skipReadback?: boolean
+}
+
+async function fetchRemoteAsset(uri: string, txId?: string): Promise<Buffer> {
+  const urlsToTry = [uri]
+  if (txId) {
+    urlsToTry.push(`https://arweave.live/${txId}`)
+    urlsToTry.push(`https://gateway.irys.xyz/${txId}`)
+  }
+
+  let lastError: Error | null = null
+  for (const url of urlsToTry) {
+    try {
+      const res = await fetch(url)
+      if (res.ok) {
+        return Buffer.from(await res.arrayBuffer())
+      }
+      lastError = new Error(`Failed to read back ${url}: ${res.status} ${res.statusText}`)
+    } catch (err) {
+      lastError = err instanceof Error ? err : new Error(String(err))
+    }
+  }
+  throw lastError ?? new Error(`Failed to read back ${uri}`)
 }
 
 export async function runUploadArweaveMetadata(options: UploadOptions = {}) {
@@ -88,84 +114,89 @@ export async function runUploadArweaveMetadata(options: UploadOptions = {}) {
   const isConfirmed = options.confirm ?? process.argv.includes('--confirm')
   const isDryRun = options.dryRun ?? !isConfirmed
   const allowLocalPayer = options.allowLocalPayer ?? process.argv.includes('--allow-local-payer')
+  const skipReadback = options.skipReadback ?? process.argv.includes('--skip-readback')
   const irysNetwork =
     options.irysNetwork ??
-    (process.argv.find(arg => arg.startsWith('--irys-network='))?.split('=')[1] as
+    (process.argv.find(a => a.startsWith('--irys-network='))?.split('=')[1] as
       | 'mainnet'
       | 'devnet'
       | undefined) ??
     'mainnet'
 
-  console.log(`\n🌌 [ASOL Phase 4] Token-2022 Arweave Metadata Automation`)
-  console.log(`=======================================================`)
-  console.log(`• Mode:          ${isDryRun ? 'DRY-RUN (Simulated)' : 'LIVE EXECUTION'}`)
-  console.log(`• Irys Network:  ${irysNetwork}`)
-  console.log(`• Workspace:     ${workspaceRoot}`)
+  // 1. Live Execution Safety Checks: Network must be mainnet
+  if (!isDryRun && irysNetwork !== 'mainnet') {
+    throw new Error(
+      `Live upload rejected: Irys network is "${irysNetwork}". Only "--irys-network=mainnet" produces permanent arweave.net URIs suitable for immutable program constants.`
+    )
+  }
 
-  // 1. Normalize manifests with Prettier (only modify disk during confirmed live run)
-  await normalizeTokensJson(workspaceRoot, !isDryRun)
-
-  // 2. Load signer
-  const signer = getSolanaServiceSigner({
-    allowLocalInProd: Boolean(
-      allowLocalPayer || (isDryRun && process.env.NODE_ENV !== 'production')
-    ),
-  })
+  // 2. Resolve Signer
+  const signer = await getSolanaServiceSigner()
   if (!signer) {
     throw new Error(
       'Unable to resolve Solana service signer. Configure AWS_KMS_KEY_ID, GCP_KMS_KEY_NAME, or SOLANA_AGENT_PAYER_KEY.'
     )
   }
 
-  // Strict KMS guard for live mainnet execution: assert on the actual resolved provider
+  // Strict check: forbid local keypair fallback on live mainnet execution
   if (!isDryRun && irysNetwork === 'mainnet' && signer.provider === 'local') {
     throw new Error(
       'Security violation: Live mainnet upload requires a Cloud KMS signer (provider: aws|gcp). Local keypair signer is strictly prohibited.'
     )
   }
 
-  console.log(`• Signer Pubkey: ${signer.publicKey.toBase58()} (Provider: ${signer.provider})`)
+  console.log(`\n• Signer Pubkey: ${signer.publicKey.toBase58()} (Provider: ${signer.provider})`)
 
-  // 3. Inspect local assets
+  // 3. Normalize and check local files
+  await normalizeTokensJson(workspaceRoot, !isDryRun)
+
   const assetsDir = path.join(workspaceRoot, 'metadata', 'solana')
-  const iconFiles = ESMS_ORDER.map(e => `icons/${e}.svg`)
-  const tokenFiles = ESMS_ORDER.map(e => `tokens/${e}.json`)
-  const allRelativeFiles = [...iconFiles, ...tokenFiles]
+  const allRelativeFiles = [
+    ...ESMS_ORDER.map(e => `icons/${e}.svg`),
+    ...ESMS_ORDER.map(e => `tokens/${e}.json`),
+  ]
 
+  // 4. Inspect Local Assets
   const assetDetails: Record<
     string,
     { absPath: string; buffer: Buffer; sha256: string; byteLength: number }
   > = {}
-
   let totalBytes = 0
+
   for (const relPath of allRelativeFiles) {
     const absPath = path.join(assetsDir, relPath)
+    if (!fsSync.existsSync(absPath)) {
+      throw new Error(`Required metadata asset missing: ${absPath}`)
+    }
     const buffer = await fs.readFile(absPath)
     const sha256 = computeSha256(buffer)
-    assetDetails[relPath] = {
-      absPath,
-      buffer,
-      sha256,
-      byteLength: buffer.length,
-    }
+    assetDetails[relPath] = { absPath, buffer, sha256, byteLength: buffer.length }
     totalBytes += buffer.length
   }
 
   console.log(`\n📦 Local Assets Summary (8 files, ${totalBytes} bytes total):`)
-  for (const relPath of allRelativeFiles) {
-    const d = assetDetails[relPath]
+  for (const [relPath, detail] of Object.entries(assetDetails)) {
     console.log(
-      `  - ${relPath.padEnd(22)}: ${d.byteLength.toString().padStart(6)} bytes | sha256: ${d.sha256.slice(0, 16)}...`
+      `  - ${relPath.padEnd(22)}: ${detail.byteLength.toString().padStart(6)} bytes | sha256: ${detail.sha256.slice(0, 16)}...`
     )
   }
 
-  // 4. Load or initialize receipt manifest
+  // 4. Load or Initialize Manifest
   const manifestPath = path.join(assetsDir, 'arweave-manifest.json')
   let manifest: ArweaveManifest
-  try {
-    const rawManifest = await fs.readFile(manifestPath, 'utf8')
-    manifest = JSON.parse(rawManifest)
-  } catch {
+  if (fsSync.existsSync(manifestPath)) {
+    try {
+      manifest = JSON.parse(await fs.readFile(manifestPath, 'utf8'))
+    } catch {
+      manifest = {
+        version: '1.0.0',
+        cluster: null,
+        irysNetwork: null,
+        uploadedAtIso: null,
+        assets: {},
+      }
+    }
+  } else {
     manifest = {
       version: '1.0.0',
       cluster: null,
@@ -173,6 +204,25 @@ export async function runUploadArweaveMetadata(options: UploadOptions = {}) {
       uploadedAtIso: null,
       assets: {},
     }
+  }
+
+  // 5. Handle Dry-Run Mode first
+  if (isDryRun) {
+    console.log(`\n💰 Dry-Run Estimation:`)
+    console.log(`• Estimated Arweave Storage Fee: < 0.0001 SOL (${totalBytes} bytes)`)
+    console.log(`• Required Funding Account:      ${signer.publicKey.toBase58()}`)
+    console.log(
+      `• Action:                        Pass --confirm --irys-network=mainnet to execute live upload.`
+    )
+    printCalculatedAccountRent(64) // 64 bytes standard Arweave URI
+    return manifest
+  }
+
+  // 6. Live Execution Safety Checks
+  if (irysNetwork !== 'mainnet') {
+    throw new Error(
+      `Live upload rejected: Irys network is "${irysNetwork}". Only "--irys-network=mainnet" produces permanent arweave.net URIs suitable for immutable program constants.`
+    )
   }
 
   // Check if existing manifest is already fully verified
@@ -185,45 +235,23 @@ export async function runUploadArweaveMetadata(options: UploadOptions = {}) {
     console.log(
       `\n✅ All assets already recorded with matching checksums in arweave-manifest.json.`
     )
-    console.log(`Performing live readback verification without re-uploading...`)
-
-    for (const relPath of allRelativeFiles) {
-      const entry = manifest.assets[relPath]
-      console.log(`  🔍 Verifying ${relPath} from ${entry.uri}...`)
-      const res = await fetch(entry.uri!)
-      if (!res.ok) {
-        throw new Error(`Failed to read back ${entry.uri}: ${res.status} ${res.statusText}`)
+    if (!skipReadback) {
+      console.log(`Performing live readback verification without re-uploading...`)
+      for (const relPath of allRelativeFiles) {
+        const entry = manifest.assets[relPath]
+        console.log(`  🔍 Verifying ${relPath} from ${entry.uri}...`)
+        const remoteBytes = await fetchRemoteAsset(entry.uri!, entry.txId!)
+        const remoteHash = computeSha256(remoteBytes)
+        if (remoteHash !== entry.sha256) {
+          throw new Error(
+            `Hash mismatch on verified asset ${relPath}: local=${entry.sha256} remote=${remoteHash}`
+          )
+        }
       }
-      const remoteBytes = Buffer.from(await res.arrayBuffer())
-      const remoteHash = computeSha256(remoteBytes)
-      if (remoteHash !== entry.sha256) {
-        throw new Error(
-          `Hash mismatch on verified asset ${relPath}: local=${entry.sha256} remote=${remoteHash}`
-        )
-      }
+      console.log(`\n🎉 All remote assets successfully re-verified.`)
     }
-    console.log(`\n🎉 All remote assets successfully re-verified.`)
     printGeneratedConstants(manifest)
     return manifest
-  }
-
-  // 5. Handle Dry-Run Mode
-  if (isDryRun) {
-    console.log(`\n💰 Dry-Run Estimation:`)
-    console.log(`• Estimated Arweave Storage Fee: < 0.0001 SOL (${totalBytes} bytes)`)
-    console.log(`• Required Funding Account:      ${signer.publicKey.toBase58()}`)
-    console.log(
-      `• Action:                        Pass --confirm --irys-network=mainnet to execute live upload.`
-    )
-    printCalculatedAccountRent(63) // 63 bytes standard Arweave URI
-    return manifest
-  }
-
-  // 6. Live Execution Safety Checks
-  if (irysNetwork !== 'mainnet') {
-    throw new Error(
-      `Live upload rejected: Irys network is "${irysNetwork}". Only "--irys-network=mainnet" produces permanent arweave.net URIs suitable for immutable program constants.`
-    )
   }
 
   console.log(`\n🚀 Initializing Irys Uploader on network: ${irysNetwork}...`)

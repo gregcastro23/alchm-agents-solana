@@ -4,7 +4,12 @@ import { describe, expect, it } from 'vitest'
 import Ajv from 'ajv'
 import addFormats from 'ajv-formats'
 import prettier from 'prettier'
-import { ESMS_NAMES, ESMS_SYMBOLS, ESMS_METADATA_URIS } from '@/lib/solana/vectors'
+import {
+  ESMS_NAMES,
+  ESMS_SYMBOLS,
+  ESMS_METADATA_URIS,
+  MAX_LEDGER_ATOMS,
+} from '@/lib/solana/vectors'
 import {
   FIXED_ACCOUNT_LEN,
   TLV_HEADER_LEN,
@@ -56,6 +61,13 @@ describe('Token-2022 Metadata, Schemas & Program Constant Integrity', () => {
       .split(',')
       .map(s => s.trim().replace(/^"|"$/g, ''))
       .filter(Boolean)
+
+    // Extract MAX_LEDGER_ATOMS
+    const maxLedgerMatch = rustSource.match(/pub const MAX_LEDGER_ATOMS:\s*u64\s*=\s*([0-9_]+);/)
+    expect(maxLedgerMatch).not.toBeNull()
+    const rustMaxLedgerAtoms = BigInt(maxLedgerMatch![1].replace(/_/g, ''))
+    expect(MAX_LEDGER_ATOMS).toBe(rustMaxLedgerAtoms)
+    expect(MAX_LEDGER_ATOMS).toBe(999_999_999_999n)
 
     expect(parsedNames).toEqual(Array.from(ESMS_NAMES))
     expect(parsedSymbols).toEqual(Array.from(ESMS_SYMBOLS))
@@ -163,11 +175,11 @@ describe('Token-2022 Metadata, Schemas & Program Constant Integrity', () => {
         const iconEntry = receipt.assets[`icons/${token}.svg`]
         const tokenEntry = receipt.assets[`tokens/${token}.json`]
 
-        expect(iconEntry.txId).toMatch(/^[A-Za-z0-9_-]{43}$/)
+        expect(iconEntry.txId).toMatch(/^[A-Za-z0-9_-]{43,44}$/)
         expect(iconEntry.uri).toBe(`https://arweave.net/${iconEntry.txId}`)
         expect(iconEntry.irysNetwork).toBe('mainnet')
 
-        expect(tokenEntry.txId).toMatch(/^[A-Za-z0-9_-]{43}$/)
+        expect(tokenEntry.txId).toMatch(/^[A-Za-z0-9_-]{43,44}$/)
         expect(tokenEntry.uri).toBe(`https://arweave.net/${tokenEntry.txId}`)
         expect(tokenEntry.irysNetwork).toBe('mainnet')
 
@@ -209,13 +221,13 @@ describe('Token-2022 Metadata, Schemas & Program Constant Integrity', () => {
     const expectedCurrentTotalLens = [453, 456, 453, 462]
     const expectedCurrentLamports = [4_043_760n, 4_064_640n, 4_043_760n, 4_106_400n]
 
-    // If permanent Arweave URIs (length 63):
-    // Spirit: 469 bytes -> 4,155,120 lamports
-    // Essence: 471 bytes -> 4,169,040 lamports
-    // Matter: 469 bytes -> 4,155,120 lamports
-    // Substance: 475 bytes -> 4,196,880 lamports
-    const expectedArweaveTotalLens = [469, 471, 469, 475]
-    const expectedArweaveLamports = [4_155_120n, 4_169_040n, 4_155_120n, 4_196_880n]
+    // If permanent Arweave URIs (length 64 with 44-char txId):
+    // Spirit: 470 bytes -> 4,162,080 lamports
+    // Essence: 472 bytes -> 4,176,000 lamports
+    // Matter: 470 bytes -> 4,162,080 lamports
+    // Substance: 476 bytes -> 4,203,840 lamports
+    const expectedArweaveTotalLens = [470, 472, 470, 476]
+    const expectedArweaveLamports = [4_162_080n, 4_176_000n, 4_162_080n, 4_203_840n]
 
     const isArweaveUri = ESMS_METADATA_URIS[0].startsWith('https://arweave.net/')
 

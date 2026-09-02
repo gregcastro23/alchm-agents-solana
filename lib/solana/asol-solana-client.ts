@@ -11,6 +11,7 @@ import {
   SYSVAR_INSTRUCTIONS_PUBKEY,
   Transaction,
   VersionedTransaction,
+  type Commitment,
   type ConfirmOptions,
   type TransactionInstruction,
 } from '@solana/web3.js'
@@ -35,7 +36,14 @@ import {
 import { getSolanaNetworkConfig } from '@/lib/solana/network-config'
 
 const MAX_U64 = (1n << 64n) - 1n
-const DEFAULT_RPC = getSolanaNetworkConfig().rpcUrls[0]
+
+export function getDefaultSolanaRpcUrl(): string {
+  try {
+    return getSolanaNetworkConfig().rpcUrls[0]
+  } catch {
+    return 'https://api.devnet.solana.com'
+  }
+}
 
 export type EsmsAmounts = readonly [bigint, bigint, bigint, bigint]
 
@@ -95,13 +103,17 @@ export class AsolSolanaClient {
   readonly mints: readonly PublicKey[]
   private readonly onTransactionConfirmed?: AsolSolanaClientOptions['onTransactionConfirmed']
   private readonly priorityFeeOptions?: PriorityFeeOptions
+  private readonly confirmOptions?: ConfirmOptions
 
   constructor(options: AsolSolanaClientOptions) {
+    this.confirmOptions = options.confirmOptions
     this.connection =
       options.connection ??
       new Connection(
-        process.env.SOLANA_RPC_URL ?? process.env.NEXT_PUBLIC_SOLANA_RPC_URL ?? DEFAULT_RPC,
-        'confirmed'
+        process.env.SOLANA_RPC_URL ??
+          process.env.NEXT_PUBLIC_SOLANA_RPC_URL ??
+          getDefaultSolanaRpcUrl(),
+        options.confirmOptions?.commitment ?? 'confirmed'
       )
     this.wallet = options.wallet
     this.onTransactionConfirmed = options.onTransactionConfirmed
@@ -258,9 +270,15 @@ export class AsolSolanaClient {
     return Uint8Array.from(config.clusterDomain)
   }
 
-  async hasOrderReceipt(orderId: Uint8Array): Promise<boolean> {
+  async hasClaimReceipt(claimId: Uint8Array, commitment?: Commitment): Promise<boolean> {
+    const address = this.getClaimReceiptAddress(claimId)
+    const account = await this.program.account.claimReceipt.fetchNullable(address, commitment)
+    return account !== null
+  }
+
+  async hasOrderReceipt(orderId: Uint8Array, commitment?: Commitment): Promise<boolean> {
     const address = this.getOrderReceiptAddress(orderId)
-    const account = await this.program.account.orderReceipt.fetchNullable(address)
+    const account = await this.program.account.orderReceipt.fetchNullable(address, commitment)
     return account !== null
   }
 
@@ -302,15 +320,26 @@ export class AsolSolanaClient {
       microLamports: priorityFee,
     })
 
-    const latest = await this.connection.getLatestBlockhash('confirmed')
+    const commitment = this.confirmOptions?.commitment ?? 'confirmed'
+    const latest = await this.connection.getLatestBlockhash(commitment)
     const transaction = new Transaction({
       feePayer: this.wallet.publicKey,
       blockhash: latest.blockhash,
       lastValidBlockHeight: latest.lastValidBlockHeight,
     }).add(...computeBudgetedInstructions)
     const signed = await this.wallet.signTransaction(transaction)
-    const signature = await this.connection.sendRawTransaction(signed.serialize())
-    await this.connection.confirmTransaction({ signature, ...latest }, 'confirmed')
+    const signature = await this.connection.sendRawTransaction(signed.serialize(), {
+      skipPreflight: false,
+      preflightCommitment: commitment,
+    })
+    await this.connection.confirmTransaction(
+      {
+        signature,
+        blockhash: latest.blockhash,
+        lastValidBlockHeight: latest.lastValidBlockHeight,
+      },
+      commitment
+    )
     await this.onTransactionConfirmed?.({
       type,
       signature,

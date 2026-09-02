@@ -10,6 +10,7 @@ import {
   DUEL_YIELD_REWARD,
   TOKEN_TYPES,
 } from '@/lib/economy-config'
+import { inspectSolanaOutbox } from '@/lib/solana/reconciliation'
 
 export const dynamic = 'force-dynamic'
 
@@ -305,14 +306,14 @@ export async function GET(_req: NextRequest) {
 
   // ── Solana rail: indexer liveness and bridge backlog ─────────────────────
   const solana = await section('Solana rail', alerts, async () => {
-    const [heartbeats, outboxPending, outboxFailing, bridgeByStatus, verifiedWallets] =
-      await Promise.all([
-        prisma.solanaServiceHeartbeat.findMany({ orderBy: { heartbeatAt: 'desc' } }),
-        prisma.solanaSyncOutbox.count({ where: { deliveredAt: null } }),
-        prisma.solanaSyncOutbox.count({ where: { deliveredAt: null, attempts: { gte: 3 } } }),
-        prisma.solanaBridgeTransfer.groupBy({ by: ['status'], _count: { _all: true } }),
-        prisma.verifiedSolanaWallet.count(),
-      ])
+    const [heartbeats, outboxResult, bridgeByStatus, verifiedWallets] = await Promise.all([
+      prisma.solanaServiceHeartbeat.findMany({ orderBy: { heartbeatAt: 'desc' } }),
+      inspectSolanaOutbox(prisma),
+      prisma.solanaBridgeTransfer.groupBy({ by: ['status'], _count: { _all: true } }),
+      prisma.verifiedSolanaWallet.count(),
+    ])
+
+    alerts.push(...outboxResult.alerts)
 
     return {
       services: heartbeats.map(hb => ({
@@ -327,7 +328,10 @@ export async function GET(_req: NextRequest) {
         heartbeatAt: toIso(hb.heartbeatAt),
         staleForMinutes: minutesSince(hb.heartbeatAt, now.getTime()),
       })),
-      outbox: { pending: outboxPending, failing: outboxFailing },
+      outbox: {
+        pending: outboxResult.inspection.pendingCount,
+        failing: outboxResult.inspection.failingCount,
+      },
       bridge: bridgeByStatus.map(row => ({ status: row.status, count: row._count._all })),
       verifiedWallets,
     }
@@ -382,22 +386,6 @@ export async function GET(_req: NextRequest) {
         .join('; '),
       href: 'tab:economy',
       remediation: 'The worker is stopped or wedged — restart the sync/bridge process.',
-    })
-    alertIf(alerts, solana.data.outbox.failing > 0, {
-      id: 'economy:outbox-failing',
-      severity: 'warning',
-      source: 'economy',
-      title: `${solana.data.outbox.failing} outbox event(s) retrying without success`,
-      detail: `${solana.data.outbox.pending} undelivered total; ${solana.data.outbox.failing} have already failed 3+ attempts.`,
-      href: 'tab:economy',
-    })
-    alertIf(alerts, solana.data.outbox.pending > 100, {
-      id: 'economy:outbox-backlog',
-      severity: 'warning',
-      source: 'economy',
-      title: 'Solana outbox backlog growing',
-      detail: `${solana.data.outbox.pending} events await delivery.`,
-      href: 'tab:economy',
     })
   }
 

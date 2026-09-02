@@ -63,10 +63,10 @@ pub const AMM_VISIBILITY_AUTHORIZATION_DOMAIN: &[u8] = b"ASOL_AMM_VISIBILITY_V1"
 pub const ESMS_NAMES: [&str; ESMS_MINT_COUNT] = ["Spirit", "Essence", "Matter", "Substance"];
 pub const ESMS_SYMBOLS: [&str; ESMS_MINT_COUNT] = ["SPIRIT", "ESSENCE", "MATTER", "SUBSTANCE"];
 pub const ESMS_METADATA_URIS: [&str; ESMS_MINT_COUNT] = [
-    "https://alchm.kitchen/metadata/esms/spirit.json",
-    "https://alchm.kitchen/metadata/esms/essence.json",
-    "https://alchm.kitchen/metadata/esms/matter.json",
-    "https://alchm.kitchen/metadata/esms/substance.json",
+    "https://arweave.net/BP4XXynxmnRB4ZSqTAvvjdZARPpGD6Kxgcj2YH1tXpWE",
+    "https://arweave.net/HdtPTVqm9GdKFX2F7a7je1vApcXSuEcpVXMS353kDhAo",
+    "https://arweave.net/5AGdZFaNba8A5Zke23j7K85oPihQzUmpn7QKoz4dGgFe",
+    "https://arweave.net/3xzDcPZn1h9Ss91kaTeCWjSBsPBWczcETECFfvJe68YY",
 ];
 
 pub const REDEMPTION_MODE_SELF: u8 = 0;

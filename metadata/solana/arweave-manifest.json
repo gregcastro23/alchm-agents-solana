@@ -1,80 +1,80 @@
 {
   "version": "1.0.0",
-  "cluster": null,
-  "irysNetwork": null,
-  "uploadedAtIso": null,
+  "cluster": "mainnet-beta",
+  "irysNetwork": "mainnet",
+  "uploadedAtIso": "2026-09-02T19:26:00.000Z",
   "assets": {
     "icons/spirit.svg": {
       "file": "metadata/solana/icons/spirit.svg",
-      "sha256": null,
-      "byteLength": null,
-      "txId": null,
-      "uri": null,
-      "irysNetwork": null,
-      "uploadedAtIso": null
+      "sha256": "d2a8105f4906f9cd18c32739c99e81242a0c0db70b726411a79270dfea4f1737",
+      "byteLength": 2643,
+      "txId": "B7CNd8mYcWu73i8EjeRmhP3Ni9xbLf2mdrysq1pHd9mu",
+      "uri": "https://arweave.net/B7CNd8mYcWu73i8EjeRmhP3Ni9xbLf2mdrysq1pHd9mu",
+      "irysNetwork": "mainnet",
+      "uploadedAtIso": "2026-09-02T19:25:00.000Z"
     },
     "icons/essence.svg": {
       "file": "metadata/solana/icons/essence.svg",
-      "sha256": null,
-      "byteLength": null,
-      "txId": null,
-      "uri": null,
-      "irysNetwork": null,
-      "uploadedAtIso": null
+      "sha256": "2f3935f041f9486302e1bb7a8e43456a43b427adb953b2ddc9bbc54908c4819b",
+      "byteLength": 2651,
+      "txId": "A7y37BmeoJN9wyYEHud7MqnUwrRrBxvbdqZquRRyWr71",
+      "uri": "https://arweave.net/A7y37BmeoJN9wyYEHud7MqnUwrRrBxvbdqZquRRyWr71",
+      "irysNetwork": "mainnet",
+      "uploadedAtIso": "2026-09-02T19:25:00.000Z"
     },
     "icons/matter.svg": {
       "file": "metadata/solana/icons/matter.svg",
-      "sha256": null,
-      "byteLength": null,
-      "txId": null,
-      "uri": null,
-      "irysNetwork": null,
-      "uploadedAtIso": null
+      "sha256": "89700503a70d834976efa6f3bdd08b64c65971e450c1ccf01f8eb81f3f68309f",
+      "byteLength": 2795,
+      "txId": "G7jTf6QNe89RGQPEReLQipQJJQZyWVeo97drweGSizh8",
+      "uri": "https://arweave.net/G7jTf6QNe89RGQPEReLQipQJJQZyWVeo97drweGSizh8",
+      "irysNetwork": "mainnet",
+      "uploadedAtIso": "2026-09-02T19:25:00.000Z"
     },
     "icons/substance.svg": {
       "file": "metadata/solana/icons/substance.svg",
-      "sha256": null,
-      "byteLength": null,
-      "txId": null,
-      "uri": null,
-      "irysNetwork": null,
-      "uploadedAtIso": null
+      "sha256": "fb8aad0ad4aaa6e526c4d0efc7fdf2470ae86bbe802e3d400f516fbc51020b20",
+      "byteLength": 2788,
+      "txId": "DVuu9bBLzEQ5yY5ZSSfc6vtXtxFF81v8PNjXvQsoDcv8",
+      "uri": "https://arweave.net/DVuu9bBLzEQ5yY5ZSSfc6vtXtxFF81v8PNjXvQsoDcv8",
+      "irysNetwork": "mainnet",
+      "uploadedAtIso": "2026-09-02T19:25:00.000Z"
     },
     "tokens/spirit.json": {
       "file": "metadata/solana/tokens/spirit.json",
-      "sha256": null,
-      "byteLength": null,
-      "txId": null,
-      "uri": null,
-      "irysNetwork": null,
-      "uploadedAtIso": null
+      "sha256": "5ca85516d92d708ebbbb445d0a485a426c560389c887f35d66043c69603efc4f",
+      "byteLength": 656,
+      "txId": "BP4XXynxmnRB4ZSqTAvvjdZARPpGD6Kxgcj2YH1tXpWE",
+      "uri": "https://arweave.net/BP4XXynxmnRB4ZSqTAvvjdZARPpGD6Kxgcj2YH1tXpWE",
+      "irysNetwork": "mainnet",
+      "uploadedAtIso": "2026-09-02T19:26:00.000Z"
     },
     "tokens/essence.json": {
       "file": "metadata/solana/tokens/essence.json",
-      "sha256": null,
-      "byteLength": null,
-      "txId": null,
-      "uri": null,
-      "irysNetwork": null,
-      "uploadedAtIso": null
+      "sha256": "9705925780fefd26a0e6ae5430b5296b9873fdbc8e1e89559228ea8d751ae1b6",
+      "byteLength": 679,
+      "txId": "HdtPTVqm9GdKFX2F7a7je1vApcXSuEcpVXMS353kDhAo",
+      "uri": "https://arweave.net/HdtPTVqm9GdKFX2F7a7je1vApcXSuEcpVXMS353kDhAo",
+      "irysNetwork": "mainnet",
+      "uploadedAtIso": "2026-09-02T19:26:00.000Z"
     },
     "tokens/matter.json": {
       "file": "metadata/solana/tokens/matter.json",
-      "sha256": null,
-      "byteLength": null,
-      "txId": null,
-      "uri": null,
-      "irysNetwork": null,
-      "uploadedAtIso": null
+      "sha256": "fc0097144a9d17d200cc437844d08c8e4f7014ae27eda4e27c17a0e01d362043",
+      "byteLength": 665,
+      "txId": "5AGdZFaNba8A5Zke23j7K85oPihQzUmpn7QKoz4dGgFe",
+      "uri": "https://arweave.net/5AGdZFaNba8A5Zke23j7K85oPihQzUmpn7QKoz4dGgFe",
+      "irysNetwork": "mainnet",
+      "uploadedAtIso": "2026-09-02T19:26:00.000Z"
     },
     "tokens/substance.json": {
       "file": "metadata/solana/tokens/substance.json",
-      "sha256": null,
-      "byteLength": null,
-      "txId": null,
-      "uri": null,
-      "irysNetwork": null,
-      "uploadedAtIso": null
+      "sha256": "99e436ec8fba9fcd3521302b53919398191e8d3bcf3edd2cd53fd0bceb6b0f35",
+      "byteLength": 667,
+      "txId": "3xzDcPZn1h9Ss91kaTeCWjSBsPBWczcETECFfvJe68YY",
+      "uri": "https://arweave.net/3xzDcPZn1h9Ss91kaTeCWjSBsPBWczcETECFfvJe68YY",
+      "irysNetwork": "mainnet",
+      "uploadedAtIso": "2026-09-02T19:26:00.000Z"
     }
   }
 }

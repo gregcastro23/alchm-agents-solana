@@ -11,7 +11,7 @@ import { AsyncCosmicContextEncoder } from '@/lib/jepa/cosmic-context-encoder'
 import type { SolanaServiceHealth } from '@/lib/solana/rpc-failover'
 import {
   createAsolBridgeProcessor,
-  createBaseSepoliaClients,
+  createBaseClients,
   createPrismaBridgeStore,
   listenToBridgeSourceEvents,
   startBridgeRelayPolling,
@@ -138,7 +138,7 @@ async function runBridge(client: PrismaClient) {
   const evmKey = process.env.EVM_MINTER_PRIVATE_KEY as Hex | undefined
   if (!evmKey) throw new Error('EVM_MINTER_PRIVATE_KEY is required for bridge service')
 
-  const { publicClient, walletClient } = createBaseSepoliaClients(evmKey)
+  const { publicClient, walletClient } = createBaseClients(evmKey)
   const solanaClient = new AsolSolanaClient({
     wallet: solanaWallet,
   })

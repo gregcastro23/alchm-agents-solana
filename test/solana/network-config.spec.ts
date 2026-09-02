@@ -7,6 +7,7 @@ import {
   SOLANA_MAINNET_GENESIS_HASH,
   SOLANA_DEVNET_GENESIS_HASH,
 } from '@/lib/solana/network-config'
+import { clearGenesisHashCache } from '@/lib/solana/rpc-failover'
 
 describe('SolanaNetworkConfig Architecture (Workstream 2)', () => {
   it('resolves default Devnet configuration in non-production environments', () => {
@@ -107,5 +108,90 @@ describe('SolanaNetworkConfig Architecture (Workstream 2)', () => {
     expect(config.network).toBe('localnet')
     expect(config.isMainnet).toBe(false)
     expect(config.rpcUrls).toEqual(['http://127.0.0.1:8899'])
+  })
+
+  describe('Step 0: Cluster Safety & Failover Genesis Assertions', () => {
+    const originalEnv = { ...process.env }
+
+    afterEach(() => {
+      process.env = { ...originalEnv }
+      clearGenesisHashCache()
+    })
+
+    it('resolveSolanaRpcUrls never appends devnet or testnet in Mainnet-Beta', async () => {
+      const { resolveSolanaRpcUrls } = await import('@/lib/solana/rpc-failover')
+      process.env.SOLANA_NETWORK = 'mainnet-beta'
+      process.env.SOLANA_RPC_URL = 'https://mainnet.helius-rpc.com/?api-key=test'
+
+      const urls = resolveSolanaRpcUrls()
+      expect(urls).toContain('https://mainnet.helius-rpc.com/?api-key=test')
+      expect(urls.some(u => u.includes('devnet') || u.includes('testnet'))).toBe(false)
+    })
+
+    it('resolveSolanaRpcUrls strictly throws if devnet URL is passed in Mainnet-Beta', async () => {
+      const { resolveSolanaRpcUrls } = await import('@/lib/solana/rpc-failover')
+      process.env.SOLANA_NETWORK = 'mainnet-beta'
+      process.env.SOLANA_RPC_URL = 'https://api.devnet.solana.com'
+
+      expect(() => resolveSolanaRpcUrls()).toThrow(/Forbidden non-mainnet RPC url in Mainnet-Beta/)
+    })
+
+    it('withSolanaRpcFailover skips endpoints that fail genesis hash assertion', async () => {
+      const { withSolanaRpcFailover, clearGenesisHashCache } =
+        await import('@/lib/solana/rpc-failover')
+      clearGenesisHashCache()
+      process.env.SOLANA_NETWORK = 'mainnet-beta'
+      process.env.SOLANA_RPC_URL = 'https://mock.mainnet1.com'
+
+      const callLog: string[] = []
+      const mockFactory = (endpoint: string) => {
+        return {
+          getGenesisHash: async () => {
+            if (endpoint.includes('bad')) return SOLANA_DEVNET_GENESIS_HASH
+            return SOLANA_MAINNET_GENESIS_HASH
+          },
+        } as any
+      }
+
+      const result = await withSolanaRpcFailover({
+        rpcUrls: ['https://mock.bad.com', 'https://mock.good.com'],
+        connectionFactory: mockFactory,
+        operation: async (conn, endpoint) => {
+          callLog.push(endpoint)
+          return `success-from-${endpoint}`
+        },
+      })
+
+      expect(callLog).toEqual(['https://mock.good.com'])
+      expect(result).toBe('success-from-https://mock.good.com')
+    })
+
+    it('withSolanaRpcFailover immediately aborts on deterministic program errors without trying further endpoints', async () => {
+      const { withSolanaRpcFailover } = await import('@/lib/solana/rpc-failover')
+      process.env.SOLANA_NETWORK = 'devnet'
+
+      const attemptedEndpoints: string[] = []
+      const deterministicError = new Error(
+        'Transaction simulation failed: Error processing Instruction 0: custom program error: 0x1770'
+      )
+
+      await expect(
+        withSolanaRpcFailover({
+          rpcUrls: [
+            'https://rpc1.example.com',
+            'https://rpc2.example.com',
+            'https://rpc3.example.com',
+          ],
+          connectionFactory: () => ({}) as any,
+          operation: async (conn, endpoint) => {
+            attemptedEndpoints.push(endpoint)
+            throw deterministicError
+          },
+        })
+      ).rejects.toThrow(/Transaction simulation failed/)
+
+      // Must have aborted on the very first endpoint!
+      expect(attemptedEndpoints).toEqual(['https://rpc1.example.com'])
+    })
   })
 })

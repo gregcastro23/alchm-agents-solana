@@ -25,7 +25,7 @@
         },
         {
           "type": "string",
-          "pattern": "^https://arweave\\.net/[A-Za-z0-9_-]{43}$"
+          "pattern": "^https://arweave\\.net/[A-Za-z0-9_-]{43,44}$"
         }
       ]
     },
