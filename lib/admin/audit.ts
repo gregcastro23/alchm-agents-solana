@@ -1,19 +1,13 @@
 import 'server-only'
 
 import { prisma } from '@/lib/db'
-import type { AdminAuthSuccess } from '@/lib/admin-auth'
 
 /**
  * Operator-console audit trail.
  *
- * Two properties matter here and they pull in opposite directions:
- *
- *  - A mutation must not fail because the audit table is missing. This repo
- *    deploys schema with `db push`, so an environment can legitimately be a
- *    push behind and the console still has to work there.
- *  - An unaudited mutation must never *look* audited. So a failed write is
- *    returned to the caller, which surfaces it in the response, rather than
- *    swallowed into a log line nobody reads.
+ * Callers that mutate operational state must treat `recorded: false` as a
+ * failed precondition and stop before the side effect. Read-only callers may
+ * still surface an unavailable trail as a degraded state.
  */
 
 export type AuditOutcome = { recorded: true; id: string } | { recorded: false; reason: string }
@@ -27,8 +21,16 @@ export type AuditEntry = {
   note?: string | null
 }
 
+export type AdminAuditActor = {
+  user: {
+    id?: string | null
+    email?: string | null
+  }
+  source: string
+}
+
 export async function recordAdminAction(
-  admin: AdminAuthSuccess,
+  admin: AdminAuditActor,
   entry: AuditEntry
 ): Promise<AuditOutcome> {
   try {

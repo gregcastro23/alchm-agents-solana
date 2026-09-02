@@ -4,7 +4,6 @@ import { SessionProvider } from 'next-auth/react'
 import { Toaster } from '@/components/ui/toaster'
 import { usePathname } from 'next/navigation'
 import { MonicaChatBubble } from '@/components/monica/monica-chat-bubble'
-import { FloatingAdminPanel } from '@/components/admin/FloatingAdminPanel'
 import { SpacetimeProvider } from '@/lib/spacetime/SpacetimeContext'
 import { useLiveEphemeris } from '@/lib/spacetime/hooks/useLiveEphemeris'
 import { DynamicCircleProvider } from '@/components/auth/DynamicCircleProvider'
@@ -30,12 +29,6 @@ function MonicaWrapper() {
   )
 }
 
-function DesktopAwareAdminPanel() {
-  const pathname = usePathname()
-  if (pathname?.startsWith('/desktop')) return null
-  return <FloatingAdminPanel />
-}
-
 function EconomyWalletHUD() {
   const pathname = usePathname()
   const show = ['/account', '/economy', '/pentacles', '/yield'].some(
@@ -52,7 +45,6 @@ export function Providers({ children }: { children: React.ReactNode }) {
           <SpacetimeProvider>
             {children}
             <Toaster />
-            <DesktopAwareAdminPanel />
             <MonicaWrapper />
             <EconomyWalletHUD />
           </SpacetimeProvider>

@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
 import { adminErrorResponse, requireAdmin } from '@/lib/admin-auth'
+import { recordAdminAction } from '@/lib/admin/audit'
 import { performanceMonitor } from '@/lib/performance-monitor'
+import { requireAdminRequest } from '@/lib/security/privileged-api-auth'
 
 /**
  * Admin API for system statistics and monitoring
@@ -198,13 +200,33 @@ export async function GET(req: NextRequest) {
 }
 
 export async function POST(req: NextRequest) {
+  const access = await requireAdminRequest(req)
+  if (!access.ok) return access.response
+
   try {
-    const admin = await requireAdmin()
-    if (!admin.ok) {
-      return adminErrorResponse(admin)
+    const { action, data = {} } = await req.json()
+    if (!['clear_cache', 'send_system_notification', 'export_data'].includes(action)) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Invalid admin action',
+        },
+        { status: 400 }
+      )
     }
 
-    const { action, data } = await req.json()
+    const audit = await recordAdminAction(access.admin, {
+      action: `system.${action}.requested`,
+      targetType: 'system',
+      targetId: action,
+      after: { requested: true },
+    })
+    if (!audit.recorded) {
+      return NextResponse.json(
+        { success: false, error: `Mandatory audit write failed: ${audit.reason}` },
+        { status: 503 }
+      )
+    }
 
     switch (action) {
       case 'clear_cache':
@@ -213,6 +235,7 @@ export async function POST(req: NextRequest) {
         return NextResponse.json({
           success: true,
           message: 'Performance cache cleared',
+          audit,
         })
 
       case 'send_system_notification': {
@@ -244,6 +267,7 @@ export async function POST(req: NextRequest) {
           return NextResponse.json({
             success: true,
             message: `System notification sent to ${users.length} users`,
+            audit,
           })
         } catch (error) {
           return NextResponse.json(
@@ -289,17 +313,12 @@ export async function POST(req: NextRequest) {
           exportData,
           timestamp: new Date().toISOString(),
           format: format || 'json',
+          audit,
         })
       }
 
       default:
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'Invalid admin action',
-          },
-          { status: 400 }
-        )
+        return NextResponse.json({ success: false, error: 'Invalid admin action' }, { status: 400 })
     }
   } catch (error) {
     console.error('Admin action error:', error)

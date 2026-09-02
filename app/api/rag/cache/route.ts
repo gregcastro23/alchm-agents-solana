@@ -7,6 +7,8 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { ragCache } from '@/lib/rag/rag-cache'
+import { recordAdminAction } from '@/lib/admin/audit'
+import { requireAdminOrService, toAdminAuditActor } from '@/lib/security/privileged-api-auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -15,6 +17,9 @@ export const dynamic = 'force-dynamic'
  * Get cache statistics
  */
 export async function GET(request: NextRequest) {
+  const access = await requireAdminOrService(request)
+  if (!access.ok) return access.response
+
   try {
     const stats = ragCache.getStats()
 
@@ -44,18 +49,30 @@ export async function GET(request: NextRequest) {
  * Clear cache (admin only in production)
  */
 export async function DELETE(request: NextRequest) {
+  const access = await requireAdminOrService(request)
+  if (!access.ok) return access.response
+
   try {
-    // In production, you might want to add authentication here
-    // const session = await getSession(request)
-    // if (!session?.user?.isAdmin) {
-    //   return NextResponse.json({ error: 'Unauthorized' }, { status: 401 })
-    // }
+    const audit = await recordAdminAction(toAdminAuditActor(access), {
+      action: 'rag.cache.clear.requested',
+      targetType: 'rag_cache',
+      targetId: 'all',
+      before: { stats: ragCache.getStats() },
+      after: { cacheSize: 0 },
+    })
+    if (!audit.recorded) {
+      return NextResponse.json(
+        { success: false, error: `Mandatory audit write failed: ${audit.reason}` },
+        { status: 503 }
+      )
+    }
 
     ragCache.clear()
 
     return NextResponse.json({
       success: true,
       message: 'Cache cleared successfully',
+      audit,
     })
   } catch (error) {
     console.error('[RAG Cache API] Failed to clear cache:', error)
@@ -74,8 +91,36 @@ export async function DELETE(request: NextRequest) {
  * Invalidate specific cache entries
  */
 export async function POST(request: NextRequest) {
+  const access = await requireAdminOrService(request)
+  if (!access.ok) return access.response
+
   try {
     const body = await request.json()
+
+    const targetId = body.agentId ? String(body.agentId) : body.clearAll ? 'all' : null
+    if (!targetId) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Invalid request: provide agentId or clearAll=true',
+        },
+        { status: 400 }
+      )
+    }
+
+    const audit = await recordAdminAction(toAdminAuditActor(access), {
+      action: body.agentId ? 'rag.cache.invalidate-agent.requested' : 'rag.cache.clear.requested',
+      targetType: 'rag_cache',
+      targetId,
+      before: { stats: ragCache.getStats() },
+      after: body.agentId ? { agentId: targetId, invalidated: true } : { cacheSize: 0 },
+    })
+    if (!audit.recorded) {
+      return NextResponse.json(
+        { success: false, error: `Mandatory audit write failed: ${audit.reason}` },
+        { status: 503 }
+      )
+    }
 
     // Support invalidating by agent or query pattern
     if (body.agentId) {
@@ -128,6 +173,7 @@ export async function POST(request: NextRequest) {
         agentId,
         inMemoryRemoved,
         chromaDb: backendResult ?? { error: backendError },
+        audit,
       })
     }
 
@@ -136,14 +182,12 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({
         success: true,
         message: 'All cache entries cleared',
+        audit,
       })
     }
 
     return NextResponse.json(
-      {
-        success: false,
-        error: 'Invalid request: provide agentId or clearAll=true',
-      },
+      { success: false, error: 'Invalid cache invalidation request' },
       { status: 400 }
     )
   } catch (error) {

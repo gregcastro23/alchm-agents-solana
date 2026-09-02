@@ -43,7 +43,7 @@ beforeEach(() => {
   ;(requireAdmin as any).mockResolvedValue({
     ok: true,
     user: { id: 'u1', email: 'admin@planetaryagents.com', role: 'admin' },
-    source: 'session-role',
+    source: 'db-role',
   })
   ;(backend.agents.get as any).mockResolvedValue({ agentId: 'ares', name: 'Ares' })
   ;(generateAgentAvatar as any).mockResolvedValue({

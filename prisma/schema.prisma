@@ -1781,15 +1781,14 @@ model SolanaServiceHeartbeat {
 ///
 /// Admin mutations (role changes, verification flips, agentic toggles) had no
 /// trail at all before this — the only way to learn that someone had been made
-/// an admin was to notice the role had changed. Writes are best-effort: a
-/// mutation is never failed because this table is absent in an environment that
-/// has not been `db push`ed yet, but the route reports the miss to the caller so
-/// an untracked change is never silently presented as tracked.
+/// an admin was to notice the role had changed. Mutations fail closed when this
+/// table is absent in an environment that has not been `db push`ed yet, so an
+/// untracked change is never applied.
 model admin_audit_log {
   id          String   @id @default(cuid())
   actorId     String?  @map("actor_id")
   actorEmail  String?  @map("actor_email")
-  /// Which requireAdmin branch authorised the actor (session-role, db-role, …).
+  /// Which authorization branch authorised the actor (db-role, internal-secret, …).
   actorSource String   @map("actor_source")
   action      String
   targetType  String   @map("target_type")

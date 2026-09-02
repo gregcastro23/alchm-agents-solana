@@ -45,7 +45,7 @@ describe('getPaTier & getEntitlements (Token Economy)', () => {
     expect(await getPaTier('u2')).toBe('master')
   })
 
-  it('returns master for configured admin emails (e.g. gregcastro23@gmail.com)', async () => {
+  it('does not grant elevated entitlements from a hardcoded email identity', async () => {
     mockUser({
       id: 'u3',
       email: 'gregcastro23@gmail.com',
@@ -54,7 +54,7 @@ describe('getPaTier & getEntitlements (Token Economy)', () => {
       createdAt: new Date(),
     })
     mockSub(null)
-    expect(await getPaTier('u3')).toBe('master')
+    expect(await getPaTier('u3')).toBe('alchemist')
   })
 
   it('returns free when user is not found (visitor / unauthenticated)', async () => {

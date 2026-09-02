@@ -12,6 +12,8 @@ import { NextRequest, NextResponse } from 'next/server'
 import { logger } from '@/lib/structured-logger'
 import { CORS_HEADERS, corsPreflight } from '@/lib/cors'
 import { rateLimit, getClientIp } from '@/lib/security/rate-limit'
+import { recordAdminAction } from '@/lib/admin/audit'
+import { requireAdminOrService, toAdminAuditActor } from '@/lib/security/privileged-api-auth'
 
 export const runtime = 'nodejs'
 
@@ -77,6 +79,9 @@ async function extractText(file: File, ext: SupportedExt): Promise<string> {
 }
 
 export async function POST(req: NextRequest) {
+  const access = await requireAdminOrService(req)
+  if (!access.ok) return access.response
+
   const ragDisabled = checkRagEnabled()
   if (ragDisabled) return ragDisabled
 
@@ -115,6 +120,19 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(
       { success: false, error: 'At least one file is required' },
       { status: 400, headers: CORS_HEADERS }
+    )
+  }
+
+  const audit = await recordAdminAction(toAdminAuditActor(access), {
+    action: 'rag.knowledge.ingest-files.requested',
+    targetType: 'agent_knowledge',
+    targetId: agentId,
+    after: { fileCount: files.length },
+  })
+  if (!audit.recorded) {
+    return NextResponse.json(
+      { success: false, error: `Mandatory audit write failed: ${audit.reason}` },
+      { status: 503, headers: CORS_HEADERS }
     )
   }
 
@@ -178,6 +196,7 @@ export async function POST(req: NextRequest) {
       filesSucceeded: succeeded,
       totalChunks,
       results,
+      audit,
       timestamp: new Date().toISOString(),
     },
     { headers: CORS_HEADERS }

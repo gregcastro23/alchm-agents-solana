@@ -5,14 +5,13 @@
  *  - Visitors (unauthenticated / no userId) resolve to 'free' (base fast model chain).
  *  - Account Holders (authenticated users with an account) have full access to hold
  *    ESMS token balances, claim daily yield, and access enhanced model tiers ('alchemist').
- *  - Designated Administrators (admin role or configured admin emails) receive full
+ *  - Designated Administrators (database-backed roles) receive full
  *    operator access ('master').
  */
 
 import { prisma } from '@/lib/db'
 import type { PaTier, ByokProvider } from './tiers'
 import { listByokProviders } from '@/lib/byok/store'
-import { isConfiguredAdminIdentity, normalizeEmail } from '@/lib/admin-identity'
 
 const ADMIN_ROLES = new Set(['admin', 'operator', 'alchemist'])
 const ACTIVE_SUB_STATUSES = ['active', 'trialing']
@@ -41,13 +40,8 @@ export async function getPaTier(userId: string, opts: EntitlementOpts = {}): Pro
     if (!user) return 'free'
 
     const role = (user.role || '').toLowerCase()
-    const email = normalizeEmail(user.email)
-
     // 1. Designated Administrator check
-    if (
-      ADMIN_ROLES.has(role) ||
-      (email && isConfiguredAdminIdentity({ email, name: user.name, id: userId }))
-    ) {
+    if (ADMIN_ROLES.has(role)) {
       return 'master'
     }
 

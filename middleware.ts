@@ -1,12 +1,15 @@
 import { NextResponse } from 'next/server'
-import type { NextRequest } from 'next/server'
 
 /**
  * Global Edge Security Middleware (OWASP API5 / NIST Protect / ASVS V2 & V14)
- * Enforces security response headers and guards administrative routes.
+ * Enforces security response headers.
+ *
+ * Authentication belongs at the route/layout boundary where cookie sessions
+ * and service credentials can be evaluated deliberately. Requiring a service
+ * secret here would reject normal browser navigation before the admin layout's
+ * cookie-backed `requireAdmin()` check can run.
  */
-export function middleware(request: NextRequest) {
-  const { pathname } = request.nextUrl
+export function middleware() {
   const response = NextResponse.next()
 
   // Apply Security Headers to all responses
@@ -14,28 +17,6 @@ export function middleware(request: NextRequest) {
   response.headers.set('X-Content-Type-Options', 'nosniff')
   response.headers.set('Referrer-Policy', 'strict-origin-when-cross-origin')
   response.headers.set('X-XSS-Protection', '1; mode=block')
-
-  // Protect Admin endpoints (/admin and /api/admin)
-  if (pathname.startsWith('/admin') || pathname.startsWith('/api/admin')) {
-    // Check for internal API secret header if provided
-    const internalSecret =
-      request.headers.get('x-internal-secret') || request.headers.get('authorization')
-    const expectedSecret = process.env.INTERNAL_API_SECRET
-
-    if (
-      expectedSecret &&
-      internalSecret !== expectedSecret &&
-      !internalSecret?.includes(expectedSecret)
-    ) {
-      // In production, require authentication or matching internal secret
-      if (process.env.NODE_ENV === 'production') {
-        return NextResponse.json(
-          { success: false, error: 'Unauthorized administrative access.' },
-          { status: 401 }
-        )
-      }
-    }
-  }
 
   return response
 }

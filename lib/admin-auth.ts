@@ -3,18 +3,16 @@ import 'server-only'
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
-import {
-  ADMIN_EMAILS,
-  ADMIN_HANDLES,
-  GREG_EMAIL,
-  GREG_HANDLE,
-  isGregIdentity,
-  normalizeEmail,
-  normalizeHandle,
-  type AdminIdentity,
-} from '@/lib/admin-identity'
 
-export { ADMIN_EMAILS, ADMIN_HANDLES, isGregIdentity, normalizeHandle } from '@/lib/admin-identity'
+type AdminIdentity = {
+  id?: string | null
+  email?: string | null
+  name?: string | null
+}
+
+function normalizeEmail(value?: string | null) {
+  return (value || '').trim().toLowerCase()
+}
 
 export type AdminSessionUser = AdminIdentity & {
   role?: string | null
@@ -24,7 +22,7 @@ export type AdminSessionUser = AdminIdentity & {
 export type AdminAuthSuccess = {
   ok: true
   user: AdminSessionUser
-  source: 'session-role' | 'configured-identity' | 'greg-identity' | 'db-role' | 'db-identity'
+  source: 'db-role'
 }
 
 export type AdminAuthFailure = {
@@ -38,33 +36,6 @@ export type AdminAuthResult = AdminAuthSuccess | AdminAuthFailure
 
 function hasSessionIdentity(user?: AdminSessionUser | null) {
   return Boolean(user?.id || user?.email || user?.name)
-}
-
-function getTrustedHandles(identity?: AdminIdentity | null) {
-  if (!identity) return []
-
-  const email = normalizeEmail(identity.email)
-  const emailHandle = email.includes('@') ? email.split('@')[0] : email
-
-  return [normalizeHandle(identity.id), normalizeHandle(emailHandle)].filter(Boolean)
-}
-
-function isTrustedGregIdentity(identity?: AdminIdentity | null) {
-  if (!identity) return false
-
-  return (
-    normalizeEmail(identity.email) === GREG_EMAIL ||
-    getTrustedHandles(identity).includes(GREG_HANDLE)
-  )
-}
-
-function isTrustedAdminIdentity(identity?: AdminIdentity | null) {
-  if (!identity) return false
-
-  const email = normalizeEmail(identity.email)
-  if (email && ADMIN_EMAILS.includes(email)) return true
-
-  return getTrustedHandles(identity).some(handle => ADMIN_HANDLES.includes(handle))
 }
 
 function toSessionUser(user?: AdminSessionUser | null): AdminSessionUser | null {
@@ -81,10 +52,7 @@ function toSessionUser(user?: AdminSessionUser | null): AdminSessionUser | null 
 
 export function isAdminSession(user?: AdminSessionUser | null) {
   if (!hasSessionIdentity(user)) return false
-
-  if (user?.role === 'admin') return true
-
-  return isTrustedAdminIdentity(user)
+  return user?.role === 'admin'
 }
 
 export function adminErrorResponse(result: AdminAuthFailure) {
@@ -127,18 +95,6 @@ export async function requireAdmin(
     }
   }
 
-  if (user?.role === 'admin') {
-    return { ok: true, user, source: 'session-role' }
-  }
-
-  if (isTrustedGregIdentity(user)) {
-    return { ok: true, user, source: 'greg-identity' }
-  }
-
-  if (isTrustedAdminIdentity(user)) {
-    return { ok: true, user, source: 'configured-identity' }
-  }
-
   try {
     const dbUser = await findDbAdminUser(user)
     if (!dbUser) {
@@ -160,14 +116,6 @@ export async function requireAdmin(
 
     if (dbUser.role === 'admin') {
       return { ok: true, user: resolvedUser, source: 'db-role' }
-    }
-
-    if (isTrustedGregIdentity(resolvedUser)) {
-      return { ok: true, user: resolvedUser, source: 'db-identity' }
-    }
-
-    if (isTrustedAdminIdentity(resolvedUser)) {
-      return { ok: true, user: resolvedUser, source: 'db-identity' }
     }
   } catch (error) {
     console.warn('[AdminAuth] Failed to verify database admin role:', error)

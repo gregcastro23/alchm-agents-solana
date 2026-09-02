@@ -350,6 +350,7 @@ export async function withApiErrorHandling<T>(
 ): Promise<NextResponse> {
   try {
     const result = await operation()
+    if (result instanceof NextResponse) return result
     return NextResponse.json(result)
   } catch (error) {
     // Handle the error and return a NextResponse
