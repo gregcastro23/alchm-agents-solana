@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -18,7 +18,6 @@ import {
   BarChart3,
   RefreshCw,
   Download,
-  Trash2,
   TrendingUp,
   Users,
   FileText,
@@ -45,42 +44,40 @@ import {
   PolarAngleAxis,
 } from 'recharts'
 import { RAGMonitor } from '@/components/rag/rag-monitor'
-import { ragAnalytics, type RAGAnalytics, type RAGQueryLog } from '@/lib/rag/rag-analytics'
+import type { RAGAnalytics, RAGQueryLog } from '@/lib/rag/rag-analytics'
+import { fetchRagAdminSnapshot } from '@/lib/rag/rag-admin-snapshot'
+
+const CACHE_TELEMETRY_STATUS = 'unavailable' as const
 
 export default function RAGAnalyticsPage() {
   const [analytics, setAnalytics] = useState<RAGAnalytics | null>(null)
   const [recentLogs, setRecentLogs] = useState<RAGQueryLog[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [lastRefresh, setLastRefresh] = useState<Date>(new Date())
+  const [lastRefresh, setLastRefresh] = useState<Date | null>(null)
+  const [loadError, setLoadError] = useState<string | null>(null)
 
-  const loadAnalytics = () => {
+  const loadAnalytics = useCallback(async () => {
+    setIsLoading(true)
     try {
-      const data = ragAnalytics.getAnalytics()
-      const logs = ragAnalytics.getRecentLogs(100)
-      setAnalytics(data)
-      setRecentLogs(logs)
-      setLastRefresh(new Date())
-      setIsLoading(false)
+      const snapshot = await fetchRagAdminSnapshot()
+      setAnalytics(snapshot.analytics)
+      setRecentLogs(snapshot.recentLogs)
+      setLastRefresh(new Date(snapshot.generatedAt))
+      setLoadError(null)
     } catch (error) {
       console.error('[RAGAnalytics] Failed to load analytics:', error)
+      setLoadError(error instanceof Error ? error.message : 'RAG analytics are unavailable')
+    } finally {
       setIsLoading(false)
     }
-  }
-
-  useEffect(() => {
-    loadAnalytics()
   }, [])
 
-  const handleRefresh = () => {
-    setIsLoading(true)
-    loadAnalytics()
-  }
+  useEffect(() => {
+    void loadAnalytics()
+  }, [loadAnalytics])
 
-  const handleClearLogs = () => {
-    if (confirm('Are you sure you want to clear all analytics logs? This cannot be undone.')) {
-      ragAnalytics.clearLogs()
-      loadAnalytics()
-    }
+  const handleRefresh = () => {
+    void loadAnalytics()
   }
 
   const handleExport = () => {
@@ -118,6 +115,22 @@ export default function RAGAnalyticsPage() {
     )
   }
 
+  if (loadError && !analytics) {
+    return (
+      <div className="container mx-auto p-6">
+        <Card className="border-red-200">
+          <CardContent className="space-y-3 pt-6">
+            <p className="font-semibold text-red-700">RAG analytics are unavailable</p>
+            <p className="text-sm text-muted-foreground">{loadError}</p>
+            <Button onClick={handleRefresh} variant="outline" size="sm">
+              Retry
+            </Button>
+          </CardContent>
+        </Card>
+      </div>
+    )
+  }
+
   return (
     <div className="container mx-auto p-6 space-y-6">
       {/* Header */}
@@ -128,11 +141,11 @@ export default function RAGAnalyticsPage() {
             Monitor and analyze Retrieval-Augmented Generation performance
           </p>
           <p className="text-xs text-muted-foreground mt-1">
-            Last updated: {formatTimestamp(lastRefresh)}
+            Last updated: {lastRefresh ? formatTimestamp(lastRefresh) : 'Unavailable'}
           </p>
         </div>
         <div className="flex items-center gap-2">
-          <Button onClick={handleRefresh} variant="outline" size="sm">
+          <Button onClick={handleRefresh} variant="outline" size="sm" disabled={isLoading}>
             <RefreshCw className={`w-4 h-4 mr-2 ${isLoading ? 'animate-spin' : ''}`} />
             Refresh
           </Button>
@@ -140,17 +153,16 @@ export default function RAGAnalyticsPage() {
             <Download className="w-4 h-4 mr-2" />
             Export
           </Button>
-          <Button
-            onClick={handleClearLogs}
-            variant="destructive"
-            size="sm"
-            disabled={!analytics || analytics.totalQueries === 0}
-          >
-            <Trash2 className="w-4 h-4 mr-2" />
-            Clear Logs
-          </Button>
         </div>
       </div>
+
+      {loadError && analytics && (
+        <Card className="border-yellow-200">
+          <CardContent className="pt-6 text-sm text-yellow-800">
+            Refresh failed; showing the last successful snapshot. {loadError}
+          </CardContent>
+        </Card>
+      )}
 
       {/* System Health Banner */}
       {analytics && analytics.errorRate > 0.5 && (
@@ -159,29 +171,10 @@ export default function RAGAnalyticsPage() {
             <div className="flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
               <div className="flex-1">
-                <h4 className="font-semibold text-sm mb-1">Known Issue: Anthropic Model Access</h4>
+                <h4 className="font-semibold text-sm mb-1">High RAG error rate</h4>
                 <p className="text-xs text-muted-foreground mb-3">
-                  RAG retrieval is working perfectly (finding documents with 60-65% relevance in
-                  sub-500ms), but text generation is currently blocked. The Anthropic API key
-                  authenticates successfully but no Claude models are available for this
-                  organization ID.
-                </p>
-                <div className="flex items-center gap-4 text-xs">
-                  <div className="flex items-center gap-1 text-green-700">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    Vector Search: Operational
-                  </div>
-                  <div className="flex items-center gap-1 text-green-700">
-                    <CheckCircle2 className="w-3.5 h-3.5" />
-                    Document Retrieval: Operational
-                  </div>
-                  <div className="flex items-center gap-1 text-red-700">
-                    <AlertCircle className="w-3.5 h-3.5" />
-                    Text Generation: Blocked (404 Model Not Found)
-                  </div>
-                </div>
-                <p className="text-xs mt-3 font-medium">
-                  Solution: Contact Anthropic support to enable Claude model access for API key.
+                  More than half of recorded RAG queries are failing. Use recent metadata and
+                  provider health to isolate the affected stage.
                 </p>
               </div>
             </div>
@@ -190,7 +183,7 @@ export default function RAGAnalyticsPage() {
       )}
 
       {/* Real-time Monitoring Cards */}
-      {analytics && <RAGMonitor variant="detailed" autoRefresh refreshInterval={5000} />}
+      {analytics && <RAGMonitor variant="detailed" autoRefresh={false} analytics={analytics} />}
 
       {/* Detailed Analytics Tabs */}
       <Tabs defaultValue="overview" className="space-y-4">
@@ -402,121 +395,133 @@ export default function RAGAnalyticsPage() {
           </div>
 
           {/* Cache Performance Metrics */}
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+          {CACHE_TELEMETRY_STATUS === 'unavailable' ? (
             <Card>
               <CardHeader>
-                <CardTitle>Cache Hit Rate</CardTitle>
-                <CardDescription>Percentage of queries served from cache</CardDescription>
+                <CardTitle>Cache telemetry unavailable</CardTitle>
+                <CardDescription>
+                  Cache hit rate and latency are not part of the database snapshot yet. No zero
+                  values are being inferred.
+                </CardDescription>
               </CardHeader>
-              <CardContent className="flex items-center justify-center">
-                <ResponsiveContainer width="100%" height={200}>
-                  <RadialBarChart
-                    cx="50%"
-                    cy="50%"
-                    innerRadius="60%"
-                    outerRadius="90%"
-                    data={[
-                      {
-                        name: 'Cache Hits',
-                        value: analytics ? analytics.cacheHitRate * 100 : 0,
-                        fill:
-                          analytics && analytics.cacheHitRate > 0.5
-                            ? '#22c55e'
-                            : analytics && analytics.cacheHitRate > 0.3
-                              ? '#eab308'
-                              : '#06b6d4',
-                      },
-                    ]}
-                    startAngle={90}
-                    endAngle={-270}
-                  >
-                    <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
-                    <RadialBar background dataKey="value" cornerRadius={10} />
-                    <text
-                      x="50%"
-                      y="50%"
-                      textAnchor="middle"
-                      dominantBaseline="middle"
-                      className="text-2xl font-bold"
+            </Card>
+          ) : (
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+              <Card>
+                <CardHeader>
+                  <CardTitle>Cache Hit Rate</CardTitle>
+                  <CardDescription>Percentage of queries served from cache</CardDescription>
+                </CardHeader>
+                <CardContent className="flex items-center justify-center">
+                  <ResponsiveContainer width="100%" height={200}>
+                    <RadialBarChart
+                      cx="50%"
+                      cy="50%"
+                      innerRadius="60%"
+                      outerRadius="90%"
+                      data={[
+                        {
+                          name: 'Cache Hits',
+                          value: analytics ? analytics.cacheHitRate * 100 : 0,
+                          fill:
+                            analytics && analytics.cacheHitRate > 0.5
+                              ? '#22c55e'
+                              : analytics && analytics.cacheHitRate > 0.3
+                                ? '#eab308'
+                                : '#06b6d4',
+                        },
+                      ]}
+                      startAngle={90}
+                      endAngle={-270}
                     >
-                      {analytics ? (analytics.cacheHitRate * 100).toFixed(1) : 0}%
-                    </text>
-                  </RadialBarChart>
-                </ResponsiveContainer>
-                <div className="mt-2 text-center text-xs text-muted-foreground">
-                  {analytics?.cacheHits || 0} hits / {analytics?.cacheMisses || 0} misses
-                </div>
-              </CardContent>
-            </Card>
+                      <PolarAngleAxis type="number" domain={[0, 100]} tick={false} />
+                      <RadialBar background dataKey="value" cornerRadius={10} />
+                      <text
+                        x="50%"
+                        y="50%"
+                        textAnchor="middle"
+                        dominantBaseline="middle"
+                        className="text-2xl font-bold"
+                      >
+                        {analytics ? (analytics.cacheHitRate * 100).toFixed(1) : 0}%
+                      </text>
+                    </RadialBarChart>
+                  </ResponsiveContainer>
+                  <div className="mt-2 text-center text-xs text-muted-foreground">
+                    {analytics?.cacheHits || 0} hits / {analytics?.cacheMisses || 0} misses
+                  </div>
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Cache Latency</CardTitle>
-                <CardDescription>Average time to check cache</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="text-center">
-                  <div className="text-3xl font-bold">
-                    {analytics ? analytics.avgCacheLatency.toFixed(1) : 0}ms
+              <Card>
+                <CardHeader>
+                  <CardTitle>Cache Latency</CardTitle>
+                  <CardDescription>Average time to check cache</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="text-center">
+                    <div className="text-3xl font-bold">
+                      {analytics ? analytics.avgCacheLatency.toFixed(1) : 0}ms
+                    </div>
+                    <p className="text-xs text-muted-foreground mt-2">Cache overhead per query</p>
                   </div>
-                  <p className="text-xs text-muted-foreground mt-2">Cache overhead per query</p>
-                </div>
-              </CardContent>
-            </Card>
+                </CardContent>
+              </Card>
 
-            <Card>
-              <CardHeader>
-                <CardTitle>Cache Performance</CardTitle>
-                <CardDescription>Response time comparison</CardDescription>
-              </CardHeader>
-              <CardContent>
-                <div className="space-y-3">
-                  <div>
-                    <div className="flex items-center justify-between text-xs mb-1">
-                      <span className="text-muted-foreground">Cached</span>
-                      <span className="font-semibold text-green-600">
-                        {analytics ? analytics.avgCachedResponseTime.toFixed(0) : 0}ms
-                      </span>
+              <Card>
+                <CardHeader>
+                  <CardTitle>Cache Performance</CardTitle>
+                  <CardDescription>Response time comparison</CardDescription>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    <div>
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-muted-foreground">Cached</span>
+                        <span className="font-semibold text-green-600">
+                          {analytics ? analytics.avgCachedResponseTime.toFixed(0) : 0}ms
+                        </span>
+                      </div>
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <div
+                          className="h-full bg-green-500"
+                          style={{
+                            width:
+                              analytics && analytics.avgUncachedResponseTime > 0
+                                ? `${Math.min((analytics.avgCachedResponseTime / analytics.avgUncachedResponseTime) * 100, 100)}%`
+                                : '0%',
+                          }}
+                        />
+                      </div>
                     </div>
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div
-                        className="h-full bg-green-500"
-                        style={{
-                          width:
-                            analytics && analytics.avgUncachedResponseTime > 0
-                              ? `${Math.min((analytics.avgCachedResponseTime / analytics.avgUncachedResponseTime) * 100, 100)}%`
-                              : '0%',
-                        }}
-                      />
+                    <div>
+                      <div className="flex items-center justify-between text-xs mb-1">
+                        <span className="text-muted-foreground">Uncached</span>
+                        <span className="font-semibold text-orange-600">
+                          {analytics ? analytics.avgUncachedResponseTime.toFixed(0) : 0}ms
+                        </span>
+                      </div>
+                      <div className="h-2 bg-muted rounded-full overflow-hidden">
+                        <div className="h-full bg-orange-500" style={{ width: '100%' }} />
+                      </div>
                     </div>
+                    {analytics && analytics.avgUncachedResponseTime > 0 && (
+                      <div className="text-center pt-2 border-t">
+                        <p className="text-xs font-semibold text-blue-600">
+                          {(
+                            (1 -
+                              analytics.avgCachedResponseTime / analytics.avgUncachedResponseTime) *
+                            100
+                          ).toFixed(0)}
+                          % faster with cache
+                        </p>
+                      </div>
+                    )}
                   </div>
-                  <div>
-                    <div className="flex items-center justify-between text-xs mb-1">
-                      <span className="text-muted-foreground">Uncached</span>
-                      <span className="font-semibold text-orange-600">
-                        {analytics ? analytics.avgUncachedResponseTime.toFixed(0) : 0}ms
-                      </span>
-                    </div>
-                    <div className="h-2 bg-muted rounded-full overflow-hidden">
-                      <div className="h-full bg-orange-500" style={{ width: '100%' }} />
-                    </div>
-                  </div>
-                  {analytics && analytics.avgUncachedResponseTime > 0 && (
-                    <div className="text-center pt-2 border-t">
-                      <p className="text-xs font-semibold text-blue-600">
-                        {(
-                          (1 -
-                            analytics.avgCachedResponseTime / analytics.avgUncachedResponseTime) *
-                          100
-                        ).toFixed(0)}
-                        % faster with cache
-                      </p>
-                    </div>
-                  )}
-                </div>
-              </CardContent>
-            </Card>
-          </div>
+                </CardContent>
+              </Card>
+            </div>
+          )}
 
           {/* Query Volume Over Time */}
           <Card>

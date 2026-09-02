@@ -4,9 +4,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
-
-const prisma = new PrismaClient()
+import { prisma } from '@/lib/db'
+import { requireAdminOrService, requireUserOrService } from '@/lib/security/privileged-api-auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -48,6 +47,9 @@ interface LogQueryRequest {
  * POST /api/rag/analytics - Log a RAG query
  */
 export async function POST(request: NextRequest) {
+  const access = await requireUserOrService(request)
+  if (!access.ok) return access.response
+
   try {
     const body = (await request.json()) as LogQueryRequest
 
@@ -76,7 +78,9 @@ export async function POST(request: NextRequest) {
         relevanceScores: body.relevanceScores,
         avgRelevance: body.averageRelevance,
         sessionId: body.sessionId,
-        userId: body.userId,
+        // Browser input never chooses the stored identity. Service callers may
+        // supply one when importing server-side telemetry.
+        userId: access.kind === 'user' ? access.user.id : body.userId,
         modelUsed: body.modelUsed,
         temperature: body.temperature,
         metadata: body.metadata,
@@ -124,6 +128,9 @@ export async function POST(request: NextRequest) {
  * GET /api/rag/analytics - Query analytics data
  */
 export async function GET(request: NextRequest) {
+  const access = await requireAdminOrService(request)
+  if (!access.ok) return access.response
+
   try {
     const { searchParams } = new URL(request.url)
     const agentId = searchParams.get('agentId')
@@ -141,12 +148,24 @@ export async function GET(request: NextRequest) {
       if (endDate) where.timestamp.lte = new Date(endDate)
     }
 
-    // Fetch queries with sources
+    // Recent records intentionally exclude prompts, user/session identifiers,
+    // source content, feedback comments, and error text. The operations UI
+    // needs performance metadata, not a second copy of user content.
     const queries = await prisma.rAGQuery.findMany({
       where,
-      include: {
-        sources: true,
-        feedback: true,
+      select: {
+        id: true,
+        timestamp: true,
+        agentId: true,
+        agentName: true,
+        queryLength: true,
+        ragUsed: true,
+        sourcesRetrieved: true,
+        retrievalTime: true,
+        generationTime: true,
+        totalTime: true,
+        success: true,
+        avgRelevance: true,
       },
       orderBy: {
         timestamp: 'desc',
@@ -184,6 +203,13 @@ export async function GET(request: NextRequest) {
     })
 
     return NextResponse.json({
+      contract: {
+        version: 1,
+        generatedAt: new Date().toISOString(),
+        source: 'postgres',
+        status: 'ok',
+        content: 'redacted',
+      },
       queries: queries.map(q => ({
         ...q,
         timestamp: q.timestamp.toISOString(),

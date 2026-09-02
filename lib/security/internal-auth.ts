@@ -1,8 +1,13 @@
+import 'server-only'
+
+import { timingSafeEqual } from 'node:crypto'
+
 /**
  * Shared server-to-server authorization for internal API routes.
  *
  * Returns true iff the request carries the configured internal secret as either
- * an `Authorization: Bearer <secret>` or `X-Sync-Secret: <secret>` header.
+ * an `Authorization: Bearer <secret>`, `X-Internal-Secret`, or
+ * `X-Sync-Secret` header.
  *
  * Fail-closed: if NO secret is configured, this returns false (callers should
  * combine it with another gate, e.g. an admin session, or reject). Never
@@ -14,5 +19,11 @@ export function hasInternalApiSecret(request: Request): boolean {
   if (!secret) return false
   const authToken = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim()
   const syncToken = request.headers.get('x-sync-secret') || ''
-  return authToken === secret || syncToken === secret
+  const internalToken = request.headers.get('x-internal-secret') || ''
+
+  return [authToken, syncToken, internalToken].some(candidate => {
+    const actual = Buffer.from(candidate)
+    const expected = Buffer.from(secret)
+    return actual.length === expected.length && timingSafeEqual(actual, expected)
+  })
 }

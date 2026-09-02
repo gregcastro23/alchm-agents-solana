@@ -8,6 +8,8 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { withApiErrorHandling, withErrorHandling } from '@/lib/error-handling'
 import { logger } from '@/lib/structured-logger'
+import { recordAdminAction } from '@/lib/admin/audit'
+import { requireAdminOrService, toAdminAuditActor } from '@/lib/security/privileged-api-auth'
 
 export const runtime = 'nodejs'
 
@@ -45,6 +47,9 @@ function checkRagEnabled() {
  * Triggers knowledge ingestion from web URLs or local PDF files
  */
 export async function POST(req: NextRequest) {
+  const access = await requireAdminOrService(req)
+  if (!access.ok) return access.response
+
   const ragDisabled = checkRagEnabled()
   if (ragDisabled) return ragDisabled
 
@@ -57,9 +62,6 @@ export async function POST(req: NextRequest) {
       if (!body.agentId) {
         return NextResponse.json({ success: false, error: 'agentId is required' }, { status: 400 })
       }
-
-      const { updateAgentKnowledge } = await import('@/lib/langchain/knowledge-updater')
-      const { ingestAstrologicalPDF } = await import('@/lib/langchain/pdf-loader')
 
       logger.info('Knowledge update request received', {
         system: 'api',
@@ -75,8 +77,23 @@ export async function POST(req: NextRequest) {
             { status: 400 }
           )
         }
+
+        const audit = await recordAdminAction(toAdminAuditActor(access), {
+          action: 'rag.knowledge.ingest-pdf.requested',
+          targetType: 'agent_knowledge',
+          targetId: body.agentId,
+          after: { type: 'pdf', requested: true },
+        })
+        if (!audit.recorded) {
+          return NextResponse.json(
+            { success: false, error: `Mandatory audit write failed: ${audit.reason}` },
+            { status: 503 }
+          )
+        }
+
+        const { ingestAstrologicalPDF } = await import('@/lib/langchain/pdf-loader')
         const result = await ingestAstrologicalPDF(body.path, body.agentId, body.options)
-        return result
+        return { ...result, audit }
       } else {
         if (!body.sources || body.sources.length === 0) {
           return NextResponse.json(
@@ -100,8 +117,22 @@ export async function POST(req: NextRequest) {
           }
         }
 
+        const audit = await recordAdminAction(toAdminAuditActor(access), {
+          action: 'rag.knowledge.ingest-web.requested',
+          targetType: 'agent_knowledge',
+          targetId: body.agentId,
+          after: { type: 'web', sourceCount: body.sources.length },
+        })
+        if (!audit.recorded) {
+          return NextResponse.json(
+            { success: false, error: `Mandatory audit write failed: ${audit.reason}` },
+            { status: 503 }
+          )
+        }
+
+        const { updateAgentKnowledge } = await import('@/lib/langchain/knowledge-updater')
         const result = await updateAgentKnowledge(body.agentId, body.sources, body.options)
-        return result
+        return { ...result, audit }
       }
     },
     {
@@ -117,6 +148,9 @@ export async function POST(req: NextRequest) {
  * Retrieves recent knowledge updates for a specific agent
  */
 export async function GET(req: NextRequest) {
+  const access = await requireAdminOrService(req)
+  if (!access.ok) return access.response
+
   const ragDisabled = checkRagEnabled()
   if (ragDisabled) return ragDisabled
 

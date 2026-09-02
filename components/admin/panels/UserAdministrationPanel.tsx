@@ -8,7 +8,6 @@ import {
   ChevronRight,
   Coins,
   History,
-  KeyRound,
   Search,
   ShieldCheck,
   UserCog,
@@ -74,7 +73,6 @@ export type UsersPayload = {
     agentic: number
     verified: number
   }
-  configuredAdmins: { emails: string[]; handles: string[] }
   audit:
     | {
         available: true
@@ -228,36 +226,10 @@ export default function UserAdministrationPanel({
           icon={ShieldCheck}
           label="Admin Role"
           value={formatNumber(data.totals.byRole.find(r => r.role === 'admin')?.count ?? 0)}
-          detail={`+${data.configuredAdmins.emails.length} configured identities`}
+          detail="Database-backed access"
           tone="rose"
         />
       </div>
-
-      {/* Configured admins — access that no role filter will reveal */}
-      <Section
-        title="Configured Admin Identities"
-        icon={KeyRound}
-        subtitle="These hold console access through env configuration, not a database role — a role=admin filter will never show them"
-      >
-        <div className="flex flex-wrap gap-2">
-          {data.configuredAdmins.emails.map(email => (
-            <span
-              key={email}
-              className="rounded-lg border border-rose-500/20 bg-rose-500/10 px-2.5 py-1 font-mono text-[11px] text-rose-200"
-            >
-              {email}
-            </span>
-          ))}
-          {data.configuredAdmins.handles.map(handle => (
-            <span
-              key={handle}
-              className="rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-1 font-mono text-[11px] text-amber-200"
-            >
-              @{handle}
-            </span>
-          ))}
-        </div>
-      </Section>
 
       {(mutationError || mutationNotice) && (
         <div

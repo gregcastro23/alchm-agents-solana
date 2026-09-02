@@ -1,47 +1,64 @@
 import { describe, expect, it, vi } from 'vitest'
-import {
-  ADMIN_EMAILS,
-  ADMIN_HANDLES,
-  isAdminSession,
-  isGregIdentity,
-  normalizeHandle,
-  requireAdmin,
-} from '@/lib/admin-auth'
+import { isAdminSession, requireAdmin } from '@/lib/admin-auth'
+import { prisma } from '@/lib/db'
 
 vi.mock('next-auth', () => ({
   getServerSession: vi.fn(),
 }))
 
+vi.mock('@/lib/db', () => ({
+  prisma: {
+    users: {
+      findFirst: vi.fn(),
+    },
+  },
+}))
+
+const users = vi.mocked(prisma.users)
+
 describe('admin auth helpers', () => {
-  it('normalizes handles for legacy identity matching', () => {
-    expect(normalizeHandle(' Greg_Castro-23 ')).toBe('gregcastro23')
-  })
-
-  it('keeps Greg access available by email and handle', () => {
-    expect(isGregIdentity({ email: 'gregcastro23@gmail.com' })).toBe(true)
-    expect(isGregIdentity({ name: 'Greg Castro 23' })).toBe(true)
-    expect(ADMIN_EMAILS).toContain('gregcastro23@gmail.com')
-    expect(ADMIN_HANDLES).toContain('gregcastro23')
-  })
-
-  it('recognizes role and configured email admin sessions', () => {
+  it('recognizes only role-backed admin sessions', () => {
     expect(isAdminSession({ id: 'u1', email: 'user@example.com', role: 'admin' })).toBe(true)
     expect(isAdminSession({ id: 'u2', email: 'support@planetaryagents.com', role: 'user' })).toBe(
-      true
+      false
     )
+    expect(isAdminSession({ name: 'Greg Castro 23', role: 'user' })).toBe(false)
     expect(isAdminSession({ id: 'u3', email: 'user@example.com', role: 'user' })).toBe(false)
   })
 
-  it('returns consistent auth failures and Greg success', async () => {
+  it('returns consistent auth failures and resolves admin authority from the database', async () => {
     await expect(requireAdmin(null)).resolves.toMatchObject({
       ok: false,
       status: 401,
       error: 'Authentication required',
     })
 
-    await expect(requireAdmin({ email: 'gregcastro23@gmail.com' })).resolves.toMatchObject({
+    users.findFirst.mockResolvedValueOnce({
+      id: 'admin-1',
+      email: 'ops@example.com',
+      name: 'Ops',
+      role: 'admin',
+    } as never)
+
+    await expect(
+      requireAdmin({ id: 'admin-1', email: 'ops@example.com', role: 'user' })
+    ).resolves.toMatchObject({
       ok: true,
-      source: 'greg-identity',
+      source: 'db-role',
+    })
+
+    users.findFirst.mockResolvedValueOnce({
+      id: 'owner-1',
+      email: 'gregcastro23@gmail.com',
+      name: 'Greg Castro 23',
+      role: 'user',
+    } as never)
+
+    await expect(
+      requireAdmin({ id: 'owner-1', email: 'gregcastro23@gmail.com', role: 'user' })
+    ).resolves.toMatchObject({
+      ok: false,
+      status: 403,
     })
   })
 })

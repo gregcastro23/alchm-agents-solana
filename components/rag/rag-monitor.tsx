@@ -14,44 +14,59 @@ import {
   TrendingUp,
   AlertCircle,
 } from 'lucide-react'
-import { ragAnalytics, type RAGAnalytics } from '@/lib/rag/rag-analytics'
+import type { RAGAnalytics } from '@/lib/rag/rag-analytics'
+import { fetchRagAdminSnapshot } from '@/lib/rag/rag-admin-snapshot'
 
 interface RAGMonitorProps {
   variant?: 'compact' | 'detailed'
   autoRefresh?: boolean
   refreshInterval?: number
+  analytics?: RAGAnalytics
 }
 
 export function RAGMonitor({
   variant = 'detailed',
   autoRefresh = true,
   refreshInterval = 5000,
+  analytics: providedAnalytics,
 }: RAGMonitorProps) {
-  const [analytics, setAnalytics] = useState<RAGAnalytics | null>(null)
-  const [isLoading, setIsLoading] = useState(true)
+  const [fetchedAnalytics, setFetchedAnalytics] = useState<RAGAnalytics | null>(null)
+  const [isLoading, setIsLoading] = useState(!providedAnalytics)
+  const analytics = providedAnalytics ?? fetchedAnalytics
 
   useEffect(() => {
-    const updateAnalytics = () => {
+    if (providedAnalytics) {
+      setIsLoading(false)
+      return undefined
+    }
+
+    let cancelled = false
+    const updateAnalytics = async () => {
       try {
-        const data = ragAnalytics.getAnalytics()
-        setAnalytics(data)
-        setIsLoading(false)
+        const snapshot = await fetchRagAdminSnapshot()
+        if (!cancelled) setFetchedAnalytics(snapshot.analytics)
       } catch (error) {
         console.error('[RAGMonitor] Failed to fetch analytics:', error)
-        setIsLoading(false)
+      } finally {
+        if (!cancelled) setIsLoading(false)
       }
     }
 
     // Initial load
-    updateAnalytics()
+    void updateAnalytics()
 
     // Auto-refresh
     if (autoRefresh) {
       const interval = setInterval(updateAnalytics, refreshInterval)
-      return () => clearInterval(interval)
+      return () => {
+        cancelled = true
+        clearInterval(interval)
+      }
     }
-    return undefined
-  }, [autoRefresh, refreshInterval])
+    return () => {
+      cancelled = true
+    }
+  }, [autoRefresh, providedAnalytics, refreshInterval])
 
   if (isLoading || !analytics) {
     return (
@@ -229,12 +244,10 @@ export function RAGMonitor({
             <div className="flex items-start gap-3">
               <AlertCircle className="w-5 h-5 text-yellow-600 mt-0.5" />
               <div className="flex-1">
-                <h4 className="font-semibold text-sm mb-1">Known Issue: Model Access</h4>
+                <h4 className="font-semibold text-sm mb-1">High RAG error rate</h4>
                 <p className="text-xs text-muted-foreground">
-                  RAG retrieval is working perfectly (finding documents with 60-65% relevance in
-                  sub-500ms), but text generation is currently blocked due to Anthropic API key not
-                  having model access configured. Contact Anthropic support to enable Claude model
-                  access for this API key.
+                  More than half of recent RAG queries are failing. Inspect the guarded query
+                  metadata and provider health before retrying ingestion or cache operations.
                 </p>
               </div>
             </div>

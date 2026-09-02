@@ -1,6 +1,5 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { adminErrorResponse, requireAdmin } from '@/lib/admin-auth'
-import { ADMIN_EMAILS, ADMIN_HANDLES } from '@/lib/admin-identity'
 import { prisma } from '@/lib/db'
 import { recentAdminActions } from '@/lib/admin/audit'
 import { sortAlerts, type AdminAlert } from '@/lib/admin/alerts'
@@ -175,12 +174,6 @@ export async function GET(req: NextRequest) {
         agentic: agenticCount,
         verified: verifiedCount,
       },
-      /**
-       * Identities that hold admin access through configuration rather than a
-       * database role — they will not appear in a role=admin filter, which is
-       * exactly the kind of gap an operator needs told rather than discovered.
-       */
-      configuredAdmins: { emails: ADMIN_EMAILS, handles: ADMIN_HANDLES },
       audit,
       alerts: sortAlerts(alerts),
     })

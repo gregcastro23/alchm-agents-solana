@@ -1,8 +1,7 @@
 import { NextResponse, type NextRequest } from 'next/server'
-import { adminErrorResponse, requireAdmin } from '@/lib/admin-auth'
-import { isGregIdentity } from '@/lib/admin-identity'
 import { prisma } from '@/lib/db'
 import { recordAdminAction } from '@/lib/admin/audit'
+import { requireAdminRequest } from '@/lib/security/privileged-api-auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -66,8 +65,9 @@ function parsePatch(body: unknown): { patch: Patch } | { error: string } {
 }
 
 export async function PATCH(req: NextRequest, { params }: { params: Promise<{ userId: string }> }) {
-  const admin = await requireAdmin()
-  if (!admin.ok) return adminErrorResponse(admin)
+  const access = await requireAdminRequest(req)
+  if (!access.ok) return access.response
+  const { admin } = access
 
   const { userId } = await params
 
@@ -93,21 +93,17 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ us
     return NextResponse.json({ success: false, error: 'User not found' }, { status: 404 })
   }
 
-  // Removing the owner's admin role from a web console would lock the console
-  // against its own operator, so that specific transition is refused here.
-  if (
-    patch.role !== undefined &&
-    patch.role !== 'admin' &&
-    isGregIdentity({ id: existing.id, email: existing.email, name: existing.name })
-  ) {
-    return NextResponse.json(
-      {
-        success: false,
-        error:
-          'Refusing to demote the configured owner identity — this would lock the console against its own operator. Change ADMIN_EMAILS / ADMIN_HANDLES instead.',
-      },
-      { status: 409 }
-    )
+  if (existing.role === 'admin' && patch.role !== undefined && patch.role !== 'admin') {
+    const adminCount = await prisma.users.count({ where: { role: 'admin' } })
+    if (adminCount <= 1) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Refusing to demote the last database admin.',
+        },
+        { status: 409 }
+      )
+    }
   }
 
   const changes: Record<string, unknown> = {}
@@ -128,19 +124,29 @@ export async function PATCH(req: NextRequest, { params }: { params: Promise<{ us
     })
   }
 
-  const updated = await prisma.users.update({
-    where: { id: userId },
-    data: changes,
-    select: { id: true, email: true, name: true, role: true, verified: true, isAgentic: true },
-  })
-
   const audit = await recordAdminAction(admin, {
-    action: 'user.update',
+    action: 'user.update.requested',
     targetType: 'user',
     targetId: userId,
     before,
     after: changes,
     note: patch.note ?? null,
+  })
+
+  if (!audit.recorded) {
+    return NextResponse.json(
+      {
+        success: false,
+        error: `Mandatory audit write failed: ${audit.reason}`,
+      },
+      { status: 503 }
+    )
+  }
+
+  const updated = await prisma.users.update({
+    where: { id: userId },
+    data: changes,
+    select: { id: true, email: true, name: true, role: true, verified: true, isAgentic: true },
   })
 
   return NextResponse.json({

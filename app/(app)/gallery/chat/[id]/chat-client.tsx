@@ -309,36 +309,37 @@ export default function HistoricalAgentChatPage() {
 
       // Log analytics and get query ID for feedback
       const totalTime = Date.now() - queryStartTime
-      const queryId = ragAnalytics.logQuery(
-        {
-          agentId: agent.id,
-          agentName: agent.name,
-          query: userMessage.content,
-          queryLength: userMessage.content.length,
-          ragUsed: ragEnabled && (ragSources?.length || 0) > 0,
-          sourcesRetrieved: ragSources?.length || 0,
-          retrievalTime,
-          generationTime,
-          totalTime,
-          success: true,
-          relevanceScores: ragSources?.map(s => s.relevanceScore) || [],
-          averageRelevance:
-            ragSources && ragSources.length > 0
-              ? ragSources.reduce((sum, s) => sum + s.relevanceScore, 0) / ragSources.length
-              : 0,
-          sessionId,
-        },
-        // Pass sources for database persistence
-        ragSources?.map(source => ({
-          documentId: (source.metadata as any)?.documentId || source.id,
-          agentId: source.agentId,
-          agentName: source.agentName,
-          title: source.title,
-          content: source.content,
-          relevanceScore: source.relevanceScore,
-          metadata: source.metadata,
-        }))
-      )
+      const queryId =
+        (await ragAnalytics.logQuery(
+          {
+            agentId: agent.id,
+            agentName: agent.name,
+            query: userMessage.content,
+            queryLength: userMessage.content.length,
+            ragUsed: ragEnabled && (ragSources?.length || 0) > 0,
+            sourcesRetrieved: ragSources?.length || 0,
+            retrievalTime,
+            generationTime,
+            totalTime,
+            success: true,
+            relevanceScores: ragSources?.map(s => s.relevanceScore) || [],
+            averageRelevance:
+              ragSources && ragSources.length > 0
+                ? ragSources.reduce((sum, s) => sum + s.relevanceScore, 0) / ragSources.length
+                : 0,
+            sessionId,
+          },
+          // Pass sources for database persistence
+          ragSources?.map(source => ({
+            documentId: (source.metadata as any)?.documentId || source.id,
+            agentId: source.agentId,
+            agentName: source.agentName,
+            title: source.title,
+            content: source.content,
+            relevanceScore: source.relevanceScore,
+            metadata: source.metadata,
+          }))
+        )) ?? undefined
 
       // Attach RAG sources + queryId to the streamed message for citations/feedback linking.
       setMessages(prev => {
@@ -361,7 +362,7 @@ export default function HistoricalAgentChatPage() {
       setMessages(prev => [...prev, errorMessage])
 
       // Log failed query
-      ragAnalytics.logQuery(
+      void ragAnalytics.logQuery(
         {
           agentId: agent.id,
           agentName: agent.name,

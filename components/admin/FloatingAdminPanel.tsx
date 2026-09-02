@@ -1,6 +1,6 @@
 'use client'
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useState } from 'react'
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import { useSession } from 'next-auth/react'
@@ -29,7 +29,6 @@ import {
   Zap,
   type LucideIcon,
 } from 'lucide-react'
-import { GREG_HANDLE, isGregIdentity } from '@/lib/admin-identity'
 import { cn } from '@/lib/utils'
 import type { AdminDashboardData } from '@/types/admin'
 
@@ -40,28 +39,6 @@ interface RuntimeTelemetry {
   network: string
   heap: string
   localTime: string
-}
-
-function parseLegacyIdentity() {
-  if (typeof document === 'undefined') return null
-
-  try {
-    const cookies = Object.fromEntries(
-      document.cookie
-        .split(';')
-        .map(cookie => cookie.trim().split('='))
-        .filter(([key]) => Boolean(key))
-        .map(([key, value]) => [key, decodeURIComponent(value || '')])
-    )
-
-    return {
-      id: cookies.userId || null,
-      name: cookies.userName || null,
-      email: null,
-    }
-  } catch {
-    return null
-  }
 }
 
 function formatNumber(value: number) {
@@ -270,7 +247,6 @@ export function FloatingAdminPanel() {
   const disabledForDesktopSurface =
     pathname?.startsWith('/desktop/ghost-feed') || pathname?.startsWith('/desktop/composer')
   const { data: session, status } = useSession()
-  const [legacyIdentity, setLegacyIdentity] = useState<ReturnType<typeof parseLegacyIdentity>>(null)
   const [collapsed, setCollapsed] = useState(false)
   const [data, setData] = useState<AdminDashboardData | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -292,7 +268,6 @@ export function FloatingAdminPanel() {
   useEffect(() => {
     if (disabledForDesktopSurface) return
 
-    setLegacyIdentity(parseLegacyIdentity())
     try {
       setCollapsed(localStorage.getItem('floating-admin-panel-collapsed') === 'true')
     } catch {
@@ -329,16 +304,11 @@ export function FloatingAdminPanel() {
     }
   }, [disabledForDesktopSurface])
 
-  const isGregUser = useMemo(() => {
-    if (sessionUser && isGregIdentity(sessionUser)) return true
-    if (legacyIdentity && isGregIdentity(legacyIdentity)) return true
-
-    return false
-  }, [legacyIdentity, sessionUser])
+  const isAdminUser = sessionUser?.role === 'admin'
 
   const fetchPanelData = useCallback(async () => {
     if (disabledForDesktopSurface) return
-    if (!isGregUser || status === 'loading') return
+    if (!isAdminUser || status === 'loading') return
 
     setLoading(true)
     try {
@@ -357,7 +327,7 @@ export function FloatingAdminPanel() {
     } finally {
       setLoading(false)
     }
-  }, [disabledForDesktopSurface, isGregUser, status])
+  }, [disabledForDesktopSurface, isAdminUser, status])
 
   useEffect(() => {
     if (disabledForDesktopSurface) return
@@ -367,9 +337,9 @@ export function FloatingAdminPanel() {
     return () => window.clearInterval(interval)
   }, [disabledForDesktopSurface, fetchPanelData])
 
-  if (disabledForDesktopSurface || status === 'loading' || !isGregUser) return null
+  if (disabledForDesktopSurface || status === 'loading' || !isAdminUser) return null
 
-  const identity = sessionUser || legacyIdentity
+  const identity = sessionUser
   const role = sessionUser?.role || (data ? 'admin' : 'operator')
   const tier = sessionUser?.tier || 'mission'
   const totalAgents = data
@@ -450,7 +420,7 @@ export function FloatingAdminPanel() {
           <div>
             <div className="mb-2 inline-flex items-center gap-2 rounded-full border border-cyan-200/20 bg-cyan-200/10 px-3 py-1 text-[10px] font-black uppercase tracking-[0.18em] text-cyan-100">
               <Sparkles className="h-3 w-3" />
-              Greg Mission Control
+              Admin Mission Control
             </div>
             <h2 className="text-2xl font-black text-white">Admin Command Rail</h2>
             <p className="mt-1 text-xs text-white/50">
@@ -484,7 +454,7 @@ export function FloatingAdminPanel() {
             G
           </div>
           <div className="min-w-0">
-            <div className="truncate text-sm font-bold">{identity?.name || GREG_HANDLE}</div>
+            <div className="truncate text-sm font-bold">{identity?.name || 'operator'}</div>
             <div className="truncate text-xs text-white/45">{identity?.email || identity?.id}</div>
           </div>
           <div className="rounded-full border border-emerald-200/20 bg-emerald-300/10 px-2 py-1 text-[10px] font-black uppercase tracking-[0.14em] text-emerald-100">

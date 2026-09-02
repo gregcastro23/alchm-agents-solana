@@ -6,7 +6,6 @@ import { Loader2, Sparkles } from 'lucide-react'
 
 import { Button } from '@/components/ui/button'
 import { useToast } from '@/hooks/use-toast'
-import { isConfiguredAdminIdentity } from '@/lib/admin-identity'
 
 interface AgentAvatarControlProps {
   agentId: string
@@ -42,7 +41,7 @@ export function AgentAvatarControl({
   const sessionUser = session?.user as
     | { id?: string; email?: string | null; name?: string | null; role?: string }
     | undefined
-  const canGenerate = sessionUser?.role === 'admin' || isConfiguredAdminIdentity(sessionUser)
+  const canGenerate = sessionUser?.role === 'admin'
 
   useEffect(() => {
     if (!isImageAvatar(initialAvatar)) {

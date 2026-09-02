@@ -402,7 +402,10 @@ describe('user administration mutations', () => {
     return request(`/api/admin/users/${userId}`, {
       method: 'PATCH',
       body: JSON.stringify(body),
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        Origin: 'http://localhost',
+      },
     })
   }
 
@@ -438,7 +441,7 @@ describe('user administration mutations', () => {
     )
   })
 
-  it('applies the change but reports the miss when the audit table is absent', async () => {
+  it('refuses the change when the mandatory audit write is unavailable', async () => {
     db.users.findUnique.mockResolvedValue({
       id: 'user-9',
       email: 'someone@example.com',
@@ -460,29 +463,32 @@ describe('user administration mutations', () => {
     )
 
     const { PATCH } = await import('@/app/api/admin/users/[userId]/route')
-    const body = await (await PATCH(patch('user-9', { verified: true }), params('user-9'))).json()
+    const response = await PATCH(patch('user-9', { verified: true }), params('user-9'))
+    const body = await response.json()
 
-    expect(body.success).toBe(true)
-    expect(body.audit.recorded).toBe(false)
-    expect(body.audit.reason).toContain('admin_audit_log')
+    expect(response.status).toBe(503)
+    expect(body.success).toBe(false)
+    expect(body.error).toContain('audit')
+    expect(db.users.update).not.toHaveBeenCalled()
   })
 
-  it('refuses to demote the configured owner identity', async () => {
+  it('refuses to demote the last database-backed admin', async () => {
     db.users.findUnique.mockResolvedValue({
       id: 'owner-1',
-      email: 'gregcastro23@gmail.com',
-      name: 'Greg',
+      email: 'only-admin@example.com',
+      name: 'Only Admin',
       role: 'admin',
       verified: true,
       isAgentic: false,
     } as never)
+    db.users.count.mockResolvedValue(1)
 
     const { PATCH } = await import('@/app/api/admin/users/[userId]/route')
     const response = await PATCH(patch('owner-1', { role: 'user' }), params('owner-1'))
     const body = await response.json()
 
     expect(response.status).toBe(409)
-    expect(body.error).toContain('owner')
+    expect(body.error).toContain('last database admin')
     expect(db.users.update).not.toHaveBeenCalled()
   })
 

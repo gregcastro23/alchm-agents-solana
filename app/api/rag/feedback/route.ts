@@ -4,9 +4,8 @@
  */
 
 import { NextRequest, NextResponse } from 'next/server'
-import { PrismaClient } from '@prisma/client'
-
-const prisma = new PrismaClient()
+import { prisma } from '@/lib/db'
+import { requireAdminOrService, requireUserOrService } from '@/lib/security/privileged-api-auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -26,6 +25,9 @@ interface SubmitFeedbackRequest {
  * POST /api/rag/feedback - Submit user feedback on RAG response
  */
 export async function POST(request: NextRequest) {
+  const access = await requireUserOrService(request)
+  if (!access.ok) return access.response
+
   try {
     const body = (await request.json()) as SubmitFeedbackRequest
 
@@ -49,13 +51,34 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Comment must be 500 characters or less' }, { status: 400 })
     }
 
-    // Create feedback record
+    const query = await prisma.rAGQuery.findUnique({
+      where: { id: body.queryId },
+      select: { id: true, agentId: true, sessionId: true, userId: true },
+    })
+
+    if (!query) {
+      return NextResponse.json({ error: 'RAG query not found' }, { status: 404 })
+    }
+    if (query.agentId !== body.agentId || query.sessionId !== body.sessionId) {
+      return NextResponse.json(
+        { error: 'Feedback does not match the persisted RAG query' },
+        { status: 409 }
+      )
+    }
+    if (access.kind === 'user' && query.userId !== access.user.id) {
+      return NextResponse.json(
+        { error: 'Feedback query is not owned by this user' },
+        { status: 403 }
+      )
+    }
+
+    // Create feedback only after the foreign-key target and ownership match.
     const feedback = await prisma.rAGFeedback.create({
       data: {
         queryId: body.queryId,
         agentId: body.agentId,
         sessionId: body.sessionId,
-        userId: body.userId,
+        userId: access.kind === 'user' ? access.user.id : body.userId,
         thumbsUp: body.thumbsUp,
         starRating: body.starRating,
         sourcesHelpful: body.sourcesHelpful || false,
@@ -84,6 +107,9 @@ export async function POST(request: NextRequest) {
  * GET /api/rag/feedback - Query feedback data
  */
 export async function GET(request: NextRequest) {
+  const access = await requireAdminOrService(request)
+  if (!access.ok) return access.response
+
   try {
     const { searchParams } = new URL(request.url)
     const queryId = searchParams.get('queryId')

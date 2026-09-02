@@ -49,7 +49,7 @@ export interface RAGAnalytics {
   relevanceTrend: Array<{ date: string; avgRelevance: number }>
 }
 
-class RAGAnalyticsManager {
+export class RAGAnalyticsManager {
   private logs: RAGQueryLog[] = []
   private maxLogs = 10000 // Keep last 10k logs in memory
 
@@ -57,37 +57,17 @@ class RAGAnalyticsManager {
    * Log a RAG query
    * Returns the generated query ID for linking feedback
    */
-  logQuery(log: Omit<RAGQueryLog, 'id' | 'timestamp'>, sources?: any[]): string {
-    const queryLog: RAGQueryLog = {
-      ...log,
-      id: this.generateId(),
-      timestamp: new Date(),
-    }
+  async logQuery(
+    log: Omit<RAGQueryLog, 'id' | 'timestamp'>,
+    sources?: any[]
+  ): Promise<string | null> {
+    const queryId = await this.persistToDatabase(log, sources)
+    if (!queryId) return null
 
-    this.logs.push(queryLog)
+    this.logs.push({ ...log, id: queryId, timestamp: new Date() })
+    if (this.logs.length > this.maxLogs) this.logs = this.logs.slice(-this.maxLogs)
 
-    // Trim logs if exceeds max
-    if (this.logs.length > this.maxLogs) {
-      this.logs = this.logs.slice(-this.maxLogs)
-    }
-
-    // Persist to localStorage for client-side tracking
-    if (typeof window !== 'undefined') {
-      try {
-        const recentLogs = this.logs.slice(-100) // Keep last 100 in localStorage
-        localStorage.setItem('rag-analytics-logs', JSON.stringify(recentLogs))
-      } catch (error) {
-        console.warn('[RAGAnalytics] Failed to persist to localStorage:', error)
-      }
-
-      // Also persist to database via API (async, non-blocking)
-      this.persistToDatabase(log, sources).catch(error => {
-        console.warn('[RAGAnalytics] Failed to persist to database:', error)
-      })
-    }
-
-    // Return query ID for feedback linking
-    return queryLog.id
+    return queryId
   }
 
   /**
@@ -96,8 +76,8 @@ class RAGAnalyticsManager {
   private async persistToDatabase(
     log: Omit<RAGQueryLog, 'id' | 'timestamp'>,
     sources?: any[]
-  ): Promise<void> {
-    if (typeof window === 'undefined') return
+  ): Promise<string | null> {
+    if (typeof window === 'undefined') return null
 
     try {
       const response = await fetch('/api/rag/analytics', {
@@ -113,9 +93,15 @@ class RAGAnalyticsManager {
         const error = await response.json()
         throw new Error(error.details || 'Failed to persist analytics')
       }
+
+      const payload = (await response.json()) as { queryId?: unknown }
+      if (typeof payload.queryId !== 'string' || !payload.queryId) {
+        throw new Error('Analytics response did not include a query ID')
+      }
+      return payload.queryId
     } catch (error) {
-      // Silent fail - localStorage is backup
       console.warn('[RAGAnalytics] Database persistence failed:', error)
+      return null
     }
   }
 
@@ -244,34 +230,6 @@ class RAGAnalyticsManager {
    */
   clearLogs(): void {
     this.logs = []
-    if (typeof window !== 'undefined') {
-      localStorage.removeItem('rag-analytics-logs')
-    }
-  }
-
-  /**
-   * Load logs from localStorage
-   */
-  loadFromStorage(): void {
-    if (typeof window !== 'undefined') {
-      try {
-        const stored = localStorage.getItem('rag-analytics-logs')
-        if (stored) {
-          const logs = JSON.parse(stored) as RAGQueryLog[]
-          // Convert timestamp strings back to Date objects
-          this.logs = logs.map(log => ({
-            ...log,
-            timestamp: new Date(log.timestamp),
-          }))
-        }
-      } catch (error) {
-        console.warn('[RAGAnalytics] Failed to load from localStorage:', error)
-      }
-    }
-  }
-
-  private generateId(): string {
-    return `rag-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`
   }
 
   private groupByDay(logs: RAGQueryLog[]): Array<{ date: string; logs: RAGQueryLog[] }> {
@@ -295,8 +253,3 @@ class RAGAnalyticsManager {
 
 // Singleton instance
 export const ragAnalytics = new RAGAnalyticsManager()
-
-// Auto-load from storage on initialization
-if (typeof window !== 'undefined') {
-  ragAnalytics.loadFromStorage()
-}
