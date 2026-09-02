@@ -6,7 +6,11 @@ import { prisma } from '@/lib/db'
 import { syncDebitToAlchm } from '@/lib/alchm-debit-sync'
 import { mintEsmsClaim } from '@/lib/esms-chain/minter'
 import { readEsmsClaimed } from '@/lib/esms-chain/contract'
-import { mintEsmsClaimSolana } from '@/lib/solana/solana-minter'
+import {
+  mintEsmsClaimSolana,
+  getSolanaClaimSettlementProof,
+  toSolanaOnchainAmounts,
+} from '@/lib/solana/solana-minter'
 import { getSolanaNetworkConfig } from '@/lib/solana/network-config'
 
 export const dynamic = 'force-dynamic'
@@ -94,6 +98,7 @@ export async function POST(request: NextRequest) {
     (body.chainNamespace === 'solana'
       ? solanaNetworkName
       : process.env.NEXT_PUBLIC_ESMS_CHAIN || solanaNetworkName)
+  const isSolana = SOLANA_ADDRESS_PATTERN.test(targetWallet) || network.includes('solana')
   const amountStrings = {
     spirit: String(amounts.spirit),
     essence: String(amounts.essence),
@@ -114,7 +119,23 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  // 1) Debit off-chain FIRST (authoritative; idempotent by claimId; never throws).
+  // 1) Dust guard: reject if all on-chain atoms round down to 0 before debiting off-chain
+  if (isSolana) {
+    const onchainAtoms = toSolanaOnchainAmounts(amountStrings)
+    const totalAtoms = onchainAtoms.reduce((acc, val) => acc + val, 0n)
+    if (totalAtoms === 0n) {
+      return NextResponse.json(
+        {
+          error:
+            'Claim amounts round down to zero on-chain atoms (minimum 0.0001 ESMS per element).',
+          code: 'zero_onchain_atoms',
+        },
+        { status: 400 }
+      )
+    }
+  }
+
+  // 2) Debit off-chain FIRST (authoritative; idempotent by claimId; never throws).
   if (existingClaim?.status !== 'debited') {
     const debit = await syncDebitToAlchm({
       userEmail: email,
@@ -151,9 +172,8 @@ export async function POST(request: NextRequest) {
     })
   }
 
-  // 2) Mint on-chain (idempotent by claimId; the backend minter pays gas/fees).
+  // 3) Mint on-chain (idempotent by claimId; the backend minter pays gas/fees).
   try {
-    const isSolana = SOLANA_ADDRESS_PATTERN.test(targetWallet) || network.includes('solana')
     const txHash = isSolana
       ? await mintEsmsClaimSolana({ recipient: targetWallet, claimId, amounts: amountStrings })
       : await mintEsmsClaim({ to: targetWallet as Address, claimId, amounts: amountStrings })
@@ -173,12 +193,24 @@ export async function POST(request: NextRequest) {
     // claimId guard prevents a double-mint on retry.
     console.error('[esms/claim] mint failed after debit (retryable):', err)
     try {
-      if (await readEsmsClaimed(claimId)) {
-        await prisma.esms_claims.update({
-          where: { id: claimId },
-          data: { status: 'minted', error: null },
-        })
-        return NextResponse.json({ ok: true, claimId, txHash: existingClaim?.txHash ?? null })
+      if (isSolana) {
+        const proof = await getSolanaClaimSettlementProof(claimId)
+        if (proof.settled) {
+          await prisma.esms_claims.update({
+            where: { id: claimId },
+            data: { status: 'minted', txHash: proof.txHash, error: null },
+          })
+          return NextResponse.json({ ok: true, claimId, txHash: proof.txHash })
+        }
+      } else {
+        if (await readEsmsClaimed(claimId as Hex)) {
+          const recoveredTxHash = existingClaim?.txHash ?? (claimId as string)
+          await prisma.esms_claims.update({
+            where: { id: claimId },
+            data: { status: 'minted', txHash: recoveredTxHash, error: null },
+          })
+          return NextResponse.json({ ok: true, claimId, txHash: recoveredTxHash })
+        }
       }
     } catch (reconciliationError) {
       console.warn('[esms/claim] could not reconcile claim state:', reconciliationError)

@@ -1,4 +1,5 @@
 import { Connection, PublicKey, type Logs } from '@solana/web3.js'
+import { getSolanaNetworkConfig } from '@/lib/solana/network-config'
 
 export const PUBLIC_SOLANA_DEVNET_RPC = 'https://api.devnet.solana.com'
 
@@ -52,16 +53,57 @@ export function resolveSolanaRpcUrls(
     additional?: string
   } = {}
 ): string[] {
-  const candidates = [
-    overrides.primary ?? process.env.SOLANA_RPC_URL,
-    overrides.helius ?? process.env.HELIUS_SOLANA_RPC_URL,
-    overrides.quickNode ?? process.env.QUICKNODE_SOLANA_RPC_URL,
-    ...(overrides.additional ?? process.env.SOLANA_RPC_URLS ?? '')
-      .split(',')
-      .map(value => value.trim()),
-    PUBLIC_SOLANA_DEVNET_RPC,
+  let config: ReturnType<typeof getSolanaNetworkConfig> | null = null
+  try {
+    config = getSolanaNetworkConfig()
+  } catch {
+    config = null
+  }
+
+  const isMainnet = config?.isMainnet ?? false
+
+  const overrideCandidates = [
+    overrides.primary,
+    overrides.helius,
+    overrides.quickNode,
+    ...(overrides.additional ? overrides.additional.split(',').map(v => v.trim()) : []),
   ].filter((value): value is string => Boolean(value))
-  return [...new Set(candidates)]
+
+  const baseCandidates =
+    overrideCandidates.length > 0
+      ? overrideCandidates
+      : config?.rpcUrls
+        ? [...config.rpcUrls]
+        : [
+            process.env.SOLANA_RPC_URL,
+            process.env.HELIUS_SOLANA_RPC_URL,
+            process.env.QUICKNODE_SOLANA_RPC_URL,
+            ...(process.env.SOLANA_RPC_URLS ?? '').split(',').map(value => value.trim()),
+          ].filter((value): value is string => Boolean(value))
+
+  // Append devnet public RPC ONLY when NOT on Mainnet-Beta
+  if (!isMainnet) {
+    baseCandidates.push(PUBLIC_SOLANA_DEVNET_RPC)
+  }
+
+  const unique = [...new Set(baseCandidates.filter(Boolean))]
+
+  // Fail-closed in Mainnet-Beta: strictly forbid devnet or testnet RPCs
+  if (isMainnet) {
+    const forbidden = unique.filter(
+      url =>
+        url.includes('api.devnet.solana.com') ||
+        url.includes('api.testnet.solana.com') ||
+        url.includes('devnet.solana.com')
+    )
+    if (forbidden.length > 0) {
+      throw new Error(
+        `Forbidden non-mainnet RPC url in Mainnet-Beta configuration: ${forbidden.join(', ')}. Devnet fallbacks are strictly prohibited.`
+      )
+    }
+  }
+
+  return unique
 }
 
 export function reconnectDelayMs(attempt: number): number {
@@ -75,6 +117,52 @@ export function solanaSlotToBigInt(slot: number): bigint {
   return BigInt(slot)
 }
 
+/** Cache of cluster genesis hashes per endpoint to minimize RPC overhead */
+const genesisHashCache = new Map<string, string>()
+
+export function clearGenesisHashCache(): void {
+  genesisHashCache.clear()
+}
+
+/**
+ * Detects deterministic on-chain / simulation program errors that will never succeed
+ * by retrying across other RPC nodes (e.g. AccountAlreadyInitialized, ClaimsPaused,
+ * AmountOutOfRange, EmptyAmounts, invalid signatures, simulation failure).
+ */
+export function isDeterministicProgramError(error: unknown): boolean {
+  if (!error) return false
+  const err = error as Record<string, unknown>
+
+  if (err.name === 'AnchorError' || typeof err.errorLogs === 'object') {
+    return true
+  }
+
+  if (Array.isArray(err.logs)) {
+    const logsStr = err.logs.join('\n')
+    if (
+      logsStr.includes('InstructionError') ||
+      logsStr.includes('custom program error:') ||
+      logsStr.includes('Program failed to complete')
+    ) {
+      return true
+    }
+  }
+
+  const message = (error instanceof Error ? error.message : String(error)).toLowerCase()
+  return (
+    message.includes('instructionerror') ||
+    message.includes('custom program error') ||
+    message.includes('transaction simulation failed') ||
+    message.includes('simulation failed') ||
+    message.includes('already in use') ||
+    message.includes('accountalreadyinitialized') ||
+    message.includes('claimsalreadyprocessed') ||
+    message.includes('amountoutofrange') ||
+    message.includes('emptyamounts') ||
+    message.includes('claimspaused')
+  )
+}
+
 export async function withSolanaRpcFailover<T>(args: {
   operation: (connection: Connection, endpoint: string) => Promise<T>
   rpcUrls?: readonly string[]
@@ -85,10 +173,38 @@ export async function withSolanaRpcFailover<T>(args: {
   const connectionFactory =
     args.connectionFactory ?? ((rpcUrl: string) => new Connection(rpcUrl, 'confirmed'))
   const errors: string[] = []
+
   for (const endpoint of urls) {
     try {
-      return await args.operation(connectionFactory(endpoint), endpoint)
+      const connection = connectionFactory(endpoint)
+
+      // Per-connection memoized cluster genesis assertion
+      try {
+        const config = getSolanaNetworkConfig()
+        if (config.isMainnet) {
+          let genesisHash = genesisHashCache.get(endpoint)
+          if (!genesisHash) {
+            genesisHash = await connection.getGenesisHash()
+            genesisHashCache.set(endpoint, genesisHash)
+          }
+          config.assertGenesisHash(genesisHash)
+        }
+      } catch (genesisErr) {
+        // Skip endpoint if genesis mismatch or unreachable
+        errors.push(
+          `${rpcEndpointLabel(endpoint)}: Genesis check failed: ${
+            genesisErr instanceof Error ? genesisErr.message : genesisErr
+          }`
+        )
+        continue
+      }
+
+      return await args.operation(connection, endpoint)
     } catch (error) {
+      // Deterministic program rejections should abort immediately rather than exhausting failover endpoints
+      if (isDeterministicProgramError(error)) {
+        throw error
+      }
       errors.push(
         `${rpcEndpointLabel(endpoint)}: ${error instanceof Error ? error.message : error}`
       )

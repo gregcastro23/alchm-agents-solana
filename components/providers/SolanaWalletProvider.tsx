@@ -46,8 +46,6 @@ import { formatEsmsRawAmount } from '@/lib/solana/esms'
 import { getSolanaNetworkConfig } from '@/lib/solana/network-config'
 import { useToast } from '@/hooks/use-toast'
 
-const networkConfig = getSolanaNetworkConfig()
-const RPC_URL = networkConfig.rpcUrls[0]
 const ESMS_KEYS = ['spirit', 'essence', 'matter', 'substance'] as const
 
 export type EsmsBalanceMap = Record<(typeof ESMS_KEYS)[number], string>
@@ -211,6 +209,8 @@ function SolanaWalletState({ children }: { children: ReactNode }) {
 }
 
 export function SolanaWalletProvider({ children }: { children: ReactNode }) {
+  const networkConfig = useMemo(() => getSolanaNetworkConfig(), [])
+  const rpcUrl = networkConfig.rpcUrls[0]
   // WalletProvider also auto-discovers Wallet Standard implementations, which
   // is how Backpack and Dynamic Global Wallet join these explicit adapters.
   const wallets = useMemo(
@@ -218,10 +218,10 @@ export function SolanaWalletProvider({ children }: { children: ReactNode }) {
       new PhantomWalletAdapter(),
       new SolflareWalletAdapter({ network: networkConfig.walletNetwork }),
     ],
-    []
+    [networkConfig.walletNetwork]
   )
   return (
-    <ConnectionProvider endpoint={RPC_URL} config={{ commitment: 'confirmed' }}>
+    <ConnectionProvider endpoint={rpcUrl} config={{ commitment: networkConfig.commitment }}>
       <WalletProvider wallets={wallets} autoConnect>
         <WalletModalProvider>
           <SolanaWalletState>
@@ -253,7 +253,7 @@ export function SolanaWalletConnectButton({ compact = false }: { compact?: boole
 }
 
 export function DualChainNetworkBadge() {
-  const label = networkConfig.networkBadgeLabel
+  const label = useMemo(() => getSolanaNetworkConfig().networkBadgeLabel, [])
   return (
     <span
       className="rounded-full border border-violet-400/30 bg-violet-950/40 px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-violet-200 hover:bg-violet-900/50"

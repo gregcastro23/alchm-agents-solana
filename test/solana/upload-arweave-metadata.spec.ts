@@ -18,12 +18,15 @@ import {
 } from '@/scripts/metadata/upload-arweave-metadata'
 
 describe('Irys Signer Adapter & Upload Automation', () => {
+  const originalEnv = { ...process.env }
+
   beforeEach(() => {
+    process.env = { ...originalEnv }
     vi.restoreAllMocks()
   })
 
   afterEach(() => {
-    vi.unstubAllEnvs()
+    process.env = { ...originalEnv }
     vi.restoreAllMocks()
   })
 
@@ -57,7 +60,7 @@ describe('Irys Signer Adapter & Upload Automation', () => {
 
   it('runs upload automation in dry-run mode without modifying state or spending funds', async () => {
     const keypair = Keypair.generate()
-    vi.stubEnv('SOLANA_AGENT_PAYER_KEY', JSON.stringify(Array.from(keypair.secretKey)))
+    process.env.SOLANA_AGENT_PAYER_KEY = JSON.stringify(Array.from(keypair.secretKey))
 
     const manifest = await runUploadArweaveMetadata({
       dryRun: true,
@@ -71,7 +74,7 @@ describe('Irys Signer Adapter & Upload Automation', () => {
 
   it('rejects live upload if irys-network is not mainnet', async () => {
     const keypair = Keypair.generate()
-    vi.stubEnv('SOLANA_AGENT_PAYER_KEY', JSON.stringify(Array.from(keypair.secretKey)))
+    process.env.SOLANA_AGENT_PAYER_KEY = JSON.stringify(Array.from(keypair.secretKey))
 
     await expect(
       runUploadArweaveMetadata({
@@ -85,7 +88,7 @@ describe('Irys Signer Adapter & Upload Automation', () => {
 
   it('rejects local provider on live mainnet execution', async () => {
     const keypair = Keypair.generate()
-    vi.stubEnv('SOLANA_AGENT_PAYER_KEY', JSON.stringify(Array.from(keypair.secretKey)))
+    process.env.SOLANA_AGENT_PAYER_KEY = JSON.stringify(Array.from(keypair.secretKey))
 
     await expect(
       runUploadArweaveMetadata({
@@ -145,9 +148,9 @@ describe('Irys Signer Adapter & Upload Automation', () => {
     }) as any
 
     const keypair = Keypair.generate()
-    vi.stubEnv('SOLANA_AGENT_PAYER_KEY', JSON.stringify(Array.from(keypair.secretKey)))
-    vi.stubEnv('AWS_KMS_KEY_ID', 'arn:aws:kms:us-east-1:123456789012:key/mock-kms-key')
-    vi.stubEnv('SOLANA_SERVICE_PUBLIC_KEY', keypair.publicKey.toBase58())
+    process.env.SOLANA_AGENT_PAYER_KEY = JSON.stringify(Array.from(keypair.secretKey))
+    process.env.AWS_KMS_KEY_ID = 'arn:aws:kms:us-east-1:123456789012:key/mock-kms-key'
+    process.env.SOLANA_SERVICE_PUBLIC_KEY = keypair.publicKey.toBase58()
 
     try {
       const manifest = await runUploadArweaveMetadata({
@@ -224,9 +227,9 @@ describe('Irys Signer Adapter & Upload Automation', () => {
     }) as any
 
     const keypair = Keypair.generate()
-    vi.stubEnv('SOLANA_AGENT_PAYER_KEY', JSON.stringify(Array.from(keypair.secretKey)))
-    vi.stubEnv('AWS_KMS_KEY_ID', 'arn:aws:kms:us-east-1:123456789012:key/mock-kms-key')
-    vi.stubEnv('SOLANA_SERVICE_PUBLIC_KEY', keypair.publicKey.toBase58())
+    process.env.SOLANA_AGENT_PAYER_KEY = JSON.stringify(Array.from(keypair.secretKey))
+    process.env.AWS_KMS_KEY_ID = 'arn:aws:kms:us-east-1:123456789012:key/mock-kms-key'
+    process.env.SOLANA_SERVICE_PUBLIC_KEY = keypair.publicKey.toBase58()
 
     try {
       await expect(

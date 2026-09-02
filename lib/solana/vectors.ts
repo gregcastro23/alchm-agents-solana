@@ -13,10 +13,10 @@ export const MAX_LEDGER_ATOMS = 999_999_999_999n
 export const ESMS_NAMES = ['Spirit', 'Essence', 'Matter', 'Substance'] as const
 export const ESMS_SYMBOLS = ['SPIRIT', 'ESSENCE', 'MATTER', 'SUBSTANCE'] as const
 export const ESMS_METADATA_URIS = [
-  'https://alchm.kitchen/metadata/esms/spirit.json',
-  'https://alchm.kitchen/metadata/esms/essence.json',
-  'https://alchm.kitchen/metadata/esms/matter.json',
-  'https://alchm.kitchen/metadata/esms/substance.json',
+  'https://arweave.net/BP4XXynxmnRB4ZSqTAvvjdZARPpGD6Kxgcj2YH1tXpWE',
+  'https://arweave.net/HdtPTVqm9GdKFX2F7a7je1vApcXSuEcpVXMS353kDhAo',
+  'https://arweave.net/5AGdZFaNba8A5Zke23j7K85oPihQzUmpn7QKoz4dGgFe',
+  'https://arweave.net/3xzDcPZn1h9Ss91kaTeCWjSBsPBWczcETECFfvJe68YY',
 ] as const
 
 const PERSONA_DOMAIN = Buffer.from('ASOL_PERSONA_V1', 'utf8')

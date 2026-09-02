@@ -12,6 +12,13 @@ vi.mock('@/lib/esms-chain/minter', () => ({ mintEsmsClaim: vi.fn() }))
 vi.mock('@/lib/esms-chain/contract', () => ({ readEsmsClaimed: vi.fn() }))
 vi.mock('@/lib/solana/solana-minter', () => ({
   mintEsmsClaimSolana: vi.fn(),
+  getSolanaClaimSettlementProof: vi.fn(async () => ({ settled: false })),
+  toSolanaOnchainAmounts: vi.fn((amounts: any) => [
+    BigInt(Math.floor(Number(amounts.spirit || 0) * 10000)),
+    BigInt(Math.floor(Number(amounts.essence || 0) * 10000)),
+    BigInt(Math.floor(Number(amounts.matter || 0) * 10000)),
+    BigInt(Math.floor(Number(amounts.substance || 0) * 10000)),
+  ]),
   isSolanaConfigured: vi.fn(() => true),
 }))
 
@@ -20,7 +27,7 @@ import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { syncDebitToAlchm } from '@/lib/alchm-debit-sync'
 import { mintEsmsClaim } from '@/lib/esms-chain/minter'
-import { mintEsmsClaimSolana } from '@/lib/solana/solana-minter'
+import { mintEsmsClaimSolana, getSolanaClaimSettlementProof } from '@/lib/solana/solana-minter'
 import { readEsmsClaimed } from '@/lib/esms-chain/contract'
 
 const req = (body: unknown) =>
@@ -155,11 +162,51 @@ describe('POST /api/esms/claim', () => {
     ;(prisma.users.findUnique as any).mockResolvedValue({ walletAddress: '0xabc' })
     ;(syncDebitToAlchm as any).mockResolvedValue({ ok: true })
     ;(mintEsmsClaimSolana as any).mockRejectedValue(new Error('already processed'))
-    ;(readEsmsClaimed as any).mockResolvedValue(true)
+    ;(getSolanaClaimSettlementProof as any).mockResolvedValue({
+      settled: true,
+      txHash: '0xreconciledHash',
+    })
 
     const res = await POST(req({ amounts: { spirit: 2 } }))
 
     expect(res.status).toBe(200)
-    expect(await res.json()).toMatchObject({ ok: true, txHash: null })
+    expect(await res.json()).toMatchObject({ ok: true, txHash: '0xreconciledHash' })
+  })
+
+  it('reconciles a Solana claim with recovered signature from SettlementProof', async () => {
+    authed()
+    ;(prisma.users.findUnique as any).mockResolvedValue({
+      walletAddress: '4AfRdxPh1RSo2299QFwutzQkMcL92KJNXAU1bzpNJcHp',
+    })
+    ;(syncDebitToAlchm as any).mockResolvedValue({ ok: true })
+    ;(mintEsmsClaimSolana as any).mockRejectedValue(new Error('timeout'))
+    ;(getSolanaClaimSettlementProof as any).mockResolvedValue({
+      settled: true,
+      txHash: '5K2bMhZMockSignatureRecovered',
+    })
+
+    const res = await POST(req({ amounts: { spirit: 2 } }))
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ ok: true, txHash: '5K2bMhZMockSignatureRecovered' })
+    expect(prisma.esms_claims.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          status: 'minted',
+          txHash: '5K2bMhZMockSignatureRecovered',
+        }),
+      })
+    )
+  })
+
+  it('400 when Solana amounts round down to zero atoms (dust guard)', async () => {
+    authed()
+    ;(prisma.users.findUnique as any).mockResolvedValue({
+      walletAddress: '4AfRdxPh1RSo2299QFwutzQkMcL92KJNXAU1bzpNJcHp',
+    })
+    const res = await POST(req({ amounts: { spirit: 0.00001 } }))
+    expect(res.status).toBe(400)
+    expect(await res.json()).toMatchObject({ code: 'zero_onchain_atoms' })
+    expect(syncDebitToAlchm).not.toHaveBeenCalled()
   })
 })

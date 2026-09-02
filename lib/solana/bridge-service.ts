@@ -11,8 +11,9 @@ import {
   type WalletClient,
 } from 'viem'
 import { privateKeyToAccount } from 'viem/accounts'
-import { baseSepolia } from 'viem/chains'
+import { base, baseSepolia } from 'viem/chains'
 import { Connection, Keypair, PublicKey, Transaction } from '@solana/web3.js'
+import { getSolanaNetworkConfig } from '@/lib/solana/network-config'
 
 import {
   AsolSolanaClient,
@@ -745,19 +746,45 @@ export function startBridgeRelayPolling(args: {
   }
 }
 
-export function createBaseSepoliaClients(privateKey: Hex) {
+export function createBaseClients(
+  privateKey: Hex,
+  options: { isMainnet?: boolean; rpcUrl?: string } = {}
+) {
+  let isMainnet = options.isMainnet
+  if (isMainnet === undefined) {
+    try {
+      isMainnet = getSolanaNetworkConfig().isMainnet
+    } catch {
+      isMainnet = false
+    }
+  }
+
+  const chain = isMainnet ? base : baseSepolia
+  const defaultRpc = isMainnet ? 'https://mainnet.base.org' : 'https://sepolia.base.org'
+  const rpcUrl =
+    options.rpcUrl ??
+    (isMainnet
+      ? (process.env.BASE_MAINNET_RPC_URL ?? process.env.BASE_RPC_URL ?? defaultRpc)
+      : (process.env.BASE_SEPOLIA_RPC_URL ?? defaultRpc))
+
   const publicClient = createPublicClient({
-    chain: baseSepolia,
-    transport: http(process.env.BASE_SEPOLIA_RPC_URL ?? 'https://sepolia.base.org'),
+    chain,
+    transport: http(rpcUrl),
   })
-  // Account construction stays at the executable boundary so importing this
-  // module never reads or materializes a private key.
   const walletClient = createWalletClient({
-    chain: baseSepolia,
-    transport: http(process.env.BASE_SEPOLIA_RPC_URL ?? 'https://sepolia.base.org'),
+    chain,
+    transport: http(rpcUrl),
     account: privateKeyToAccount(privateKey),
   })
-  return { publicClient, walletClient }
+  return { publicClient, walletClient, chain, isMainnet }
+}
+
+export function createBaseMainnetClients(privateKey: Hex, rpcUrl?: string) {
+  return createBaseClients(privateKey, { isMainnet: true, rpcUrl })
+}
+
+export function createBaseSepoliaClients(privateKey: Hex) {
+  return createBaseClients(privateKey, { isMainnet: false })
 }
 
 export interface BridgeSourceListeners {

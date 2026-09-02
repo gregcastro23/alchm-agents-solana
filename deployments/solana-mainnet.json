@@ -1,0 +1,63 @@
+{
+  "cluster": "mainnet-beta",
+  "genesisHash": "5eykt4UsFv8P8NJdTREpY1vzqKqZKvdpKuc147dw2N9d",
+  "programId": "5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD",
+  "programDataAddress": "7WYfJRuiZG9GsQUUKJoUFVX3yusFVqmbgK8SyTdWtdKg",
+  "programConfigPda": "4YCVh9KHrhN6mFSMvybGVqLeGfaRkfUtqrn19mLLJGku",
+  "token2022ProgramId": "TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb",
+  "mints": {
+    "spirit": {
+      "mintIndex": 0,
+      "address": "K5kwwomtWYydxJacA7bC5yUEW9TtEuVqBKBoqAWLmhQ",
+      "name": "Spirit",
+      "symbol": "SPIRIT",
+      "decimals": 4,
+      "metadataUri": "https://arweave.net/BP4XXynxmnRB4ZSqTAvvjdZARPpGD6Kxgcj2YH1tXpWE",
+      "accountSpaceBytes": 469,
+      "rentExemptLamports": 4155120
+    },
+    "essence": {
+      "mintIndex": 1,
+      "address": "3FcpToU7bj4sLD687uecbesEjzjxBfqYn2EcBXJKPaCf",
+      "name": "Essence",
+      "symbol": "ESSENCE",
+      "decimals": 4,
+      "metadataUri": "https://arweave.net/HdtPTVqm9GdKFX2F7a7je1vApcXSuEcpVXMS353kDhAo",
+      "accountSpaceBytes": 471,
+      "rentExemptLamports": 4169040
+    },
+    "matter": {
+      "mintIndex": 2,
+      "address": "7naJZozLrknDF3dguAdEWn7Z4MviUkXitjhaAt57Vkb4",
+      "name": "Matter",
+      "symbol": "MATTER",
+      "decimals": 4,
+      "metadataUri": "https://arweave.net/5AGdZFaNba8A5Zke23j7K85oPihQzUmpn7QKoz4dGgFe",
+      "accountSpaceBytes": 469,
+      "rentExemptLamports": 4155120
+    },
+    "substance": {
+      "mintIndex": 3,
+      "address": "6RY6ZG1eJQ2uEvpyA6XK74WyF1MpTYbw97hdhELqDUsa",
+      "name": "Substance",
+      "symbol": "SUBSTANCE",
+      "decimals": 4,
+      "metadataUri": "https://arweave.net/3xzDcPZn1h9Ss91kaTeCWjSBsPBWczcETECFfvJe68YY",
+      "accountSpaceBytes": 475,
+      "rentExemptLamports": 4196880
+    }
+  },
+  "verifiableBuild": {
+    "dockerImage": "backpackapp/build:v0.30.1",
+    "rustVersion": "1.79.0",
+    "solanaVersion": "1.18.17",
+    "anchorVersion": "0.30.1",
+    "sourceRepository": "https://github.com/gregcastro23/alchm-agents-solana",
+    "targetPath": "programs/asol_program"
+  },
+  "governance": {
+    "squadsProgramId": "SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pcf",
+    "upgradeAuthorityTransferred": false
+  },
+  "status": "ready_for_initialization"
+}
