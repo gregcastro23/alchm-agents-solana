@@ -139,6 +139,12 @@ describe('admin API authorization', () => {
       },
       expires: new Date(Date.now() + 60_000).toISOString(),
     })
+    prismaMock.users.findFirst.mockResolvedValue({
+      id: 'admin-1',
+      email: 'ops@example.com',
+      name: 'Ops',
+      role: 'admin',
+    } as never)
 
     prismaMock.users.count.mockResolvedValue(3)
     prismaMock.userSession.count.mockResolvedValue(2)
