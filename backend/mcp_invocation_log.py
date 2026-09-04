@@ -25,10 +25,10 @@ def _log(msg: str) -> None:
 def resolve_api_key_sync(db, api_key: str) -> Tuple[Optional[str], Optional[str], str]:
     """Resolves an API key string into (api_key_id, user_id, auth_tier).
     
-    Auth tiers:
-      - "alchemist" (master env key, admin, or alchemist subscription)
-      - "standard" (active database key, limited to free/cheap_fast)
-      - "anonymous" (invalid or missing key)
+    Auth tiers in ESMS Token Economy:
+      - "alchemist" (master env key, admin, authenticated account holder, or legacy alchemist subscription)
+      - "standard" (active database key unassociated with account holder, limited to free/cheap_fast)
+      - "anonymous" (invalid or missing key, limited to free)
     """
     if not api_key:
         return None, None, "anonymous"
@@ -52,22 +52,32 @@ def resolve_api_key_sync(db, api_key: str) -> Tuple[Optional[str], Optional[str]
             db.commit()
 
             user_id = key_row.userId
-            # Check user role or subscription tier
-            user_stmt = select(User).where(User.id == user_id)
-            user_result = db.execute(user_stmt).scalar_one_or_none()
-            
-            sub_stmt = select(UserSubscription).where(UserSubscription.userId == user_id)
-            sub_result = db.execute(sub_stmt).scalar_one_or_none()
+            user_result = None
+            if user_id:
+                user_stmt = select(User).where(User.id == user_id)
+                user_result = db.execute(user_stmt).scalar_one_or_none()
 
-            role = user_result.role if user_result else "user"
-            sub_tier = sub_result.tier if sub_result else "free"
+            role = (user_result.role or "user").lower() if user_result else "user"
 
-            is_premium = (
-                role in ("admin", "alchemist") or
-                sub_tier.lower() in ("alchemist", "premium", "pro", "unlimited", "paid")
-            )
-            
-            auth_tier = "alchemist" if is_premium else "standard"
+            # ESMS Token Economy Account Entitlement:
+            # 1. Operators & Admins
+            is_admin = role in ("admin", "operator", "alchemist")
+            # 2. Authenticated account holder in token economy
+            is_account_holder = user_result is not None
+            # 3. Legacy subscription check fallback
+            sub_tier = "free"
+            try:
+                if user_id:
+                    sub_stmt = select(UserSubscription).where(UserSubscription.userId == user_id)
+                    sub_result = db.execute(sub_stmt).scalar_one_or_none()
+                    if sub_result and sub_result.tier:
+                        sub_tier = sub_result.tier.lower()
+            except Exception:
+                pass
+
+            is_legacy_paid = sub_tier in ("alchemist", "premium", "pro", "unlimited", "paid")
+
+            auth_tier = "alchemist" if (is_admin or is_account_holder or is_legacy_paid) else "standard"
             return key_row.id, user_id, auth_tier
     except Exception as exc:
         _log(f"Error resolving api key: {exc}")

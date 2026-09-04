@@ -45,7 +45,7 @@ import { poolIdForPair } from '@/lib/solana/constellation-amm'
 import type { EsmsId, LivePlanet } from '@/lib/staking/types'
 
 import { getSolanaNetworkConfig } from '@/lib/solana/network-config'
-import { checkAttestationRateLimit } from '@/lib/solana/amm-rate-limit'
+import { checkAttestationRateLimit } from '@/lib/solana/amm-attestation-limiter'
 
 export const runtime = 'nodejs'
 
@@ -58,7 +58,6 @@ interface AmmAttestationRequest {
   op: 'add_liquidity' | 'swap'
   observer: { lat: number; lon: number }
 }
-
 function pairLabel(poolId: number): string {
   const names = ['Spirit', 'Essence', 'Matter', 'Substance']
   const pair = CONSTELLATION_PAIRS[poolId]

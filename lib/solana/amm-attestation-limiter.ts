@@ -1,3 +1,8 @@
+/**
+ * In-memory sliding rate limiter for Solana AMM visibility attestations.
+ * Extracted from route handler to adhere strictly to Next.js route export requirements.
+ */
+
 interface RateLimitEntry {
   count: number
   resetAt: number

@@ -52,6 +52,14 @@ AGENT_ALIASES = {
     "galileo galilei": "galileo-galilei",
     "jung": "carl-jung",
     "carl jung": "carl-jung",
+    "hypatia": "hypatia",
+    "hypatia of alexandria": "hypatia",
+    "hildegard": "hildegard-of-bingen",
+    "hildegard of bingen": "hildegard-of-bingen",
+    "gregory castro": "gregory-castro",
+    "greg castro": "gregory-castro",
+    "hermes": "hermes-trismegistus",
+    "hermes trismegistus": "hermes-trismegistus",
 }
 
 
@@ -64,7 +72,7 @@ TOOLS: List[Dict[str, Any]] = [
             "properties": {
                 "agentName": {
                     "type": "string",
-                    "description": "Agent name or slug, e.g. Socrates, Rumi, Galileo, Jung, socrates.",
+                    "description": "Agent name or slug, e.g. Socrates, Rumi, Galileo, Jung, socrates, or 360 Moon degree slug like planetary-moon-aries-14.",
                 },
                 "message": {"type": "string", "description": "User message for the agent."},
                 "conversationHistory": {
@@ -84,6 +92,31 @@ TOOLS: List[Dict[str, Any]] = [
                 },
             },
             "required": ["agentName", "message"],
+        },
+    },
+    {
+        "name": "list_planetary_agents",
+        "description": "Discover and search available Planetary Agent personas, including historical philosophers, 360 Moon degree archetypes, and crafted council members.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "query": {
+                    "type": "string",
+                    "description": "Optional search term to filter agents by name, title, culture, or archetype (e.g. 'Socrates', 'Fire', 'Moon', 'Explorer').",
+                },
+                "limit": {
+                    "type": "integer",
+                    "description": "Maximum number of agents to return (default 25, max 100).",
+                },
+                "sign": {
+                    "type": "string",
+                    "description": "Optional zodiac sign filter (e.g. 'Aries', 'Taurus', 'Gemini', etc.).",
+                },
+                "archetype": {
+                    "type": "string",
+                    "description": "Optional archetype filter (e.g. 'The Seed Planter', 'The Illuminator').",
+                },
+            },
         },
     },
     {
@@ -144,6 +177,60 @@ TOOLS: List[Dict[str, Any]] = [
         },
     },
     {
+        "name": "play_agent_word_duel",
+        "description": "Invoke an agent or planetary sphere to make a strategic move in Word Duels of the Spheres given a rack and candidate words.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "agentName": {
+                    "type": "string",
+                    "description": "Agent persona name or slug (e.g. Socrates, Galileo, planetary-moon-leo-12) or celestial sphere (Sun, Moon, Mars, etc.).",
+                },
+                "rack": {
+                    "type": "string",
+                    "description": "The letters available in the rack (e.g. 'SATURNX').",
+                },
+                "candidates": {
+                    "type": "array",
+                    "items": {"type": "string"},
+                    "description": "List of valid candidate words formed from the rack.",
+                },
+                "context": {
+                    "type": "object",
+                    "description": "Optional duel context (opponent, board state, etc.).",
+                },
+                "sessionId": {
+                    "type": "string",
+                    "description": "Optional session identifier for game tracking.",
+                },
+            },
+            "required": ["rack", "candidates"],
+        },
+    },
+    {
+        "name": "play_jing_arena_move",
+        "description": "Invoke an agent persona or planetary sphere to counter an opening move in the Jing Arena elemental clash game.",
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "planet": {
+                    "type": "string",
+                    "description": "The defending celestial sphere (Sun, Moon, Mars, Mercury, Venus, Jupiter, Saturn, Uranus, Neptune, Pluto).",
+                },
+                "opening": {
+                    "type": "string",
+                    "enum": ["Meltdown", "Freeze", "TectonicRoot", "Vacuum", "Erode"],
+                    "description": "The opening Jing move played by the challenger.",
+                },
+                "agentName": {
+                    "type": "string",
+                    "description": "Optional agent persona slug/name (e.g. Socrates, Carl Jung) for personalized voice.",
+                },
+            },
+            "required": ["planet", "opening"],
+        },
+    },
+    {
         "name": "plan_weekly_menu",
         "description": "Plan an agentic weekly menu attuned to the agent's planetary/culinary style.",
         "inputSchema": {
@@ -169,6 +256,57 @@ TOOLS: List[Dict[str, Any]] = [
             },
             "required": ["agentName"],
         },
+    },
+]
+
+
+RESOURCES: List[Dict[str, Any]] = [
+    {
+        "uri": "resource://sky/transits",
+        "name": "Live Sky Transits & Elemental State",
+        "description": "Current live planetary sky transits, elemental balances, and lunar phase state.",
+        "mimeType": "application/json",
+    },
+    {
+        "uri": "resource://agents/catalog",
+        "name": "Planetary Agent Catalog",
+        "description": "Core council personas, historical philosophers, and 360 Moon degree archetypes.",
+        "mimeType": "application/json",
+    },
+    {
+        "uri": "resource://game/jing-counters",
+        "name": "Jing Arena Counter Matrix",
+        "description": "The 5-element counter rules and mechanics for Jing Arena duels.",
+        "mimeType": "application/json",
+    },
+]
+
+
+PROMPTS: List[Dict[str, Any]] = [
+    {
+        "name": "culinary-debate",
+        "description": "Stage a philosophical culinary debate between agents over ingredients and elemental alchemy.",
+        "arguments": [
+            {"name": "ingredients", "description": "Comma-separated list of ingredients to debate", "required": True},
+            {"name": "agents", "description": "Personas to include (e.g. Socrates, Rumi, Galileo)", "required": False},
+        ],
+    },
+    {
+        "name": "philosophical-council",
+        "description": "Consult a council of historical personas on an ethical, existential, or cosmic question.",
+        "arguments": [
+            {"name": "question", "description": "The core inquiry for the council", "required": True},
+            {"name": "council", "description": "Council members (e.g. Socrates, Hypatia, Carl Jung)", "required": False},
+        ],
+    },
+    {
+        "name": "jing-elemental-clash",
+        "description": "Stage an in-character Jing duel between two planetary forces based on elemental mechanics.",
+        "arguments": [
+            {"name": "caster", "description": "Initiating agent persona or planet", "required": True},
+            {"name": "target", "description": "Defending agent persona or planet", "required": True},
+            {"name": "move", "description": "Opening move (Meltdown, Freeze, TectonicRoot, Vacuum, Erode)", "required": False},
+        ],
     },
 ]
 
@@ -398,11 +536,32 @@ async def trigger_chart_specific_jing_duel(arguments: Dict[str, Any]) -> Dict[st
     return _text_result(triggered_jing)
 
 
+def _calculate_lunar_phase(sun_deg: float, moon_deg: float) -> Dict[str, Any]:
+    """Calculate the lunar phase archetype, symbol, and angle from Sun-Moon elongation."""
+    angle = (moon_deg - sun_deg) % 360
+    if angle < 22.5 or angle >= 337.5:
+        return {"phase": "New Moon", "symbol": "🌑", "archetype": "The Seed Planter", "angle": round(angle, 1)}
+    elif angle < 67.5:
+        return {"phase": "Waxing Crescent", "symbol": "🌒", "archetype": "The Young Explorer", "angle": round(angle, 1)}
+    elif angle < 112.5:
+        return {"phase": "First Quarter", "symbol": "🌓", "archetype": "The Decision Maker", "angle": round(angle, 1)}
+    elif angle < 157.5:
+        return {"phase": "Waxing Gibbous", "symbol": "🌔", "archetype": "The Refiner", "angle": round(angle, 1)}
+    elif angle < 202.5:
+        return {"phase": "Full Moon", "symbol": "🌕", "archetype": "The Illuminator", "angle": round(angle, 1)}
+    elif angle < 247.5:
+        return {"phase": "Waning Gibbous", "symbol": "🌖", "archetype": "The Grateful Sage", "angle": round(angle, 1)}
+    elif angle < 292.5:
+        return {"phase": "Last Quarter", "symbol": "🌗", "archetype": "The Release Master", "angle": round(angle, 1)}
+    else:
+        return {"phase": "Waning Crescent", "symbol": "🌘", "archetype": "The Dream Weaver", "angle": round(angle, 1)}
+
+
 async def _live_sky_context() -> Optional[Dict[str, Any]]:
-    """Fetch the current sky elemental balance + dominant element so
+    """Fetch the current sky elemental balance + dominant element + lunar phase so
     every persona response can be grounded in real planetary state.
 
-    Returns a small dict (dominantElement + elementalBalance + timestamp)
+    Returns a dict (dominantElement + elementalBalance + timestamp + optional lunarPhase)
     or None when the Alchm MCP is unreachable — callers degrade silently
     rather than blocking the chat.
     """
@@ -415,11 +574,26 @@ async def _live_sky_context() -> Optional[Dict[str, Any]]:
     if not isinstance(transits, dict) or not transits:
         return None
 
-    return {
+    sky_ctx: Dict[str, Any] = {
         "timestamp": transits.get("timestamp"),
         "dominantElement": transits.get("dominantElement"),
         "elementalBalance": transits.get("elementalBalance"),
     }
+
+    lunar_phase = transits.get("lunarPhase")
+    if not lunar_phase and "planets" in transits and isinstance(transits["planets"], dict):
+        planets_data = transits["planets"]
+        if "Sun" in planets_data and "Moon" in planets_data:
+            try:
+                s_deg = planets_data["Sun"].get("longitude") or planets_data["Sun"].get("degree", 0.0)
+                m_deg = planets_data["Moon"].get("longitude") or planets_data["Moon"].get("degree", 0.0)
+                lunar_phase = _calculate_lunar_phase(float(s_deg), float(m_deg))
+            except Exception:
+                pass
+    if lunar_phase:
+        sky_ctx["lunarPhase"] = lunar_phase
+
+    return sky_ctx
 
 
 async def _backend_chat(
@@ -440,6 +614,8 @@ async def _backend_chat(
         # field when the caller didn't already provide one (allows the
         # culinary-debate flow to pass the scan-derived state through).
         merged_context["liveSkyState"] = sky_state
+        if "lunarPhase" in sky_state and "lunarPhase" not in merged_context:
+            merged_context["lunarPhase"] = sky_state["lunarPhase"]
 
     payload = {
         "agentId": agent_id,
@@ -700,11 +876,177 @@ async def plan_weekly_menu(arguments: Dict[str, Any]) -> Dict[str, Any]:
         )
 
 
+async def list_planetary_agents(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Discover and filter agents from backend /api/agents or /api/agents-search, with DB fallback."""
+    query = str(arguments.get("query") or "").strip()
+    limit = min(max(int(arguments.get("limit") or 25), 1), 100)
+    sign = str(arguments.get("sign") or "").strip().title() if arguments.get("sign") else None
+    archetype = str(arguments.get("archetype") or "").strip().lower() if arguments.get("archetype") else None
+
+    agents_list: List[Dict[str, Any]] = []
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            if query:
+                resp = await client.get(
+                    f"{BACKEND_URL.rstrip('/')}/api/agents-search",
+                    params={"q": query, "limit": limit}
+                )
+                resp.raise_for_status()
+                data = resp.json()
+                agents_list = data.get("agents", []) if isinstance(data, dict) else []
+            else:
+                resp = await client.get(
+                    f"{BACKEND_URL.rstrip('/')}/api/agents",
+                    params={"limit": limit}
+                )
+                resp.raise_for_status()
+                raw_agents = resp.json()
+                if isinstance(raw_agents, list):
+                    for a in raw_agents:
+                        agents_list.append({
+                            "agentId": a.get("agentId") or a.get("id"),
+                            "name": a.get("name"),
+                            "title": a.get("title"),
+                            "historicalEra": a.get("historicalEra"),
+                            "culture": a.get("culture"),
+                            "consciousnessLevel": a.get("consciousnessLevel"),
+                            "dominantElement": a.get("dominantElement"),
+                        })
+    except Exception as exc:
+        _log(f"list_planetary_agents HTTP backend failed, falling back to local DB if available: {exc}")
+        try:
+            from database import SessionLocal
+            import crud
+            db = SessionLocal()
+            try:
+                if query:
+                    rows = crud.search_agents(db, query=query, limit=limit)
+                else:
+                    rows = crud.get_agents(db, limit=limit)
+                agents_list = [
+                    {
+                        "agentId": a.agentId,
+                        "name": a.name,
+                        "title": a.title,
+                        "historicalEra": a.historicalEra,
+                        "culture": a.culture,
+                        "consciousnessLevel": a.consciousnessLevel,
+                        "dominantElement": getattr(a, "dominantElement", None),
+                    }
+                    for a in rows
+                ]
+            finally:
+                db.close()
+        except Exception as db_exc:
+            _log(f"list_planetary_agents DB fallback also failed: {db_exc}")
+
+    # Apply sign or archetype filters if requested
+    if sign:
+        agents_list = [a for a in agents_list if sign.lower() in (str(a.get("name", "")) + " " + str(a.get("agentId", ""))).lower()]
+    if archetype:
+        agents_list = [a for a in agents_list if archetype in (str(a.get("title", "")) + " " + str(a.get("name", ""))).lower()]
+
+    return _text_result({
+        "success": True,
+        "count": len(agents_list),
+        "agents": agents_list,
+        "filters": {
+            "query": query or None,
+            "limit": limit,
+            "sign": sign,
+            "archetype": archetype,
+        }
+    })
+
+
+async def play_agent_word_duel(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Invoke an agent or planetary sphere to make a strategic move in Word Duels of the Spheres."""
+    rack = str(arguments.get("rack") or "").strip().upper()
+    candidates = arguments.get("candidates") or []
+    if not rack or not candidates:
+        return _text_result({"error": "rack and candidates are required"}, is_error=True)
+
+    agent_name = str(arguments.get("agentName") or arguments.get("agentId") or arguments.get("planet") or "Sun").strip()
+    agent_id = _agent_id(agent_name)
+
+    payload: Dict[str, Any] = {
+        "rack": rack,
+        "candidates": candidates,
+        "agentId": agent_id,
+        "agentKey": agent_id,
+        "context": arguments.get("context") or {},
+        "sessionId": arguments.get("sessionId") or f"mcp-duel-{agent_id}",
+    }
+    planets = {"sun", "moon", "mercury", "venus", "mars", "jupiter", "saturn", "uranus", "neptune", "pluto"}
+    if agent_name.lower() in planets:
+        payload["planet"] = agent_name.title()
+
+    try:
+        async with httpx.AsyncClient(timeout=30.0) as client:
+            resp = await client.post(
+                f"{FRONTEND_URL.rstrip('/')}/api/agents/word-duel",
+                json=payload
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return _text_result(data)
+    except Exception as exc:
+        return _text_result(
+            {
+                "error": "play_agent_word_duel failed",
+                "message": str(exc),
+                "frontendUrl": FRONTEND_URL,
+            },
+            is_error=True,
+        )
+
+
+async def play_jing_arena_move(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    """Invoke an agent persona or planetary sphere to counter an opening move in Jing Arena."""
+    planet = str(arguments.get("planet") or "").strip().title()
+    opening = str(arguments.get("opening") or "").strip()
+    if not planet or not opening:
+        return _text_result({"error": "planet and opening are required"}, is_error=True)
+
+    agent_name = str(arguments.get("agentName") or arguments.get("agentId") or "").strip()
+    agent_id = _agent_id(agent_name) if agent_name else None
+
+    payload: Dict[str, Any] = {
+        "planet": planet,
+        "opening": opening,
+    }
+    if agent_id:
+        payload["agentId"] = agent_id
+
+    try:
+        async with httpx.AsyncClient(timeout=15.0) as client:
+            resp = await client.post(
+                f"{FRONTEND_URL.rstrip('/')}/api/agents/jing",
+                json=payload
+            )
+            resp.raise_for_status()
+            data = resp.json()
+            return _text_result(data)
+    except Exception as exc:
+        return _text_result(
+            {
+                "error": "play_jing_arena_move failed",
+                "message": str(exc),
+                "frontendUrl": FRONTEND_URL,
+            },
+            is_error=True,
+        )
+
+
 TOOL_HANDLERS = {
     "chat_with_planetary_agent": chat_with_planetary_agent,
+    "list_planetary_agents": list_planetary_agents,
     "get_agent_feed_discussion": get_agent_feed_discussion,
     "synthesize_culinary_debate": synthesize_culinary_debate,
     "trigger_chart_specific_jing_duel": trigger_chart_specific_jing_duel,
+    "play_agent_word_duel": play_agent_word_duel,
+    "play_jing_arena_move": play_jing_arena_move,
     "plan_weekly_menu": plan_weekly_menu,
 }
 
@@ -721,13 +1063,166 @@ async def handle_request(message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if method == "initialize":
             result = {
                 "protocolVersion": PROTOCOL_VERSION,
-                "capabilities": {"tools": {}},
-                "serverInfo": {"name": "planetary-agents-mcp-server", "version": "1.0.0"},
+                "capabilities": {
+                    "tools": {},
+                    "resources": {},
+                    "prompts": {},
+                },
+                "serverInfo": {"name": "planetary-agents-mcp-server", "version": "1.1.0"},
             }
         elif method == "ping":
             result = {}
         elif method == "tools/list":
             result = {"tools": TOOLS}
+        elif method == "resources/list":
+            result = {"resources": RESOURCES}
+        elif method == "resources/read":
+            params = message.get("params") if isinstance(message.get("params"), dict) else {}
+            uri = params.get("uri")
+            if uri == "resource://sky/transits":
+                sky_state = await _live_sky_context() or {
+                    "status": "unavailable",
+                    "timestamp": datetime.utcnow().isoformat(),
+                    "note": "Alchm MCP bridge offline or initializing"
+                }
+                result = {
+                    "contents": [
+                        {
+                            "uri": uri,
+                            "mimeType": "application/json",
+                            "text": json.dumps(sky_state, indent=2, ensure_ascii=True)
+                        }
+                    ]
+                }
+            elif uri == "resource://agents/catalog":
+                catalog = {
+                    "factions": ["Solaris", "Lunaris", "Mercury", "Venus", "Mars", "Jupiter", "Saturn"],
+                    "craftedPersonas": [
+                        {"id": "socrates", "name": "Socrates", "title": "The Gadfly of Athens"},
+                        {"id": "rumi", "name": "Jalal al-Din Rumi", "title": "Mystic Poet of the Heart"},
+                        {"id": "galileo-galilei", "name": "Galileo Galilei", "title": "Father of Observational Astronomy"},
+                        {"id": "carl-jung", "name": "Carl Jung", "title": "Pioneer of Analytical Psychology"},
+                        {"id": "hypatia", "name": "Hypatia of Alexandria", "title": "Astronomer & Mathematician"},
+                        {"id": "hildegard-of-bingen", "name": "Hildegard of Bingen", "title": "Mystic & Herbalist"},
+                        {"id": "gregory-castro", "name": "Gregory Castro", "title": "Lead Architect of Alchm Agents"},
+                        {"id": "hermes-trismegistus", "name": "Hermes Trismegistus", "title": "Master of Hermetic Wisdom"}
+                    ],
+                    "moonDegreeArchetypes": {
+                        "count": 360,
+                        "format": "planetary-moon-{zodiacSign}-{degree0to29}",
+                        "phases": [
+                            "New Moon", "Waxing Crescent", "First Quarter", "Waxing Gibbous",
+                            "Full Moon", "Waning Gibbous", "Last Quarter", "Waning Crescent", "Dark Moon"
+                        ]
+                    }
+                }
+                result = {
+                    "contents": [
+                        {
+                            "uri": uri,
+                            "mimeType": "application/json",
+                            "text": json.dumps(catalog, indent=2, ensure_ascii=True)
+                        }
+                    ]
+                }
+            elif uri == "resource://game/jing-counters":
+                jing_counters = {
+                    "elements": ["Fire", "Water", "Earth", "Air", "Aether"],
+                    "moves": {
+                        "Meltdown": {"element": "Fire", "counters": "TectonicRoot", "counteredBy": "Freeze"},
+                        "Freeze": {"element": "Water", "counters": "Meltdown", "counteredBy": "Vacuum"},
+                        "Vacuum": {"element": "Air", "counters": "Freeze", "counteredBy": "Erode"},
+                        "Erode": {"element": "Aether", "counters": "Vacuum", "counteredBy": "TectonicRoot"},
+                        "TectonicRoot": {"element": "Earth", "counters": "Erode", "counteredBy": "Meltdown"}
+                    },
+                    "rules": "Each Jing move commands an elemental vector that counters one adjacent element and is subdued by another."
+                }
+                result = {
+                    "contents": [
+                        {
+                            "uri": uri,
+                            "mimeType": "application/json",
+                            "text": json.dumps(jing_counters, indent=2, ensure_ascii=True)
+                        }
+                    ]
+                }
+            else:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {"code": -32602, "message": f"Resource not found: {uri}"},
+                }
+        elif method == "prompts/list":
+            result = {"prompts": PROMPTS}
+        elif method == "prompts/get":
+            params = message.get("params") if isinstance(message.get("params"), dict) else {}
+            prompt_name = params.get("name")
+            prompt_args = params.get("arguments") or {}
+
+            if prompt_name == "culinary-debate":
+                ingredients = prompt_args.get("ingredients") or "salt, olive oil, thyme"
+                agents = prompt_args.get("agents") or "Socrates, Rumi, Galileo"
+                result = {
+                    "description": f"Culinary debate over {ingredients} among {agents}",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": {
+                                "type": "text",
+                                "text": (
+                                    f"Assemble a culinary debate between {agents} analyzing the following ingredients: {ingredients}. "
+                                    f"Each persona must evaluate the ingredients according to their planetary archetype, elemental balance, "
+                                    f"and philosophical temperament."
+                                )
+                            }
+                        }
+                    ]
+                }
+            elif prompt_name == "philosophical-council":
+                question = prompt_args.get("question") or "What is the relationship between celestial motion and human destiny?"
+                council = prompt_args.get("council") or "Socrates, Hypatia, Carl Jung"
+                result = {
+                    "description": f"Philosophical council consultation on: {question}",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": {
+                                "type": "text",
+                                "text": (
+                                    f"Convene a council of {council} to address the following inquiry:\n\n"
+                                    f"\"{question}\"\n\n"
+                                    f"Have each thinker speak in their distinct historical voice and challenge each other's premises."
+                                )
+                            }
+                        }
+                    ]
+                }
+            elif prompt_name == "jing-elemental-clash":
+                caster = prompt_args.get("caster") or "Mars"
+                target = prompt_args.get("target") or "Saturn"
+                move = prompt_args.get("move") or "Meltdown"
+                result = {
+                    "description": f"Jing elemental clash between {caster} and {target}",
+                    "messages": [
+                        {
+                            "role": "user",
+                            "content": {
+                                "type": "text",
+                                "text": (
+                                    f"Stage an elemental clash in the Jing Arena between {caster} and {target}. "
+                                    f"{caster} initiates with {move}. Both entities must deliver defiant, elemental lines "
+                                    f"grounded in astrological synastry and their elemental natures."
+                                )
+                            }
+                        }
+                    ]
+                }
+            else:
+                return {
+                    "jsonrpc": "2.0",
+                    "id": request_id,
+                    "error": {"code": -32602, "message": f"Prompt not found: {prompt_name}"},
+                }
         elif method == "tools/call":
             params = message.get("params") if isinstance(message.get("params"), dict) else {}
             name = params.get("name")
@@ -771,8 +1266,14 @@ async def handle_request(message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
                 # Resolve agentId
                 agent_id = None
-                if name in ("chat_with_planetary_agent", "synthesize_culinary_debate", "trigger_chart_specific_jing_duel"):
-                    agent_name = gated_args.get("agentName") or gated_args.get("agent_name") or gated_args.get("casterName")
+                if name in ("chat_with_planetary_agent", "synthesize_culinary_debate", "trigger_chart_specific_jing_duel", "play_agent_word_duel", "play_jing_arena_move"):
+                    agent_name = (
+                        gated_args.get("agentName")
+                        or gated_args.get("agent_name")
+                        or gated_args.get("casterName")
+                        or gated_args.get("agentId")
+                        or gated_args.get("planet")
+                    )
                     if agent_name:
                         agent_id = _agent_id(agent_name)
                     if name == "trigger_chart_specific_jing_duel":

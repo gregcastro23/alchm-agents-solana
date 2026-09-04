@@ -142,10 +142,14 @@ export class KmsSolanaSigner implements AsolSolanaWallet {
         let client = this.gcpClient
         if (!client) {
           try {
-            // Dynamic import of @google-cloud/kms if installed
-            const { KeyManagementServiceClient } = await import(
-              /* webpackIgnore: true */ '@google-cloud/kms' as string
-            )
+            // Dynamic import of @google-cloud/kms if installed (via Function to bypass Webpack static bundle analysis)
+            const dynamicImport = new Function('specifier', 'return import(specifier)')
+            const gcpKmsModule = (await dynamicImport('@google-cloud/kms')) as {
+              KeyManagementServiceClient: new () => {
+                asymmetricSign: (req: any) => Promise<[{ signature?: Uint8Array | null }]>
+              }
+            }
+            const { KeyManagementServiceClient } = gcpKmsModule
             const kms = new KeyManagementServiceClient()
             const [response] = await kms.asymmetricSign({
               name: this.keyId,

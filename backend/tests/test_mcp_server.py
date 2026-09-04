@@ -289,3 +289,235 @@ async def test_trigger_chart_specific_jing_duel(monkeypatch):
     assert "Socrates responding" in payload["casterVoice"]
     assert "Rumi responding" in payload["targetVoice"]
 
+
+@pytest.mark.asyncio
+async def test_list_planetary_agents_happy_path(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+        def json(self):
+            return [
+                {
+                    "agentId": "socrates",
+                    "name": "Socrates",
+                    "title": "The Gadfly of Athens",
+                    "historicalEra": "Classical Greece",
+                    "culture": "Greek",
+                    "consciousnessLevel": 95,
+                    "dominantElement": "Air"
+                },
+                {
+                    "agentId": "planetary-moon-aries-14",
+                    "name": "Waxing Crescent Moon in Aries 14 Degree",
+                    "title": "The Young Explorer",
+                    "historicalEra": "Cosmic Degree",
+                    "culture": "Universal",
+                    "consciousnessLevel": 100,
+                    "dominantElement": "Fire"
+                }
+            ]
+        def raise_for_status(self):
+            pass
+
+    async def fake_get(url, *args, **kwargs):
+        return FakeResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient.get", fake_get)
+
+    response = await planetary_agents_mcp_server.list_planetary_agents({"limit": 10})
+    assert "isError" not in response
+    payload = json.loads(response["content"][0]["text"])
+    assert payload["success"] is True
+    assert payload["count"] == 2
+    assert payload["agents"][0]["agentId"] == "socrates"
+    assert payload["agents"][1]["agentId"] == "planetary-moon-aries-14"
+
+
+@pytest.mark.asyncio
+async def test_list_planetary_agents_with_query(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+        def json(self):
+            return {
+                "query": "Socrates",
+                "count": 1,
+                "agents": [
+                    {
+                        "agentId": "socrates",
+                        "name": "Socrates",
+                        "title": "The Gadfly of Athens",
+                        "historicalEra": "Classical Greece",
+                        "culture": "Greek",
+                        "consciousnessLevel": 95
+                    }
+                ]
+            }
+        def raise_for_status(self):
+            pass
+
+    async def fake_get(url, *args, **kwargs):
+        return FakeResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient.get", fake_get)
+
+    response = await planetary_agents_mcp_server.list_planetary_agents({"query": "Socrates"})
+    assert "isError" not in response
+    payload = json.loads(response["content"][0]["text"])
+    assert payload["success"] is True
+    assert payload["count"] == 1
+    assert payload["agents"][0]["name"] == "Socrates"
+
+
+@pytest.mark.asyncio
+async def test_play_agent_word_duel(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+        def json(self):
+            return {
+                "success": True,
+                "agentKey": "galileo-galilei",
+                "planet": "Jupiter",
+                "move": {
+                    "word": "SATURN",
+                    "score": 24,
+                    "rationale": "The celestial spheres turn in mathematical precision."
+                }
+            }
+        def raise_for_status(self):
+            pass
+
+    async def fake_post(url, *args, **kwargs):
+        return FakeResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient.post", fake_post)
+
+    response = await planetary_agents_mcp_server.play_agent_word_duel({
+        "agentName": "Galileo",
+        "rack": "SATURNX",
+        "candidates": ["SATURN", "STAR", "SUN"]
+    })
+
+    assert "isError" not in response
+    payload = json.loads(response["content"][0]["text"])
+    assert payload["success"] is True
+    assert payload["move"]["word"] == "SATURN"
+    assert "mathematical precision" in payload["move"]["rationale"]
+
+
+@pytest.mark.asyncio
+async def test_play_jing_arena_move(monkeypatch):
+    class FakeResponse:
+        status_code = 200
+        def json(self):
+            return {
+                "success": True,
+                "planet": "Moon",
+                "move": "Freeze",
+                "element": "Water",
+                "voice": "The cool waters extinguish the heat of contention."
+            }
+        def raise_for_status(self):
+            pass
+
+    async def fake_post(url, *args, **kwargs):
+        return FakeResponse()
+
+    monkeypatch.setattr("httpx.AsyncClient.post", fake_post)
+
+    response = await planetary_agents_mcp_server.play_jing_arena_move({
+        "planet": "Moon",
+        "opening": "Meltdown",
+        "agentName": "Hypatia"
+    })
+
+    assert "isError" not in response
+    payload = json.loads(response["content"][0]["text"])
+    assert payload["success"] is True
+    assert payload["move"] == "Freeze"
+    assert payload["element"] == "Water"
+
+
+@pytest.mark.asyncio
+async def test_mcp_resources_protocol(monkeypatch):
+    # Test resources/list
+    res_list = await planetary_agents_mcp_server.handle_request({
+        "jsonrpc": "2.0",
+        "id": "test-res-list",
+        "method": "resources/list"
+    })
+    assert res_list["result"]["resources"]
+    uris = [r["uri"] for r in res_list["result"]["resources"]]
+    assert "resource://sky/transits" in uris
+    assert "resource://agents/catalog" in uris
+    assert "resource://game/jing-counters" in uris
+
+    # Test resources/read for catalog
+    res_read_cat = await planetary_agents_mcp_server.handle_request({
+        "jsonrpc": "2.0",
+        "id": "test-res-read-cat",
+        "method": "resources/read",
+        "params": {"uri": "resource://agents/catalog"}
+    })
+    cat_text = res_read_cat["result"]["contents"][0]["text"]
+    cat_json = json.loads(cat_text)
+    assert "craftedPersonas" in cat_json
+    assert cat_json["moonDegreeArchetypes"]["count"] == 360
+
+    # Test resources/read for jing-counters
+    res_read_jing = await planetary_agents_mcp_server.handle_request({
+        "jsonrpc": "2.0",
+        "id": "test-res-read-jing",
+        "method": "resources/read",
+        "params": {"uri": "resource://game/jing-counters"}
+    })
+    jing_text = res_read_jing["result"]["contents"][0]["text"]
+    jing_json = json.loads(jing_text)
+    assert "Meltdown" in jing_json["moves"]
+    assert jing_json["moves"]["Meltdown"]["counters"] == "TectonicRoot"
+
+
+@pytest.mark.asyncio
+async def test_mcp_prompts_protocol():
+    # Test prompts/list
+    prompts_list = await planetary_agents_mcp_server.handle_request({
+        "jsonrpc": "2.0",
+        "id": "test-prompts-list",
+        "method": "prompts/list"
+    })
+    assert prompts_list["result"]["prompts"]
+    names = [p["name"] for p in prompts_list["result"]["prompts"]]
+    assert "culinary-debate" in names
+    assert "philosophical-council" in names
+    assert "jing-elemental-clash" in names
+
+    # Test prompts/get culinary-debate
+    prompt_get = await planetary_agents_mcp_server.handle_request({
+        "jsonrpc": "2.0",
+        "id": "test-prompts-get",
+        "method": "prompts/get",
+        "params": {
+            "name": "culinary-debate",
+            "arguments": {"ingredients": "cardamom, saffron", "agents": "Rumi, Socrates"}
+        }
+    })
+    messages = prompt_get["result"]["messages"]
+    assert "cardamom, saffron" in messages[0]["content"]["text"]
+    assert "Rumi, Socrates" in messages[0]["content"]["text"]
+
+
+def test_calculate_lunar_phase():
+    # Sun 0, Moon 0 -> New Moon
+    new_moon = planetary_agents_mcp_server._calculate_lunar_phase(0.0, 5.0)
+    assert new_moon["phase"] == "New Moon"
+    assert new_moon["symbol"] == "🌑"
+
+    # Sun 0, Moon 90 -> First Quarter
+    first_q = planetary_agents_mcp_server._calculate_lunar_phase(0.0, 90.0)
+    assert first_q["phase"] == "First Quarter"
+    assert first_q["symbol"] == "🌓"
+
+    # Sun 0, Moon 180 -> Full Moon
+    full_moon = planetary_agents_mcp_server._calculate_lunar_phase(0.0, 185.0)
+    assert full_moon["phase"] == "Full Moon"
+    assert full_moon["symbol"] == "🌕"
+
+
