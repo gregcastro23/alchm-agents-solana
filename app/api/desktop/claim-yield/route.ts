@@ -42,10 +42,11 @@ export async function POST(req: Request) {
     return NextResponse.json({
       success: true,
       distribution: {
-        spirit: result.distribution.spirit,
-        essence: result.distribution.essence,
-        matter: result.distribution.matter,
-        substance: result.distribution.substance,
+        spirit: (result.distribution as any).spirit ?? (result.distribution as any).Spirit ?? 0,
+        essence: (result.distribution as any).essence ?? (result.distribution as any).Essence ?? 0,
+        matter: (result.distribution as any).matter ?? (result.distribution as any).Matter ?? 0,
+        substance:
+          (result.distribution as any).substance ?? (result.distribution as any).Substance ?? 0,
       },
       balances: {
         spirit: Number(result.balances.spirit),
