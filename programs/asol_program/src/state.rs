@@ -32,6 +32,13 @@ impl ProgramConfig {
 
 #[account]
 #[derive(InitSpace)]
+pub struct PendingAdmin {
+    pub pending_admin: Pubkey,
+    pub bump: u8,
+}
+
+#[account]
+#[derive(InitSpace)]
 pub struct PersonaCommitment {
     pub version: u8,
     pub agent_id: [u8; 32],

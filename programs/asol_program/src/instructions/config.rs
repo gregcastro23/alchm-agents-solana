@@ -1,10 +1,10 @@
 use anchor_lang::prelude::*;
 
 use crate::{
-    constants::{PROGRAM_AUTHORITY_SEED, STATE_VERSION},
+    constants::{PENDING_ADMIN_SEED, PROGRAM_AUTHORITY_SEED, STATE_VERSION},
     errors::AsolError,
     program::AsolProgram,
-    state::ProgramConfig,
+    state::{PendingAdmin, ProgramConfig},
 };
 
 pub fn initialize(
@@ -64,6 +64,25 @@ pub fn set_service_authorities(
     Ok(())
 }
 
+pub fn propose_admin(ctx: Context<ProposeAdmin>, new_admin: Pubkey) -> Result<()> {
+    require_keys_neq!(new_admin, Pubkey::default(), AsolError::DefaultAuthority);
+    require_keys_neq!(
+        new_admin,
+        ctx.accounts.program_config.admin,
+        AsolError::Unauthorized
+    );
+    ctx.accounts.pending_admin.set_inner(PendingAdmin {
+        pending_admin: new_admin,
+        bump: ctx.bumps.pending_admin,
+    });
+    Ok(())
+}
+
+pub fn accept_admin(ctx: Context<AcceptAdmin>) -> Result<()> {
+    ctx.accounts.program_config.admin = ctx.accounts.authority.key();
+    Ok(())
+}
+
 #[derive(Accounts)]
 pub struct InitializeConfig<'info> {
     #[account(
@@ -103,4 +122,54 @@ pub struct SetServiceAuthorities<'info> {
     )]
     pub program_config: Account<'info, ProgramConfig>,
     pub authority: Signer<'info>,
+}
+
+#[derive(Accounts)]
+pub struct ProposeAdmin<'info> {
+    #[account(
+        seeds = [PROGRAM_AUTHORITY_SEED],
+        bump = program_config.bump
+    )]
+    pub program_config: Account<'info, ProgramConfig>,
+    #[account(
+        init_if_needed,
+        payer = authority,
+        space = 8 + PendingAdmin::INIT_SPACE,
+        seeds = [PENDING_ADMIN_SEED],
+        bump
+    )]
+    pub pending_admin: Account<'info, PendingAdmin>,
+    #[account(mut, constraint = authority.key() == program_config.admin @ AsolError::Unauthorized)]
+    pub authority: Signer<'info>,
+    pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct AcceptAdmin<'info> {
+    #[account(
+        mut,
+        seeds = [PROGRAM_AUTHORITY_SEED],
+        bump = program_config.bump
+    )]
+    pub program_config: Account<'info, ProgramConfig>,
+    #[account(
+        mut,
+        seeds = [PENDING_ADMIN_SEED],
+        bump = pending_admin.bump,
+        close = authority,
+        constraint = authority.key() == pending_admin.pending_admin @ AsolError::Unauthorized
+    )]
+    pub pending_admin: Account<'info, PendingAdmin>,
+    #[account(mut)]
+    pub authority: Signer<'info>,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_pending_admin_init_space() {
+        assert_eq!(PendingAdmin::INIT_SPACE, 32 + 1);
+    }
 }

@@ -1,28 +1,25 @@
-import { PublicKey, TransactionInstruction } from '@solana/web3.js'
+import { PublicKey, SystemProgram, TransactionInstruction } from '@solana/web3.js'
 import { ASOL_SOLANA_PROGRAM_ID, getProgramConfigAddress } from '@/lib/solana/esms'
 
-export const SQUADS_V4_PROGRAM_ID = new PublicKey('SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pcf')
+export const SQUADS_V4_PROGRAM_ID = new PublicKey('SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf')
 
 export const BPF_LOADER_UPGRADEABLE_PROGRAM_ID = new PublicKey(
   'BPFLoaderUpgradeab1e11111111111111111111111'
 )
 
-/** Convert BigInt or number into 8-byte little-endian Uint8Array. */
-export function u64ToBufferLE(value: bigint | number): Buffer {
-  const buf = Buffer.alloc(8)
-  buf.writeBigUInt64LE(BigInt(value))
-  return buf
-}
+import {
+  getMultisigPda as sqdsGetMultisigPda,
+  getVaultPda as sqdsGetVaultPda,
+  getProposalPda as sqdsGetProposalPda,
+  getTransactionPda as sqdsGetTransactionPda,
+} from '@sqds/multisig'
 
 /** Derive Squads v4 Multisig PDA from create key. */
 export function getSquadsMultisigPda(
   createKey: PublicKey,
   programId = SQUADS_V4_PROGRAM_ID
 ): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from('multisig'), createKey.toBuffer()],
-    programId
-  )
+  return sqdsGetMultisigPda({ createKey, programId })
 }
 
 /** Derive Squads v4 Vault PDA for a given multisig and vault index (default 1). */
@@ -31,10 +28,7 @@ export function getSquadsVaultPda(
   vaultIndex = 1,
   programId = SQUADS_V4_PROGRAM_ID
 ): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [Buffer.from('multisig'), multisigPda.toBuffer(), Buffer.from([vaultIndex])],
-    programId
-  )
+  return sqdsGetVaultPda({ multisigPda, index: vaultIndex, programId })
 }
 
 /** Derive Squads v4 Proposal PDA for a given transaction index. */
@@ -43,15 +37,11 @@ export function getSquadsProposalPda(
   transactionIndex: bigint | number,
   programId = SQUADS_V4_PROGRAM_ID
 ): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [
-      Buffer.from('multisig'),
-      multisigPda.toBuffer(),
-      Buffer.from('proposal'),
-      u64ToBufferLE(transactionIndex),
-    ],
-    programId
-  )
+  return sqdsGetProposalPda({
+    multisigPda,
+    transactionIndex: BigInt(transactionIndex),
+    programId,
+  })
 }
 
 /** Derive Squads v4 Transaction PDA for a given transaction index. */
@@ -60,15 +50,11 @@ export function getSquadsTransactionPda(
   transactionIndex: bigint | number,
   programId = SQUADS_V4_PROGRAM_ID
 ): [PublicKey, number] {
-  return PublicKey.findProgramAddressSync(
-    [
-      Buffer.from('multisig'),
-      multisigPda.toBuffer(),
-      Buffer.from('transaction'),
-      u64ToBufferLE(transactionIndex),
-    ],
-    programId
-  )
+  return sqdsGetTransactionPda({
+    multisigPda,
+    index: BigInt(transactionIndex),
+    programId,
+  })
 }
 
 /** Derive BPF Loader Upgradeable ProgramData address for a program ID. */
@@ -131,6 +117,93 @@ export function buildSetServiceAuthoritiesInstruction(args: {
     ],
     data,
   })
+}
+
+/** Derive PendingAdmin PDA for two-step admin transfers. */
+export function getPendingAdminAddress(programId = ASOL_SOLANA_PROGRAM_ID): PublicKey {
+  return PublicKey.findProgramAddressSync([Buffer.from('pending_admin')], programId)[0]
+}
+
+/**
+ * Build `asol_program.propose_admin` instruction.
+ * Initiates the two-step admin handover to a new admin (e.g., Squads Vault).
+ */
+export function buildProposeAdminInstruction(args: {
+  programId?: PublicKey
+  currentAdmin: PublicKey
+  newAdmin: PublicKey
+}): TransactionInstruction {
+  const programId = args.programId ?? ASOL_SOLANA_PROGRAM_ID
+  const programConfigPda = getProgramConfigAddress(programId)
+  const pendingAdminPda = getPendingAdminAddress(programId)
+
+  // Anchor instruction discriminator for propose_admin: [121, 214, 199, 212, 87, 39, 117, 234]
+  const discriminator = Buffer.from([121, 214, 199, 212, 87, 39, 117, 234])
+  const data = Buffer.concat([discriminator, args.newAdmin.toBuffer()])
+
+  return new TransactionInstruction({
+    programId,
+    keys: [
+      { pubkey: programConfigPda, isSigner: false, isWritable: false },
+      { pubkey: pendingAdminPda, isSigner: false, isWritable: true },
+      { pubkey: args.currentAdmin, isSigner: true, isWritable: true },
+      { pubkey: SystemProgram.programId, isSigner: false, isWritable: false },
+    ],
+    data,
+  })
+}
+
+/**
+ * Build `asol_program.accept_admin` instruction.
+ * Proposed admin signs to accept role and close the PendingAdmin PDA.
+ */
+export function buildAcceptAdminInstruction(args: {
+  programId?: PublicKey
+  newAdmin: PublicKey
+}): TransactionInstruction {
+  const programId = args.programId ?? ASOL_SOLANA_PROGRAM_ID
+  const programConfigPda = getProgramConfigAddress(programId)
+  const pendingAdminPda = getPendingAdminAddress(programId)
+
+  // Anchor instruction discriminator for accept_admin: [112, 42, 45, 90, 116, 181, 13, 170]
+  const discriminator = Buffer.from([112, 42, 45, 90, 116, 181, 13, 170])
+
+  return new TransactionInstruction({
+    programId,
+    keys: [
+      { pubkey: programConfigPda, isSigner: false, isWritable: true },
+      { pubkey: pendingAdminPda, isSigner: false, isWritable: true },
+      { pubkey: args.newAdmin, isSigner: true, isWritable: true },
+    ],
+    data: discriminator,
+  })
+}
+
+/**
+ * Verify on-chain existence and ownership of Squads multisig and vault accounts.
+ */
+export async function verifySquadsAccountsOnChain(
+  connection: { getAccountInfo: (pubkey: PublicKey) => Promise<any> },
+  multisigPda: PublicKey,
+  vaultPda: PublicKey,
+  squadsProgramId = SQUADS_V4_PROGRAM_ID
+): Promise<{
+  multisigExists: boolean
+  vaultExists: boolean
+  multisigOwnerValid: boolean
+  vaultOwnerValid: boolean
+}> {
+  const [multisigInfo, vaultInfo] = await Promise.all([
+    connection.getAccountInfo(multisigPda),
+    connection.getAccountInfo(vaultPda),
+  ])
+
+  return {
+    multisigExists: Boolean(multisigInfo),
+    vaultExists: Boolean(vaultInfo),
+    multisigOwnerValid: Boolean(multisigInfo && multisigInfo.owner.equals(squadsProgramId)),
+    vaultOwnerValid: Boolean(vaultInfo && vaultInfo.owner.equals(SystemProgram.programId)),
+  }
 }
 
 export interface SquadsHandoverReport {

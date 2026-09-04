@@ -9,6 +9,7 @@ pub const STAKE_POSITION_SEED: &[u8] = b"stake";
 pub const CONSTELLATION_POOL_SEED: &[u8] = b"constellation_pool";
 pub const DEED_POSITION_SEED: &[u8] = b"deed";
 pub const AMM_NONCE_SEED: &[u8] = b"amm_nonce";
+pub const PENDING_ADMIN_SEED: &[u8] = b"pending_admin";
 
 pub const STATE_VERSION: u8 = 1;
 pub const ESMS_MINT_COUNT: usize = 4;
