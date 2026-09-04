@@ -92,10 +92,36 @@ Simulation executed via `scripts/simulate-historical-faucet.ts`:
 
 ---
 
-## 6. Implementation References
+## 6. Real Astronomical Dates Forecast & Probe Matrix
+
+Executed via `scripts/probe-real-dates-faucet.ts` using real VSOP87 planetary ephemeris across the 72 historical agents:
+
+| Reference Date                               | Astronomical Configuration                                       | Dom. Element | Ephemeris Weights `[F, W, E, A]` | Avg SPIRIT (`🝇`) | Avg ESSENCE (`🝑`) | Avg MATTER (`🝙`) | Avg SUBSTANCE (`🝉`) | Daily Total / Agent | Fleet Daily Mint | SPRT / MATR Ratio |
+| :------------------------------------------- | :--------------------------------------------------------------- | :----------: | :------------------------------: | :--------------: | :---------------: | :--------------: | :-----------------: | :-----------------: | :--------------: | :---------------: |
+| **Today: Live Sky** (2026-09-04)             | Sun in Virgo, Moon/Uranus in Gemini, Mars in Cancer              |   **AIR**    |          `[3, 1, 2, 4]`          |      3.9659      |      1.3227       |      1.5894      |     **5.1221**      |     **12.0000**     |     864 ESMS     |     **2.50×**     |
+| **Autumnal Equinox** (2026-09-22)            | Solar Libra Ingress 0°, Moon in Aquarius                         |   **AIR**    |          `[3, 2, 1, 4]`          |      3.7952      |      2.5317       |    **0.7642**    |     **4.9088**      |     **12.0000**     |     864 ESMS     |     **4.97×**     |
+| **Samhain / Scorpio Portal** (2026-10-31)    | Sun/Mercury in Scorpio, Moon in Cancer, Mars/Jupiter in Leo      |   **FIRE**   |          `[4, 3, 0, 3]`          |    **4.8344**    |    **3.6339**     |    **0.0000**    |       3.5317        |     **12.0000**     |     864 ESMS     | **∞ (Zero Glut)** |
+| **Winter Solstice** (2026-12-21)             | Solar Capricorn Ingress 0°, Moon in Taurus, Mars in Virgo        |   **FIRE**   |          `[4, 1, 3, 2]`          |    **5.4876**    |      1.3738       |      2.4738      |       2.6648        |     **12.0000**     |     864 ESMS     |     **2.22×**     |
+| **Vernal Equinox** (2026-03-20)              | Solar Aries Ingress 0°, Moon/Venus/Saturn in Aries               |   **FIRE**   |          `[4, 4, 1, 1]`          |    **5.0069**    |    **5.0120**     |    **0.7604**    |       1.2207        |     **12.0000**     |     864 ESMS     |     **6.58×**     |
+| **Historic Capricorn Stellium** (2024-01-10) | 6 planets in Earth (Sun/Moon/Mars/Pluto in Cap, Jup/Uran in Tau) |  **EARTH**   |          `[2, 2, 6, 0]`          |      3.1967      |      3.1783       |    **5.6250**    |       0.0000        |     **12.0000**     |     864 ESMS     |     **0.57×**     |
+| **Historic Pisces Supermoon** (2024-09-18)   | Moon in Pisces 25.8° Eclipse, Saturn/Neptune in Pisces           |  **WATER**   |          `[0, 4, 4, 2]`          |      0.0000      |    **5.7682**     |      3.4309      |       2.8009        |     **12.0000**     |     864 ESMS     |     **0.00×**     |
+| **Summer Solstice** (2026-06-21)             | Solar Cancer Ingress 0°, Mercury/Jupiter in Cancer               |   **FIRE**   |          `[3, 3, 2, 2]`          |      3.9368      |      3.9339       |      1.5807      |       2.5486        |     **12.0000**     |     864 ESMS     |     **2.49×**     |
+
+### Key Empirical Takeaways Under Real Skies
+
+1. **Real-World Anti-Glut Protection:** Even during the most extreme Earth stellium of the decade (6 Earth planets on Jan 10, 2024), $\Omega_{\text{MATTER}} = 0.750$ held fleet average MATTER issuance to 5.6250 tokens (saving the network from runaway surplus).
+2. **Zero-Earth Sky Periods Accelerate Glut Depletion:** During events like Samhain 2026 (0 Earth planets), new MATTER issuance drops to **0.0000 ESMS**, allowing the 29.1k kitchen surplus to deplete with zero passive dilution.
+3. **Continuous Kinetic Gas Supply:** Today's sky (Sep 4, 2026) delivers **3.9659 SPIRIT** and **5.1221 SUBSTANCE**, perfectly supporting both chat consultation gas (15+ turns at 0.25 SPIRIT) and intellectual resonance.
+4. **Universal 12.0000 Conservation:** In every single real astronomical scenario, all 72 historical agents received exactly 12.0000 ESMS ($864.0000$ ESMS fleet total mint).
+
+---
+
+## 7. Implementation References
 
 - `lib/services/discriminant-faucet.ts`: Canonical ADR-014 calculation engine.
 - `lib/services/agent-action-service.ts`: Hourly agentic claim integration (`claimYieldForAgent`).
 - `lib/economy-config.ts`: Daily yield constant definitions (`DAILY_ESMS_YIELD = 12`).
-- `scripts/simulate-historical-faucet.ts`: 72-agent multi-sky validation harness.
-- `test/discriminant-faucet.spec.ts`: Unit test suite verifying mathematical invariants.
+- `lib/calculate-transits.ts`: Real-time and forward VSOP87 astronomical ephemeris calculator.
+- `scripts/simulate-historical-faucet.ts`: 72-agent multi-sky benchmark validation harness.
+- `scripts/probe-real-dates-faucet.ts`: Real astronomical dates forecast and probe harness.
+- `test/discriminant-faucet.spec.ts`: Unit test suite verifying mathematical invariants under synthetic and real skies.

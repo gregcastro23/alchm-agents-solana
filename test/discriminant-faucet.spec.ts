@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import {
   computeDiscriminantDailyYield,
   deriveTransitWeightsFromPositions,
+  getLiveTransitSky,
   resolveAgentNatalData,
   TOKEN_IDENTITIES,
   CANONICAL_TOKENS,
@@ -164,5 +165,52 @@ describe('ADR-014: Discriminant Astrological Faucet Engine', () => {
     expect(transit.elementWeights.Earth).toBe(1)
     expect(transit.elementWeights.Air).toBe(1)
     expect(transit.dominantElement).toBe('Fire')
+  })
+
+  it('forecasts and strictly conserves 12.0000 ESMS across real astronomical reference dates', () => {
+    const referenceDates = [
+      new Date('2026-09-04T16:00:00Z'), // Today: Live Sky Epoch
+      new Date('2026-09-22T18:00:00Z'), // Autumnal Equinox 2026
+      new Date('2026-10-31T12:00:00Z'), // Samhain 2026
+      new Date('2026-12-21T21:00:00Z'), // Winter Solstice 2026
+      new Date('2026-03-20T14:00:00Z'), // Vernal Equinox 2026
+    ]
+
+    for (const d of referenceDates) {
+      const liveSky = getLiveTransitSky(d)
+      const weightsSum =
+        liveSky.elementWeights.Fire +
+        liveSky.elementWeights.Water +
+        liveSky.elementWeights.Earth +
+        liveSky.elementWeights.Air
+      expect(weightsSum).toBe(10)
+
+      const daVinci = computeDiscriminantDailyYield(
+        resolveAgentNatalData('leonardo-da-vinci'),
+        liveSky,
+        LIVE_NETWORK_SUPPLY
+      )
+      const newton = computeDiscriminantDailyYield(
+        resolveAgentNatalData('isaac-newton'),
+        liveSky,
+        LIVE_NETWORK_SUPPLY
+      )
+      const einstein = computeDiscriminantDailyYield(
+        resolveAgentNatalData('albert-einstein'),
+        liveSky,
+        LIVE_NETWORK_SUPPLY
+      )
+
+      expect(daVinci.total).toBe(12.0)
+      expect(newton.total).toBe(12.0)
+      expect(einstein.total).toBe(12.0)
+
+      // 4-axis sum strictly equals 12.0000
+      expect(
+        Math.round(
+          (daVinci.spirit + daVinci.essence + daVinci.matter + daVinci.substance) * 10000
+        ) / 10000
+      ).toBe(12.0)
+    }
   })
 })
