@@ -86,14 +86,36 @@ def test_mcp_stdio_roundtrip(mock_backend_server):
         assert init_res["id"] == 101
         assert "result" in init_res
         assert init_res["result"]["serverInfo"]["name"] == "planetary-agents-mcp-server"
+        assert init_res["result"]["serverInfo"]["version"] == "1.1.0"
+        assert "resources" in init_res["result"]["capabilities"]
+        assert "prompts" in init_res["result"]["capabilities"]
 
         # 2. Speak tools/list
         list_res = send_request("tools/list", req_id=102)
         assert list_res["id"] == 102
         tools = list_res["result"]["tools"]
-        assert any(t["name"] == "chat_with_planetary_agent" for t in tools)
+        tool_names = [t["name"] for t in tools]
+        assert "chat_with_planetary_agent" in tool_names
+        assert "list_planetary_agents" in tool_names
+        assert "play_agent_word_duel" in tool_names
+        assert "play_jing_arena_move" in tool_names
+        assert len(tools) >= 8
 
-        # 3. Call chat_with_planetary_agent tool call
+        # 3. Speak resources/list
+        res_list = send_request("resources/list", req_id=103)
+        assert res_list["id"] == 103
+        resources = res_list["result"]["resources"]
+        assert any(r["uri"] == "resource://sky/transits" for r in resources)
+        assert any(r["uri"] == "resource://agents/catalog" for r in resources)
+
+        # 4. Speak prompts/list
+        prompts_res = send_request("prompts/list", req_id=104)
+        assert prompts_res["id"] == 104
+        prompts = prompts_res["result"]["prompts"]
+        assert any(p["name"] == "culinary-debate" for p in prompts)
+        assert any(p["name"] == "philosophical-council" for p in prompts)
+
+        # 5. Call chat_with_planetary_agent tool call
         call_res = send_request("tools/call", {
             "name": "chat_with_planetary_agent",
             "arguments": {
@@ -101,9 +123,9 @@ def test_mcp_stdio_roundtrip(mock_backend_server):
                 "message": "Hello from stdio test!",
                 "modelTier": "free"
             }
-        }, req_id=103)
+        }, req_id=105)
 
-        assert call_res["id"] == 103
+        assert call_res["id"] == 105
         assert "result" in call_res
         
         # Check tool response text
