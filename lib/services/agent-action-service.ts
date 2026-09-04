@@ -38,6 +38,11 @@ import { PlanetaryHourCalculator } from '@/lib/planetary-hour'
 import { signDegreeToLongitude } from '@/lib/enhanced-astronomical-calculator'
 import { getCurrentPlanetaryPositions } from '@/lib/calculate-transits'
 import type { CurrentPlanetPosition } from '@/lib/calculate-transits'
+import {
+  computeDiscriminantDailyYield,
+  resolveAgentNatalData,
+  getLiveTransitSky,
+} from '@/lib/services/discriminant-faucet'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -359,21 +364,14 @@ export class AgentActionService {
   }
 
   /**
-   * Atomic yield claim for a single agentic user. Uses the same transaction
-   * pattern as `EconomyService.claimAgentsYield`, with an even per-axis split
-   * so every daily claim can fund two interactions even at maximum clash cost.
+   * Atomic yield claim for a single agentic user.
+   * ADR-014 Chart-Ratio Faucet: Calculates daily yield based on the agent's
+   * authentic natal chart ratio modulated by current celestial transits
+   * and anti-glut damping, strictly conserving 24.0000 ESMS total.
    */
   private async claimYieldForAgent(userId: string): Promise<void> {
-    const totalYield = AGENT_DAILY_YIELD
     const dateStr = new Date().toISOString().split('T')[0]
     const transactionGroupId = crypto.randomUUID()
-    const perAxis = totalYield / TOKEN_TYPES.length
-    const amountsObj: Record<string, number> = {
-      spirit: perAxis,
-      essence: perAxis,
-      matter: perAxis,
-      substance: perAxis,
-    }
 
     await prisma.$transaction(async tx => {
       // Idempotency guard within the transaction
@@ -390,6 +388,33 @@ export class AgentActionService {
         }
       }
 
+      // Fetch agent details to resolve natal chart
+      const agent = await tx.users.findUnique({
+        where: { id: userId },
+        include: {
+          user_profiles: {
+            select: {
+              natalChart: true,
+              dominantElement: true,
+              monicaConstant: true,
+            },
+          },
+        },
+      })
+
+      // ADR-014 Chart-Ratio Faucet Calculation
+      const email = agent?.email ? agent.email.toLowerCase() : userId
+      const natalData = resolveAgentNatalData(email, agent?.user_profiles || undefined)
+      const transitSky = getLiveTransitSky()
+      const yieldResult = computeDiscriminantDailyYield(natalData, transitSky)
+
+      const amountsObj: Record<string, number> = {
+        spirit: yieldResult.spirit,
+        essence: yieldResult.essence,
+        matter: yieldResult.matter,
+        substance: yieldResult.substance,
+      }
+
       const amounts: Record<string, number> = {}
       for (const token of TOKEN_TYPES) {
         const tokenKey = token.toLowerCase() as keyof typeof amountsObj
@@ -402,7 +427,7 @@ export class AgentActionService {
             tokenType: token,
             amount: new Prisma.Decimal(amt),
             sourceType: 'agents_daily_yield',
-            description: 'Automated ESMS Yield (Agentic)',
+            description: 'Automated ESMS Yield (ADR-014 Chart Ratio)',
             idempotencyKey: `agentic:daily:${userId}:${dateStr}:${token}`,
             createdAt: new Date(),
           },
@@ -410,14 +435,11 @@ export class AgentActionService {
       }
 
       // Sync yield to alchm.kitchen (with identity metadata so user_profiles is kept fresh)
-      const agent = await tx.users.findUnique({
-        where: { id: userId },
-        select: { email: true, name: true, isAgentic: true },
-      })
-
       if (agent?.isAgentic) {
-        const email = agent.email.toLowerCase()
-        console.log(`[AgentActionService] Syncing yield for ${email} to alchm.kitchen...`)
+        console.log(
+          `[AgentActionService] Syncing chart-ratio yield for ${email} to alchm.kitchen ` +
+            `[Sp=${amountsObj.spirit}, Es=${amountsObj.essence}, Ma=${amountsObj.matter}, Su=${amountsObj.substance}]...`
+        )
 
         await syncCreditToAlchm({
           userEmail: email,
