@@ -367,7 +367,7 @@ export class AgentActionService {
    * Atomic yield claim for a single agentic user.
    * ADR-014 Chart-Ratio Faucet: Calculates daily yield based on the agent's
    * authentic natal chart ratio modulated by current celestial transits
-   * and anti-glut damping, strictly conserving 24.0000 ESMS total.
+   * and anti-glut damping, strictly conserving 12.0000 ESMS total.
    */
   private async claimYieldForAgent(userId: string): Promise<void> {
     const dateStr = new Date().toISOString().split('T')[0]

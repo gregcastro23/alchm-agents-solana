@@ -22,7 +22,7 @@ describe('POST /api/economy/yield', () => {
     })
     mockClaimProfileYield.mockResolvedValue({
       isPremium: false,
-      distribution: { spirit: 6, essence: 6, matter: 6, substance: 6 },
+      distribution: { spirit: 3, essence: 3, matter: 3, substance: 3 },
       balances: { spirit: 10, essence: 10, matter: 10, substance: 10 },
     })
 

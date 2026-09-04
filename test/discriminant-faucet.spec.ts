@@ -61,14 +61,14 @@ describe('ADR-014: Discriminant Astrological Faucet Engine', () => {
     })
   })
 
-  it('allocates a flat symmetrical 6.0000 each for a neutral claimer under neutral sky', () => {
+  it('allocates a flat symmetrical 3.0000 each for a neutral claimer under neutral sky', () => {
     const res = computeDiscriminantDailyYield(null, neutralTransit, neutralSupply)
 
-    expect(res.spirit).toBe(6.0)
-    expect(res.essence).toBe(6.0)
-    expect(res.matter).toBe(6.0)
-    expect(res.substance).toBe(6.0)
-    expect(res.total).toBe(24.0)
+    expect(res.spirit).toBe(3.0)
+    expect(res.essence).toBe(3.0)
+    expect(res.matter).toBe(3.0)
+    expect(res.substance).toBe(3.0)
+    expect(res.total).toBe(12.0)
   })
 
   it('elevates SPIRIT yield significantly for a Fire-dominant chart during a Fire transit', () => {
@@ -86,10 +86,10 @@ describe('ADR-014: Discriminant Astrological Faucet Engine', () => {
 
     const res = computeDiscriminantDailyYield(fireNatal, fireTransit, neutralSupply)
 
-    expect(res.spirit).toBeGreaterThan(12.0)
+    expect(res.spirit).toBeGreaterThan(6.0)
     expect(res.spirit).toBeGreaterThan(res.matter)
-    expect(res.total).toBe(24.0)
-    expect(res.spirit + res.essence + res.matter + res.substance).toBeCloseTo(24.0, 4)
+    expect(res.total).toBe(12.0)
+    expect(res.spirit + res.essence + res.matter + res.substance).toBeCloseTo(12.0, 4)
   })
 
   it('applies counter-cyclical anti-glut damping to MATTER when MATTER share exceeds 30%', () => {
@@ -101,13 +101,13 @@ describe('ADR-014: Discriminant Astrological Faucet Engine', () => {
     expect(res.breakdown.essence.antiGlutFactor).toBe(1.0)
     expect(res.breakdown.substance.antiGlutFactor).toBe(1.0)
 
-    // MATTER yield is dampened below 6.0000
-    expect(res.matter).toBeLessThan(6.0)
-    expect(res.total).toBe(24.0)
-    expect(res.spirit + res.essence + res.matter + res.substance).toBeCloseTo(24.0, 4)
+    // MATTER yield is dampened below 3.0000
+    expect(res.matter).toBeLessThan(3.0)
+    expect(res.total).toBe(12.0)
+    expect(res.spirit + res.essence + res.matter + res.substance).toBeCloseTo(12.0, 4)
   })
 
-  it('strictly conserves 24.0000 tokens for all users across extreme skies (no premium tier)', () => {
+  it('strictly conserves 12.0000 tokens for all users across extreme skies (no premium tier)', () => {
     const extremeTransit: TransitSkyData = {
       elementWeights: { Fire: 12.0, Water: 0.5, Earth: 0.5, Air: 1.0 },
     }
@@ -117,10 +117,10 @@ describe('ADR-014: Discriminant Astrological Faucet Engine', () => {
       extremeTransit,
       LIVE_NETWORK_SUPPLY
     )
-    expect(resExtreme.total).toBe(24.0)
+    expect(resExtreme.total).toBe(12.0)
     expect(
       resExtreme.spirit + resExtreme.essence + resExtreme.matter + resExtreme.substance
-    ).toBeCloseTo(24.0, 4)
+    ).toBeCloseTo(12.0, 4)
   })
 
   it('produces distinct, differentiated yields for different historical agent charts under the same sky', () => {
@@ -140,9 +140,9 @@ describe('ADR-014: Discriminant Astrological Faucet Engine', () => {
     const newtonNatal = resolveAgentNatalData('isaac-newton')
     const newtonYield = computeDiscriminantDailyYield(newtonNatal, equinoxSky, LIVE_NETWORK_SUPPLY)
 
-    // Both strictly total 24.0000
-    expect(daVinciYield.total).toBe(24.0)
-    expect(newtonYield.total).toBe(24.0)
+    // Both strictly total 12.0000
+    expect(daVinciYield.total).toBe(12.0)
+    expect(newtonYield.total).toBe(12.0)
 
     // Leonardo's Spirit yield exceeds Newton's Matter yield ratio
     expect(daVinciYield.spirit).toBeGreaterThan(newtonYield.spirit)

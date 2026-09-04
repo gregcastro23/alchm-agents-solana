@@ -6,7 +6,7 @@
  * modulated by current celestial moment transit weights w_i(t)
  * and counter-cyclical anti-glut damping Omega_i.
  *
- * Strictly conserved at 24.0000 tokens universally for all users.
+ * Strictly conserved at 12.0000 tokens universally for all users.
  * No artificial sect hacks or wave functions.
  */
 
@@ -161,14 +161,14 @@ const SIGN_TO_ELEMENT: Record<string, 'Fire' | 'Water' | 'Earth' | 'Air'> = {
  * proportional clean chart-ratio formulation:
  * Yield_i = Quantize( Y_total * (r_i(N) * w_i(t) * Omega_i) / sum_j(r_j(N) * w_j(t) * Omega_j) )
  *
- * Strictly conserved at 24.0000 tokens.
+ * Strictly conserved at 12.0000 tokens.
  */
 export function computeDiscriminantDailyYield(
   natal: NatalChartData | null | undefined,
   transit: TransitSkyData,
   supply: GlobalSupplyState = LIVE_NETWORK_SUPPLY
 ): DiscriminantYieldResult {
-  const TOTAL_YIELD = 24.0 // Strictly universal 24.0000 ESMS
+  const TOTAL_YIELD = 12.0 // Strictly universal 12.0000 ESMS for all users
 
   // 1. Natal Chart Ratio Vector r_i(N)
   const natalRaw = {

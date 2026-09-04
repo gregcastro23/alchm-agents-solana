@@ -197,7 +197,7 @@ for (const moment of CELESTIAL_MOMENTS) {
 
     // Check individual conservation to 4 decimals
     const agentSum = Math.round((y.spirit + y.essence + y.matter + y.substance) * 10000) / 10000
-    if (Math.abs(agentSum - 24.0) > 0.0001) {
+    if (Math.abs(agentSum - 12.0) > 0.0001) {
       console.error(`❌ Conservation violation for ${agent.name}: sum = ${agentSum}`)
       allConservationPassed = false
     }
@@ -223,16 +223,16 @@ for (const moment of CELESTIAL_MOMENTS) {
   const avgTot = sumTotal / n
 
   // Verifications
-  if (moment.id === 'moment_1_fire' && avgS < 12.8) {
+  if (moment.id === 'moment_1_fire' && avgS < 6.4) {
     fireSpiritTargetPassed = false
   }
   if (
     (moment.id === 'moment_1_fire' || moment.id === 'moment_4_air') &&
-    (avgM < 2.3 || avgM > 4.0)
+    (avgM < 1.1 || avgM > 2.05)
   ) {
     antiGlutCompressedPassed = false
   }
-  if (moment.id === 'moment_3_earth' && avgM >= 9.0) {
+  if (moment.id === 'moment_3_earth' && avgM >= 4.5) {
     antiGlutCompressedPassed = false
   }
 
@@ -326,14 +326,14 @@ function reportAssertion(condition: boolean, title: string, detail: string) {
 
 reportAssertion(
   allConservationPassed,
-  'Strict Conservation Invariant (24.0000 ESMS per agent)',
-  'Every single agent claim across all 5 celestial moments sums to exactly 24.0000 (1,728 ESMS fleet total).'
+  'Strict Conservation Invariant (12.0000 ESMS per agent)',
+  'Every single agent claim across all 5 celestial moments sums to exactly 12.0000 (864 ESMS fleet total).'
 )
 
 const fireStats = statsTable.find(s => s.id === 'moment_1_fire')!
 reportAssertion(
   fireSpiritTargetPassed,
-  'Fire Sky Kinetic Gas Elevation (SPIRIT ≥ 12.80)',
+  'Fire Sky Kinetic Gas Elevation (SPIRIT ≥ 6.40)',
   `Fire transit elevates fleet average SPIRIT yield to ${fireStats.avgSpirit.toFixed(4)} (eliminates chat depletion).`
 )
 
@@ -342,7 +342,7 @@ const airStats = statsTable.find(s => s.id === 'moment_4_air')!
 reportAssertion(
   antiGlutCompressedPassed,
   'Counter-Cyclical Anti-Glut Damping (MATTER compressed)',
-  `Fire: ${fireStats.avgMatter.toFixed(4)} | Air: ${airStats.avgMatter.toFixed(4)} (2.3–4.0 range); Earth Stellium: ${earthStats.avgMatter.toFixed(4)} (< 9.0 ceiling).`
+  `Fire: ${fireStats.avgMatter.toFixed(4)} | Air: ${airStats.avgMatter.toFixed(4)} (1.15–2.05 range); Earth Stellium: ${earthStats.avgMatter.toFixed(4)} (< 4.50 ceiling).`
 )
 
 const allPassed = allConservationPassed && fireSpiritTargetPassed && antiGlutCompressedPassed

@@ -1,9 +1,8 @@
 /**
- * One free daily claim: 6 ESMS per axis. This funds three neutral consultations
- * or two even at the maximum elemental clash markup; resonance stretches it
- * further.
+ * One free daily claim: 3 ESMS per axis (12 total under neutral conditions).
+ * Modulated by authentic natal chart ratios and celestial transits.
  */
-export const DAILY_ESMS_YIELD = 24
+export const DAILY_ESMS_YIELD = 12
 export const BASE_AGENTS_YIELD = DAILY_ESMS_YIELD
 export const TOKEN_TYPES = ['Spirit', 'Essence', 'Matter', 'Substance'] as const
 export type TokenType = (typeof TOKEN_TYPES)[number]
