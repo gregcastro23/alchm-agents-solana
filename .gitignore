@@ -92,6 +92,7 @@ src-tauri/target/
 /target/
 .anchor/
 test-ledger/
+deployments/*-keys.json
 *.DS_Store
 .DS_Store
 src-tauri/bin/llama-server*

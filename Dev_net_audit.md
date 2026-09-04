@@ -1,229 +1,181 @@
-# Solana Devnet ESMS Coin & Program On-Chain Audit Runbook
+# Solana Devnet Gate 4 Comprehensive Audit & Execution Runbook
 
 > **Target Repository:** `/Users/cookingwithcastro/Desktop/AlchmAgentsSolana`  
 > **Cluster:** Solana Devnet (`https://api.devnet.solana.com`)  
 > **Devnet Genesis Hash:** `EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG`  
 > **Program ID:** `5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD`  
-> **ProgramConfig PDA:** `4YCVh9KHrhN6mFSMvybGVqLeGfaRkfUtqrn19mLLJGku`  
-> **Devnet Funder / Operator Wallet:** `AhNRjjyhJ4dR6ZSvWyJNSpbJFbFnxhkRdUNMY31fJ3S5` (~13.08 SOL)  
-> **Token Program:** `TokenzQdBNbLqP5VEhdkAS6EPFLC1PHnBqCXEpPxuEb` (SPL Token-2022)  
-> **Objective:** Exhaustively audit the 4 Devnet ESMS coins, Token-2022 extension invariants, claim issuance, replay guards, and AMM attestation flows to guarantee 100% consistent, flawless behavior _before_ funding the Mainnet burner wallet.
+> **ProgramData Address:** `7WYfJRuiZG9GsQUUKJoUFVX3yusFVqmbgK8SyTdWtdKg`  
+> **ProgramConfig PDA:** `4YCVh9KHrhN6mFSMvybGVqLeGfaRkfUtqrn19mLLJGku` (Exact 140 bytes)  
+> **PendingAdmin PDA:** `5PFkkHU53LkbmUyJeaYx2FxqwSWbnRDfo9YzUFv9eyJY`  
+> **Operator / Deployer Wallet:** `AhNRjjyhJ4dR6ZSvWyJNSpbJFbFnxhkRdUNMY31fJ3S5` (~12.6 SOL)  
+> **Squads v4 Program:** `SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf`  
+> **Squads Multisig PDA (2-of-3):** `4V6oUAf2jm5qfGFkM4LP3NT5MNi5XCx9YWT7xKodq784`  
+> **Squads Vault PDA (index 1):** `3DUq9j5STnoF8kuBSJ3VZ8ryEs9b4PhWKF3eQomdtPEU`  
+> **Audit Receipt Artifact:** `deployments/solana-devnet-audit-receipt.json`  
+> **Governance Artifact:** `deployments/solana-devnet-governance.json`
 
 ---
 
-## 📋 Comprehensive Devnet Audit Prompt
+## 1. Executive Summary & Certified Gate 4 State
 
-_Copy and execute the prompt below to run a complete Devnet on-chain audit of the current state:_
+This runbook documents the verification and operational runbook for **Devnet Gate 4 Readiness**. All three blocking failures and four P0 architectural issues have been resolved:
 
-```markdown
-Run a comprehensive, end-to-end on-chain audit of the ASOL Solana Devnet program and ESMS Token-2022 coins in ~/Desktop/AlchmAgentsSolana.
-
-Goals:
-
-1. Verify Devnet Cluster Genesis Hash matches EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG and operator wallet AhNRjjyhJ4dR6ZSvWyJNSpbJFbFnxhkRdUNMY31fJ3S5 has sufficient gas (> 1 SOL).
-2. Audit Program 5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD and ProgramConfig PDA 4YCVh9KHrhN6mFSMvybGVqLeGfaRkfUtqrn19mLLJGku on Devnet.
-3. Validate all 4 ESMS Token-2022 mint accounts (Spirit, Essence, Matter, Substance) against the on-chain TLV extension layout (NonTransferable, PermanentDelegate, MetadataPointer, TokenMetadata, PermissionedBurn).
-4. Execute the live Token-2022 security drill to confirm that direct transfers fail (soulbound), unauthorized burns fail, and authorized burns succeed.
-5. Dry-run the initialization engine (bun run scripts/deploy/init-mainnet.ts --dry-run --allow-devnet --allow-local-signer).
-6. Run the automated Devnet audit runner (bun run solana:audit:devnet).
-7. Report the full findings, confirming whether all Devnet operations run flawlessly and the protocol is cleared for Mainnet Gate 4 funding.
-```
+1. **Bytecode SHA-256 Parity:** On-chain ProgramData was extended to 1,026,048 bytes and deployed. Local binary and on-chain bytecode match byte-for-byte at SHA-256 hash `a964f067f2b455c56fa2b0de8cc500462ac76778ffd00d13f6692500713cf6f8`.
+2. **Safe Two-Step Admin Handover:** Implemented `propose_admin` and `accept_admin` via a dedicated `PendingAdmin` PDA (`5PFkkHU53LkbmUyJeaYx2FxqwSWbnRDfo9YzUFv9eyJY`). The core `ProgramConfig` account size remains **exactly 140 bytes**, avoiding breaking account reallocation.
+3. **Read-Only Mint Verification:** Live Devnet test suites (`test:solana:devnet`) validate existing Token-2022 mints without re-initializing them.
+4. **Constellation AMM Canonical Pools:** All 6 canonical element pairs (0 through 5) are idempotently registered and bootstrapped on Devnet with 30 bps fee and 100,000,000 initial atoms. Live end-to-end drills (add liquidity, swap, replay check, withdrawal) pass with 100% success.
+5. **Real Squads v4 Multisig Deployment:** A real 2-of-3 multisig and vault were deployed and tested with an on-chain proposal lifecycle drill on Devnet.
+6. **Machine-Readable Audit Receipt:** Generated and validated via `bun run solana:audit:devnet`.
 
 ---
 
-## 🔬 Audit Stages & Execution Checklist
+## 2. On-Chain Identity & Authority Matrix
 
-### Stage 1: Cluster Pre-flight & Operator Wallet Verification
+| Role / Component         | Devnet Target Address                          | Authority / Owner                             |    Verification Status     |
+| :----------------------- | :--------------------------------------------- | :-------------------------------------------- | :------------------------: |
+| **Program ID**           | `5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD` | `BPFLoaderUpgradeab1e...`                     |  ✅ Deployed & Executable  |
+| **ProgramData**          | `7WYfJRuiZG9GsQUUKJoUFVX3yusFVqmbgK8SyTdWtdKg` | Operator (`AhNRjjyh...`)                      | ✅ SHA-256 Parity Verified |
+| **ProgramConfig PDA**    | `4YCVh9KHrhN6mFSMvybGVqLeGfaRkfUtqrn19mLLJGku` | `asol_program`                                | ✅ Strict 140-byte layout  |
+| **PendingAdmin PDA**     | `5PFkkHU53LkbmUyJeaYx2FxqwSWbnRDfo9YzUFv9eyJY` | `asol_program`                                |      ✅ Clean / Ready      |
+| **Squads Multisig**      | `4V6oUAf2jm5qfGFkM4LP3NT5MNi5XCx9YWT7xKodq784` | `SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf` | ✅ 2-of-3 Threshold Active |
+| **Squads Vault (idx 1)** | `3DUq9j5STnoF8kuBSJ3VZ8ryEs9b4PhWKF3eQomdtPEU` | `11111111111111111111111111111111`            |  ✅ Funded & Operational   |
 
-Verify the Devnet RPC endpoint, cluster genesis hash, and local keypair funding.
+---
+
+## 3. Canonical Constellation AMM Pools (Devnet)
+
+All 6 canonical trading pairs are registered and bootstrapped on Devnet:
+
+| Pool ID | Pair Elements                               | Pool PDA Address                               | Initial Virtual Reserves  |  Fee   | Bootstrapped |
+| :-----: | :------------------------------------------ | :--------------------------------------------- | :------------------------ | :----: | :----------: |
+|  **0**  | Spirit (0) $\leftrightarrow$ Essence (1)    | `FaKBUSnWPTmHKxB4qMxMobjg7SGPPtCUyWxSUNG8zFhE` | 100,000,000 / 100,000,000 | 30 bps |      ✅      |
+|  **1**  | Spirit (0) $\leftrightarrow$ Matter (2)     | `8dRxFCCszoMXdB5GRGWgipWZPVfwqxhy9RndFaJNscuh` | 100,000,000 / 100,000,000 | 30 bps |      ✅      |
+|  **2**  | Spirit (0) $\leftrightarrow$ Substance (3)  | `B8YowtV7BDa6HX1mC7CbjNAoMfn2cdVYYXeg1N8xz68Q` | 100,000,000 / 100,000,000 | 30 bps |      ✅      |
+|  **3**  | Essence (1) $\leftrightarrow$ Matter (2)    | `GpCH31W1HkNaUwL5HhmaKrUW1XuZk9pxeKxfG2QNyU3R` | 100,000,000 / 100,000,000 | 30 bps |      ✅      |
+|  **4**  | Essence (1) $\leftrightarrow$ Substance (3) | `2NAqUx8jMATkdeq3RCRNkQTQsBa3sWBCA8pa8eDWSzPY` | 100,000,000 / 100,000,000 | 30 bps |      ✅      |
+|  **5**  | Matter (2) $\leftrightarrow$ Substance (3)  | `GK3ogtXDaBJ3QUjsXmpE95JDYqpygXQ1XekGxvABE32p` | 100,000,000 / 100,000,000 | 30 bps |      ✅      |
+
+---
+
+## 4. Audit Execution & Verification Commands
+
+All commands use `bun` runtime in adherence to Apple Silicon and zero-zombie-process constraints:
+
+### 1. Comprehensive Devnet Invariant & Parity Audit
 
 ```bash
-# 1. Assert Devnet Genesis Hash
-solana genesis-hash --url https://api.devnet.solana.com
-# Expected: EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG
-
-# 2. Check Operator Keypair & Devnet Balance
-solana address --keypair ~/.config/solana/id.json
-# Expected: AhNRjjyhJ4dR6ZSvWyJNSpbJFbFnxhkRdUNMY31fJ3S5
-
-solana balance AhNRjjyhJ4dR6ZSvWyJNSpbJFbFnxhkRdUNMY31fJ3S5 --url devnet
-# Expected: >= 1.0 SOL (Confirmed current: ~13.08 SOL)
-```
-
----
-
-### Stage 2: Program Identity & PDA Authorization Audit
-
-Verify that the Anchor program is deployed, owned by the BPF Upgradeable Loader, and that `ProgramConfig` is initialized.
-
-```bash
-# 1. Inspect Program Account
-solana account 5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD --url devnet
-# Checks:
-# - Owner: BPFLoaderUpgradeab1e11111111111111111111111
-# - Executable: true
-
-# 2. Inspect ProgramConfig PDA
-solana account 4YCVh9KHrhN6mFSMvybGVqLeGfaRkfUtqrn19mLLJGku --url devnet
-# Checks:
-# - Owner: 5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD
-# - Length: 140 bytes (contains admin, attestor, pauser, cluster_domain, is_paused)
-
-# 3. Verify Squads v4 Multisig Governance Runbook
-bun run scripts/governance/squads-multisig-runbook.ts
-# Checks:
-# - Multisig PDA: C3pmNGtdRfgGsZFnvFxcXWxUBswpZuwgssW9QcmvPxGm
-# - Vault PDA:    DxgjU414Adq4BCyFsvrLkVs3a9ecxtMwh7gjzKjV4muA
-```
-
----
-
-### Stage 3: The 4 ESMS Token-2022 Devnet Mint Accounts Audit
-
-Audit the 4 pinned Devnet ESMS mints. All four are deterministic PDAs derived from seed `[b"esms_mint", [mint_index]]` and owned by SPL Token-2022.
-
-| Elemental Coin | Mint Address                                   | Decimals | Required TLV Extensions                                                                                                |
-| :------------- | :--------------------------------------------- | :------: | :--------------------------------------------------------------------------------------------------------------------- |
-| **Spirit**     | `K5kwwomtWYydxJacA7bC5yUEW9TtEuVqBKBoqAWLmhQ`  |    4     | `NonTransferable` (9), `PermanentDelegate` (12), `MetadataPointer` (18), `TokenMetadata` (19), `PermissionedBurn` (28) |
-| **Essence**    | `3FcpToU7bj4sLD687uecbesEjzjxBfqYn2EcBXJKPaCf` |    4     | `NonTransferable` (9), `PermanentDelegate` (12), `MetadataPointer` (18), `TokenMetadata` (19), `PermissionedBurn` (28) |
-| **Matter**     | `7naJZozLrknDF3dguAdEWn7Z4MviUkXitjhaAt57Vkb4` |    4     | `NonTransferable` (9), `PermanentDelegate` (12), `MetadataPointer` (18), `TokenMetadata` (19), `PermissionedBurn` (28) |
-| **Substance**  | `6RY6ZG1eJQ2uEvpyA6XK74WyF1MpTYbw97hdhELqDUsa` |    4     | `NonTransferable` (9), `PermanentDelegate` (12), `MetadataPointer` (18), `TokenMetadata` (19), `PermissionedBurn` (28) |
-
-```bash
-# Automated Single-Command Invariant Audit
 bun run solana:audit:devnet
 ```
 
-**Expected Passing Telemetry:**
+_Outputs certified audit report to `deployments/solana-devnet-audit-receipt.json`._
 
-```
-=============================================================
-🪐 SOLANA DEVNET ESMS COIN & PROGRAM ON-CHAIN AUDIT REPORT
-=============================================================
-Timestamp:       2026-09-04T15:32:40.850Z
-Cluster:         devnet
-RPC URL:         https://api.devnet.solana.com
-Genesis Hash:    EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG (✅ MATCH)
--------------------------------------------------------------
-Program ID:      5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD
-  • Deployed:    ✅ YES
-  • Executable:  ✅ YES
-  • Owner:       BPFLoaderUpgradeab1e11111111111111111111111
-  • Balance:     0.00114144 SOL
--------------------------------------------------------------
-ProgramConfig:   4YCVh9KHrhN6mFSMvybGVqLeGfaRkfUtqrn19mLLJGku
-  • Initialized: ✅ YES
-  • Owner:       5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD
-  • Balance:     0.00186528 SOL
--------------------------------------------------------------
-ESMS Token-2022 Mint Invariants:
-  🪙 Spirit (SPIRIT) -> K5kwwomtWYydxJacA7bC5yUEW9TtEuVqBKBoqAWLmhQ
-     - Extensions: NonTransferable=true | PermanentDelegate=true | MetadataPointer=true | PermissionedBurn=true
-     - Metadata URI: https://alchm.kitchen/metadata/esms/spirit.json
-     - Decimals: 4 | Length: 453 bytes | Balance: 0.00404376 SOL
-     - Valid Layout: ✅ PASS
-  🪙 Essence (ESSENCE) -> 3FcpToU7bj4sLD687uecbesEjzjxBfqYn2EcBXJKPaCf
-     - Extensions: NonTransferable=true | PermanentDelegate=true | MetadataPointer=true | PermissionedBurn=true
-     - Metadata URI: https://alchm.kitchen/metadata/esms/essence.json
-     - Decimals: 4 | Length: 456 bytes | Balance: 0.00406464 SOL
-     - Valid Layout: ✅ PASS
-  🪙 Matter (MATTER) -> 7naJZozLrknDF3dguAdEWn7Z4MviUkXitjhaAt57Vkb4
-     - Extensions: NonTransferable=true | PermanentDelegate=true | MetadataPointer=true | PermissionedBurn=true
-     - Metadata URI: https://alchm.kitchen/metadata/esms/matter.json
-     - Decimals: 4 | Length: 453 bytes | Balance: 0.00404376 SOL
-     - Valid Layout: ✅ PASS
-  🪙 Substance (SUBSTANCE) -> 6RY6ZG1eJQ2uEvpyA6XK74WyF1MpTYbw97hdhELqDUsa
-     - Extensions: NonTransferable=true | PermanentDelegate=true | MetadataPointer=true | PermissionedBurn=true
-     - Metadata URI: https://alchm.kitchen/metadata/esms/substance.json
-     - Decimals: 4 | Length: 462 bytes | Balance: 0.0041064 SOL
-     - Valid Layout: ✅ PASS
-=============================================================
-🎉 AUDIT STATUS: ALL DEVNET OPERATIONS & INVARIANTS PASSING
-=============================================================
-```
-
----
-
-### Stage 4: Live Token-2022 Extension Security Drill
-
-Execute live transactions on Devnet testing extension constraints:
-
-1. **Soulbound Invariant:** Direct user-to-user ATA transfers MUST be rejected by Token-2022 (`NonTransferable`).
-2. **Permissioned Burn Invariant:** Direct user burns without ProgramConfig authorization MUST fail (`PermissionedBurn`).
-3. **Permanent Delegate Burn:** Authorized burn via `PermanentDelegate` MUST succeed and correctly debit the balance.
+### 2. Live Devnet Core Integration Suite (10 tests)
 
 ```bash
-bun run test:solana:extensions
+bun run test:solana:devnet
 ```
 
-**Expected Live Output:**
+_Executes `test/solana/esms-persona.spec.ts` (8 tests) and `test/solana/devnet-amm.spec.ts` (2 tests) sequentially against Solana Devnet._
 
-```
-initialize mint and extensions: brTEW493JSDCBDGjMsUP8z1XdWYuRfh9rmtBwR88YNVG4h7hgfWB59bpVDPgppjevo1MXY7HpJxNKGeV2Fse5Gc
-direct Token-2022 transfer: rejected as expected (Simulation failed. )
-direct holder burn without AAE permission: rejected as expected (Simulation failed. )
-permissioned burn with unauthorized co-signer: rejected as expected (Simulation failed. )
-sponsored redeem_for burn: 25MgSbBu9GeZB71octYbhoGaj7DQXLfeF68VBGJ3gCpvT3z6kNLQfRZDA8zaPM5zcm48KDpTimTog13JpraGuJd7
-{
-  "cluster": "devnet",
-  "verified": {
-    "nonTransferable": true,
-    "unauthorizedBurnRejected": true,
-    "permanentDelegateSponsoredBurn": true,
-    "metadataPointer": "..."
-  }
-}
-```
-
----
-
-### Stage 5: Idempotent Deployment Engine Devnet Drill
-
-Simulate the production deployment receipt and verification engine against Devnet:
+### 3. AMM Pool Verification & Ephemeral Trading Drill
 
 ```bash
-bun run scripts/deploy/init-mainnet.ts \
-  --dry-run \
-  --allow-devnet \
-  --allow-local-signer \
-  --rpc-url https://api.devnet.solana.com
+bun run test:solana:devnet:amm
+# OR directly execute the initialization/drill runner:
+bun run scripts/devnet/init-devnet-amm.ts
 ```
 
-**Audit Checks:**
+### 4. Squads v4 Multisig Deployment & Governance Drill
 
-- Asserts genesis hash is `EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG`.
-- Resolves operator signer: `AhNRjjyhJ4dR6ZSvWyJNSpbJFbFnxhkRdUNMY31fJ3S5`.
-- Identifies all 4 mint accounts on-chain.
-- Writes verified receipt to `deployments/solana-devnet.json`.
+```bash
+bun run scripts/governance/init-devnet-multisig.ts
+```
 
----
+_Deploys or verifies 2-of-3 Squads multisig and executes on-chain vault transaction with multi-signer approval._
 
-### Stage 6: Unit Test Matrix Verification
-
-Ensure all 17 unit test suites remain 100% green:
+### 5. Unit & Invariant Test Suite (197 tests)
 
 ```bash
 bun run test:solana:unit
 ```
 
-- Total test files: **17 passed**
-- Total tests: **197 passed**
-- Invariant tests: metadata URIs, rent matrices, velocity guards, priority fees, and outbox reconciliation.
+---
+
+## 5. Governance Handover & Rollback Playbook
+
+### 5.1 Program Upgrade Authority Handover
+
+To transfer BPF Upgrade Authority to Squads Vault (`3DUq9j5STnoF8kuBSJ3VZ8ryEs9b4PhWKF3eQomdtPEU`):
+
+```bash
+solana program set-upgrade-authority 5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD \
+  --new-upgrade-authority 3DUq9j5STnoF8kuBSJ3VZ8ryEs9b4PhWKF3eQomdtPEU \
+  --keypair ~/.config/solana/id.json \
+  --url devnet
+```
+
+### 5.2 Two-Step Protocol Admin Handover
+
+To hand over `ProgramConfig` admin authority:
+
+1. **Current Admin Proposes Squads Vault:**
+   ```ts
+   await program.methods.proposeAdmin(squadsVaultPda).accounts({ ... }).rpc()
+   ```
+2. **Squads Vault Accepts Role:**
+   Create and execute a Squads transaction calling `acceptAdmin` with Squads Vault as signer:
+   ```ts
+   await program.methods.acceptAdmin().accounts({ ... }).rpc()
+   ```
+
+### 5.3 Emergency Protocol Pause
+
+The designated `pauser` key (or Squads Vault) can instantly freeze claims and redemptions:
+
+```ts
+await program.methods.setServiceAuthorities(attestor, pauser).accounts({ ... }).rpc()
+await program.methods.pause().accounts({ ... }).rpc()
+```
 
 ---
 
-## 🚦 Audit Sign-Off Matrix
+## 6. Audit Receipt Summary
 
-Before funding the Mainnet burner wallet (`AhNRjjyhJ4dR6ZSvWyJNSpbJFbFnxhkRdUNMY31fJ3S5`):
-
-| #   | Invariant / Drill                               | Command                                      | Status |
-| --- | :---------------------------------------------- | :------------------------------------------- | :----: |
-| 1   | Devnet Genesis Hash & RPC Health                | `solana genesis-hash --url devnet`           |   ✅   |
-| 2   | Operator Keypair Balance ($\ge 1.0\text{ SOL}$) | `solana balance AhNRjjyh... --url devnet`    |   ✅   |
-| 3   | Program Deployment & Config PDA Ownership       | `solana account 5Qheuqaic... --url devnet`   |   ✅   |
-| 4   | 4 Token-2022 ESMS Mints TLV Layout              | `bun run solana:audit:devnet`                |   ✅   |
-| 5   | Token-2022 Transfer & Burn Constraints Drill    | `bun run test:solana:extensions`             |   ✅   |
-| 6   | Idempotent Initializer Dry-Run                  | `bun run scripts/deploy/init-mainnet.ts ...` |   ✅   |
-| 7   | Full Unit Test Suite (17 files, 197 tests)      | `bun run test:solana:unit`                   |   ✅   |
-
-**Conclusion:** When all 7 items are checked ✅, the protocol behavior on Solana is certified as consistent, robust, and running flawlessly. The operator may safely proceed to fund the Mainnet burner wallet.
+```json
+{
+  "cluster": "devnet",
+  "genesisHash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "genesisMatch": true,
+  "program": {
+    "id": "5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD",
+    "isDeployed": true,
+    "bytecodeParity": true,
+    "localBytecodeSha256": "a964f067f2b455c56fa2b0de8cc500462ac76778ffd00d13f6692500713cf6f8",
+    "onChainBytecodeSha256": "a964f067f2b455c56fa2b0de8cc500462ac76778ffd00d13f6692500713cf6f8"
+  },
+  "programConfig": {
+    "pda": "4YCVh9KHrhN6mFSMvybGVqLeGfaRkfUtqrn19mLLJGku",
+    "sizeValid": true,
+    "expectedDataLength": 140,
+    "dataLength": 140
+  },
+  "pendingAdmin": {
+    "pda": "5PFkkHU53LkbmUyJeaYx2FxqwSWbnRDfo9YzUFv9eyJY",
+    "exists": false,
+    "pendingAdmin": null
+  },
+  "ammPoolsCount": 6,
+  "allAmmPoolsBootstrapped": true,
+  "governance": {
+    "configured": true,
+    "multisigPda": "4V6oUAf2jm5qfGFkM4LP3NT5MNi5XCx9YWT7xKodq784",
+    "vaultPda": "3DUq9j5STnoF8kuBSJ3VZ8ryEs9b4PhWKF3eQomdtPEU",
+    "threshold": 2,
+    "memberCount": 3,
+    "multisigValid": true,
+    "vaultValid": true,
+    "lifecycleExecuted": true
+  },
+  "status": "PASSED"
+}
+```

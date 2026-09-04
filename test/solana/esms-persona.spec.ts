@@ -29,7 +29,8 @@ import {
   getProgramConfigAddress,
   getReceiptAddress,
 } from '@/lib/solana/esms'
-import type { AaeSolana } from '@/lib/solana/idl/aae_solana'
+import { IDL, type AsolProgram, type AaeSolana } from '@/lib/solana/idl'
+import { SOLANA_DEVNET_GENESIS_HASH } from '@/lib/solana/network-config'
 
 const toBytes = (value: Uint8Array): number[] => [...value]
 const toAmounts = (values: readonly bigint[]): anchor.BN[] =>
@@ -45,13 +46,18 @@ async function getRawTokenBalance(connection: Connection, account: PublicKey): P
   throw new Error(`Token account was not visible at confirmed commitment: ${account.toBase58()}`)
 }
 
-const hasDevnetProvider = Boolean(process.env.ANCHOR_PROVIDER_URL && process.env.ANCHOR_WALLET)
+const hasDevnetProvider = Boolean(
+  process.env.RUN_SOLANA_DEVNET_LIVE === '1' &&
+  process.env.ANCHOR_PROVIDER_URL &&
+  process.env.ANCHOR_WALLET
+)
 
 const describeDevnet = hasDevnetProvider
   ? describe
   : (name: string, _suite: () => void) =>
       describe.skip(name, () => {
-        it('requires ANCHOR_PROVIDER_URL and ANCHOR_WALLET', () => undefined)
+        it('requires RUN_SOLANA_DEVNET_LIVE=1, ANCHOR_PROVIDER_URL, and ANCHOR_WALLET', () =>
+          undefined)
       })
 
 describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
@@ -65,7 +71,9 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
     preflightCommitment: 'confirmed',
   })
   anchor.setProvider(provider)
-  const program = anchor.workspace.AaeSolana as anchor.Program<AaeSolana>
+  const program = (anchor.workspace.AsolProgram ??
+    anchor.workspace.AaeSolana ??
+    new anchor.Program(IDL as any, provider)) as anchor.Program<AsolProgram>
   const admin = provider.wallet.publicKey
   const attestor = Keypair.generate()
   const pauser = Keypair.generate()
@@ -102,8 +110,16 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
   )
 
   let configuredDomain: Uint8Array
+  let initialAdmin: PublicKey
+  let initialAttestor: PublicKey
+  let initialPauser: PublicKey
+  let initialPauseClaims: boolean
+  let initialPauseRedemptions: boolean
 
   beforeAll(async () => {
+    const genesisHash = await connection.getGenesisHash()
+    expect(genesisHash).toBe(SOLANA_DEVNET_GENESIS_HASH)
+
     expect(getProgramConfigAddress(program.programId).equals(programConfig)).toBe(true)
     const existing = await provider.connection.getAccountInfo(programConfig, 'confirmed')
     if (!existing) {
@@ -121,6 +137,11 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
     const config = await program.account.programConfig.fetch(programConfig)
     expect(config.admin.equals(admin)).toBe(true)
     configuredDomain = Uint8Array.from(config.clusterDomain)
+    initialAdmin = config.admin
+    initialAttestor = config.attestor
+    initialPauser = config.pauser
+    initialPauseClaims = config.pauseClaims
+    initialPauseRedemptions = config.pauseRedemptions
 
     const funding = new Transaction()
       .add(
@@ -145,25 +166,15 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
         })
       )
     await provider.sendAndConfirm(funding)
-    await program.methods
-      .initializeEsmsMints()
-      .accountsPartial({
-        programConfig,
-        admin,
-        ...mintAccounts,
-        tokenProgram: TOKEN_2022_PROGRAM_ID,
-        systemProgram: SystemProgram.programId,
-      })
-      .rpc()
   }, 120_000)
 
   afterAll(async () => {
     await program.methods
-      .setPauseState(false, false)
+      .setPauseState(initialPauseClaims, initialPauseRedemptions)
       .accountsPartial({ programConfig, authority: admin })
       .rpc()
     await program.methods
-      .setServiceAuthorities(admin, admin)
+      .setServiceAuthorities(initialAttestor, initialPauser)
       .accountsPartial({ programConfig, authority: admin })
       .rpc()
   }, 120_000)
@@ -246,28 +257,109 @@ describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
     expect(receipt.authority.equals(attestor.publicKey)).toBe(true)
   }, 120_000)
 
-  it('creates all four Token-2022 ESMS mints idempotently', async () => {
-    const accounts = {
-      programConfig,
-      admin,
-      ...mintAccounts,
-      tokenProgram: TOKEN_2022_PROGRAM_ID,
-      systemProgram: SystemProgram.programId,
-    }
-    await program.methods.initializeEsmsMints().accountsPartial(accounts).rpc()
-    await program.methods.initializeEsmsMints().accountsPartial(accounts).rpc()
-
+  it('validates all four Token-2022 ESMS mints read-only on-chain', async () => {
     for (const mint of mints) {
       const info = await provider.connection.getAccountInfo(mint, 'confirmed')
       expect(info?.owner.equals(TOKEN_2022_PROGRAM_ID)).toBe(true)
       expect(info?.data.length).toBeGreaterThan(300)
       const state = await getMint(provider.connection, mint, 'confirmed', TOKEN_2022_PROGRAM_ID)
+      expect(state.decimals).toBe(4)
       expect(getNonTransferable(state)).not.toBeNull()
       expect(getPermanentDelegate(state)?.delegate.equals(programConfig)).toBe(true)
       expect(getPermissionedBurn(state)?.authority?.equals(programConfig)).toBe(true)
       expect(getMetadataPointerState(state)?.authority?.equals(programConfig)).toBe(true)
       expect(getMetadataPointerState(state)?.metadataAddress?.equals(mint)).toBe(true)
     }
+  }, 120_000)
+
+  it('executes a safe two-step admin transfer protocol and rejects unauthorized actions', async () => {
+    const [pendingAdminPda] = PublicKey.findProgramAddressSync(
+      [Buffer.from('pending_admin')],
+      program.programId
+    )
+
+    // Non-admin cannot propose
+    await expect(
+      program.methods
+        .proposeAdmin(outsider.publicKey)
+        .accountsPartial({
+          programConfig,
+          pendingAdmin: pendingAdminPda,
+          authority: outsider.publicKey,
+          systemProgram: SystemProgram.programId,
+        })
+        .signers([outsider])
+        .rpc()
+    ).rejects.toThrow(/Unauthorized/)
+
+    // Admin proposes outsider
+    await program.methods
+      .proposeAdmin(outsider.publicKey)
+      .accountsPartial({
+        programConfig,
+        pendingAdmin: pendingAdminPda,
+        authority: admin,
+        systemProgram: SystemProgram.programId,
+      })
+      .rpc()
+
+    const pending = await (program.account as any).pendingAdmin.fetch(pendingAdminPda)
+    expect(pending.pendingAdmin.equals(outsider.publicKey)).toBe(true)
+
+    // Unauthorized signer cannot accept
+    await expect(
+      program.methods
+        .acceptAdmin()
+        .accountsPartial({
+          programConfig,
+          pendingAdmin: pendingAdminPda,
+          authority: holder.publicKey,
+        })
+        .signers([holder])
+        .rpc()
+    ).rejects.toThrow(/Unauthorized/)
+
+    // Proposed admin (outsider) accepts
+    await program.methods
+      .acceptAdmin()
+      .accountsPartial({
+        programConfig,
+        pendingAdmin: pendingAdminPda,
+        authority: outsider.publicKey,
+      })
+      .signers([outsider])
+      .rpc()
+
+    const updatedConfig = await program.account.programConfig.fetch(programConfig)
+    expect(updatedConfig.admin.equals(outsider.publicKey)).toBe(true)
+
+    // Pending admin PDA should be closed
+    const closedAccount = await provider.connection.getAccountInfo(pendingAdminPda, 'confirmed')
+    expect(closedAccount).toBeNull()
+
+    // Hand admin back to original admin
+    await program.methods
+      .proposeAdmin(admin)
+      .accountsPartial({
+        programConfig,
+        pendingAdmin: pendingAdminPda,
+        authority: outsider.publicKey,
+        systemProgram: SystemProgram.programId,
+      })
+      .signers([outsider])
+      .rpc()
+
+    await program.methods
+      .acceptAdmin()
+      .accountsPartial({
+        programConfig,
+        pendingAdmin: pendingAdminPda,
+        authority: admin,
+      })
+      .rpc()
+
+    const restoredConfig = await program.account.programConfig.fetch(programConfig)
+    expect(restoredConfig.admin.equals(admin)).toBe(true)
   }, 120_000)
 
   it('records monotonic persona commitments and rejects unauthorized writers', async () => {

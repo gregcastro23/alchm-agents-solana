@@ -14,6 +14,60 @@ export type AsolProgram = {
   }
   instructions: [
     {
+      name: 'acceptAdmin'
+      discriminator: [112, 42, 45, 90, 116, 181, 13, 170]
+      accounts: [
+        {
+          name: 'programConfig'
+          writable: true
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [
+                  112,
+                  114,
+                  111,
+                  103,
+                  114,
+                  97,
+                  109,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121,
+                ]
+              },
+            ]
+          }
+        },
+        {
+          name: 'pendingAdmin'
+          writable: true
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [112, 101, 110, 100, 105, 110, 103, 95, 97, 100, 109, 105, 110]
+              },
+            ]
+          }
+        },
+        {
+          name: 'authority'
+          writable: true
+          signer: true
+        },
+      ]
+      args: []
+    },
+    {
       name: 'activateStar'
       discriminator: [82, 216, 86, 203, 195, 1, 48, 98]
       accounts: [
@@ -885,6 +939,68 @@ export type AsolProgram = {
         {
           name: 'maxYieldRatePerUsdcDay'
           type: 'u64'
+        },
+      ]
+    },
+    {
+      name: 'proposeAdmin'
+      discriminator: [121, 214, 199, 212, 87, 39, 117, 234]
+      accounts: [
+        {
+          name: 'programConfig'
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [
+                  112,
+                  114,
+                  111,
+                  103,
+                  114,
+                  97,
+                  109,
+                  95,
+                  97,
+                  117,
+                  116,
+                  104,
+                  111,
+                  114,
+                  105,
+                  116,
+                  121,
+                ]
+              },
+            ]
+          }
+        },
+        {
+          name: 'pendingAdmin'
+          writable: true
+          pda: {
+            seeds: [
+              {
+                kind: 'const'
+                value: [112, 101, 110, 100, 105, 110, 103, 95, 97, 100, 109, 105, 110]
+              },
+            ]
+          }
+        },
+        {
+          name: 'authority'
+          writable: true
+          signer: true
+        },
+        {
+          name: 'systemProgram'
+          address: '11111111111111111111111111111111'
+        },
+      ]
+      args: [
+        {
+          name: 'newAdmin'
+          type: 'pubkey'
         },
       ]
     },
@@ -2554,6 +2670,10 @@ export type AsolProgram = {
       discriminator: [133, 4, 37, 85, 200, 201, 93, 70]
     },
     {
+      name: 'pendingAdmin'
+      discriminator: [220, 45, 135, 16, 196, 153, 181, 56]
+    },
+    {
       name: 'personaCommitment'
       discriminator: [230, 97, 191, 242, 27, 177, 16, 63]
     },
@@ -3079,6 +3199,22 @@ export type AsolProgram = {
           {
             name: 'settledSlot'
             type: 'u64'
+          },
+          {
+            name: 'bump'
+            type: 'u8'
+          },
+        ]
+      }
+    },
+    {
+      name: 'pendingAdmin'
+      type: {
+        kind: 'struct'
+        fields: [
+          {
+            name: 'pendingAdmin'
+            type: 'pubkey'
           },
           {
             name: 'bump'

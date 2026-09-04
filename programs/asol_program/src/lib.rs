@@ -41,6 +41,14 @@ pub mod asol_program {
         config::set_service_authorities(ctx, attestor, pauser)
     }
 
+    pub fn propose_admin(ctx: Context<ProposeAdmin>, new_admin: Pubkey) -> Result<()> {
+        config::propose_admin(ctx, new_admin)
+    }
+
+    pub fn accept_admin(ctx: Context<AcceptAdmin>) -> Result<()> {
+        config::accept_admin(ctx)
+    }
+
     pub fn initialize_esms_mints(ctx: Context<InitializeEsmsMints>) -> Result<()> {
         esms::initialize_mints(ctx)
     }

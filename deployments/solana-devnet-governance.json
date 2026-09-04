@@ -1,0 +1,44 @@
+{
+  "cluster": "devnet",
+  "genesisHash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "squadsProgramId": "SQDS4ep65T869zMMBKyuUq6aD6EgTu8psMjkvj52pCf",
+  "createKey": "Hm9BvEYrLrVb9MDnNDkdRvx7qWAKLhvXdSbppmYeLQ7W",
+  "multisigPda": "4V6oUAf2jm5qfGFkM4LP3NT5MNi5XCx9YWT7xKodq784",
+  "vaultPda": "3DUq9j5STnoF8kuBSJ3VZ8ryEs9b4PhWKF3eQomdtPEU",
+  "vaultIndex": 1,
+  "threshold": 2,
+  "members": [
+    {
+      "role": "operator",
+      "address": "AhNRjjyhJ4dR6ZSvWyJNSpbJFbFnxhkRdUNMY31fJ3S5"
+    },
+    {
+      "role": "signer2",
+      "address": "TBuPUZirhUYCTfLJ2ekray8P8oLhYLokvZyvyC7ohUs"
+    },
+    {
+      "role": "signer3",
+      "address": "Ctb31cPNgGVZVgvcAVLX2SgqrnZvDgSa1DEPu68E628n"
+    }
+  ],
+  "multisigCreated": true,
+  "createSignature": "2ivVxo9JoapWHGfiZDQFquKNcw9kakbxb4JWaa14DoFajYC2H8E8w2D1gFpPYkGWfbbGX2jFsB4BVHEZRbskx1mB",
+  "verification": {
+    "multisigExists": true,
+    "vaultExists": true,
+    "multisigOwnerValid": true,
+    "vaultOwnerValid": true
+  },
+  "lifecycleDrill": {
+    "transactionIndex": 2,
+    "vaultTxSignature": "2f4qusAMUCDurX1MStqk8eAhaFAB69HfPNUAHV7fDse7SbpPBheqqWPh29gofyAARgKVCSqg7qCDMbuUdo4pMVWL",
+    "proposalSignature": "4nkGwaKHYDXh66EB9DeZg34iaPDMySFjt77pTLsKFVMjjTgCwPWC492V2eBXfpy1eKqcbuoHAhuyWnTimvcbDgBb",
+    "approvalSignatures": [
+      "MJok8jxNZkBZQ8rWC8XzaEy4iqPr5a7WV4vAQK214eHYrZPemAp9DbArrxfbDJaTmaquRY2TUmXKAPvUhvJ4LAe",
+      "5uwyfSToKspYxY2rC8wVonCbs4pJK2f28hhtC7Q8qr64EH9SpLNLbCySHMYaj9fqVJxN1N3FhuKGkEhSEfsy22P1"
+    ],
+    "executeSignature": "4EvcC7gQJhrD3tueg4v1PqUhjNHy1BtzboHa6pbrBBbooRZ4usdCcMKxe9pm2iWKTkEp1SKuy4Yw5iau6dtvmQdP",
+    "status": "executed"
+  },
+  "timestamp": "2026-09-04T17:05:06.813Z"
+}
