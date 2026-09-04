@@ -56,15 +56,8 @@ const describeDevnet = hasDevnetProvider
 
 describeDevnet('AAE Solana ESMS and persona program on Devnet', () => {
   const environmentProvider = anchor.AnchorProvider.env()
-  let nextRequestAt = 0
   const connection = new Connection(environmentProvider.connection.rpcEndpoint, {
     commitment: 'confirmed',
-    fetchMiddleware: (info, init, fetch) => {
-      const now = Date.now()
-      const delay = Math.max(0, nextRequestAt - now)
-      nextRequestAt = Math.max(now, nextRequestAt) + 350
-      setTimeout(() => fetch(info, init), delay)
-    },
   })
   const provider = new anchor.AnchorProvider(connection, environmentProvider.wallet, {
     ...environmentProvider.opts,
