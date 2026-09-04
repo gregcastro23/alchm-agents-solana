@@ -5,7 +5,6 @@
  */
 export const DAILY_ESMS_YIELD = 24
 export const BASE_AGENTS_YIELD = DAILY_ESMS_YIELD
-export const PREMIUM_MULTIPLIER = 2.0
 export const TOKEN_TYPES = ['Spirit', 'Essence', 'Matter', 'Substance'] as const
 export type TokenType = (typeof TOKEN_TYPES)[number]
 export type EsmsCost = Record<TokenType, number>

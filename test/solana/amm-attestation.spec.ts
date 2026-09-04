@@ -1,9 +1,9 @@
 // @vitest-environment node
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Keypair, PublicKey } from '@solana/web3.js'
 import nacl from 'tweetnacl'
-import { POST, resetAttestationRateLimits } from '@/app/api/solana/amm-attestation/route'
+import { POST } from '@/app/api/solana/amm-attestation/route'
+import { resetAttestationRateLimits } from '@/lib/solana/amm-rate-limit'
 import {
   ammAttestorPublicKey,
   getAmmAttestorSigner,

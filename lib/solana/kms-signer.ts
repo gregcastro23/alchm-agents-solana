@@ -101,7 +101,9 @@ export class KmsSolanaSigner implements AsolSolanaWallet {
         if (!client) {
           try {
             // Dynamic import of @aws-sdk/client-kms if installed
-            const { KMSClient, SignCommand } = await import('@aws-sdk/client-kms' as string)
+            const { KMSClient, SignCommand } = await import(
+              /* webpackIgnore: true */ '@aws-sdk/client-kms' as string
+            )
             const kms = new KMSClient({
               region: process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? 'us-east-1',
             })
@@ -141,7 +143,9 @@ export class KmsSolanaSigner implements AsolSolanaWallet {
         if (!client) {
           try {
             // Dynamic import of @google-cloud/kms if installed
-            const { KeyManagementServiceClient } = await import('@google-cloud/kms' as string)
+            const { KeyManagementServiceClient } = await import(
+              /* webpackIgnore: true */ '@google-cloud/kms' as string
+            )
             const kms = new KeyManagementServiceClient()
             const [response] = await kms.asymmetricSign({
               name: this.keyId,

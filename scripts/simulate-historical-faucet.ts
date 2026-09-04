@@ -193,7 +193,7 @@ for (const moment of CELESTIAL_MOMENTS) {
       monicaConstant: agent.consciousness?.monicaConstant,
     }
 
-    const y = computeDiscriminantDailyYield(natalData, moment.transit, LIVE_NETWORK_SUPPLY, false)
+    const y = computeDiscriminantDailyYield(natalData, moment.transit, LIVE_NETWORK_SUPPLY)
 
     // Check individual conservation to 4 decimals
     const agentSum = Math.round((y.spirit + y.essence + y.matter + y.substance) * 10000) / 10000

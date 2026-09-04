@@ -62,7 +62,7 @@ describe('ADR-014: Discriminant Astrological Faucet Engine', () => {
   })
 
   it('allocates a flat symmetrical 6.0000 each for a neutral claimer under neutral sky', () => {
-    const res = computeDiscriminantDailyYield(null, neutralTransit, neutralSupply, false)
+    const res = computeDiscriminantDailyYield(null, neutralTransit, neutralSupply)
 
     expect(res.spirit).toBe(6.0)
     expect(res.essence).toBe(6.0)
@@ -84,7 +84,7 @@ describe('ADR-014: Discriminant Astrological Faucet Engine', () => {
       elementWeights: { Fire: 5.0, Water: 1.5, Earth: 1.5, Air: 2.0 },
     }
 
-    const res = computeDiscriminantDailyYield(fireNatal, fireTransit, neutralSupply, false)
+    const res = computeDiscriminantDailyYield(fireNatal, fireTransit, neutralSupply)
 
     expect(res.spirit).toBeGreaterThan(12.0)
     expect(res.spirit).toBeGreaterThan(res.matter)
@@ -94,7 +94,7 @@ describe('ADR-014: Discriminant Astrological Faucet Engine', () => {
 
   it('applies counter-cyclical anti-glut damping to MATTER when MATTER share exceeds 30%', () => {
     // Under LIVE_NETWORK_SUPPLY, MATTER is 37.51%
-    const res = computeDiscriminantDailyYield(null, neutralTransit, LIVE_NETWORK_SUPPLY, false)
+    const res = computeDiscriminantDailyYield(null, neutralTransit, LIVE_NETWORK_SUPPLY)
 
     expect(res.breakdown.matter.antiGlutFactor).toBeCloseTo(0.75, 2)
     expect(res.breakdown.spirit.antiGlutFactor).toBe(1.0)
@@ -107,32 +107,20 @@ describe('ADR-014: Discriminant Astrological Faucet Engine', () => {
     expect(res.spirit + res.essence + res.matter + res.substance).toBeCloseTo(24.0, 4)
   })
 
-  it('strictly conserves 24.0000 tokens for Standard and 48.0000 for Premium tier across extreme skies', () => {
+  it('strictly conserves 24.0000 tokens for all users across extreme skies (no premium tier)', () => {
     const extremeTransit: TransitSkyData = {
       elementWeights: { Fire: 12.0, Water: 0.5, Earth: 0.5, Air: 1.0 },
     }
 
-    const standardRes = computeDiscriminantDailyYield(
+    const resExtreme = computeDiscriminantDailyYield(
       { spiritScore: 80, essenceScore: 60, matterScore: 40, substanceScore: 60 },
       extremeTransit,
-      LIVE_NETWORK_SUPPLY,
-      false
+      LIVE_NETWORK_SUPPLY
     )
-    expect(standardRes.total).toBe(24.0)
+    expect(resExtreme.total).toBe(24.0)
     expect(
-      standardRes.spirit + standardRes.essence + standardRes.matter + standardRes.substance
+      resExtreme.spirit + resExtreme.essence + resExtreme.matter + resExtreme.substance
     ).toBeCloseTo(24.0, 4)
-
-    const premiumRes = computeDiscriminantDailyYield(
-      { spiritScore: 80, essenceScore: 60, matterScore: 40, substanceScore: 60 },
-      extremeTransit,
-      LIVE_NETWORK_SUPPLY,
-      true
-    )
-    expect(premiumRes.total).toBe(48.0)
-    expect(
-      premiumRes.spirit + premiumRes.essence + premiumRes.matter + premiumRes.substance
-    ).toBeCloseTo(48.0, 4)
   })
 
   it('produces distinct, differentiated yields for different historical agent charts under the same sky', () => {

@@ -1,5 +1,6 @@
 import { generateText } from 'ai'
 import { openai } from '@ai-sdk/openai'
+import { resolveOpenAIModel, resolveGroqModel, resolveGoogleModel } from '@/lib/models/registry'
 import { NextRequest, NextResponse } from 'next/server'
 import { verifyApiKeys } from '../secure-config'
 import {
@@ -148,17 +149,54 @@ ${interactionGuidelines}
 
 Keep your response concise and distinctive to your planetary nature. Speak in first person as ${agent.planet}.`
 
+  let responseText = ''
+  let lastError: unknown = null
+
+  // Provider chain: OpenAI (gpt-4o-mini) -> Groq (llama-3.3-70b-versatile) -> Gemini (gemini-2.0-flash)
   try {
+    const model = resolveOpenAIModel('default')
     const { text } = await generateText({
-      model: openai('gpt-5.5') as any,
+      model,
       system: systemPrompt,
       prompt: question,
-      maxOutputTokens: 300, // Shorter responses for multi-agent
+      maxTokens: 300,
     } as any)
+    responseText = text
+  } catch (openAiError) {
+    console.warn(`OpenAI failed for ${agent.planet}, attempting Groq fallback:`, openAiError)
+    lastError = openAiError
+    try {
+      const groqModel = resolveGroqModel('default')
+      const { text } = await generateText({
+        model: groqModel,
+        system: systemPrompt,
+        prompt: question,
+        maxTokens: 300,
+      } as any)
+      responseText = text
+    } catch (groqError) {
+      console.warn(`Groq failed for ${agent.planet}, attempting Gemini fallback:`, groqError)
+      lastError = groqError
+      try {
+        const geminiModel = resolveGoogleModel('default')
+        const { text } = await generateText({
+          model: geminiModel,
+          system: systemPrompt,
+          prompt: question,
+          maxTokens: 300,
+        } as any)
+        responseText = text
+      } catch (geminiError) {
+        console.error(`All LLM providers failed for ${agent.planet}:`, geminiError)
+        lastError = geminiError
+      }
+    }
+  }
 
+  if (responseText) {
     return {
       agent: agent.planet,
-      response: text,
+      response: responseText,
       elementalInfo: {
         signElement,
         planetElement,
@@ -167,19 +205,19 @@ Keep your response concise and distinctive to your planetary nature. Speak in fi
         dignity,
       },
     }
-  } catch (error) {
-    console.error(`Error generating response for ${agent.planet}:`, error)
-    return {
-      agent: agent.planet,
-      response: `As ${agent.planet} in ${agent.sign}, I'm experiencing some cosmic interference and cannot fully channel my wisdom at this time.`,
-      elementalInfo: {
-        signElement,
-        planetElement,
-        elementalAffinity,
-        isDiurnal,
-        dignity,
-      },
-    }
+  }
+
+  console.error(`Error generating response for ${agent.planet}:`, lastError)
+  return {
+    agent: agent.planet,
+    response: `As ${agent.planet} in ${agent.sign}, I'm experiencing some cosmic interference and cannot fully channel my wisdom at this time.`,
+    elementalInfo: {
+      signElement,
+      planetElement,
+      elementalAffinity,
+      isDiurnal,
+      dignity,
+    },
   }
 }
 

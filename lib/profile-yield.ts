@@ -1,4 +1,3 @@
-import { prisma } from '@/lib/db'
 import { EconomyService, type TokenBalances } from '@/lib/services/economyService'
 
 export type YieldSite = 'agents' | 'kitchen'
@@ -27,9 +26,6 @@ export type ProfileYieldState = {
   balances: YieldBalanceSnapshot
   accounts: YieldAccount[]
 }
-
-const PREMIUM_TIERS = new Set(['alchemist', 'premium', 'pro', 'unlimited', 'paid'])
-const PREMIUM_ROLES = new Set(['admin', 'alchemist'])
 
 function isSameUtcDay(value: string | null | undefined): boolean {
   if (!value) return false
@@ -95,48 +91,30 @@ export async function getProfileYieldState(userId: string): Promise<ProfileYield
   return buildProfileYieldStateFromBalances(balances)
 }
 
+/**
+ * @deprecated Premium tier has been eliminated across ASOL in favor of universal 24.0000 ESMS yield.
+ */
 export async function deriveYieldPremium(
-  userId: string,
-  opts: { kitchenPremium?: boolean } = {}
+  _userId: string,
+  _opts: { kitchenPremium?: boolean } = {}
 ): Promise<boolean> {
-  try {
-    const [user, subscription] = await Promise.all([
-      prisma.users.findUnique({ where: { id: userId }, select: { role: true } }),
-      prisma.userSubscription.findUnique({
-        where: { userId },
-        select: { tier: true, status: true },
-      }),
-    ])
-
-    const roleIsPremium = user?.role ? PREMIUM_ROLES.has(user.role.toLowerCase()) : false
-    const subActive = subscription?.status
-      ? ['active', 'trialing'].includes(subscription.status.toLowerCase())
-      : false
-    const tierIsPremium =
-      subActive && subscription?.tier ? PREMIUM_TIERS.has(subscription.tier.toLowerCase()) : false
-
-    return roleIsPremium || tierIsPremium || !!opts.kitchenPremium
-  } catch (err) {
-    console.error('[profile-yield] deriveYieldPremium failed; defaulting to non-premium:', err)
-    return false
-  }
+  return false
 }
 
 export async function claimProfileYield(
   userId: string,
   site: YieldSite,
-  opts: { kitchenPremium?: boolean } = {}
+  _opts: { kitchenPremium?: boolean } = {}
 ) {
   await EconomyService.getBalances(userId)
-  const isPremium = await deriveYieldPremium(userId, opts)
   const result =
     site === 'kitchen'
-      ? await EconomyService.claimKitchenYield(userId, isPremium)
-      : await EconomyService.claimAgentsYield(userId, isPremium)
+      ? await EconomyService.claimKitchenYield(userId)
+      : await EconomyService.claimAgentsYield(userId)
 
   return {
     site,
-    isPremium,
+    isPremium: false,
     distribution: result.distribution,
     balances: normalizeYieldBalances(result.balances),
     wallet: buildProfileYieldStateFromBalances(result.balances),

@@ -21,8 +21,8 @@ describe('POST /api/economy/yield', () => {
       user: { id: 'user-123', kitchenPremium: true },
     })
     mockClaimProfileYield.mockResolvedValue({
-      isPremium: true,
-      distribution: { spirit: 5, essence: 5, matter: 5, substance: 5 },
+      isPremium: false,
+      distribution: { spirit: 6, essence: 6, matter: 6, substance: 6 },
       balances: { spirit: 10, essence: 10, matter: 10, substance: 10 },
     })
 
@@ -34,7 +34,7 @@ describe('POST /api/economy/yield', () => {
     })
     await expect(response.json()).resolves.toMatchObject({
       success: true,
-      isPremium: true,
+      isPremium: false,
       balances: { spirit: 10, essence: 10, matter: 10, substance: 10 },
     })
   })

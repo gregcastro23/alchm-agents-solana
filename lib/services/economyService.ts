@@ -2,7 +2,6 @@ import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import {
   BASE_AGENTS_YIELD,
-  PREMIUM_MULTIPLIER,
   TOKEN_TYPES,
   TokenType,
   AGENT_OPERATION_COSTS,
@@ -100,11 +99,10 @@ export class EconomyService {
 
   /**
    * Claim the daily Kitchen-side yield. Mirrors `claimAgentsYield` but bumps
-   * `lastDailyClaimAt` and tags transactions as `kitchen_daily_yield` so the
-   * desktop and `/yield` page hand out the same amount with the same multiplier
-   * rules as the Agents-side claim.
+   * `lastDailyClaimAt` and tags transactions as `kitchen_daily_yield`.
+   * Daily yield is strictly and universally 24.0000 ESMS for all users.
    */
-  static async claimKitchenYield(userId: string, isPremium: boolean) {
+  static async claimKitchenYield(userId: string) {
     try {
       return await prisma.$transaction(async tx => {
         const balances = await tx.tokenBalance.findUnique({ where: { userId } })
@@ -112,7 +110,7 @@ export class EconomyService {
           throw new Error('Already claimed today')
         }
 
-        const total = BASE_AGENTS_YIELD * (isPremium ? PREMIUM_MULTIPLIER : 1)
+        const total = BASE_AGENTS_YIELD
         const perType = total / 4
         const dateStr = new Date().toISOString().split('T')[0]
         const distribution: Record<string, number> = {}
@@ -166,7 +164,7 @@ export class EconomyService {
     }
   }
 
-  static async claimAgentsYield(userId: string, isPremium: boolean) {
+  static async claimAgentsYield(userId: string) {
     try {
       return await prisma.$transaction(async tx => {
         // Re-check hasClaimedAgentsYieldToday within transaction
@@ -183,7 +181,7 @@ export class EconomyService {
           }
         }
 
-        const total = BASE_AGENTS_YIELD * (isPremium ? PREMIUM_MULTIPLIER : 1)
+        const total = BASE_AGENTS_YIELD
         const perType = total / 4
         const dateStr = new Date().toISOString().split('T')[0]
 
