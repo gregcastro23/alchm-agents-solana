@@ -1,0 +1,72 @@
+{
+  "cluster": "devnet",
+  "genesisHash": "EtWTRABZaYq6iMfeYKouRu166VU2xqa1wcaWoxPkrZBG",
+  "programId": "5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD",
+  "programConfigPda": "4YCVh9KHrhN6mFSMvybGVqLeGfaRkfUtqrn19mLLJGku",
+  "programDataAddress": "7WYfJRuiZG9GsQUUKJoUFVX3yusFVqmbgK8SyTdWtdKg",
+  "deployer": "AhNRjjyhJ4dR6ZSvWyJNSpbJFbFnxhkRdUNMY31fJ3S5",
+  "signerProvider": "local",
+  "configInitialized": true,
+  "mintsInitialized": true,
+  "mints": [
+    {
+      "mintIndex": 0,
+      "element": "Spirit",
+      "symbol": "SPIRIT",
+      "address": "K5kwwomtWYydxJacA7bC5yUEW9TtEuVqBKBoqAWLmhQ",
+      "metadataUri": "https://alchm.kitchen/metadata/esms/spirit.json",
+      "hasNonTransferable": true,
+      "hasPermanentDelegate": true,
+      "hasMetadataPointer": true,
+      "hasTokenMetadata": true,
+      "hasPermissionedBurn": true,
+      "decimals": 4,
+      "isValid": true
+    },
+    {
+      "mintIndex": 1,
+      "element": "Essence",
+      "symbol": "ESSENCE",
+      "address": "3FcpToU7bj4sLD687uecbesEjzjxBfqYn2EcBXJKPaCf",
+      "metadataUri": "https://alchm.kitchen/metadata/esms/essence.json",
+      "hasNonTransferable": true,
+      "hasPermanentDelegate": true,
+      "hasMetadataPointer": true,
+      "hasTokenMetadata": true,
+      "hasPermissionedBurn": true,
+      "decimals": 4,
+      "isValid": true
+    },
+    {
+      "mintIndex": 2,
+      "element": "Matter",
+      "symbol": "MATTER",
+      "address": "7naJZozLrknDF3dguAdEWn7Z4MviUkXitjhaAt57Vkb4",
+      "metadataUri": "https://alchm.kitchen/metadata/esms/matter.json",
+      "hasNonTransferable": true,
+      "hasPermanentDelegate": true,
+      "hasMetadataPointer": true,
+      "hasTokenMetadata": true,
+      "hasPermissionedBurn": true,
+      "decimals": 4,
+      "isValid": true
+    },
+    {
+      "mintIndex": 3,
+      "element": "Substance",
+      "symbol": "SUBSTANCE",
+      "address": "6RY6ZG1eJQ2uEvpyA6XK74WyF1MpTYbw97hdhELqDUsa",
+      "metadataUri": "https://alchm.kitchen/metadata/esms/substance.json",
+      "hasNonTransferable": true,
+      "hasPermanentDelegate": true,
+      "hasMetadataPointer": true,
+      "hasTokenMetadata": true,
+      "hasPermissionedBurn": true,
+      "decimals": 4,
+      "isValid": true
+    }
+  ],
+  "dryRun": true,
+  "timestamp": "2026-09-04T15:25:31.273Z",
+  "status": "dry_run_completed"
+}
