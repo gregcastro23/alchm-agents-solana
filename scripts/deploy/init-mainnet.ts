@@ -130,11 +130,12 @@ export function validateMintAccountData(
   data: Buffer,
   mintAddress: PublicKey,
   mintIndex: number,
-  authority: PublicKey
+  authority: PublicKey,
+  options?: { allowDevnetUri?: boolean }
 ): MintVerificationResult {
   const element = ESMS_NAMES[mintIndex]
   const symbol = ESMS_SYMBOLS[mintIndex]
-  const expectedUri = ESMS_METADATA_URIS[mintIndex]
+  const expectedUri: string = ESMS_METADATA_URIS[mintIndex]
 
   if (data.length < TOKEN_2022_TLV_START) {
     throw new Error(
@@ -169,6 +170,7 @@ export function validateMintAccountData(
   let hasMetadataPointer = false
   let hasTokenMetadata = false
   let hasPermissionedBurn = false
+  let actualUri = expectedUri
 
   let cursor = TOKEN_2022_TLV_START
   while (cursor + TLV_HEADER_LEN <= data.length) {
@@ -224,13 +226,19 @@ export function validateMintAccountData(
           const uriLen = value.readUInt32LE(textCursor)
           textCursor += 4
           const uri = value.subarray(textCursor, textCursor + uriLen).toString('utf8')
+          actualUri = uri
+
+          const isUriValid =
+            uri === expectedUri ||
+            (Boolean(options?.allowDevnetUri) &&
+              (uri.startsWith('http://') || uri.startsWith('https://')))
 
           hasTokenMetadata =
             updateAuth.equals(authority) &&
             mintPub.equals(mintAddress) &&
             name === element &&
             sym === symbol &&
-            uri === expectedUri
+            isUriValid
         }
         break
       }
@@ -255,7 +263,7 @@ export function validateMintAccountData(
     element,
     symbol,
     address: mintAddress.toBase58(),
-    metadataUri: expectedUri,
+    metadataUri: actualUri,
     hasNonTransferable,
     hasPermanentDelegate,
     hasMetadataPointer,
@@ -452,7 +460,9 @@ export async function initMainnet(
           `Mint account owner is ${info.owner.toBase58()}, expected ${TOKEN_2022_PROGRAM_ID.toBase58()}`
         )
       }
-      const verified = validateMintAccountData(info.data, mintAddresses[i], i, programConfigPda)
+      const verified = validateMintAccountData(info.data, mintAddresses[i], i, programConfigPda, {
+        allowDevnetUri: options.allowDevnet,
+      })
       if (!verified.isValid) {
         throw new Error(
           `Mint ${ESMS_NAMES[i]} (${mintAddresses[i].toBase58()}) failed extension validation!`
@@ -485,8 +495,9 @@ export async function initMainnet(
   }
 
   // 7. Write Deployment Receipt
+  const defaultReceiptFilename = isMainnet ? 'solana-mainnet.json' : 'solana-devnet.json'
   const deploymentsPath = path.resolve(
-    options.deploymentsFile ?? path.join(process.cwd(), 'deployments', 'solana-mainnet.json')
+    options.deploymentsFile ?? path.join(process.cwd(), 'deployments', defaultReceiptFilename)
   )
 
   let existingDeployments: Record<string, unknown> = {}

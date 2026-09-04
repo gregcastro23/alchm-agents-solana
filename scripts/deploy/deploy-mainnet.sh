@@ -233,6 +233,41 @@ fi
 # 5. PROGRAM BYTECODE DEPLOYMENT
 # ------------------------------------------------------------------------------
 echo -e "\n${BLUE}[5/7] Deploying program bytecode...${NC}"
+
+SO_BYTES=$(wc -c < "$TARGET_SO" | tr -d ' ')
+SO_KIB=$((SO_BYTES / 1024))
+BUFFER_RENT_SOL="6.92"
+PEAK_RENT_SOL="13.85"
+if command -v bc >/dev/null 2>&1; then
+    BUFFER_RENT_SOL=$(echo "scale=2; ($SO_BYTES + 45 + 128) * 0.000006960" | bc 2>/dev/null || echo "6.92")
+    PEAK_RENT_SOL=$(echo "scale=2; $BUFFER_RENT_SOL * 2" | bc 2>/dev/null || echo "13.85")
+fi
+
+echo -e "  Binary Size:      ${CYAN}${SO_KIB} KiB${NC} (${SO_BYTES} bytes)"
+echo -e "  Peak Rent Needed: ${YELLOW}~${PEAK_RENT_SOL} SOL${NC} (~${BUFFER_RENT_SOL} SOL temporary buffer + ~${BUFFER_RENT_SOL} SOL ProgramData)"
+
+if [ -n "$KEYPAIR_PATH" ] && [ -f "$KEYPAIR_PATH" ]; then
+    DEPLOYER_PUBKEY=$(solana address --keypair "$KEYPAIR_PATH" 2>/dev/null || echo "")
+    if [ -n "$DEPLOYER_PUBKEY" ]; then
+        DEPLOYER_BAL_RAW=$(solana balance "$DEPLOYER_PUBKEY" --url "$RPC_URL" 2>/dev/null || echo "0 SOL")
+        DEPLOYER_BAL=$(echo "$DEPLOYER_BAL_RAW" | cut -d' ' -f1)
+        echo -e "  Deployer Account: ${CYAN}${DEPLOYER_PUBKEY}${NC} | Balance: ${GREEN}${DEPLOYER_BAL} SOL${NC}"
+
+        if [ "$DRY_RUN" = false ]; then
+            IS_ENOUGH="1"
+            if command -v bc >/dev/null 2>&1; then
+                IS_ENOUGH=$(echo "$DEPLOYER_BAL >= $PEAK_RENT_SOL" | bc 2>/dev/null || echo "1")
+            fi
+            if [ "$IS_ENOUGH" = "0" ]; then
+                echo -e "${RED}❌ INSUFFICIENT DEPLOYER BALANCE!${NC}"
+                echo -e "Deployer Balance: ${YELLOW}${DEPLOYER_BAL} SOL${NC} < Peak Required: ${YELLOW}~${PEAK_RENT_SOL} SOL${NC} (Recommend >= 14.5 SOL)."
+                echo -e "Solana BPF Loader concurrently allocates both the temporary buffer and ProgramData account before buffer refund."
+                exit 1
+            fi
+        fi
+    fi
+fi
+
 if [ "$DRY_RUN" = true ]; then
     echo -e "  ${YELLOW}[DRY RUN] Would execute:${NC}"
     echo -e "    solana program deploy ${TARGET_SO} \\"

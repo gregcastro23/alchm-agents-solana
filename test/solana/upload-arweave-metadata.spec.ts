@@ -86,7 +86,7 @@ describe('Irys Signer Adapter & Upload Automation', () => {
     ).rejects.toThrow(/Live upload rejected: Irys network is "devnet"/)
   })
 
-  it('rejects local provider on live mainnet execution', async () => {
+  it('rejects local provider on live mainnet execution when --allow-local-payer is false', async () => {
     const keypair = Keypair.generate()
     process.env.SOLANA_AGENT_PAYER_KEY = JSON.stringify(Array.from(keypair.secretKey))
 
@@ -95,7 +95,7 @@ describe('Irys Signer Adapter & Upload Automation', () => {
         dryRun: false,
         confirm: true,
         irysNetwork: 'mainnet',
-        allowLocalPayer: true,
+        allowLocalPayer: false,
         workspaceRoot: process.cwd(),
       })
     ).rejects.toThrow(/Security violation: Live mainnet upload requires a Cloud KMS signer/)
