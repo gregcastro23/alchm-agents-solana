@@ -16,8 +16,8 @@ export type EsmsCost = Record<TokenType, number>
 export const AGENT_ACTIVATION_THRESHOLD = 0.4
 
 /**
- * Base daily yield amount credited to each agentic user during the automated
- * daily claim cron (`/api/cron/agents/claim-yield`), evenly split across axes.
+ * Base daily yield amount (12 ESMS) credited to each agentic user during the automated
+ * daily claim cron (`/api/cron/agents/claim-yield`), modulated by ADR-014 chart ratios.
  */
 export const AGENT_DAILY_YIELD = DAILY_ESMS_YIELD
 

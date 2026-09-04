@@ -92,7 +92,7 @@ export async function getProfileYieldState(userId: string): Promise<ProfileYield
 }
 
 /**
- * @deprecated Premium tier has been eliminated across ASOL in favor of universal 24.0000 ESMS yield.
+ * @deprecated Premium tier has been eliminated across ASOL in favor of universal 12.0000 ESMS yield.
  */
 export async function deriveYieldPremium(
   _userId: string,

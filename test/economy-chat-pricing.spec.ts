@@ -96,7 +96,7 @@ describe('chart-dynamic ESMS chat pricing', () => {
   })
 
   it('allows a daily yield claim to fund 20+ agent consultations', () => {
-    const perAxisYield = AGENT_DAILY_YIELD / 4 // 6 of each token axis
+    const perAxisYield = AGENT_DAILY_YIELD / 4 // 3 of each token axis under neutral conditions
     const waterCost = calculateAgentChatPricing('Water', sky(2, 9, 4, 1)).cost
 
     expect(Math.floor(perAxisYield / waterCost.Essence)).toBeGreaterThanOrEqual(20)

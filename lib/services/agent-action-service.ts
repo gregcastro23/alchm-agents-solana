@@ -276,7 +276,8 @@ export class AgentActionService {
   /**
    * Claim daily ESMS yield for every active agentic user.
    *
-   * Distributes `AGENT_DAILY_YIELD` evenly across the four token types. Skips
+   * Distributes daily yield across the four token types via ADR-014
+   * discriminant faucet, strictly conserving 12.0000 ESMS per agent. Skips
    * any agent that has already claimed today (idempotent via the
    * in-transaction daily claim guard).
    */

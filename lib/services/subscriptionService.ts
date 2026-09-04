@@ -2,7 +2,7 @@ import { prisma } from '@/lib/db'
 
 export class SubscriptionService {
   /**
-   * @deprecated Premium tier has been eliminated across ASOL in favor of universal 24.0000 ESMS yield.
+   * @deprecated Premium tier has been eliminated across ASOL in favor of universal 12.0000 ESMS yield.
    */
   static async isPremium(_userId: string): Promise<boolean> {
     return false

@@ -100,7 +100,7 @@ export class EconomyService {
   /**
    * Claim the daily Kitchen-side yield. Mirrors `claimAgentsYield` but bumps
    * `lastDailyClaimAt` and tags transactions as `kitchen_daily_yield`.
-   * Daily yield is strictly and universally 24.0000 ESMS for all users.
+   * Daily yield is strictly and universally 12.0000 ESMS for all users.
    */
   static async claimKitchenYield(userId: string) {
     try {
