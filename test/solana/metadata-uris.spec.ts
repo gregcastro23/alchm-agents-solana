@@ -176,11 +176,11 @@ describe('Token-2022 Metadata, Schemas & Program Constant Integrity', () => {
         const iconEntry = receipt.assets[`icons/${token}.svg`]
         const tokenEntry = receipt.assets[`tokens/${token}.json`]
 
-        expect(iconEntry.txId).toMatch(/^[A-Za-z0-9_-]{43,44}$/)
+        expect(iconEntry.txId).toMatch(/^[A-Za-z0-9_-]{43}$/)
         expect(iconEntry.uri).toBe(`https://arweave.net/${iconEntry.txId}`)
         expect(iconEntry.irysNetwork).toBe('mainnet')
 
-        expect(tokenEntry.txId).toMatch(/^[A-Za-z0-9_-]{43,44}$/)
+        expect(tokenEntry.txId).toMatch(/^[A-Za-z0-9_-]{43}$/)
         expect(tokenEntry.uri).toBe(`https://arweave.net/${tokenEntry.txId}`)
         expect(tokenEntry.irysNetwork).toBe('mainnet')
 
@@ -313,6 +313,27 @@ describe('Token-2022 Metadata, Schemas & Program Constant Integrity', () => {
       .split(',')
       .map(s => s.trim().replace(/^"|"$/g, ''))
       .filter(Boolean)
+
+    const isPopulated = Object.values(receipt.assets).some((a: any) => a.txId !== null)
+    if (!isPopulated) {
+      // In honest pre-upload state, all token manifests have image: null and receipt txIds are null
+      for (const token of TOKENS) {
+        const tokenPath = path.join(WORKSPACE_ROOT, 'metadata', 'solana', 'tokens', `${token}.json`)
+        const tokenJson = JSON.parse(await fs.readFile(tokenPath, 'utf8'))
+        expect(tokenJson.image).toBeNull()
+      }
+      for (const [k, a] of Object.entries(receipt.assets as Record<string, any>)) {
+        expect(a.txId, `${k} txId`).toBeNull()
+        expect(a.uri, `${k} uri`).toBeNull()
+      }
+      return
+    }
+
+    // every txId must be exactly 43 base64url chars (32-byte Arweave id)
+    for (const [k, a] of Object.entries(receipt.assets as Record<string, any>)) {
+      expect(a.txId, `${k} txId length`).toMatch(/^[A-Za-z0-9_-]{43}$/)
+      expect(a.uri, `${k} uri format`).toBe(`https://arweave.net/${a.txId}`)
+    }
 
     for (let i = 0; i < TOKENS.length; i++) {
       const token = TOKENS[i]
