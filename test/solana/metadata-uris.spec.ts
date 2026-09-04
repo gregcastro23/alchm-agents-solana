@@ -16,6 +16,7 @@ import {
   computeMetadataValueLen,
   computeTotalMintAccountLen,
   calculateRentExemptLamports,
+  computeSha256,
 } from '@/scripts/metadata/upload-arweave-metadata'
 
 const WORKSPACE_ROOT = process.cwd()
@@ -175,11 +176,11 @@ describe('Token-2022 Metadata, Schemas & Program Constant Integrity', () => {
         const iconEntry = receipt.assets[`icons/${token}.svg`]
         const tokenEntry = receipt.assets[`tokens/${token}.json`]
 
-        expect(iconEntry.txId).toMatch(/^[A-Za-z0-9_-]{43,44}$/)
+        expect(iconEntry.txId).toMatch(/^[A-Za-z0-9_-]{43}$/)
         expect(iconEntry.uri).toBe(`https://arweave.net/${iconEntry.txId}`)
         expect(iconEntry.irysNetwork).toBe('mainnet')
 
-        expect(tokenEntry.txId).toMatch(/^[A-Za-z0-9_-]{43,44}$/)
+        expect(tokenEntry.txId).toMatch(/^[A-Za-z0-9_-]{43}$/)
         expect(tokenEntry.uri).toBe(`https://arweave.net/${tokenEntry.txId}`)
         expect(tokenEntry.irysNetwork).toBe('mainnet')
 
@@ -284,6 +285,80 @@ describe('Token-2022 Metadata, Schemas & Program Constant Integrity', () => {
         parser: 'json',
       })
       expect(content).toBe(formatted)
+    }
+  })
+
+  it('enforces manifest parity and image wiring across manifests, constants, and icons', async () => {
+    const manifestReceiptPath = path.join(
+      WORKSPACE_ROOT,
+      'metadata',
+      'solana',
+      'arweave-manifest.json'
+    )
+    const receipt = JSON.parse(await fs.readFile(manifestReceiptPath, 'utf8'))
+
+    const constantsRsPath = path.join(
+      WORKSPACE_ROOT,
+      'programs',
+      'asol_program',
+      'src',
+      'constants.rs'
+    )
+    const rustSource = await fs.readFile(constantsRsPath, 'utf8')
+    const urisMatch = rustSource.match(
+      /pub const ESMS_METADATA_URIS:\s*\[&str;\s*ESMS_MINT_COUNT\]\s*=\s*\[([^\]]+)\];/
+    )
+    expect(urisMatch).not.toBeNull()
+    const parsedConstantsUris = urisMatch![1]
+      .split(',')
+      .map(s => s.trim().replace(/^"|"$/g, ''))
+      .filter(Boolean)
+
+    const isPopulated = Object.values(receipt.assets).some((a: any) => a.txId !== null)
+    if (!isPopulated) {
+      // In honest pre-upload state, all token manifests have image: null and receipt txIds are null
+      for (const token of TOKENS) {
+        const tokenPath = path.join(WORKSPACE_ROOT, 'metadata', 'solana', 'tokens', `${token}.json`)
+        const tokenJson = JSON.parse(await fs.readFile(tokenPath, 'utf8'))
+        expect(tokenJson.image).toBeNull()
+      }
+      for (const [k, a] of Object.entries(receipt.assets as Record<string, any>)) {
+        expect(a.txId, `${k} txId`).toBeNull()
+        expect(a.uri, `${k} uri`).toBeNull()
+      }
+      return
+    }
+
+    // every txId must be exactly 43 base64url chars (32-byte Arweave id)
+    for (const [k, a] of Object.entries(receipt.assets as Record<string, any>)) {
+      expect(a.txId, `${k} txId length`).toMatch(/^[A-Za-z0-9_-]{43}$/)
+      expect(a.uri, `${k} uri format`).toBe(`https://arweave.net/${a.txId}`)
+    }
+
+    for (let i = 0; i < TOKENS.length; i++) {
+      const token = TOKENS[i]
+      const tokenPath = path.join(WORKSPACE_ROOT, 'metadata', 'solana', 'tokens', `${token}.json`)
+      const tokenBytes = await fs.readFile(tokenPath)
+      const tokenSha = computeSha256(tokenBytes)
+      const tokenJson = JSON.parse(tokenBytes.toString('utf8'))
+
+      const manifestTokenEntry = receipt.assets[`tokens/${token}.json`]
+      const manifestIconEntry = receipt.assets[`icons/${token}.svg`]
+
+      // 1. Each token JSON SHA-256 equals its arweave-manifest entry
+      expect(tokenSha).toBe(manifestTokenEntry.sha256)
+
+      // 2. Each icon SVG SHA-256 equals its arweave-manifest entry
+      const iconPath = path.join(WORKSPACE_ROOT, 'metadata', 'solana', 'icons', `${token}.svg`)
+      const iconBytes = await fs.readFile(iconPath)
+      const iconSha = computeSha256(iconBytes)
+      expect(iconSha).toBe(manifestIconEntry.sha256)
+
+      // 3. ESMS_METADATA_URIS (parsed from constants.rs) equals manifest URIs in mint order
+      expect(parsedConstantsUris[i]).toBe(manifestTokenEntry.uri)
+
+      // 4. Each token's image equals its own icon's manifest URI
+      expect(tokenJson.image).toBe(manifestIconEntry.uri)
     }
   })
 })

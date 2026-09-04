@@ -142,6 +142,7 @@ describe('Solana Mainnet Deployment & Initialization Tooling (Workstream 5)', ()
       expect(defaultOpts.dryRun).toBe(false)
       expect(defaultOpts.allowDevnet).toBe(false)
       expect(defaultOpts.allowLocalSigner).toBe(false)
+      expect(defaultOpts.skipUriLivenessCheck).toBe(false)
       expect(defaultOpts.rpcUrl).toBeUndefined()
       expect(defaultOpts.deploymentsFile).toBeUndefined()
 
@@ -149,6 +150,7 @@ describe('Solana Mainnet Deployment & Initialization Tooling (Workstream 5)', ()
         '--dry-run',
         '--allow-devnet',
         '--allow-local-signer',
+        '--skip-uri-liveness-check',
         '--rpc-url',
         'https://my-rpc.com',
         '--deployments-file',
@@ -158,6 +160,7 @@ describe('Solana Mainnet Deployment & Initialization Tooling (Workstream 5)', ()
       expect(fullOpts.dryRun).toBe(true)
       expect(fullOpts.allowDevnet).toBe(true)
       expect(fullOpts.allowLocalSigner).toBe(true)
+      expect(fullOpts.skipUriLivenessCheck).toBe(true)
       expect(fullOpts.rpcUrl).toBe('https://my-rpc.com')
       expect(fullOpts.deploymentsFile).toBe('custom-deploy.json')
     })

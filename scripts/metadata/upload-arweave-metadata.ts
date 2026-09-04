@@ -87,26 +87,52 @@ export interface UploadOptions {
   skipReadback?: boolean
 }
 
-async function fetchRemoteAsset(uri: string, txId?: string): Promise<Buffer> {
+export interface FetchRemoteAssetOptions {
+  maxRetries?: number
+  initialBackoffMs?: number
+  maxBackoffMs?: number
+}
+
+async function fetchRemoteAsset(
+  uri: string,
+  txId?: string,
+  options: FetchRemoteAssetOptions = {}
+): Promise<Buffer> {
+  const maxRetries = options.maxRetries ?? 15
+  let backoffMs = options.initialBackoffMs ?? 2000
+  const maxBackoffMs = options.maxBackoffMs ?? 10000
+
   const urlsToTry = [uri]
   if (txId) {
-    urlsToTry.push(`https://arweave.live/${txId}`)
     urlsToTry.push(`https://gateway.irys.xyz/${txId}`)
+    urlsToTry.push(`https://arweave.net/${txId}`)
+    urlsToTry.push(`https://arweave.live/${txId}`)
   }
 
   let lastError: Error | null = null
-  for (const url of urlsToTry) {
-    try {
-      const res = await fetch(url)
-      if (res.ok) {
-        return Buffer.from(await res.arrayBuffer())
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    for (const url of urlsToTry) {
+      try {
+        const res = await fetch(url)
+        if (res.ok) {
+          return Buffer.from(await res.arrayBuffer())
+        }
+        lastError = new Error(`Failed to read back ${url}: ${res.status} ${res.statusText}`)
+      } catch (err) {
+        lastError = err instanceof Error ? err : new Error(String(err))
       }
-      lastError = new Error(`Failed to read back ${url}: ${res.status} ${res.statusText}`)
-    } catch (err) {
-      lastError = err instanceof Error ? err : new Error(String(err))
+    }
+
+    if (attempt < maxRetries) {
+      console.log(
+        `  ⏳ Gateway indexing delay (attempt ${attempt}/${maxRetries}): Retrying in ${Math.round(backoffMs / 1000)}s...`
+      )
+      await new Promise(resolve => setTimeout(resolve, backoffMs))
+      backoffMs = Math.min(Math.round(backoffMs * 1.5), maxBackoffMs)
     }
   }
-  throw lastError ?? new Error(`Failed to read back ${uri}`)
+
+  throw lastError ?? new Error(`Failed to read back ${uri} after ${maxRetries} attempts`)
 }
 
 export async function runUploadArweaveMetadata(options: UploadOptions = {}) {
@@ -138,14 +164,20 @@ export async function runUploadArweaveMetadata(options: UploadOptions = {}) {
     )
   }
 
-  // Strict check: forbid local keypair fallback on live mainnet execution
-  if (!isDryRun && irysNetwork === 'mainnet' && signer.provider === 'local') {
+  // Strict check: forbid unflagged local keypair fallback on live mainnet execution
+  if (!isDryRun && irysNetwork === 'mainnet' && signer.provider === 'local' && !allowLocalPayer) {
     throw new Error(
-      'Security violation: Live mainnet upload requires a Cloud KMS signer (provider: aws|gcp). Local keypair signer is strictly prohibited.'
+      'Security violation: Live mainnet upload requires a Cloud KMS signer (provider: aws|gcp) or explicit --allow-local-payer for throwaway burner wallets.'
     )
   }
 
-  console.log(`\n• Signer Pubkey: ${signer.publicKey.toBase58()} (Provider: ${signer.provider})`)
+  if (signer.provider === 'local') {
+    console.log(
+      `  🔑 Signer: Local burner wallet (${signer.publicKey.toBase58()}) [allowLocalPayer: ${allowLocalPayer}]`
+    )
+  } else {
+    console.log(`\n• Signer Pubkey: ${signer.publicKey.toBase58()} (Provider: ${signer.provider})`)
+  }
 
   // 3. Normalize and check local files
   await normalizeTokensJson(workspaceRoot, !isDryRun)

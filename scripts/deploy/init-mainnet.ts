@@ -47,6 +47,7 @@ export interface InitMainnetCliOptions {
   dryRun: boolean
   allowDevnet: boolean
   allowLocalSigner: boolean
+  skipUriLivenessCheck?: boolean
   rpcUrl?: string
   deploymentsFile?: string
 }
@@ -89,6 +90,7 @@ export function parseArgs(argv: string[]): InitMainnetCliOptions {
     dryRun: false,
     allowDevnet: false,
     allowLocalSigner: false,
+    skipUriLivenessCheck: false,
   }
 
   for (let i = 0; i < argv.length; i++) {
@@ -99,6 +101,8 @@ export function parseArgs(argv: string[]): InitMainnetCliOptions {
       options.allowDevnet = true
     } else if (arg === '--allow-local-signer') {
       options.allowLocalSigner = true
+    } else if (arg === '--skip-uri-liveness-check') {
+      options.skipUriLivenessCheck = true
     } else if (arg === '--rpc-url' && argv[i + 1]) {
       options.rpcUrl = argv[++i]
     } else if (arg === '--deployments-file' && argv[i + 1]) {
@@ -108,12 +112,13 @@ export function parseArgs(argv: string[]): InitMainnetCliOptions {
 Usage: bun run scripts/deploy/init-mainnet.ts [options]
 
 Options:
-  --dry-run               Simulate checks and transaction building without broadcasting.
-  --allow-devnet          Allow execution on clusters other than Mainnet-Beta.
-  --allow-local-signer    Allow using a local filesystem/env keypair (prohibited on Mainnet by default).
-  --rpc-url <url>         Solana RPC endpoint URL (overrides SOLANA_RPC_URL).
-  --deployments-file <f>  Target JSON deployment receipt file (default: deployments/solana-mainnet.json).
-  --help, -h              Show this help message.
+  --dry-run                    Simulate checks and transaction building without broadcasting.
+  --allow-devnet               Allow execution on clusters other than Mainnet-Beta.
+  --allow-local-signer         Allow using a local filesystem/env keypair (prohibited on Mainnet by default).
+  --skip-uri-liveness-check    Skip remote Arweave metadata URI accessibility verification.
+  --rpc-url <url>              Solana RPC endpoint URL (overrides SOLANA_RPC_URL).
+  --deployments-file <f>       Target JSON deployment receipt file (default: deployments/solana-mainnet.json).
+  --help, -h                   Show this help message.
 `)
       process.exit(0)
     }
@@ -130,11 +135,12 @@ export function validateMintAccountData(
   data: Buffer,
   mintAddress: PublicKey,
   mintIndex: number,
-  authority: PublicKey
+  authority: PublicKey,
+  options?: { allowDevnetUri?: boolean }
 ): MintVerificationResult {
   const element = ESMS_NAMES[mintIndex]
   const symbol = ESMS_SYMBOLS[mintIndex]
-  const expectedUri = ESMS_METADATA_URIS[mintIndex]
+  const expectedUri: string = ESMS_METADATA_URIS[mintIndex]
 
   if (data.length < TOKEN_2022_TLV_START) {
     throw new Error(
@@ -169,6 +175,7 @@ export function validateMintAccountData(
   let hasMetadataPointer = false
   let hasTokenMetadata = false
   let hasPermissionedBurn = false
+  let actualUri = expectedUri
 
   let cursor = TOKEN_2022_TLV_START
   while (cursor + TLV_HEADER_LEN <= data.length) {
@@ -224,13 +231,19 @@ export function validateMintAccountData(
           const uriLen = value.readUInt32LE(textCursor)
           textCursor += 4
           const uri = value.subarray(textCursor, textCursor + uriLen).toString('utf8')
+          actualUri = uri
+
+          const isUriValid =
+            uri === expectedUri ||
+            (Boolean(options?.allowDevnetUri) &&
+              (uri.startsWith('http://') || uri.startsWith('https://')))
 
           hasTokenMetadata =
             updateAuth.equals(authority) &&
             mintPub.equals(mintAddress) &&
             name === element &&
             sym === symbol &&
-            uri === expectedUri
+            isUriValid
         }
         break
       }
@@ -255,7 +268,7 @@ export function validateMintAccountData(
     element,
     symbol,
     address: mintAddress.toBase58(),
-    metadataUri: expectedUri,
+    metadataUri: actualUri,
     hasNonTransferable,
     hasPermanentDelegate,
     hasMetadataPointer,
@@ -312,7 +325,31 @@ export async function initMainnet(
     )
   }
 
-  // 3. Program Deployment Check
+  // 3. Metadata URIs Liveness Check (Hard Pre-Flight)
+  if (!options.skipUriLivenessCheck && !options.allowDevnet) {
+    console.log(`[InitMainnet] Performing metadata URI liveness pre-flight check...`)
+    for (let i = 0; i < ESMS_METADATA_URIS.length; i++) {
+      const uri = ESMS_METADATA_URIS[i]
+      const name = ESMS_NAMES[i]
+      try {
+        const res = await fetch(uri, { signal: AbortSignal.timeout(10000) })
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status} ${res.statusText}`)
+        }
+        const json = (await res.json()) as { name?: string }
+        if (!json || json.name !== name) {
+          throw new Error(`Invalid manifest content (expected name "${name}", got "${json?.name}")`)
+        }
+        console.log(`  ✓ ${name} metadata URI live & verified: ${uri}`)
+      } catch (err: any) {
+        throw new Error(
+          `Metadata URI liveness check failed for ${name} (${uri}): ${err.message}. Refusing to initialize mints with unverified or dead metadata URIs. Pass --skip-uri-liveness-check to bypass for offline testing.`
+        )
+      }
+    }
+  }
+
+  // 4. Program Deployment Check
   const programId = ASOL_SOLANA_PROGRAM_ID
   const programConfigPda = getProgramConfigAddress(programId)
   const programDataAddress = getProgramDataAddress(programId)
@@ -452,7 +489,9 @@ export async function initMainnet(
           `Mint account owner is ${info.owner.toBase58()}, expected ${TOKEN_2022_PROGRAM_ID.toBase58()}`
         )
       }
-      const verified = validateMintAccountData(info.data, mintAddresses[i], i, programConfigPda)
+      const verified = validateMintAccountData(info.data, mintAddresses[i], i, programConfigPda, {
+        allowDevnetUri: options.allowDevnet,
+      })
       if (!verified.isValid) {
         throw new Error(
           `Mint ${ESMS_NAMES[i]} (${mintAddresses[i].toBase58()}) failed extension validation!`
@@ -485,8 +524,9 @@ export async function initMainnet(
   }
 
   // 7. Write Deployment Receipt
+  const defaultReceiptFilename = isMainnet ? 'solana-mainnet.json' : 'solana-devnet.json'
   const deploymentsPath = path.resolve(
-    options.deploymentsFile ?? path.join(process.cwd(), 'deployments', 'solana-mainnet.json')
+    options.deploymentsFile ?? path.join(process.cwd(), 'deployments', defaultReceiptFilename)
   )
 
   let existingDeployments: Record<string, unknown> = {}
