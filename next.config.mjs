@@ -27,7 +27,7 @@ const nextConfig = {
   },
   // Keep heavy server SDKs available to functions WITHOUT folding their large
   // (and sometimes non-bundlable) dependency trees into the shared server bundle.
-  serverExternalPackages: ['@google-cloud/bigquery', '@coinbase/cdp-sdk'],
+  serverExternalPackages: ['@google-cloud/bigquery', '@coinbase/cdp-sdk', '@google-cloud/kms'],
   // Disable source maps completely to avoid Next.js internal source-map module issues
   productionBrowserSourceMaps: false,
   // Docker optimization - standalone output (only for production builds)
