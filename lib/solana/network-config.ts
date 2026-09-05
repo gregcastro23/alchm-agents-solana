@@ -45,6 +45,12 @@ export function getSolanaNetworkConfig(
     .toLowerCase()
     .trim()
 
+  // Support both server and client-inlined devnet allowance in production
+  const allowDevnetInProd = customEnv
+    ? (customEnv.SOLANA_ALLOW_DEVNET_IN_PROD ?? customEnv.NEXT_PUBLIC_SOLANA_ALLOW_DEVNET_IN_PROD)
+    : (process.env.SOLANA_ALLOW_DEVNET_IN_PROD ??
+      process.env.NEXT_PUBLIC_SOLANA_ALLOW_DEVNET_IN_PROD)
+
   let network: SolanaNetwork
   if (configuredNetwork === 'mainnet' || configuredNetwork === 'mainnet-beta') {
     network = 'mainnet-beta'
@@ -52,19 +58,16 @@ export function getSolanaNetworkConfig(
     network = 'devnet'
   } else if (configuredNetwork === 'localnet' || configuredNetwork === 'localhost') {
     network = 'localnet'
-  } else if (isProd) {
+  } else if (isProd && allowDevnetInProd !== 'true') {
     throw new Error(
       'SOLANA_NETWORK must be explicitly set to "mainnet-beta" in production. Devnet fallbacks are prohibited.'
     )
   } else {
-    // Default to devnet in development / test only
+    // Default to devnet in development / test only (or in prod when allowDevnetInProd === 'true')
     network = 'devnet'
   }
 
-  // Prevent devnet in production
-  const allowDevnetInProd = customEnv
-    ? customEnv.SOLANA_ALLOW_DEVNET_IN_PROD
-    : process.env.SOLANA_ALLOW_DEVNET_IN_PROD
+  // Prevent devnet in production without explicit permission
   if (isProd && network === 'devnet' && allowDevnetInProd !== 'true') {
     throw new Error(
       'Devnet is prohibited in production. Configure SOLANA_NETWORK=mainnet-beta and private Mainnet RPCs.'
