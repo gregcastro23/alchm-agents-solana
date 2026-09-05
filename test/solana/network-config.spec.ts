@@ -1,6 +1,6 @@
 // @vitest-environment node
 
-import { describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { WalletAdapterNetwork } from '@solana/wallet-adapter-base'
 import {
   getSolanaNetworkConfig,
@@ -83,6 +83,25 @@ describe('SolanaNetworkConfig Architecture (Workstream 2)', () => {
         NEXT_PUBLIC_SOLANA_RPC_URL: '',
       })
     ).toThrow(/Mainnet-Beta requires at least one configured RPC URL/)
+  })
+
+  it('permits devnet in production when SOLANA_ALLOW_DEVNET_IN_PROD is true', () => {
+    // Both server-side and client-inlined flags permit devnet
+    const configWithServerFlag = getSolanaNetworkConfig({
+      NODE_ENV: 'production',
+      SOLANA_ALLOW_DEVNET_IN_PROD: 'true',
+    })
+    expect(configWithServerFlag.network).toBe('devnet')
+    expect(configWithServerFlag.isMainnet).toBe(false)
+    expect(configWithServerFlag.rpcUrls).toEqual(['https://api.devnet.solana.com'])
+
+    const configWithPublicFlag = getSolanaNetworkConfig({
+      NODE_ENV: 'production',
+      NEXT_PUBLIC_SOLANA_ALLOW_DEVNET_IN_PROD: 'true',
+      SOLANA_NETWORK: 'devnet',
+    })
+    expect(configWithPublicFlag.network).toBe('devnet')
+    expect(configWithPublicFlag.isMainnet).toBe(false)
   })
 
   it('supports comma-delimited RPC URLs for failover lists', () => {

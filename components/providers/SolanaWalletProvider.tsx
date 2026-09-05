@@ -209,7 +209,45 @@ function SolanaWalletState({ children }: { children: ReactNode }) {
 }
 
 export function SolanaWalletProvider({ children }: { children: ReactNode }) {
-  const networkConfig = useMemo(() => getSolanaNetworkConfig(), [])
+  const networkConfig = useMemo(() => {
+    try {
+      return getSolanaNetworkConfig()
+    } catch (error) {
+      if (typeof window === 'undefined' || process.env.NODE_ENV !== 'production') {
+        // Fallback for SSR / static prerendering during build or non-prod
+        return {
+          network: 'devnet' as const,
+          isMainnet: false,
+          rpcUrls: ['https://api.devnet.solana.com'],
+          expectedGenesisHash: null,
+          walletNetwork: WalletAdapterNetwork.Devnet,
+          explorerClusterParam: 'cluster=devnet',
+          networkBadgeLabel: 'Base + Solana Devnet',
+          commitment: 'confirmed' as const,
+          buildExplorerTxUrl: (sig: string) =>
+            `https://explorer.solana.com/tx/${encodeURIComponent(sig)}?cluster=devnet`,
+          assertGenesisHash: () => {},
+        }
+      }
+      console.error(
+        '[SolanaWalletProvider] Failed to load Solana network configuration. Operating in degraded mode:',
+        error
+      )
+      return {
+        network: 'devnet' as const,
+        isMainnet: false,
+        rpcUrls: ['https://api.devnet.solana.com'],
+        expectedGenesisHash: null,
+        walletNetwork: WalletAdapterNetwork.Devnet,
+        explorerClusterParam: 'cluster=devnet',
+        networkBadgeLabel: 'Solana (Unconfigured)',
+        commitment: 'confirmed' as const,
+        buildExplorerTxUrl: (sig: string) =>
+          `https://explorer.solana.com/tx/${encodeURIComponent(sig)}?cluster=devnet`,
+        assertGenesisHash: () => {},
+      }
+    }
+  }, [])
   const rpcUrl = networkConfig.rpcUrls[0]
   // WalletProvider also auto-discovers Wallet Standard implementations, which
   // is how Backpack and Dynamic Global Wallet join these explicit adapters.
@@ -253,7 +291,13 @@ export function SolanaWalletConnectButton({ compact = false }: { compact?: boole
 }
 
 export function DualChainNetworkBadge() {
-  const label = useMemo(() => getSolanaNetworkConfig().networkBadgeLabel, [])
+  const label = useMemo(() => {
+    try {
+      return getSolanaNetworkConfig().networkBadgeLabel
+    } catch {
+      return 'Base + Solana Devnet'
+    }
+  }, [])
   return (
     <span
       className="rounded-full border border-violet-400/30 bg-violet-950/40 px-2 py-1 font-mono text-[10px] uppercase tracking-wider text-violet-200 hover:bg-violet-900/50"

@@ -240,7 +240,7 @@ export async function initDevnetMultisig(options: {
 
   // Execute Proposal Drill
   const multisigAccount = await sqds.accounts.Multisig.fromAccountAddress(connection, multisigPda)
-  const nextTxIndex = BigInt(multisigAccount.transactionIndex) + 1n
+  const nextTxIndex = BigInt(multisigAccount.transactionIndex.toString()) + 1n
   console.log(`Next Transaction Index: ${nextTxIndex}`)
 
   const proposalPda = getSquadsProposalPda(multisigPda, nextTxIndex)[0]

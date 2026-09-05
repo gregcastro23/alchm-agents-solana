@@ -85,7 +85,11 @@ export const ASOL_SOLANA_TRANSACTION_CONFIRMED_EVENT = 'asol:solana-transaction-
 export const AAE_SOLANA_TRANSACTION_CONFIRMED_EVENT = ASOL_SOLANA_TRANSACTION_CONFIRMED_EVENT
 
 export function solanaExplorerTransactionUrl(signature: string): string {
-  return getSolanaNetworkConfig().buildExplorerTxUrl(signature)
+  try {
+    return getSolanaNetworkConfig().buildExplorerTxUrl(signature)
+  } catch {
+    return `https://explorer.solana.com/tx/${encodeURIComponent(signature)}?cluster=devnet`
+  }
 }
 
 export const solanaExplorerTxUrl = solanaExplorerTransactionUrl
