@@ -34,8 +34,10 @@ import './landing.css'
 import ResonantStarVaultsWidget from '@/components/staking/ResonantStarVaultsWidget'
 import { usePlanetaryPositions } from '@/hooks/usePlanetaryPositions'
 import { LivePlanetaryCouncilThread } from '@/components/landing/live-planetary-council-thread'
-import { QuickChartAttachmentGenerator } from '@/components/landing/quick-chart-attachment-generator'
-import { CurrentPromotionalThread } from '@/components/landing/current-promotional-thread'
+import {
+  CurrentPromotionalThread,
+  CurrentSkyChat,
+} from '@/components/landing/current-promotional-thread'
 import FreeAgentsOfTheWeek from '@/components/landing/free-agents-of-the-week'
 import { useFreeAgents } from '@/hooks/use-free-agents'
 import {
@@ -812,9 +814,9 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* ==================== CURRENT PROMOTION FEATURED (ACTIVE CELESTIAL EVENT) ==================== */}
+        {/* ==================== CURRENT SKY CHAT (LIVE PLANETARY DEGREE COUNCIL) ==================== */}
         <section id="current-promotion" className="space-y-6">
-          <CurrentPromotionalThread
+          <CurrentSkyChat
             positions={planetaryData.planetaryPositions}
             alchmQuantities={planetaryData.alchmQuantities}
             monicaConstant={displayMonica}
@@ -822,8 +824,6 @@ export default function LandingPage() {
             onOpenCouncil={() => router.push('/planetary-council')}
           />
         </section>
-
-        <QuickChartAttachmentGenerator />
 
         {/* ======================= PLANETARY AGENTS & SKY COUNCIL ======================= */}
         <section id="planetary" className="space-y-6">

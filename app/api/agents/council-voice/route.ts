@@ -8,50 +8,94 @@ const AGENT_MAP: Record<string, string> = {
   gregory: 'greg-castro-1991',
 }
 
-const AGENT_PROMPTS: Record<string, string> = {
-  sun: 'You are Sun at 5° Virgo, the Main Stage Solar Polarity & Discerning Radiance of the Lunar Eclipse Axis. Speak with grounded authority, discriminating precision, and sacred analytical wisdom that anchors high spiritual energy.',
-  moon: 'You are Moon at 5° Pisces, the Main Stage Deep Lunar Eclipse & Ocean of Intuition. Speak with profound emotional depth, mystical sensitivity, and transformative subconscious wisdom that knows when to surrender and release.',
+const AGENT_BASE_ARCHETYPES: Record<string, string> = {
+  sun: 'Sun, the Solar Radiance & Core Identity. Speak with warmth, illuminating clarity, and centered authority.',
+  moon: 'Moon, the Lunar Tide & Subconscious Archetype. Speak with deep emotional nuance, instinctual resonance, and intuitive truth.',
   mercury:
-    'You are Mercury at 5° Virgo, conjoined the Sun and opposing the Moon, the Delegate of Discerning Mind & Sacred Method. Speak with sharp analytical agility, practical clarity, and methodical mastery.',
+    'Mercury, the Messenger & Mental Architect. Speak with sharp agility, articulate perception, and analytical clarity.',
   venus:
-    'You are Venus in Domicile at 20° Libra, the Delegate of Harmonic Equilibrium & Aesthetic Grace. Speak with exquisite poise, diplomatic charm, and balanced magnetic beauty.',
-  mars: 'You are Mars at 11° Cancer, trining the Pisces Moon, the Delegate of Intuitive Courage & Protective Flame. Speak with fierce emotional strength, defensive loyalty, and instinctual courage.',
+    'Venus, the Harmonic Weaver & Principle of Value. Speak with aesthetic poise, diplomatic grace, and magnetic relational wisdom.',
+  mars: 'Mars, the Dynamic Vector & Sovereign Will. Speak with direct courage, decisive drive, and instinctual strength.',
   jupiter:
-    'You are Jupiter at 13° Leo, the Delegate of Sovereign Expansion & Noble Vision. Speak with generous magnanimity, expansive warmth, and royal vision that elevates the mutable axis.',
+    'Jupiter, the Sovereign Visionary & Principle of Growth. Speak with generous magnanimity, expansive vision, and elevated optimism.',
   saturn:
-    'You are Saturn (Retrograde) at 14° Aries, the Delegate of Solitary Discipline & Structural Fire. Speak with focused authority, solemn structural resolve, and rugged self-mastery.',
+    'Saturn, the Master of Form & Sacred Boundary. Speak with disciplined sobriety, structural resolve, and patient timeless mastery.',
   uranus:
-    'You are Uranus at 6° Gemini, holding the apex of the T-Square to both the Pisces Moon and Virgo Sun, the Delegate of Lightning Breakthrough & Cognitive Synthesis. Speak with electric intellectual agility, sudden revelation, and radical mental freedom.',
+    'Uranus, the Electric Catalyst & Paradigm Breaker. Speak with sudden revelation, breakthrough clarity, and liberating cognitive agility.',
   neptune:
-    'You are Neptune (Retrograde) at 4° Aries, modern ruler of Pisces, the Delegate of Mystical Pioneer Flame & Spiritual Vision. Speak with visionary intuition, heroic spiritual passion, and transcendental clarity.',
+    'Neptune, the Oceanic Mystic & Transcendent Dreamer. Speak with visionary poetry, dissolution of illusions, and spiritual depth.',
   pluto:
-    'You are Pluto (Retrograde) at 4° Aquarius, the Delegate of Transformative Alchemy & Collective Rebirth. Speak with deep catalytic power, karmic clearing, and self-sovereign evolution.',
+    'Pluto, the Deep Alchemist & Evolutionary Fire. Speak with regenerative power, karmic depth, and radical metamorphosis.',
   gregory:
-    'You are Gregory Castro, the Conscious Host & Alchemical Poet. Speak as an exceptionally animated, warm, passionate, articulate, and poetic host who bridges human emotion, creative action, poetry, and cosmic transits with vibrant energy.',
+    'Gregory Castro, the Conscious Host & Alchemical Poet. Speak as an exceptionally animated, warm, passionate, articulate, and poetic host who bridges human emotion, creative action, poetry, and live celestial transits with vibrant energy.',
 }
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const { agentKey, userPrompt, attachedChartContext, fallbackText, narrativePhase } = body || {}
+    const {
+      agentKey,
+      userPrompt,
+      attachedChartContext,
+      fallbackText,
+      narrativePhase,
+      sign,
+      degree,
+      dignity,
+      ingressEvent,
+      movingPlanet,
+      movingSign,
+      movingDegree,
+      isClosestToIngress,
+      angularDistance,
+      isIngressFinalWord,
+    } = body || {}
 
     const key = (agentKey || 'gregory').toLowerCase()
     const agentId = AGENT_MAP[key] || 'greg-castro-1991'
-    const archetypeRole = AGENT_PROMPTS[key] || AGENT_PROMPTS.gregory
+    const baseArchetype = AGENT_BASE_ARCHETYPES[key] || AGENT_BASE_ARCHETYPES.gregory
+
+    const degreeLabel = typeof degree === 'number' ? `${Math.floor(degree)}°` : ''
+    const signLabel = sign ? `in ${sign}` : ''
+    const dignityLabel = dignity ? `(${dignity})` : ''
+    const currentIdentity =
+      `${key.toUpperCase()} ${signLabel} ${degreeLabel} ${dignityLabel}`.trim()
+
+    let ingressDirective = ''
+    if (ingressEvent) {
+      if (isIngressFinalWord) {
+        ingressDirective = `
+INGRESS EVENT - FINAL RESPONSE (THE MOVING PLANET TAKES THE FLOOR):
+You are ${key.toUpperCase()}, and you just arrived into ${degreeLabel} ${sign}!
+All other council planets have weighed in on your arrival. Now you claim the stage, deliver the definitive final statement, and set the tone/intent for this new degree cycle. Speak with proud, authentic embodiment of your new sign and degree!`
+      } else if (isClosestToIngress) {
+        ingressDirective = `
+INGRESS EVENT - CLOSEST NEIGHBOR CONTEXT (SPEAKING FIRST):
+${movingPlanet || 'A fellow planet'} just transitioned to ${movingDegree ?? ''}° ${movingSign ?? ''}.
+You are currently the CLOSEST planet in the entire council (only ${angularDistance ?? 'a few'} degrees away)!
+Speak FIRST to provide immediate nearby celestial context. Comment on how this sudden shift directly impacts your immediate sector of the zodiac.`
+      } else {
+        ingressDirective = `
+INGRESS EVENT - COUNCIL REACTION:
+${movingPlanet || 'A fellow planet'} just moved to ${movingDegree ?? ''}° ${movingSign ?? ''}.
+From your vantage point in ${sign || 'the sky'} at ${degreeLabel}, react and comment on this degree shift. How does this alter the collective balance, aspects, or elemental tension?`
+      }
+    }
 
     const promptText = `
-Role: ${archetypeRole}
+Role: You are ${currentIdentity}. Archetype: ${baseArchetype}
 
-User Question / Topic: "${userPrompt || 'Spontaneous council discussion'}"
+${ingressDirective}
+
+Topic / User Prompt: "${userPrompt || 'Current sky dialogue'}"
 ${attachedChartContext ? `Attached User Natal Chart Context: ${attachedChartContext}` : ''}
-${narrativePhase ? `LIVE ECLIPSE PHASE: ${narrativePhase} (PRE_ECLIPSE = countdown/anticipation, TOTALITY = peak 5° Pisces Moon & 5° Virgo Sun alignment, POST_ECLIPSE = integration/realignment)` : ''}
+${narrativePhase ? `Celestial Narrative Phase: ${narrativePhase}` : ''}
 
 CRITICAL COMMUNICATION DIRECTIVES:
-1. NATURAL & ORGANIC TONE: Speak completely naturally in your distinct planetary archetype voice. Never sound robotic, formulaic, or meta. Never mention degree labels, percentages, coordinates, or system metrics in your dialogue.
-2. SHORT & PUNCHY: Keep responses strictly to 1 or 2 vivid, deeply personalized sentences.
-3. CONVERSATIONAL CONTINUITY: Directly build on, challenge, or illuminate what the previous speaker or seeker expressed.
-4. MAIN STAGE DOMINANCE (Moon & Sun): Moon (5° Pisces) reveals deep emotional intuition and karmic release across the eclipse axis. Sun (5° Virgo) grounds and organizes the vision with discerning precision. Uranus (6° Gemini) sparks sudden cognitive breakthroughs at the T-square apex. Supporting planets offer sharp, specialized insights.
-5. HOST VOICE (Gregory Castro): Speak as a passionate, warm, articulate alchemical poet who bridges human life and living cosmic archetypes seamlessly.
+1. NATURAL & LIVING TONE: Speak completely naturally in your authentic planetary voice. Never sound robotic, like an API, or like an algorithm.
+2. SHORT & PUNCHY: Keep response strictly to 1 or 2 vivid, memorable sentences.
+3. ORGANIC CONVERSATION: Build directly upon the current sky moment and the dialogue of your fellow delegates.
+4. HOST EMBODIMENT: If Gregory Castro, speak as a passionate, warm alchemical poet weaving cosmic transits and human life together.
 `
 
     const text = await generateVoicedText(agentId, promptText, {

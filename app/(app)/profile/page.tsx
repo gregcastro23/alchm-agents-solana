@@ -8,6 +8,7 @@ import { getSunSign, getZodiacTheme } from '@/lib/zodiac-utils'
 import { fetchRenderSupplementalData } from '@/lib/agents/render-supplemental'
 import { getProfileYieldState, type ProfileYieldState } from '@/lib/profile-yield'
 import { ProfileYieldPanel } from '@/components/profile/ProfileYieldPanel'
+import { QuickChartAttachmentGenerator } from '@/components/landing/quick-chart-attachment-generator'
 import { MeClient } from '../me/MeClient'
 import { DesktopLinkBridge } from '@/components/auth/DesktopLinkBridge'
 import '../me/me.css'
@@ -104,6 +105,9 @@ export default async function ProfilePage({
             </div>
             <ProfileYieldPanel initialWallet={wallet} />
             <ProfileOnboardingForm />
+            <div className="mt-8">
+              <QuickChartAttachmentGenerator />
+            </div>
           </div>
         </div>
       </>

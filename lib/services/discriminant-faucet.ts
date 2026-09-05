@@ -594,6 +594,20 @@ function extractPlacementsFromProfile(
     }
   }
 
+  // 5. Direct map in userProfile.planets (e.g. from user_natal_charts row)
+  if (
+    userProfile.planets &&
+    typeof userProfile.planets === 'object' &&
+    !Array.isArray(userProfile.planets)
+  ) {
+    return Object.entries(userProfile.planets).map(([planet, data]: [string, any], idx) => ({
+      planet,
+      sign: String(data?.sign || 'Aries'),
+      degree: Number(data?.signDegree ?? data?.degree ?? 0) || 0,
+      house: typeof data?.house === 'number' ? data.house : idx + 1,
+    }))
+  }
+
   return null
 }
 
@@ -606,8 +620,13 @@ export function resolveAgentNatalData(
   userProfile?: {
     natalChart?: any
     natalPositions?: any
+    planets?: any
     dominantElement?: string | null
     monicaConstant?: number | null
+    spiritScore?: number | null
+    essenceScore?: number | null
+    matterScore?: number | null
+    substanceScore?: number | null
   }
 ): NatalChartData {
   const agentId = agentIdOrEmail.includes('@') ? agentIdOrEmail.split('@')[0] : agentIdOrEmail
@@ -624,6 +643,30 @@ export function resolveAgentNatalData(
       substanceScore: typeof el.substance === 'number' ? el.substance * 100 : 50,
       monicaConstant: historical.consciousness.monicaConstant ?? null,
       isNeutralFallback: false,
+    }
+  }
+
+  // 1.5 Check for explicit elemental scores (e.g. from user_natal_charts or pre-calculated profile)
+  if (
+    typeof userProfile?.spiritScore === 'number' &&
+    typeof userProfile?.essenceScore === 'number' &&
+    typeof userProfile?.matterScore === 'number' &&
+    typeof userProfile?.substanceScore === 'number'
+  ) {
+    const sp = userProfile.spiritScore
+    const es = userProfile.essenceScore
+    const ma = userProfile.matterScore
+    const su = userProfile.substanceScore
+    if (sp > 0 || es > 0 || ma > 0 || su > 0) {
+      return {
+        dominantElement: userProfile.dominantElement ?? null,
+        spiritScore: sp > 1 ? sp : sp * 100,
+        essenceScore: es > 1 ? es : es * 100,
+        matterScore: ma > 1 ? ma : ma * 100,
+        substanceScore: su > 1 ? su : su * 100,
+        monicaConstant: userProfile.monicaConstant ?? null,
+        isNeutralFallback: false,
+      }
     }
   }
 

@@ -100,7 +100,23 @@ function resolveCoordinates(locationStr: string): { lat: number; lon: number } {
   return { lat: 40.7128, lon: -74.006 }
 }
 
-export function QuickChartAttachmentGenerator() {
+export interface QuickChartAttachmentGeneratorProps {
+  initialBirthInfo?: {
+    name?: string | null
+    year?: number
+    month?: number
+    day?: number
+    hour?: number
+    minute?: number
+    latitude?: number
+    longitude?: number
+    locationName?: string
+  }
+}
+
+export function QuickChartAttachmentGenerator({
+  initialBirthInfo,
+}: QuickChartAttachmentGeneratorProps = {}) {
   const router = useRouter()
   const [data, setData] = useState<ContextCardData>(DEMO_CARD_DATA)
   const [format, setFormat] = useState<ExportFormat>('md')
@@ -110,8 +126,31 @@ export function QuickChartAttachmentGenerator() {
   const [calculating, setCalculating] = useState(false)
   const [showForm, setShowForm] = useState(false)
 
-  const [charts, setCharts] = useState<UserChartProfile[]>([
-    {
+  const initialPrimary = useMemo<UserChartProfile>(() => {
+    if (initialBirthInfo && initialBirthInfo.year) {
+      const m = (initialBirthInfo.month ?? 0) + 1
+      const d = initialBirthInfo.day ?? 1
+      const h = initialBirthInfo.hour ?? 12
+      const min = initialBirthInfo.minute ?? 0
+      const dateStr = `${initialBirthInfo.year}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`
+      const timeStr = `${String(h).padStart(2, '0')}:${String(min).padStart(2, '0')}`
+      return {
+        id: 'primary',
+        chartName: initialBirthInfo.name
+          ? `${initialBirthInfo.name}'s Chart`
+          : 'Primary Birth Chart',
+        birthDate: dateStr,
+        birthTime: timeStr,
+        birthLocation: {
+          name: initialBirthInfo.locationName || 'Saved Birth Location',
+          lat: initialBirthInfo.latitude ?? 40.7128,
+          lon: initialBirthInfo.longitude ?? -74.006,
+        },
+        isPrimary: true,
+        data: DEMO_CARD_DATA,
+      }
+    }
+    return {
       id: 'demo',
       chartName: 'Primary Birth Chart',
       birthDate: '1990-06-01',
@@ -119,9 +158,11 @@ export function QuickChartAttachmentGenerator() {
       birthLocation: { name: 'Brooklyn, NY, USA', lat: 40.6782, lon: -73.9442 },
       isPrimary: true,
       data: DEMO_CARD_DATA,
-    },
-  ])
-  const [selectedChartIds, setSelectedChartIds] = useState<string[]>(['demo'])
+    }
+  }, [initialBirthInfo])
+
+  const [charts, setCharts] = useState<UserChartProfile[]>([initialPrimary])
+  const [selectedChartIds, setSelectedChartIds] = useState<string[]>([initialPrimary.id])
 
   // Form Inputs
   const [formName, setFormName] = useState('Partner / Second Chart')

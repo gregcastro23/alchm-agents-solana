@@ -157,13 +157,16 @@ export function ProfileYieldPanel({ initialWallet }: Props) {
         }
 
         const distribution = data?.distribution || {}
-        const spirit = Number(distribution.spirit || 0)
+        const sp = Number(distribution.spirit ?? distribution.Spirit ?? 0).toFixed(2)
+        const es = Number(distribution.essence ?? distribution.Essence ?? 0).toFixed(2)
+        const ma = Number(distribution.matter ?? distribution.Matter ?? 0).toFixed(2)
+        const su = Number(distribution.substance ?? distribution.Substance ?? 0).toFixed(2)
         setMessages(prev => [
           ...prev,
           {
             site,
             kind: 'success',
-            text: `Yield harvested: +${spirit.toFixed(2)} each of Spirit, Essence, Matter, and Substance.`,
+            text: `Yield harvested (12.00 ESMS): +${sp} Spirit, +${es} Essence, +${ma} Matter, +${su} Substance.`,
           },
         ])
       } catch (err) {

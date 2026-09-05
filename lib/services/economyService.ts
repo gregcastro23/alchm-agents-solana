@@ -16,6 +16,7 @@ import {
   resolveAgentNatalData,
   validateLedgerClamp,
 } from '@/lib/services/discriminant-faucet'
+import { generateAccurateHoroscope } from '@/lib/monica/horoscope-generator'
 
 export type TransactionSourceType =
   | 'agents_yield'
@@ -108,22 +109,134 @@ export class EconomyService {
   }
 
   /**
+   * Helper to resolve the most authentic available natal chart data for a user,
+   * checking user_profiles, user_natal_charts, and profiles.birthInfo in priority order.
+   */
+  static async resolveUserNatalData(userId: string, userEmail?: string | null) {
+    const [profile, natalChart, legacyProfile] = await Promise.all([
+      prisma.user_profiles
+        ? prisma.user_profiles
+            .findUnique({
+              where: { userId },
+              select: {
+                dominantElement: true,
+                natalPositions: true,
+                natalChart: true,
+                monicaConstant: true,
+              },
+            })
+            .catch(() => null)
+        : Promise.resolve(null),
+      prisma.user_natal_charts
+        ? prisma.user_natal_charts
+            .findFirst({
+              where: { userId, isPrimary: true },
+              select: {
+                dominantElement: true,
+                spiritScore: true,
+                essenceScore: true,
+                matterScore: true,
+                substanceScore: true,
+                monicaConstant: true,
+                planets: true,
+              },
+            })
+            .then(
+              res =>
+                res ||
+                (prisma.user_natal_charts
+                  ? prisma.user_natal_charts.findFirst({
+                      where: { userId },
+                      select: {
+                        dominantElement: true,
+                        spiritScore: true,
+                        essenceScore: true,
+                        matterScore: true,
+                        substanceScore: true,
+                        monicaConstant: true,
+                        planets: true,
+                      },
+                    })
+                  : null)
+            )
+            .catch(() => null)
+        : Promise.resolve(null),
+      prisma.profiles
+        ? prisma.profiles
+            .findUnique({
+              where: { userId },
+              select: {
+                birthInfo: true,
+              },
+            })
+            .catch(() => null)
+        : Promise.resolve(null),
+    ])
+
+    let mergedProfile: any = profile ? { ...profile } : null
+
+    // If user_natal_charts has explicit scores, prefer/merge them
+    if (natalChart) {
+      mergedProfile = {
+        ...mergedProfile,
+        dominantElement: mergedProfile?.dominantElement || natalChart.dominantElement,
+        spiritScore: natalChart.spiritScore,
+        essenceScore: natalChart.essenceScore,
+        matterScore: natalChart.matterScore,
+        substanceScore: natalChart.substanceScore,
+        monicaConstant: mergedProfile?.monicaConstant ?? natalChart.monicaConstant,
+        planets:
+          mergedProfile?.natalChart || mergedProfile?.natalPositions
+            ? undefined
+            : natalChart.planets,
+      }
+    }
+
+    // If no chart or scores yet, but profiles.birthInfo is present, generate horoscope
+    if (
+      !mergedProfile?.spiritScore &&
+      !mergedProfile?.natalPositions &&
+      !mergedProfile?.natalChart &&
+      legacyProfile?.birthInfo
+    ) {
+      try {
+        const b = legacyProfile.birthInfo as any
+        if (
+          typeof b?.year === 'number' &&
+          typeof b?.month === 'number' &&
+          typeof b?.day === 'number'
+        ) {
+          const horoscope = generateAccurateHoroscope({
+            year: b.year,
+            month: b.month + 1,
+            day: b.day,
+            hour: b.hour ?? 12,
+            minute: b.minute ?? 0,
+            latitude: b.latitude ?? 0,
+            longitude: b.longitude ?? 0,
+          })
+          mergedProfile = {
+            ...mergedProfile,
+            natalChart: horoscope,
+          }
+        }
+      } catch (e) {
+        console.warn('[EconomyService] Could not generate horoscope from birthInfo:', e)
+      }
+    }
+
+    const identifier = userEmail?.toLowerCase() || userId
+    return resolveAgentNatalData(identifier, mergedProfile || undefined)
+  }
+
+  /**
    * Claim the daily Kitchen-side yield. Mirrors `claimAgentsYield` but bumps
    * `lastDailyClaimAt` and tags transactions as `kitchen_daily_yield`.
    * Modulated by authentic natal chart ratios and celestial transits (ADR-014/ADR-015).
    */
   static async claimKitchenYield(userId: string) {
     // 1. Pre-transaction computation (outside row locks)
-    const [profile, user, supply] = await Promise.all([
-      prisma.user_profiles.findUnique({
-        where: { userId },
-        select: {
-          dominantElement: true,
-          natalPositions: true,
-          natalChart: true,
-          monicaConstant: true,
-        },
-      }),
+    const [user, supply] = await Promise.all([
       prisma.users.findUnique({
         where: { id: userId },
         select: { email: true },
@@ -131,8 +244,7 @@ export class EconomyService {
       getLiveNetworkSupply(prisma),
     ])
 
-    const identifier = user?.email?.toLowerCase() || userId
-    const natalData = resolveAgentNatalData(identifier, profile || undefined)
+    const natalData = await EconomyService.resolveUserNatalData(userId, user?.email)
     const transitSky = getLiveTransitSky()
     const yieldResult = computeDiscriminantDailyYield(natalData, transitSky, supply)
 
@@ -209,16 +321,7 @@ export class EconomyService {
 
   static async claimAgentsYield(userId: string) {
     // 1. Pre-transaction computation (outside row locks)
-    const [profile, user, supply] = await Promise.all([
-      prisma.user_profiles.findUnique({
-        where: { userId },
-        select: {
-          dominantElement: true,
-          natalPositions: true,
-          natalChart: true,
-          monicaConstant: true,
-        },
-      }),
+    const [user, supply] = await Promise.all([
       prisma.users.findUnique({
         where: { id: userId },
         select: { email: true },
@@ -226,8 +329,7 @@ export class EconomyService {
       getLiveNetworkSupply(prisma),
     ])
 
-    const identifier = user?.email?.toLowerCase() || userId
-    const natalData = resolveAgentNatalData(identifier, profile || undefined)
+    const natalData = await EconomyService.resolveUserNatalData(userId, user?.email)
     const transitSky = getLiveTransitSky()
     const yieldResult = computeDiscriminantDailyYield(natalData, transitSky, supply)
 
