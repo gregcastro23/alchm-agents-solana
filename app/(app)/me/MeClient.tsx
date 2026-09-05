@@ -5,8 +5,8 @@ import Link from 'next/link'
 import Image from 'next/image'
 import dynamic from 'next/dynamic'
 import type { ZodiacTheme } from '@/lib/zodiac-utils'
-import type { ProfileYieldState } from '@/lib/profile-yield'
 import { ProfileYieldPanel } from '@/components/profile/ProfileYieldPanel'
+import { QuickChartAttachmentGenerator } from '@/components/landing/quick-chart-attachment-generator'
 import {
   Compass,
   Users,
@@ -1367,6 +1367,31 @@ export function MeClient({
           </section>
         </>
       )}
+
+      {/* Personal Chart Context Attachment Generator */}
+      <div className="me-section-title">
+        <h2>Personal Chart Context</h2>
+        <p>
+          Export your full astrological and alchemical context (.md, .txt, .json) for AI agents and
+          LLM chats
+        </p>
+        <div className="divider" />
+      </div>
+
+      <section className="max-w-[1440px] mx-auto px-4 md:px-8 mb-12">
+        <QuickChartAttachmentGenerator
+          initialBirthInfo={{
+            name: profileName || user.name || 'You',
+            year: birthInfo.year,
+            month: birthInfo.month,
+            day: birthInfo.day,
+            hour: birthInfo.hour,
+            minute: birthInfo.minute,
+            latitude: birthInfo.latitude,
+            longitude: birthInfo.longitude,
+          }}
+        />
+      </section>
 
       {/* Footer */}
       <footer className="me-footer">

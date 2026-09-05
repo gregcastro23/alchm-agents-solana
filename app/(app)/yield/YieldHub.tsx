@@ -156,12 +156,17 @@ export default function YieldHub({ user }: { user: YieldUser | null }) {
         } else if (!res.ok) {
           throw new Error(data.error || `Daily ESMS Yield claim failed (${res.status})`)
         } else {
+          const dist = data.distribution || {}
+          const sp = Number(dist.spirit ?? dist.Spirit ?? 0).toFixed(2)
+          const es = Number(dist.essence ?? dist.Essence ?? 0).toFixed(2)
+          const ma = Number(dist.matter ?? dist.Matter ?? 0).toFixed(2)
+          const su = Number(dist.substance ?? dist.Substance ?? 0).toFixed(2)
           setClaimStatuses(prev => [
             ...prev,
             {
               site,
               kind: 'success',
-              message: `Yield harvested: +${Number(data.distribution?.spirit || 0).toFixed(2)} each of Spirit, Essence, Matter, and Substance.`,
+              message: `Yield harvested (12.00 ESMS): +${sp} Spirit, +${es} Essence, +${ma} Matter, +${su} Substance.`,
             },
           ])
         }
