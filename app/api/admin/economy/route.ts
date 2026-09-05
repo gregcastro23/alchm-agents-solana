@@ -3,14 +3,19 @@ import { adminErrorResponse, requireAdmin } from '@/lib/admin-auth'
 import { prisma } from '@/lib/db'
 import { alertIf, sortAlerts, unreadableAlert, type AdminAlert } from '@/lib/admin/alerts'
 import { minutesSince, percent, round, toAmount, toIso } from '@/lib/admin/serialize'
+import { Prisma } from '@prisma/client'
 import {
   AGENT_OPERATION_COSTS,
   DAILY_ESMS_YIELD,
   DUEL_YIELD_DAILY_CAP,
   DUEL_YIELD_REWARD,
   TOKEN_TYPES,
+  AXIS_FLOOR,
+  Y_MIN,
+  Y_MAX,
 } from '@/lib/economy-config'
 import { inspectSolanaOutbox } from '@/lib/solana/reconciliation'
+import { resolveAgentNatalData, getLiveNetworkSupply } from '@/lib/services/discriminant-faucet'
 
 export const dynamic = 'force-dynamic'
 
@@ -71,7 +76,15 @@ export async function GET(_req: NextRequest) {
 
   // ── Supply: who holds ESMS, and how much ─────────────────────────────────
   const supply = await section('Token balances', alerts, async () => {
-    const [holders, totals, claimedToday, claimedTodayAgents] = await Promise.all([
+    const [
+      holders,
+      totals,
+      claimedToday,
+      claimedTodayAgents,
+      totalProfiles,
+      sampleProfiles,
+      liveSupply,
+    ] = await Promise.all([
       prisma.tokenBalance.count(),
       prisma.tokenBalance.aggregate({
         _sum: { spirit: true, essence: true, matter: true, substance: true },
@@ -80,7 +93,40 @@ export async function GET(_req: NextRequest) {
       }),
       prisma.tokenBalance.count({ where: { lastDailyClaimAt: { gte: todayStart } } }),
       prisma.tokenBalance.count({ where: { lastDailyClaimAgentsAt: { gte: todayStart } } }),
+      prisma.user_profiles.count(),
+      prisma.user_profiles.findMany({
+        take: 200,
+        select: {
+          userId: true,
+          dominantElement: true,
+          natalPositions: true,
+          natalChart: true,
+          monicaConstant: true,
+        },
+      }),
+      getLiveNetworkSupply(prisma),
     ])
+
+    if (liveSupply.isDegraded) {
+      alertIf(alerts, true, {
+        id: 'economy:faucet-supply-degraded',
+        severity: 'critical',
+        source: 'economy',
+        title: 'Live Network Supply Degraded (Frozen Baseline Active)',
+        detail:
+          'Failed to aggregate live token supply from database. Faucet is falling back to static baseline LIVE_NETWORK_SUPPLY.',
+        href: 'tab:economy',
+        remediation:
+          'Check database connectivity and token_balances table aggregation performance.',
+      })
+    }
+
+    const sampleList = Array.isArray(sampleProfiles) ? sampleProfiles : []
+    const fallbackCount = sampleList.filter(
+      p => resolveAgentNatalData(p?.userId || '', p as any).isNeutralFallback
+    ).length
+    const neutralFallbackRatePct =
+      sampleList.length > 0 ? percent(fallbackCount, sampleList.length) : 0
 
     const perAxis = AXES.map(axis => ({
       axis,
@@ -119,7 +165,13 @@ export async function GET(_req: NextRequest) {
       dailyClaims: {
         humansToday: claimedToday,
         agentsToday: claimedTodayAgents,
-        yieldPerClaim: DAILY_ESMS_YIELD,
+        yieldPerClaim: {
+          min: Y_MIN,
+          max: Y_MAX,
+          base: DAILY_ESMS_YIELD,
+          axisFloor: AXIS_FLOOR,
+        },
+        neutralFallbackRatePct,
         claimRatePct: percent(claimedToday, holders),
       },
     }
@@ -127,7 +179,7 @@ export async function GET(_req: NextRequest) {
 
   // ── Flow: what minted ESMS and what burned it ────────────────────────────
   const flow = await section('Token transactions', alerts, async () => {
-    const [bySource24h, bySource7d, count24h, count7d, recent] = await Promise.all([
+    const [bySource24h, bySource7d, count24h, count7d, recent, floorBreach] = await Promise.all([
       prisma.tokenTransaction.groupBy({
         by: ['sourceType'],
         where: { createdAt: { gte: since24h } },
@@ -156,7 +208,25 @@ export async function GET(_req: NextRequest) {
           createdAt: true,
         },
       }),
+      prisma.tokenTransaction.findFirst({
+        where: {
+          sourceType: { in: ['kitchen_daily_yield', 'agents_daily_yield'] },
+          createdAt: { gte: since24h },
+          amount: { lt: new Prisma.Decimal(AXIS_FLOOR) },
+        },
+        select: { id: true, amount: true, tokenType: true, userId: true },
+      }),
     ])
+
+    alertIf(alerts, Boolean(floorBreach), {
+      id: 'economy:gas-floor-breach',
+      severity: 'critical',
+      source: 'economy',
+      title: 'Operational Gas Floor Breach (INV-2)',
+      detail: `Daily claim transaction yielded ${floorBreach?.amount} on ${floorBreach?.tokenType} < AXIS_FLOOR (${AXIS_FLOOR})`,
+      href: 'tab:economy',
+      remediation: 'Investigate discriminant faucet allocation and per-axis floor enforcement',
+    })
 
     const shape = (
       rows: Array<{ sourceType: string; _sum: { amount: unknown }; _count: { _all: number } }>

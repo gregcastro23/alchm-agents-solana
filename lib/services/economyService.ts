@@ -2,11 +2,20 @@ import { prisma } from '@/lib/db'
 import { Prisma } from '@prisma/client'
 import {
   BASE_AGENTS_YIELD,
-  PREMIUM_MULTIPLIER,
   TOKEN_TYPES,
   TokenType,
   AGENT_OPERATION_COSTS,
+  AXIS_FLOOR,
+  Y_MIN,
+  Y_MAX,
 } from '@/lib/economy-config'
+import {
+  computeDiscriminantDailyYield,
+  getLiveTransitSky,
+  getLiveNetworkSupply,
+  resolveAgentNatalData,
+  validateLedgerClamp,
+} from '@/lib/services/discriminant-faucet'
 
 export type TransactionSourceType =
   | 'agents_yield'
@@ -100,11 +109,43 @@ export class EconomyService {
 
   /**
    * Claim the daily Kitchen-side yield. Mirrors `claimAgentsYield` but bumps
-   * `lastDailyClaimAt` and tags transactions as `kitchen_daily_yield` so the
-   * desktop and `/yield` page hand out the same amount with the same multiplier
-   * rules as the Agents-side claim.
+   * `lastDailyClaimAt` and tags transactions as `kitchen_daily_yield`.
+   * Modulated by authentic natal chart ratios and celestial transits (ADR-014/ADR-015).
    */
-  static async claimKitchenYield(userId: string, isPremium: boolean) {
+  static async claimKitchenYield(userId: string) {
+    // 1. Pre-transaction computation (outside row locks)
+    const [profile, user, supply] = await Promise.all([
+      prisma.user_profiles.findUnique({
+        where: { userId },
+        select: {
+          dominantElement: true,
+          natalPositions: true,
+          natalChart: true,
+          monicaConstant: true,
+        },
+      }),
+      prisma.users.findUnique({
+        where: { id: userId },
+        select: { email: true },
+      }),
+      getLiveNetworkSupply(prisma),
+    ])
+
+    const identifier = user?.email?.toLowerCase() || userId
+    const natalData = resolveAgentNatalData(identifier, profile || undefined)
+    const transitSky = getLiveTransitSky()
+    const yieldResult = computeDiscriminantDailyYield(natalData, transitSky, supply)
+
+    // Ledger-Boundary Clamp (Phase 2 invariant safety)
+    validateLedgerClamp(yieldResult)
+
+    const amountsObj: Record<TokenType, number> = {
+      Spirit: yieldResult.spirit,
+      Essence: yieldResult.essence,
+      Matter: yieldResult.matter,
+      Substance: yieldResult.substance,
+    }
+
     try {
       return await prisma.$transaction(async tx => {
         const balances = await tx.tokenBalance.findUnique({ where: { userId } })
@@ -112,22 +153,22 @@ export class EconomyService {
           throw new Error('Already claimed today')
         }
 
-        const total = BASE_AGENTS_YIELD * (isPremium ? PREMIUM_MULTIPLIER : 1)
-        const perType = total / 4
         const dateStr = new Date().toISOString().split('T')[0]
         const distribution: Record<string, number> = {}
         const transactionGroupId = crypto.randomUUID()
 
         for (const token of TOKEN_TYPES) {
-          distribution[token] = perType
+          const amt = amountsObj[token]
+          distribution[token] = amt
+          distribution[token.toLowerCase()] = amt
           await tx.tokenTransaction.create({
             data: {
               transactionGroupId,
               userId,
               tokenType: token,
-              amount: new Prisma.Decimal(perType),
+              amount: new Prisma.Decimal(amt),
               sourceType: 'kitchen_daily_yield',
-              description: 'ESMS Yield from Kitchen',
+              description: 'ESMS Yield from Kitchen (Chart-Ratio Resonance)',
               idempotencyKey: `daily:kitchen:${userId}:${dateStr}:${token}`,
               createdAt: new Date(),
             },
@@ -137,10 +178,10 @@ export class EconomyService {
         const updated = await tx.tokenBalance.update({
           where: { userId },
           data: {
-            spirit: { increment: perType },
-            essence: { increment: perType },
-            matter: { increment: perType },
-            substance: { increment: perType },
+            spirit: { increment: amountsObj.Spirit },
+            essence: { increment: amountsObj.Essence },
+            matter: { increment: amountsObj.Matter },
+            substance: { increment: amountsObj.Substance },
             lastDailyClaimAt: new Date(),
             updatedAt: new Date(),
           },
@@ -166,42 +207,64 @@ export class EconomyService {
     }
   }
 
-  static async claimAgentsYield(userId: string, isPremium: boolean) {
+  static async claimAgentsYield(userId: string) {
+    // 1. Pre-transaction computation (outside row locks)
+    const [profile, user, supply] = await Promise.all([
+      prisma.user_profiles.findUnique({
+        where: { userId },
+        select: {
+          dominantElement: true,
+          natalPositions: true,
+          natalChart: true,
+          monicaConstant: true,
+        },
+      }),
+      prisma.users.findUnique({
+        where: { id: userId },
+        select: { email: true },
+      }),
+      getLiveNetworkSupply(prisma),
+    ])
+
+    const identifier = user?.email?.toLowerCase() || userId
+    const natalData = resolveAgentNatalData(identifier, profile || undefined)
+    const transitSky = getLiveTransitSky()
+    const yieldResult = computeDiscriminantDailyYield(natalData, transitSky, supply)
+
+    // Ledger-Boundary Clamp (Phase 2 invariant safety)
+    validateLedgerClamp(yieldResult)
+
+    const amountsObj: Record<TokenType, number> = {
+      Spirit: yieldResult.spirit,
+      Essence: yieldResult.essence,
+      Matter: yieldResult.matter,
+      Substance: yieldResult.substance,
+    }
+
     try {
       return await prisma.$transaction(async tx => {
         // Re-check hasClaimedAgentsYieldToday within transaction
         const balances = await tx.tokenBalance.findUnique({ where: { userId } })
-        if (balances?.lastDailyClaimAgentsAt) {
-          const lastClaim = new Date(balances.lastDailyClaimAgentsAt)
-          const today = new Date()
-          if (
-            lastClaim.getUTCFullYear() === today.getUTCFullYear() &&
-            lastClaim.getUTCMonth() === today.getUTCMonth() &&
-            lastClaim.getUTCDate() === today.getUTCDate()
-          ) {
-            throw new Error('Already claimed today')
-          }
+        if (isSameUtcDay(balances?.lastDailyClaimAgentsAt?.toISOString())) {
+          throw new Error('Already claimed today')
         }
 
-        const total = BASE_AGENTS_YIELD * (isPremium ? PREMIUM_MULTIPLIER : 1)
-        const perType = total / 4
         const dateStr = new Date().toISOString().split('T')[0]
-
         const distribution: Record<string, number> = {}
-
-        // Group ID for these transactions
         const transactionGroupId = crypto.randomUUID()
 
         for (const token of TOKEN_TYPES) {
-          distribution[token] = perType
+          const amt = amountsObj[token]
+          distribution[token] = amt
+          distribution[token.toLowerCase()] = amt
           await tx.tokenTransaction.create({
             data: {
               transactionGroupId,
               userId,
               tokenType: token,
-              amount: new Prisma.Decimal(perType),
-              sourceType: 'agents_yield',
-              description: 'ESMS Yield from Agents',
+              amount: new Prisma.Decimal(amt),
+              sourceType: 'agents_daily_yield',
+              description: 'ESMS Yield from Agents (Chart-Ratio Resonance)',
               idempotencyKey: `daily:agents:${userId}:${dateStr}:${token}`,
               createdAt: new Date(),
             },
@@ -211,10 +274,10 @@ export class EconomyService {
         const updated = await tx.tokenBalance.update({
           where: { userId },
           data: {
-            spirit: { increment: perType },
-            essence: { increment: perType },
-            matter: { increment: perType },
-            substance: { increment: perType },
+            spirit: { increment: amountsObj.Spirit },
+            essence: { increment: amountsObj.Essence },
+            matter: { increment: amountsObj.Matter },
+            substance: { increment: amountsObj.Substance },
             lastDailyClaimAgentsAt: new Date(),
             updatedAt: new Date(),
           },

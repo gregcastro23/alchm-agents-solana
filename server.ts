@@ -21,7 +21,14 @@ import {
   computePower,
   type ElementVector,
 } from './lib/alchemical-kinetics'
-import { DAILY_ESMS_YIELD } from '@/lib/economy-config'
+import { DAILY_ESMS_YIELD, AXIS_FLOOR, Y_MIN, Y_MAX } from './lib/economy-config'
+import {
+  computeDiscriminantDailyYield,
+  getLiveTransitSky,
+  getLiveNetworkSupply,
+  resolveAgentNatalData,
+  validateLedgerClamp,
+} from './lib/services/discriminant-faucet'
 
 const DATABASE_URL = process.env.RAILWAY_DATABASE_URL || process.env.DATABASE_URL
 const pool = DATABASE_URL ? new Pool({ connectionString: DATABASE_URL }) : null
@@ -1822,11 +1829,55 @@ async function getAccountSnapshots(userId: string) {
 }
 
 async function claimDailyYield(userId: string, site: AccountSite) {
+  // 1. Pre-transaction computation (outside row locks)
+  let profileRow: any = null
+  let userRow: any = null
+
+  if (pool) {
+    try {
+      const profileRes = await pool.query(
+        `SELECT "dominantElement", "natalPositions", "natalChart", "monicaConstant" FROM "user_profiles" WHERE "userId" = $1 LIMIT 1`,
+        [userId]
+      )
+      profileRow = profileRes.rows[0]
+      const userRes = await pool.query(`SELECT email FROM "users" WHERE id = $1 LIMIT 1`, [userId])
+      userRow = userRes.rows[0]
+    } catch {
+      try {
+        const profileRes = await pool.query(
+          `SELECT dominant_element, natal_positions, natal_chart, monica_constant FROM user_profiles WHERE user_id = $1 LIMIT 1`,
+          [userId]
+        )
+        profileRow = profileRes.rows[0]
+        const userRes = await pool.query(`SELECT email FROM users WHERE id = $1 LIMIT 1`, [userId])
+        userRow = userRes.rows[0]
+      } catch {}
+    }
+  }
+
+  const profile = profileRow
+    ? {
+        dominantElement: profileRow.dominantElement ?? profileRow.dominant_element,
+        natalPositions: profileRow.natalPositions ?? profileRow.natal_positions,
+        natalChart: profileRow.natalChart ?? profileRow.natal_chart,
+        monicaConstant: profileRow.monicaConstant ?? profileRow.monica_constant,
+      }
+    : undefined
+
+  const identifier = userRow?.email?.toLowerCase() || userId
+  const natalData = resolveAgentNatalData(identifier, profile)
+  const transitSky = getLiveTransitSky()
+  const supply = await getLiveNetworkSupply(pool)
+  const yieldResult = computeDiscriminantDailyYield(natalData, transitSky, supply)
+
+  // Ledger-Boundary Clamp (Phase 2 invariant safety)
+  validateLedgerClamp(yieldResult)
+
   const distribution = {
-    spirit: DAILY_YIELD_PER_TYPE,
-    essence: DAILY_YIELD_PER_TYPE,
-    matter: DAILY_YIELD_PER_TYPE,
-    substance: DAILY_YIELD_PER_TYPE,
+    spirit: yieldResult.spirit,
+    essence: yieldResult.essence,
+    matter: yieldResult.matter,
+    substance: yieldResult.substance,
   }
 
   if (!pool || userId === DEV_DESKTOP_USER_ID) {
@@ -1918,8 +1969,7 @@ async function claimDailyYield(userId: string, site: AccountSite) {
             transaction_group_id, user_id, token_type, amount, source_type, description,
             idempotency_key, created_at
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-          ON CONFLICT (idempotency_key) DO NOTHING;
+          VALUES ($1, $2, $3, $4, $5, $6, $7, NOW());
         `,
         [
           transactionGroupId,
@@ -1968,8 +2018,15 @@ async function claimDailyYield(userId: string, site: AccountSite) {
       accounts,
       account: accounts.find(account => account.site === site),
     }
-  } catch (error) {
+  } catch (error: any) {
     await client.query('ROLLBACK').catch(() => {})
+    if (
+      error.code === '23505' ||
+      error.message?.includes('idempotency_key') ||
+      error.message?.includes('Already claimed')
+    ) {
+      return { ok: false, status: 409, message: `${siteLabel(site)} yield already claimed today.` }
+    }
     throw error
   } finally {
     client.release()

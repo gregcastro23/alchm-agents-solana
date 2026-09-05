@@ -101,7 +101,9 @@ export class KmsSolanaSigner implements AsolSolanaWallet {
         if (!client) {
           try {
             // Dynamic import of @aws-sdk/client-kms if installed
-            const { KMSClient, SignCommand } = await import('@aws-sdk/client-kms' as string)
+            const { KMSClient, SignCommand } = await import(
+              /* webpackIgnore: true */ '@aws-sdk/client-kms' as string
+            )
             const kms = new KMSClient({
               region: process.env.AWS_REGION ?? process.env.AWS_DEFAULT_REGION ?? 'us-east-1',
             })

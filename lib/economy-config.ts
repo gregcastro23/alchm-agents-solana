@@ -1,11 +1,9 @@
 /**
- * One free daily claim: 6 ESMS per axis. This funds three neutral consultations
- * or two even at the maximum elemental clash markup; resonance stretches it
- * further.
+ * One free daily claim: 3 ESMS per axis (12 total under neutral conditions).
+ * Modulated by authentic natal chart ratios and celestial transits.
  */
-export const DAILY_ESMS_YIELD = 24
+export const DAILY_ESMS_YIELD = 12
 export const BASE_AGENTS_YIELD = DAILY_ESMS_YIELD
-export const PREMIUM_MULTIPLIER = 2.0
 export const TOKEN_TYPES = ['Spirit', 'Essence', 'Matter', 'Substance'] as const
 export type TokenType = (typeof TOKEN_TYPES)[number]
 export type EsmsCost = Record<TokenType, number>
@@ -18,8 +16,8 @@ export type EsmsCost = Record<TokenType, number>
 export const AGENT_ACTIVATION_THRESHOLD = 0.4
 
 /**
- * Base daily yield amount credited to each agentic user during the automated
- * daily claim cron (`/api/cron/agents/claim-yield`), evenly split across axes.
+ * Base daily yield amount (12 ESMS) credited to each agentic user during the automated
+ * daily claim cron (`/api/cron/agents/claim-yield`), modulated by ADR-014 chart ratios.
  */
 export const AGENT_DAILY_YIELD = DAILY_ESMS_YIELD
 
@@ -50,6 +48,26 @@ export const UNIFIED_CHAT_BASE_COST: EsmsCost = {
   Matter: 0.2,
   Substance: 0.2,
 }
+
+/**
+ * ADR-015: Operational gas floor. Derived dynamically from chat pricing
+ * to guarantee that every daily claim unconditionally funds at least one full chat turn,
+ * preventing 0.0000 axis collapse (INV-2).
+ */
+export const AXIS_FLOOR = Math.max(...Object.values(UNIFIED_CHAT_BASE_COST)) // 0.30
+
+/**
+ * ADR-015 Phase 1 & 2 Faucet Band:
+ * Conserved strictly at 12.0000 tokens during Phase 1 & 2.
+ * Magnitude untethering is enabled in Phase 4.
+ */
+export const FAUCET_BAND = {
+  min: 12.0,
+  max: 12.0,
+} as const
+
+export const Y_MIN = FAUCET_BAND.min
+export const Y_MAX = FAUCET_BAND.max
 
 /**
  * The Oracle Chamber — High-Consciousness AI consultation session (20 ESMS).

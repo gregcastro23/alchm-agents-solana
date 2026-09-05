@@ -1,5 +1,4 @@
 // @vitest-environment node
-
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { Keypair, PublicKey } from '@solana/web3.js'
 import nacl from 'tweetnacl'

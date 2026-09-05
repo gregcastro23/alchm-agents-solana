@@ -84,7 +84,6 @@ export function TokenHUD() {
       const distribution = (data.distribution || {}) as Partial<
         Record<TokenType | Lowercase<TokenType>, number>
       >
-      const basePerAxis = DAILY_ESMS_YIELD / 4
       const lowercaseToken: Record<TokenType, Lowercase<TokenType>> = {
         Spirit: 'spirit',
         Essence: 'essence',
@@ -92,10 +91,10 @@ export function TokenHUD() {
         Substance: 'substance',
       }
       const amount = (token: TokenType) =>
-        distribution[token] ?? distribution[lowercaseToken[token]] ?? basePerAxis
+        distribution[token] ?? distribution[lowercaseToken[token]] ?? 0
       toast({
         title: 'Yield Harvested',
-        description: `Received ${amount('Spirit')} Spirit, ${amount('Essence')} Essence, ${amount('Matter')} Matter, ${amount('Substance')} Substance.${data.isPremium ? ' A 2.0× yield multiplier was applied.' : ''}`,
+        description: `Received ${amount('Spirit')} Spirit, ${amount('Essence')} Essence, ${amount('Matter')} Matter, ${amount('Substance')} Substance.`,
       })
     } catch (error) {
       toast({
