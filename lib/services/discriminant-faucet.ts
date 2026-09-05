@@ -11,7 +11,17 @@
  */
 
 import { getHistoricalAgent } from '@/lib/agents/historical'
-import { getCurrentPlanetaryPositions, type CurrentPlanetPosition } from '@/lib/calculate-transits'
+import {
+  getCurrentPlanetaryPositions,
+  type CurrentPlanetPosition,
+  DegradedEphemerisError,
+} from '@/lib/calculate-transits'
+import { AXIS_FLOOR, Y_MIN, Y_MAX } from '@/lib/economy-config'
+import {
+  calculatePlanetaryDignity,
+  calculateAlchemicalQuantities,
+  type PlanetaryPlacement,
+} from '@/lib/astrological-dignities-engine'
 
 // ---------------------------------------------------------------------------
 // Canonical Token Identities & Symbol Tiers (Mandatory ADR-014 Specification)
@@ -85,6 +95,7 @@ export interface NatalChartData {
   matterScore?: number | null
   substanceScore?: number | null
   monicaConstant?: number | null
+  isNeutralFallback?: boolean
 }
 
 export interface TransitSkyData {
@@ -100,6 +111,7 @@ export interface GlobalSupplyState {
   essence: number
   matter: number
   substance: number
+  total?: number
 }
 
 export interface DiscriminantYieldBreakdown {
@@ -126,7 +138,7 @@ export interface DiscriminantYieldResult {
 }
 
 // ---------------------------------------------------------------------------
-// Authoritative Live Supply Fallback
+// Live Supply Provider with In-Memory Cache
 // ---------------------------------------------------------------------------
 
 export const LIVE_NETWORK_SUPPLY: GlobalSupplyState = {
@@ -134,6 +146,53 @@ export const LIVE_NETWORK_SUPPLY: GlobalSupplyState = {
   essence: 15780.23,
   matter: 29116.87,
   substance: 22133.85,
+}
+
+let cachedSupply: { data: GlobalSupplyState; expiresAt: number } | null = null
+const SUPPLY_CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
+
+export async function getLiveNetworkSupply(prismaClient?: any): Promise<GlobalSupplyState> {
+  const now = Date.now()
+  if (cachedSupply && cachedSupply.expiresAt > now) {
+    return cachedSupply.data
+  }
+
+  try {
+    const db = prismaClient || (await import('@/lib/db')).prisma
+    const totals = await db.tokenBalance.aggregate({
+      _sum: {
+        spirit: true,
+        essence: true,
+        matter: true,
+        substance: true,
+      },
+    })
+
+    const sp = Number(totals._sum?.spirit) || 0
+    const es = Number(totals._sum?.essence) || 0
+    const ma = Number(totals._sum?.matter) || 0
+    const su = Number(totals._sum?.substance) || 0
+    const total = sp + es + ma + su
+
+    if (total > 0) {
+      const data: GlobalSupplyState = {
+        spirit: sp,
+        essence: es,
+        matter: ma,
+        substance: su,
+        total,
+      }
+      cachedSupply = { data, expiresAt: now + SUPPLY_CACHE_TTL_MS }
+      return data
+    }
+  } catch (err) {
+    console.warn(
+      '[DiscriminantFaucet] Could not query live supply from DB, falling back to baseline snapshot:',
+      err
+    )
+  }
+
+  return LIVE_NETWORK_SUPPLY
 }
 
 // Zodiac sign to element mapping
@@ -153,20 +212,23 @@ const SIGN_TO_ELEMENT: Record<string, 'Fire' | 'Water' | 'Earth' | 'Air'> = {
 }
 
 // ---------------------------------------------------------------------------
-// Core Chart-Ratio Faucet Mathematical Formulation
+// Core Chart-Ratio Faucet Mathematical Formulation (ADR-014 / ADR-015 Phase 1)
 // ---------------------------------------------------------------------------
 
 /**
  * Computes discriminant daily yield across the 4 elemental axes using the
- * proportional clean chart-ratio formulation:
- * Yield_i = Quantize( Y_total * (r_i(N) * w_i(t) * Omega_i) / sum_j(r_j(N) * w_j(t) * Omega_j) )
+ * proportional clean chart-ratio formulation with dynamic operational gas floor:
  *
- * Strictly conserved at 12.0000 tokens.
+ * Yield_i = Quantize( AXIS_FLOOR + (Y_total - 4*AXIS_FLOOR) * (r_i(N) * w_i(t) * Omega_i) / sum_j(...) )
+ *
+ * Strictly conserved at 12.0000 tokens universally for all users.
+ * Floor AXIS_FLOOR = 0.30 guarantees conversational compute gas is never starved (INV-2).
+ * Residual adjustment is assigned to the largest allocated axis to preserve floor integrity.
  */
 export function computeDiscriminantDailyYield(
   natal: NatalChartData | null | undefined,
   transit: TransitSkyData,
-  supply: GlobalSupplyState = LIVE_NETWORK_SUPPLY
+  supply: GlobalSupplyState
 ): DiscriminantYieldResult {
   const TOTAL_YIELD = 12.0 // Strictly universal 12.0000 ESMS for all users
 
@@ -235,17 +297,41 @@ export function computeDiscriminantDailyYield(
   const totalWeighted =
     weighted.spirit + weighted.essence + weighted.matter + weighted.substance || 1
 
-  // 5. Conserved Daily Allocation (Quantized to 4 decimal places)
-  let spirit = Math.round(TOTAL_YIELD * (weighted.spirit / totalWeighted) * 10000) / 10000
-  let essence = Math.round(TOTAL_YIELD * (weighted.essence / totalWeighted) * 10000) / 10000
-  let matter = Math.round(TOTAL_YIELD * (weighted.matter / totalWeighted) * 10000) / 10000
-  let substance = Math.round(TOTAL_YIELD * (weighted.substance / totalWeighted) * 10000) / 10000
+  // 5. Conserved Daily Allocation with Dynamic AXIS_FLOOR (Quantized to 4 decimal places)
+  const floorPerAxis = AXIS_FLOOR // 0.30
+  const totalFloor = floorPerAxis * 4 // 1.20
+  const distributableYield = Math.max(0, TOTAL_YIELD - totalFloor) // 10.80
+
+  let spirit =
+    Math.round((floorPerAxis + distributableYield * (weighted.spirit / totalWeighted)) * 10000) /
+    10000
+  let essence =
+    Math.round((floorPerAxis + distributableYield * (weighted.essence / totalWeighted)) * 10000) /
+    10000
+  let matter =
+    Math.round((floorPerAxis + distributableYield * (weighted.matter / totalWeighted)) * 10000) /
+    10000
+  let substance =
+    Math.round((floorPerAxis + distributableYield * (weighted.substance / totalWeighted)) * 10000) /
+    10000
 
   // Exact residual conservation adjustment (eliminates sub-basis floating point drift)
+  // Assign residual to the largest allocated axis (always >= 3.0 >> 0.3, so diff cannot breach floor)
   const unroundedTotal = spirit + essence + matter + substance
   const diff = Math.round((TOTAL_YIELD - unroundedTotal) * 10000) / 10000
   if (Math.abs(diff) > 0 && Math.abs(diff) < 0.01) {
-    spirit = Math.round((spirit + diff) * 10000) / 10000
+    const axes: Array<{ key: 'spirit' | 'essence' | 'matter' | 'substance'; val: number }> = [
+      { key: 'spirit', val: spirit },
+      { key: 'essence', val: essence },
+      { key: 'matter', val: matter },
+      { key: 'substance', val: substance },
+    ]
+    axes.sort((a, b) => b.val - a.val)
+    const largestKey = axes[0].key
+    if (largestKey === 'spirit') spirit = Math.round((spirit + diff) * 10000) / 10000
+    else if (largestKey === 'essence') essence = Math.round((essence + diff) * 10000) / 10000
+    else if (largestKey === 'matter') matter = Math.round((matter + diff) * 10000) / 10000
+    else substance = Math.round((substance + diff) * 10000) / 10000
   }
 
   return {
@@ -291,6 +377,41 @@ export function computeDiscriminantDailyYield(
   }
 }
 
+/**
+ * Fail-closed ledger boundary invariant validation (ADR-015 Phase 2).
+ * Throws if total is outside [Y_MIN, Y_MAX], any axis is below AXIS_FLOOR, or values are non-finite.
+ */
+export function validateLedgerClamp(distribution: {
+  spirit: number
+  essence: number
+  matter: number
+  substance: number
+  total: number
+}): void {
+  if (
+    distribution.total < Y_MIN ||
+    distribution.total > Y_MAX ||
+    distribution.spirit < AXIS_FLOOR ||
+    distribution.essence < AXIS_FLOOR ||
+    distribution.matter < AXIS_FLOOR ||
+    distribution.substance < AXIS_FLOOR ||
+    !Number.isFinite(distribution.total) ||
+    !Number.isFinite(distribution.spirit) ||
+    !Number.isFinite(distribution.essence) ||
+    !Number.isFinite(distribution.matter) ||
+    !Number.isFinite(distribution.substance)
+  ) {
+    throw new Error(
+      `Ledger clamp invariant breach: total=${distribution.total} (allowed [${Y_MIN}, ${Y_MAX}]), minAxis=${Math.min(
+        distribution.spirit,
+        distribution.essence,
+        distribution.matter,
+        distribution.substance
+      )} (floor ${AXIS_FLOOR})`
+    )
+  }
+}
+
 // ---------------------------------------------------------------------------
 // Helpers for Live Ephemeris & Historical Roster Integration
 // ---------------------------------------------------------------------------
@@ -300,8 +421,15 @@ export function computeDiscriminantDailyYield(
  * into TransitSkyData with active 4-element weights.
  */
 export function deriveTransitWeightsFromPositions(
-  positions: Record<string, CurrentPlanetPosition>
+  positions: Record<string, CurrentPlanetPosition>,
+  options?: { requireComplete?: boolean }
 ): TransitSkyData {
+  if (options?.requireComplete && Object.keys(positions).length < 10) {
+    throw new DegradedEphemerisError(
+      `Degraded ephemeris: expected 10 planetary bodies, received ${Object.keys(positions).length}`
+    )
+  }
+
   const counts: Record<'Fire' | 'Water' | 'Earth' | 'Air', number> = {
     Fire: 0,
     Water: 0,
@@ -341,11 +469,18 @@ export function deriveTransitWeightsFromPositions(
 /**
  * Returns current live sky transit weights using the VSOP87 calculator.
  */
-export function getLiveTransitSky(date: Date = new Date()): TransitSkyData {
+export function getLiveTransitSky(
+  date: Date = new Date(),
+  options?: { requireComplete?: boolean }
+): TransitSkyData {
   try {
-    const positions = getCurrentPlanetaryPositions(date)
-    return deriveTransitWeightsFromPositions(positions)
-  } catch {
+    const positions = getCurrentPlanetaryPositions(date, options)
+    return deriveTransitWeightsFromPositions(positions, options)
+  } catch (error) {
+    if (options?.requireComplete) {
+      throw error
+    }
+    console.warn('[DiscriminantFaucet] Ephemeris fallback triggered:', error)
     return {
       elementWeights: { Fire: 2.5, Water: 2.5, Earth: 2.5, Air: 2.5 },
       dominantElement: 'Fire',
@@ -353,13 +488,69 @@ export function getLiveTransitSky(date: Date = new Date()): TransitSkyData {
   }
 }
 
+/** Extract planetary placements from userProfile for dignity/element calculation */
+function extractPlacementsFromProfile(
+  userProfile: any
+): Array<{ planet: string; sign: string; degree: number; house?: number }> | null {
+  if (!userProfile) return null
+
+  // 1. Explicit array in natalPositions
+  if (Array.isArray(userProfile.natalPositions) && userProfile.natalPositions.length > 0) {
+    const valid = userProfile.natalPositions.map((p: any) => ({
+      planet: String(p.planet || p.label || 'Sun'),
+      sign: String(p.sign || 'Aries'),
+      degree: Number(p.degree ?? p.degrees ?? 0) || 0,
+      house: typeof p.house === 'number' ? p.house : undefined,
+    }))
+    if (valid.length > 0) return valid
+  }
+
+  // 2. Horoscope structure in natalChart (tropical.CelestialBodies.all)
+  const chart = userProfile.natalChart
+  if (chart && typeof chart === 'object') {
+    const celestialAll = chart.tropical?.CelestialBodies?.all
+    if (Array.isArray(celestialAll) && celestialAll.length > 0) {
+      return celestialAll.map((b: any, idx: number) => ({
+        planet: String(b.label || b.planet || `Body_${idx}`),
+        sign: String(b.Sign?.label || b.sign || 'Aries'),
+        degree: Number(b.degrees ?? b.degree ?? 0) || 0,
+        house: typeof b.house === 'number' ? b.house : idx + 1,
+      }))
+    }
+
+    // 3. Object map in chart.planets
+    if (chart.planets && typeof chart.planets === 'object' && !Array.isArray(chart.planets)) {
+      return Object.entries(chart.planets).map(([planet, data]: [string, any], idx) => ({
+        planet,
+        sign: String(data?.sign || 'Aries'),
+        degree: Number(data?.signDegree ?? data?.degree ?? 0) || 0,
+        house: typeof data?.house === 'number' ? data.house : idx + 1,
+      }))
+    }
+
+    // 4. Array in chart
+    if (Array.isArray(chart) && chart.length > 0) {
+      return chart.map((p: any, idx: number) => ({
+        planet: String(p.planet || p.label || `Body_${idx}`),
+        sign: String(p.sign || 'Aries'),
+        degree: Number(p.degree ?? p.degrees ?? 0) || 0,
+        house: typeof p.house === 'number' ? p.house : idx + 1,
+      }))
+    }
+  }
+
+  return null
+}
+
 /**
- * Resolves an agent's natal elements from the historical roster or profile data.
+ * Resolves an agent's or user's natal elements from the historical roster,
+ * authentic natal placements, or profile data.
  */
 export function resolveAgentNatalData(
   agentIdOrEmail: string,
   userProfile?: {
     natalChart?: any
+    natalPositions?: any
     dominantElement?: string | null
     monicaConstant?: number | null
   }
@@ -377,31 +568,66 @@ export function resolveAgentNatalData(
       matterScore: typeof el.matter === 'number' ? el.matter * 100 : 50,
       substanceScore: typeof el.substance === 'number' ? el.substance * 100 : 50,
       monicaConstant: historical.consciousness.monicaConstant ?? null,
+      isNeutralFallback: false,
     }
   }
 
-  // 2. Check profile natal chart / elements if provided
+  // 2. Check profile for direct alchemical effects / elements
   if (userProfile?.natalChart) {
     const chart = userProfile.natalChart
-    const alch = chart.alchemicalElements || chart
+    const alch = chart.alchemicalElements || chart['Alchemy Effects'] || chart
+    const sp = alch.spirit ?? alch['Total Spirit']
+    const es = alch.essence ?? alch['Total Essence']
+    const ma = alch.matter ?? alch['Total Matter']
+    const su = alch.substance ?? alch['Total Substance']
     if (
-      typeof alch.spirit === 'number' ||
-      typeof alch.essence === 'number' ||
-      typeof alch.matter === 'number' ||
-      typeof alch.substance === 'number'
+      typeof sp === 'number' &&
+      typeof es === 'number' &&
+      typeof ma === 'number' &&
+      typeof su === 'number'
     ) {
       return {
         dominantElement: userProfile.dominantElement ?? chart.dominantElement ?? null,
-        spiritScore: typeof alch.spirit === 'number' ? alch.spirit * 100 : 50,
-        essenceScore: typeof alch.essence === 'number' ? alch.essence * 100 : 50,
-        matterScore: typeof alch.matter === 'number' ? alch.matter * 100 : 50,
-        substanceScore: typeof alch.substance === 'number' ? alch.substance * 100 : 50,
+        spiritScore: sp > 1 ? sp : sp * 100,
+        essenceScore: es > 1 ? es : es * 100,
+        matterScore: ma > 1 ? ma : ma * 100,
+        substanceScore: su > 1 ? su : su * 100,
         monicaConstant: userProfile.monicaConstant ?? null,
+        isNeutralFallback: false,
       }
     }
   }
 
-  // 3. Neutral fallback
+  // 3. Derive authentic elemental scores from natal placements
+  const placements = extractPlacementsFromProfile(userProfile)
+  if (placements && placements.length > 0) {
+    try {
+      const dignitiesPlacements: PlanetaryPlacement[] = placements.map((p, idx) => ({
+        planet: p.planet,
+        sign: p.sign,
+        degree: p.degree,
+        house: p.house || idx + 1,
+        dignity: calculatePlanetaryDignity(p.planet, p.sign, p.degree, p.house || idx + 1),
+      }))
+      const quantities = calculateAlchemicalQuantities(dignitiesPlacements)
+      return {
+        dominantElement: userProfile?.dominantElement ?? null,
+        spiritScore: Math.round(quantities.spirit * 10000) / 100,
+        essenceScore: Math.round(quantities.essence * 10000) / 100,
+        matterScore: Math.round(quantities.matter * 10000) / 100,
+        substanceScore: Math.round(quantities.substance * 10000) / 100,
+        monicaConstant: userProfile?.monicaConstant ?? null,
+        isNeutralFallback: false,
+      }
+    } catch (e) {
+      console.warn(
+        '[DiscriminantFaucet] Failed calculating alchemical quantities from placements:',
+        e
+      )
+    }
+  }
+
+  // 4. Neutral fallback
   return {
     dominantElement: userProfile?.dominantElement ?? null,
     spiritScore: 50,
@@ -409,5 +635,6 @@ export function resolveAgentNatalData(
     matterScore: 50,
     substanceScore: 50,
     monicaConstant: userProfile?.monicaConstant ?? null,
+    isNeutralFallback: true,
   }
 }

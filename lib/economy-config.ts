@@ -50,6 +50,26 @@ export const UNIFIED_CHAT_BASE_COST: EsmsCost = {
 }
 
 /**
+ * ADR-015: Operational gas floor. Derived dynamically from chat pricing
+ * to guarantee that every daily claim unconditionally funds at least one full chat turn,
+ * preventing 0.0000 axis collapse (INV-2).
+ */
+export const AXIS_FLOOR = Math.max(...Object.values(UNIFIED_CHAT_BASE_COST)) // 0.30
+
+/**
+ * ADR-015 Phase 1 & 2 Faucet Band:
+ * Conserved strictly at 12.0000 tokens during Phase 1 & 2.
+ * Magnitude untethering is enabled in Phase 4.
+ */
+export const FAUCET_BAND = {
+  min: 12.0,
+  max: 12.0,
+} as const
+
+export const Y_MIN = FAUCET_BAND.min
+export const Y_MAX = FAUCET_BAND.max
+
+/**
  * The Oracle Chamber — High-Consciousness AI consultation session (20 ESMS).
  * Unlocks Tier 2 reasoning (DeepSeek-V3 / Gemini 2.5 Flash) with full 360° RAG & memory.
  */

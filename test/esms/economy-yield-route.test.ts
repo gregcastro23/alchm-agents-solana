@@ -1,7 +1,6 @@
-import { mock } from 'bun:test'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-mock.module('server-only', () => ({}))
+vi.mock('server-only', () => ({}))
 
 const mockAuth = vi.fn()
 const mockClaimProfileYield = vi.fn()

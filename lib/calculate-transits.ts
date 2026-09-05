@@ -13,6 +13,14 @@ export interface CurrentPlanetPosition {
   sign: string
   degree: number
   retrograde: boolean
+  longitude: number
+}
+
+export class DegradedEphemerisError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'DegradedEphemerisError'
+  }
 }
 
 const PLANETS = [
@@ -33,7 +41,8 @@ const PLANETS = [
  * Uses the enhanced VSOP87-based calculator (±0.1° accuracy for inner planets).
  */
 export function getCurrentPlanetaryPositions(
-  date: Date = new Date()
+  date: Date = new Date(),
+  options?: { requireComplete?: boolean }
 ): Record<string, CurrentPlanetPosition> {
   const jd = toJulianDay(date)
   const result: Record<string, CurrentPlanetPosition> = {}
@@ -46,10 +55,17 @@ export function getCurrentPlanetaryPositions(
         sign,
         degree: Math.round(degree * 100) / 100,
         retrograde: pos.retrograde,
+        longitude: Math.round(pos.longitude * 10000) / 10000,
       }
     } catch {
       // Skip planets that fail calculation
     }
+  }
+
+  if (options?.requireComplete && Object.keys(result).length < PLANETS.length) {
+    throw new DegradedEphemerisError(
+      `Degraded ephemeris read: resolved only ${Object.keys(result).length} of ${PLANETS.length} bodies`
+    )
   }
 
   return result

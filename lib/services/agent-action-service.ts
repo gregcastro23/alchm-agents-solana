@@ -26,6 +26,9 @@ import {
   AGENT_OPERATION_COSTS,
   TOKEN_TYPES,
   type TokenType,
+  AXIS_FLOOR,
+  Y_MIN,
+  Y_MAX,
 } from '@/lib/economy-config'
 import { EconomyService } from '@/lib/services/economyService'
 import { syncDebitToAlchm } from '@/lib/alchm-debit-sync'
@@ -42,6 +45,8 @@ import {
   computeDiscriminantDailyYield,
   resolveAgentNatalData,
   getLiveTransitSky,
+  getLiveNetworkSupply,
+  validateLedgerClamp,
 } from '@/lib/services/discriminant-faucet'
 
 // ---------------------------------------------------------------------------
@@ -374,6 +379,40 @@ export class AgentActionService {
     const dateStr = new Date().toISOString().split('T')[0]
     const transactionGroupId = crypto.randomUUID()
 
+    // 1. Pre-transaction computation (outside row locks)
+    const agent = await prisma.users.findUnique({
+      where: { id: userId },
+      include: {
+        user_profiles: {
+          select: {
+            natalChart: true,
+            natalPositions: true,
+            dominantElement: true,
+            monicaConstant: true,
+          },
+        },
+      },
+    })
+
+    const email = agent?.email ? agent.email.toLowerCase() : userId
+    const natalData = resolveAgentNatalData(email, agent?.user_profiles || undefined)
+    const transitSky = getLiveTransitSky()
+    const supply = await getLiveNetworkSupply(prisma)
+    const yieldResult = computeDiscriminantDailyYield(natalData, transitSky, supply)
+
+    // Ledger-Boundary Clamp (Phase 2 invariant safety)
+    validateLedgerClamp(yieldResult)
+
+    const amountsObj: Record<string, number> = {
+      spirit: yieldResult.spirit,
+      essence: yieldResult.essence,
+      matter: yieldResult.matter,
+      substance: yieldResult.substance,
+    }
+
+    const amounts: Record<string, number> = {}
+
+    // 2. Database transaction (atomic balance and transaction mutation)
     await prisma.$transaction(async tx => {
       // Idempotency guard within the transaction
       const bal = await tx.tokenBalance.findUnique({ where: { userId } })
@@ -389,34 +428,6 @@ export class AgentActionService {
         }
       }
 
-      // Fetch agent details to resolve natal chart
-      const agent = await tx.users.findUnique({
-        where: { id: userId },
-        include: {
-          user_profiles: {
-            select: {
-              natalChart: true,
-              dominantElement: true,
-              monicaConstant: true,
-            },
-          },
-        },
-      })
-
-      // ADR-014 Chart-Ratio Faucet Calculation
-      const email = agent?.email ? agent.email.toLowerCase() : userId
-      const natalData = resolveAgentNatalData(email, agent?.user_profiles || undefined)
-      const transitSky = getLiveTransitSky()
-      const yieldResult = computeDiscriminantDailyYield(natalData, transitSky)
-
-      const amountsObj: Record<string, number> = {
-        spirit: yieldResult.spirit,
-        essence: yieldResult.essence,
-        matter: yieldResult.matter,
-        substance: yieldResult.substance,
-      }
-
-      const amounts: Record<string, number> = {}
       for (const token of TOKEN_TYPES) {
         const tokenKey = token.toLowerCase() as keyof typeof amountsObj
         const amt = amountsObj[tokenKey]
@@ -428,26 +439,10 @@ export class AgentActionService {
             tokenType: token,
             amount: new Prisma.Decimal(amt),
             sourceType: 'agents_daily_yield',
-            description: 'Automated ESMS Yield (ADR-014 Chart Ratio)',
-            idempotencyKey: `agentic:daily:${userId}:${dateStr}:${token}`,
+            description: 'Automated ESMS Yield (ADR-014/ADR-015 Chart-Ratio Resonance)',
+            idempotencyKey: `daily:agents:${userId}:${dateStr}:${token}`,
             createdAt: new Date(),
           },
-        })
-      }
-
-      // Sync yield to alchm.kitchen (with identity metadata so user_profiles is kept fresh)
-      if (agent?.isAgentic) {
-        console.log(
-          `[AgentActionService] Syncing chart-ratio yield for ${email} to alchm.kitchen ` +
-            `[Sp=${amountsObj.spirit}, Es=${amountsObj.essence}, Ma=${amountsObj.matter}, Su=${amountsObj.substance}]...`
-        )
-
-        await syncCreditToAlchm({
-          userEmail: email,
-          amounts: this.toFixedAmounts(amounts),
-          source: 'agents_yield',
-          idempotencyKey: `agentic:yield:${email}:${dateStr}`,
-          metadata: { agentName: `${agent.name ?? email.split('@')[0]} ` },
         })
       }
 
@@ -473,6 +468,26 @@ export class AgentActionService {
         },
       })
     })
+
+    // 3. Post-transaction external sync (outside row locks)
+    if (agent?.isAgentic) {
+      console.log(
+        `[AgentActionService] Syncing chart-ratio yield for ${email} to alchm.kitchen ` +
+          `[Sp=${amountsObj.spirit}, Es=${amountsObj.essence}, Ma=${amountsObj.matter}, Su=${amountsObj.substance}]...`
+      )
+
+      try {
+        await syncCreditToAlchm({
+          userEmail: email,
+          amounts: this.toFixedAmounts(amounts),
+          source: 'agents_yield',
+          idempotencyKey: `daily:agents:sync:${email}:${dateStr}`,
+          metadata: { agentName: `${agent.name ?? email.split('@')[0]} ` },
+        })
+      } catch (err) {
+        console.error('[AgentActionService] Failed syncing credit to alchm.kitchen:', err)
+      }
+    }
   }
 
   // -----------------------------------------------------------------------
