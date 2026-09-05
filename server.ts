@@ -1867,7 +1867,7 @@ async function claimDailyYield(userId: string, site: AccountSite) {
   const identifier = userRow?.email?.toLowerCase() || userId
   const natalData = resolveAgentNatalData(identifier, profile)
   const transitSky = getLiveTransitSky()
-  const supply = await getLiveNetworkSupply()
+  const supply = await getLiveNetworkSupply(pool)
   const yieldResult = computeDiscriminantDailyYield(natalData, transitSky, supply)
 
   // Ledger-Boundary Clamp (Phase 2 invariant safety)
@@ -1969,8 +1969,7 @@ async function claimDailyYield(userId: string, site: AccountSite) {
             transaction_group_id, user_id, token_type, amount, source_type, description,
             idempotency_key, created_at
           )
-          VALUES ($1, $2, $3, $4, $5, $6, $7, NOW())
-          ON CONFLICT (idempotency_key) DO NOTHING;
+          VALUES ($1, $2, $3, $4, $5, $6, $7, NOW());
         `,
         [
           transactionGroupId,
@@ -2019,8 +2018,15 @@ async function claimDailyYield(userId: string, site: AccountSite) {
       accounts,
       account: accounts.find(account => account.site === site),
     }
-  } catch (error) {
+  } catch (error: any) {
     await client.query('ROLLBACK').catch(() => {})
+    if (
+      error.code === '23505' ||
+      error.message?.includes('idempotency_key') ||
+      error.message?.includes('Already claimed')
+    ) {
+      return { ok: false, status: 409, message: `${siteLabel(site)} yield already claimed today.` }
+    }
     throw error
   } finally {
     client.release()

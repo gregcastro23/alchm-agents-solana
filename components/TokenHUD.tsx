@@ -94,7 +94,7 @@ export function TokenHUD() {
         distribution[token] ?? distribution[lowercaseToken[token]] ?? 0
       toast({
         title: 'Yield Harvested',
-        description: `Received ${amount('Spirit')} Spirit, ${amount('Essence')} Essence, ${amount('Matter')} Matter, ${amount('Substance')} Substance.${data.isPremium ? ' A 2.0× yield multiplier was applied.' : ''}`,
+        description: `Received ${amount('Spirit')} Spirit, ${amount('Essence')} Essence, ${amount('Matter')} Matter, ${amount('Substance')} Substance.`,
       })
     } catch (error) {
       toast({

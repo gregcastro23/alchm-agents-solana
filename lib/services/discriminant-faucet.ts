@@ -112,6 +112,7 @@ export interface GlobalSupplyState {
   matter: number
   substance: number
   total?: number
+  isDegraded?: boolean
 }
 
 export interface DiscriminantYieldBreakdown {
@@ -146,32 +147,57 @@ export const LIVE_NETWORK_SUPPLY: GlobalSupplyState = {
   essence: 15780.23,
   matter: 29116.87,
   substance: 22133.85,
+  total: 77614.17,
+  isDegraded: true,
 }
 
 let cachedSupply: { data: GlobalSupplyState; expiresAt: number } | null = null
 const SUPPLY_CACHE_TTL_MS = 5 * 60 * 1000 // 5 minutes
 
-export async function getLiveNetworkSupply(prismaClient?: any): Promise<GlobalSupplyState> {
+export async function getLiveNetworkSupply(client?: any): Promise<GlobalSupplyState> {
   const now = Date.now()
   if (cachedSupply && cachedSupply.expiresAt > now) {
     return cachedSupply.data
   }
 
   try {
-    const db = prismaClient || (await import('@/lib/db')).prisma
-    const totals = await db.tokenBalance.aggregate({
-      _sum: {
-        spirit: true,
-        essence: true,
-        matter: true,
-        substance: true,
-      },
-    })
+    let sp = 0
+    let es = 0
+    let ma = 0
+    let su = 0
 
-    const sp = Number(totals._sum?.spirit) || 0
-    const es = Number(totals._sum?.essence) || 0
-    const ma = Number(totals._sum?.matter) || 0
-    const su = Number(totals._sum?.substance) || 0
+    if (client && typeof client.query === 'function') {
+      // Raw pg.Pool / pg.Client (e.g. from server.ts)
+      const res = await client.query(
+        `SELECT
+           COALESCE(SUM(spirit), 0) AS spirit,
+           COALESCE(SUM(essence), 0) AS essence,
+           COALESCE(SUM(matter), 0) AS matter,
+           COALESCE(SUM(substance), 0) AS substance
+         FROM token_balances`
+      )
+      const row = res.rows[0]
+      sp = Number(row?.spirit) || 0
+      es = Number(row?.essence) || 0
+      ma = Number(row?.matter) || 0
+      su = Number(row?.substance) || 0
+    } else {
+      // Prisma client or default Prisma import
+      const db = client || (await import('@/lib/db')).prisma
+      const totals = await db.tokenBalance.aggregate({
+        _sum: {
+          spirit: true,
+          essence: true,
+          matter: true,
+          substance: true,
+        },
+      })
+      sp = Number(totals._sum?.spirit) || 0
+      es = Number(totals._sum?.essence) || 0
+      ma = Number(totals._sum?.matter) || 0
+      su = Number(totals._sum?.substance) || 0
+    }
+
     const total = sp + es + ma + su
 
     if (total > 0) {
@@ -181,6 +207,7 @@ export async function getLiveNetworkSupply(prismaClient?: any): Promise<GlobalSu
         matter: ma,
         substance: su,
         total,
+        isDegraded: false,
       }
       cachedSupply = { data, expiresAt: now + SUPPLY_CACHE_TTL_MS }
       return data
@@ -192,7 +219,10 @@ export async function getLiveNetworkSupply(prismaClient?: any): Promise<GlobalSu
     )
   }
 
-  return LIVE_NETWORK_SUPPLY
+  return {
+    ...LIVE_NETWORK_SUPPLY,
+    isDegraded: true,
+  }
 }
 
 // Zodiac sign to element mapping
@@ -294,26 +324,41 @@ export function computeDiscriminantDailyYield(
     matter: natalRatio.matter * transitRatio.matter * omega.matter,
     substance: natalRatio.substance * transitRatio.substance * omega.substance,
   }
-  const totalWeighted =
-    weighted.spirit + weighted.essence + weighted.matter + weighted.substance || 1
+  const totalWeighted = weighted.spirit + weighted.essence + weighted.matter + weighted.substance
 
   // 5. Conserved Daily Allocation with Dynamic AXIS_FLOOR (Quantized to 4 decimal places)
   const floorPerAxis = AXIS_FLOOR // 0.30
   const totalFloor = floorPerAxis * 4 // 1.20
   const distributableYield = Math.max(0, TOTAL_YIELD - totalFloor) // 10.80
 
-  let spirit =
-    Math.round((floorPerAxis + distributableYield * (weighted.spirit / totalWeighted)) * 10000) /
-    10000
-  let essence =
-    Math.round((floorPerAxis + distributableYield * (weighted.essence / totalWeighted)) * 10000) /
-    10000
-  let matter =
-    Math.round((floorPerAxis + distributableYield * (weighted.matter / totalWeighted)) * 10000) /
-    10000
-  let substance =
-    Math.round((floorPerAxis + distributableYield * (weighted.substance / totalWeighted)) * 10000) /
-    10000
+  let spirit = 0
+  let essence = 0
+  let matter = 0
+  let substance = 0
+
+  if (totalWeighted <= 0) {
+    // When chart alchemical mass sits entirely in elements absent from the sky transit (or all sky weights are 0),
+    // fall back to equal shares of distributable yield (0.25 each -> 2.7000 + 0.3000 = 3.0000 per axis).
+    const equalShare = distributableYield / 4
+    spirit = Math.round((floorPerAxis + equalShare) * 10000) / 10000
+    essence = Math.round((floorPerAxis + equalShare) * 10000) / 10000
+    matter = Math.round((floorPerAxis + equalShare) * 10000) / 10000
+    substance = Math.round((floorPerAxis + equalShare) * 10000) / 10000
+  } else {
+    spirit =
+      Math.round((floorPerAxis + distributableYield * (weighted.spirit / totalWeighted)) * 10000) /
+      10000
+    essence =
+      Math.round((floorPerAxis + distributableYield * (weighted.essence / totalWeighted)) * 10000) /
+      10000
+    matter =
+      Math.round((floorPerAxis + distributableYield * (weighted.matter / totalWeighted)) * 10000) /
+      10000
+    substance =
+      Math.round(
+        (floorPerAxis + distributableYield * (weighted.substance / totalWeighted)) * 10000
+      ) / 10000
+  }
 
   // Exact residual conservation adjustment (eliminates sub-basis floating point drift)
   // Assign residual to the largest allocated axis (always >= 3.0 >> 0.3, so diff cannot breach floor)
@@ -334,12 +379,14 @@ export function computeDiscriminantDailyYield(
     else substance = Math.round((substance + diff) * 10000) / 10000
   }
 
+  const computedTotal = Math.round((spirit + essence + matter + substance) * 10000) / 10000
+
   return {
     spirit,
     essence,
     matter,
     substance,
-    total: TOTAL_YIELD,
+    total: computedTotal,
     breakdown: {
       spirit: {
         natalRatio: Math.round(natalRatio.spirit * 10000) / 10000,
@@ -379,7 +426,8 @@ export function computeDiscriminantDailyYield(
 
 /**
  * Fail-closed ledger boundary invariant validation (ADR-015 Phase 2).
- * Throws if total is outside [Y_MIN, Y_MAX], any axis is below AXIS_FLOOR, or values are non-finite.
+ * Throws if the computed sum of axes is outside [Y_MIN, Y_MAX], does not match distribution.total,
+ * any axis is below AXIS_FLOOR, or any value is non-finite/NaN.
  */
 export function validateLedgerClamp(distribution: {
   spirit: number
@@ -388,21 +436,28 @@ export function validateLedgerClamp(distribution: {
   substance: number
   total: number
 }): void {
+  const computedSum =
+    Math.round(
+      (distribution.spirit + distribution.essence + distribution.matter + distribution.substance) *
+        10000
+    ) / 10000
+
   if (
-    distribution.total < Y_MIN ||
-    distribution.total > Y_MAX ||
-    distribution.spirit < AXIS_FLOOR ||
-    distribution.essence < AXIS_FLOOR ||
-    distribution.matter < AXIS_FLOOR ||
-    distribution.substance < AXIS_FLOOR ||
     !Number.isFinite(distribution.total) ||
     !Number.isFinite(distribution.spirit) ||
     !Number.isFinite(distribution.essence) ||
     !Number.isFinite(distribution.matter) ||
-    !Number.isFinite(distribution.substance)
+    !Number.isFinite(distribution.substance) ||
+    computedSum < Y_MIN - 0.0001 ||
+    computedSum > Y_MAX + 0.0001 ||
+    Math.abs(computedSum - distribution.total) > 0.0001 ||
+    distribution.spirit < AXIS_FLOOR - 0.0001 ||
+    distribution.essence < AXIS_FLOOR - 0.0001 ||
+    distribution.matter < AXIS_FLOOR - 0.0001 ||
+    distribution.substance < AXIS_FLOOR - 0.0001
   ) {
     throw new Error(
-      `Ledger clamp invariant breach: total=${distribution.total} (allowed [${Y_MIN}, ${Y_MAX}]), minAxis=${Math.min(
+      `Ledger clamp invariant breach: computedSum=${computedSum}, total=${distribution.total} (allowed [${Y_MIN}, ${Y_MAX}]), minAxis=${Math.min(
         distribution.spirit,
         distribution.essence,
         distribution.matter,

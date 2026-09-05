@@ -15,6 +15,7 @@ import {
   Y_MAX,
 } from '@/lib/economy-config'
 import { inspectSolanaOutbox } from '@/lib/solana/reconciliation'
+import { resolveAgentNatalData, getLiveNetworkSupply } from '@/lib/services/discriminant-faucet'
 
 export const dynamic = 'force-dynamic'
 
@@ -81,7 +82,8 @@ export async function GET(_req: NextRequest) {
       claimedToday,
       claimedTodayAgents,
       totalProfiles,
-      profilesWithPlacements,
+      sampleProfiles,
+      liveSupply,
     ] = await Promise.all([
       prisma.tokenBalance.count(),
       prisma.tokenBalance.aggregate({
@@ -92,18 +94,39 @@ export async function GET(_req: NextRequest) {
       prisma.tokenBalance.count({ where: { lastDailyClaimAt: { gte: todayStart } } }),
       prisma.tokenBalance.count({ where: { lastDailyClaimAgentsAt: { gte: todayStart } } }),
       prisma.user_profiles.count(),
-      prisma.user_profiles.count({
-        where: {
-          OR: [
-            { natalPositions: { not: Prisma.AnyNull } },
-            { natalChart: { not: Prisma.AnyNull } },
-          ],
+      prisma.user_profiles.findMany({
+        take: 200,
+        select: {
+          userId: true,
+          dominantElement: true,
+          natalPositions: true,
+          natalChart: true,
+          monicaConstant: true,
         },
       }),
+      getLiveNetworkSupply(prisma),
     ])
 
+    if (liveSupply.isDegraded) {
+      alertIf(alerts, true, {
+        id: 'economy:faucet-supply-degraded',
+        severity: 'critical',
+        source: 'economy',
+        title: 'Live Network Supply Degraded (Frozen Baseline Active)',
+        detail:
+          'Failed to aggregate live token supply from database. Faucet is falling back to static baseline LIVE_NETWORK_SUPPLY.',
+        href: 'tab:economy',
+        remediation:
+          'Check database connectivity and token_balances table aggregation performance.',
+      })
+    }
+
+    const sampleList = Array.isArray(sampleProfiles) ? sampleProfiles : []
+    const fallbackCount = sampleList.filter(
+      p => resolveAgentNatalData(p?.userId || '', p as any).isNeutralFallback
+    ).length
     const neutralFallbackRatePct =
-      totalProfiles > 0 ? percent(totalProfiles - profilesWithPlacements, totalProfiles) : 0
+      sampleList.length > 0 ? percent(fallbackCount, sampleList.length) : 0
 
     const perAxis = AXES.map(axis => ({
       axis,
@@ -195,15 +218,15 @@ export async function GET(_req: NextRequest) {
       }),
     ])
 
-    alertIf(
-      alerts,
-      Boolean(floorBreach),
-      'critical',
-      'economy',
-      'Operational Gas Floor Breach (INV-2)',
-      `Daily claim transaction yielded ${floorBreach?.amount} on ${floorBreach?.tokenType} < AXIS_FLOOR (${AXIS_FLOOR})`,
-      'Investigate discriminant faucet allocation and per-axis floor enforcement'
-    )
+    alertIf(alerts, Boolean(floorBreach), {
+      id: 'economy:gas-floor-breach',
+      severity: 'critical',
+      source: 'economy',
+      title: 'Operational Gas Floor Breach (INV-2)',
+      detail: `Daily claim transaction yielded ${floorBreach?.amount} on ${floorBreach?.tokenType} < AXIS_FLOOR (${AXIS_FLOOR})`,
+      href: 'tab:economy',
+      remediation: 'Investigate discriminant faucet allocation and per-axis floor enforcement',
+    })
 
     const shape = (
       rows: Array<{ sourceType: string; _sum: { amount: unknown }; _count: { _all: number } }>

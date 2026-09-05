@@ -261,6 +261,64 @@ describe('ADR-015: Untethered Resonance Faucet Invariants (Phases 1 & 2)', () =>
       // Smallest axis must not be penalized below AXIS_FLOOR
       expect(res.essence).toBeGreaterThanOrEqual(AXIS_FLOOR)
     })
+
+    it('prevents reachable under-mint to 1.2000 when chart mass sits entirely in absent sky elements', () => {
+      // Pure Fire chart under zero Fire sky
+      const pureFireNatal: NatalChartData = {
+        spiritScore: 100,
+        essenceScore: 0,
+        matterScore: 0,
+        substanceScore: 0,
+      }
+      const zeroFireSky: TransitSkyData = {
+        elementWeights: { Fire: 0, Water: 4, Earth: 3, Air: 3 },
+      }
+      const resFire = computeDiscriminantDailyYield(pureFireNatal, zeroFireSky, LIVE_NETWORK_SUPPLY)
+      const sumFire =
+        Math.round(
+          (resFire.spirit + resFire.essence + resFire.matter + resFire.substance) * 10000
+        ) / 10000
+      expect(sumFire).toBe(12.0)
+      expect(resFire.total).toBe(12.0)
+      expect(resFire.spirit).toBe(3.0)
+      expect(resFire.essence).toBe(3.0)
+      expect(resFire.matter).toBe(3.0)
+      expect(resFire.substance).toBe(3.0)
+
+      // Pure Earth chart under zero Earth sky
+      const pureEarthNatal: NatalChartData = {
+        spiritScore: 0,
+        essenceScore: 0,
+        matterScore: 100,
+        substanceScore: 0,
+      }
+      const zeroEarthSky: TransitSkyData = {
+        elementWeights: { Fire: 4, Water: 3, Earth: 0, Air: 3 },
+      }
+      const resEarth = computeDiscriminantDailyYield(
+        pureEarthNatal,
+        zeroEarthSky,
+        LIVE_NETWORK_SUPPLY
+      )
+      const sumEarth =
+        Math.round(
+          (resEarth.spirit + resEarth.essence + resEarth.matter + resEarth.substance) * 10000
+        ) / 10000
+      expect(sumEarth).toBe(12.0)
+      expect(resEarth.total).toBe(12.0)
+
+      // All-zero sky weights
+      const allZeroSky: TransitSkyData = {
+        elementWeights: { Fire: 0, Water: 0, Earth: 0, Air: 0 },
+      }
+      const resZero = computeDiscriminantDailyYield(pureFireNatal, allZeroSky, LIVE_NETWORK_SUPPLY)
+      const sumZero =
+        Math.round(
+          (resZero.spirit + resZero.essence + resZero.matter + resZero.substance) * 10000
+        ) / 10000
+      expect(sumZero).toBe(12.0)
+      expect(resZero.total).toBe(12.0)
+    })
   })
 
   // INV-2: Operational Gas Floor Regression Pin
@@ -290,12 +348,15 @@ describe('ADR-015: Untethered Resonance Faucet Invariants (Phases 1 & 2)', () =>
           const minAxis = Math.min(res.spirit, res.essence, res.matter, res.substance)
           if (minAxis < minObservedAxis) minObservedAxis = minAxis
 
+          const axisSum =
+            Math.round((res.spirit + res.essence + res.matter + res.substance) * 10000) / 10000
+
           expect(res.spirit).toBeGreaterThanOrEqual(AXIS_FLOOR)
           expect(res.essence).toBeGreaterThanOrEqual(AXIS_FLOOR)
           expect(res.matter).toBeGreaterThanOrEqual(AXIS_FLOOR)
           expect(res.substance).toBeGreaterThanOrEqual(AXIS_FLOOR)
+          expect(axisSum).toBe(12.0)
           expect(res.total).toBe(12.0)
-          expect(res.spirit + res.essence + res.matter + res.substance).toBeCloseTo(12.0, 4)
           totalEvaluations++
         }
       }
@@ -358,9 +419,25 @@ describe('ADR-015: Untethered Resonance Faucet Invariants (Phases 1 & 2)', () =>
 
       const keyKitchen = `daily:${site}:${userId}:${dateStr}:${token}`
       const keyAgents = `daily:agents:${userId}:${dateStr}:${token}`
+      const keyDesktop = `daily:${site}:${userId}:${dateStr}:${token}`
 
       expect(keyKitchen).toBe('daily:kitchen:usr-test-123:2026-09-04:Spirit')
       expect(keyAgents).toBe('daily:agents:usr-test-123:2026-09-04:Spirit')
+      expect(keyDesktop).toBe('daily:kitchen:usr-test-123:2026-09-04:Spirit')
+    })
+
+    it('resolves identifiers identically (email.toLowerCase() || userId) across claim paths', () => {
+      const email = 'Leonardo-Da-Vinci@Example.COM'
+      const userId = 'uuid-12345'
+      const identifierFromEmail = email.toLowerCase() || userId
+      const identifierFromIdOnly = (null as any)?.toLowerCase() || userId
+
+      const daVinciFromEmail = resolveAgentNatalData(identifierFromEmail)
+      const fallbackFromId = resolveAgentNatalData(identifierFromIdOnly)
+
+      expect(daVinciFromEmail.isNeutralFallback).toBe(false)
+      expect(daVinciFromEmail.dominantElement).toBe('Fire')
+      expect(fallbackFromId.isNeutralFallback).toBe(true)
     })
 
     it('produces bit-identical yield allocations across claim paths for identical natal and sky inputs', () => {
@@ -374,6 +451,16 @@ describe('ADR-015: Untethered Resonance Faucet Invariants (Phases 1 & 2)', () =>
 
       expect(kitchenYield).toEqual(agentsYield)
       expect(kitchenYield).toEqual(desktopYield)
+      expect(kitchenYield.total).toBe(12.0)
+      expect(
+        Math.round(
+          (kitchenYield.spirit +
+            kitchenYield.essence +
+            kitchenYield.matter +
+            kitchenYield.substance) *
+            10000
+        ) / 10000
+      ).toBe(12.0)
     })
   })
 
@@ -508,6 +595,30 @@ describe('ADR-015: Untethered Resonance Faucet Invariants (Phases 1 & 2)', () =>
           matter: 3.0,
           substance: 3.0,
           total: 12.0,
+        })
+      }).toThrow(/Ledger clamp invariant breach/)
+    })
+
+    it('fails closed when axes sum to 1.2000 even if total property reports 12.0000', () => {
+      expect(() => {
+        validateLedgerClamp({
+          spirit: 0.3,
+          essence: 0.3,
+          matter: 0.3,
+          substance: 0.3,
+          total: 12.0,
+        })
+      }).toThrow(/Ledger clamp invariant breach/)
+    })
+
+    it('fails closed when computed sum differs from total property', () => {
+      expect(() => {
+        validateLedgerClamp({
+          spirit: 3.0,
+          essence: 3.0,
+          matter: 3.0,
+          substance: 3.0,
+          total: 11.5,
         })
       }).toThrow(/Ledger clamp invariant breach/)
     })
