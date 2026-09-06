@@ -5,6 +5,7 @@ import Link from 'next/link'
 import Image from 'next/image'
 import dynamic from 'next/dynamic'
 import type { ZodiacTheme } from '@/lib/zodiac-utils'
+import type { ProfileYieldState } from '@/lib/profile-yield'
 import { ProfileYieldPanel } from '@/components/profile/ProfileYieldPanel'
 import { QuickChartAttachmentGenerator } from '@/components/landing/quick-chart-attachment-generator'
 import {
