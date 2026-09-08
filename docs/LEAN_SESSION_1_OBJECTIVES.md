@@ -1,13 +1,13 @@
-# Lean 4 Formal Verification — Day 1 Objectives & Execution Runbook
+# Lean 4 Formal Verification — Session 1 Objectives & Execution Runbook
 
 > **Target Repository:** [`AlchmAgentsSolana`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana)  
-> **Status:** ✅ Day 1 Completed & Verified  
-> **Sprint Milestone:** Day 1: Toolchain Bootstrapping, Module Topology & CI Pipeline  
+> **Status:** ✅ Session 1 Completed & Verified  
+> **Sprint Milestone:** Session 1: Toolchain Bootstrapping, Module Topology & CI Pipeline  
 > **Toolchain Target:** Lean 4 `v4.13.0` (`arm64-apple-darwin23.6.0`) | Lake `5.0.0`
 
 ---
 
-## 1. Day 1 Deliverables Summary
+## 1. Session 1 Deliverables Summary
 
 1. **Toolchain Provisioning (`elan` & Lean 4):**
    - Provisioned `elan 4.2.4` and toolchain `leanprover/lean4:v4.13.0` on Apple Silicon.
@@ -23,6 +23,8 @@
    - Executed `lake build` successfully with zero errors across all modules.
 5. **Continuous Integration (CI):**
    - Created [`.github/workflows/lean-verify.yml`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/.github/workflows/lean-verify.yml) ensuring automated `lake build` verification on PRs modifying proof files.
+6. **Pull Request Tracking:**
+   - Opened [Draft PR #26](https://github.com/gregcastro23/alchm-agents-solana/pull/26) on branch `feat/lean-formal-proofs-plan`.
 
 ---
 
@@ -53,6 +55,8 @@ proofs/lean/
 ├── lean-toolchain            # Pinned Lean version (v4.13.0)
 ├── Proofs.lean               # Umbrella root module
 ├── README.md                 # Setup & quickstart guide
+├── .gitignore                # Lake build cache exclusions
+├── lake-manifest.json        # Pinned package dependency manifest
 └── Proofs/
     ├── Wavefunction.lean     # Elemental potentials, \Psi_a(t), and pricing bounds
     ├── ConstellationAMM.lean # Virtual reserves, constant-product, and cycle conservation
@@ -61,9 +65,9 @@ proofs/lean/
 
 ---
 
-## 4. Transition to Day 2: Wavefunction & Pricing Bounds
+## 4. Transition to Session 2: Wavefunction & Pricing Bounds
 
-With Day 1 toolchain setup and build verification 100% complete, Day 2 will focus on closing the proof obligations in [`Wavefunction.lean`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/proofs/lean/Proofs/Wavefunction.lean):
+With Session 1 toolchain setup and build verification 100% complete, Session 2 focuses on closing the proof obligations in [`Wavefunction.lean`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/proofs/lean/Proofs/Wavefunction.lean):
 
 - **Theorem 1 & 1b (Bound Invariance):** Prove that $\Psi_a \in [-2, 2]$ for both continuous and discrete fixed-point formulations given positive total transit energy.
 - **Theorem 2 & 2b (Economic Positivity & Lower Bound):** Prove that chat cost is strictly positive and bounded from below by $0.3 \times \text{Base} \times \text{Multiplier}$, guaranteeing no negative-cost prompt exploits.
