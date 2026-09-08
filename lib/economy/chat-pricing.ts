@@ -207,14 +207,15 @@ export function computeDignityWaveharmonics(currentAlchemy: unknown): Record<str
 
   const total =
     Math.abs(spiritVal) + Math.abs(essenceVal) + Math.abs(matterVal) + Math.abs(substanceVal)
-  if (total === 0) return { Spirit: 0, Essence: 0, Matter: 0, Substance: 0 }
+  const halfTotal = total / 2
+  if (halfTotal <= 0) return { Spirit: 0, Essence: 0, Matter: 0, Substance: 0 }
 
   // Waveharmonics normalized between -1 and +1
   return {
-    Spirit: roundEsms(spiritVal / (total / 2)),
-    Essence: roundEsms(essenceVal / (total / 2)),
-    Matter: roundEsms(matterVal / (total / 2)),
-    Substance: roundEsms(substanceVal / (total / 2)),
+    Spirit: roundEsms(spiritVal / halfTotal),
+    Essence: roundEsms(essenceVal / halfTotal),
+    Matter: roundEsms(matterVal / halfTotal),
+    Substance: roundEsms(substanceVal / halfTotal),
   }
 }
 

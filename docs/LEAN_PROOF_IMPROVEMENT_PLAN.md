@@ -91,41 +91,47 @@ While property-based tests (fuzzing) can probe millions of pseudo-random inputs,
 │     • Open draft Pull Request #26 on GitHub                                            │
 │                                           │                                            │
 │                                           ▼                                            │
-│ [x] Session 2: Wavefunction & Pricing Bounds Proofs (Proofs/Wavefunction.lean)         │
-│     • Close Theorem 1 & 1b: Wavefunction Bound Invariance                              │
-│     • Close Theorem 2 & 2b: Economic Cost Positivity & 0.3x Lower Bound                │
-│     • Close Theorem 3 & 3b: Zero Energy Degeneracy                                     │
-│     • Re-verify lake build with 0 sorry axioms in Wavefunction.lean                    │
+│ [x] Session 2: Discrete Wavefunction & Pricing Bounds (Proofs/Wavefunction.lean)       │
+│     • Prove Theorem 1: Discrete Wavefunction BPS Range Invariance [-20000, 20000]      │
+│     • Prove Theorem 2 & 2b: Economic Cost Positivity (Standard & Resonance Regimes)    │
+│     • Prove Protocol Non-Negativity & Zero-Energy Degeneracy (Thm 3b)                  │
+│     • Audit Purge: Removed continuous Float axioms refuted by IEEE-754 subnormals      │
+│     • Re-verify lake build with 0 sorry and 0 custom axioms in Wavefunction.lean       │
 │                                           │                                            │
 │                                           ▼                                            │
-│ [x] Session 3: Fixed-Point Discretization & Precision Bounds (Proofs/Discretization.lean)│
-│     • Formalize epsilon error bounds between continuous Float and integer BPS (Thm 3.1) │
-│     • Prove exact Euclidean remainder bound 0 <= R < E in integer arithmetic (Thm 3.1b)│
+│ [x] Session 3: Fixed-Point Discretization & Truncation Solvency (Proofs/Discretization)│
+│     • Prove exact Euclidean remainder bound 0 <= R < E in integer arithmetic (Thm 3.1) │
 │     • Prove pricing floor and AMM output truncation solvency (Thm 3.2a, 3.2b)          │
 │     • Prove sub-atom extraction immunity / 1-atom drain protection (Thm 3.2c)          │
 │     • Prove discount factor bounds [3000, 17000] and sub-threshold non-negativity      │
-│     • Re-verify lake build with 0 sorry warnings in Discretization.lean                │
+│     • Audit Purge: Removed continuous Float epsilon axiom; discrete remainder proved   │
+│     • Re-verify lake build with 0 sorry and 0 custom axioms in Discretization.lean     │
 │                                           │                                            │
 │                                           ▼                                            │
 │ [x] Session 4: Constellation AMM Invariants (Proofs/ConstellationAMM.lean)             │
-│     • Close Theorem 4: Invariant Non-Decreasing (k' >= k)                              │
-│     • Close Theorem 5: No-Infinite-Mint Cyclic Swap Conservation                       │
-│     • Close Theorem 6: Slippage & Minimum Output Protection                            │
-│     • Re-verify lake build with 0 sorry warnings in ConstellationAMM.lean              │
+│     • Align AMM model with deployed Solana Rust & EVM Solidity BPS-first integer logic │
+│     • Prove Ratio Lemma: outAmt * reserveIn <= inWithFee * reserveOut <= amtIn * resOut│
+│     • Prove Theorem 4: Invariant Non-Decreasing (k' >= k) under deployed division      │
+│     • Prove Theorem 5: Cyclic Swap Token Conservation (No-Mint) & 2-hop Round-Trip     │
+│     • Prove Theorem 6: On-Chain Slippage & Reserve Exhaustion Reversion Guarantees     │
+│     • Re-verify lake build with 0 sorry and 0 custom axioms in ConstellationAMM.lean   │
 │                                           │                                            │
 │                                           ▼                                            │
 │ [x] Session 5: JEPA EMA Persona Stability (Proofs/JEPAPersona.lean)                    │
-│     • Close Theorem 7 & 7b, 7c: EMA Operator Banach Contraction & Drift Compression   │
-│     • Close Theorem 8, 8b, 8d: Fixed Point Identity (1D & 64-dim Vector)              │
-│     • Close Theorem 9, 9b, 9c, 9d: Bounded Range Invariance [-1.0, 1.0] (Float & BPS) │
-│     • Re-verify lake build with 0 sorry warnings across the entire suite               │
+│     • Prove Theorem 7b: Discrete Lipschitz Distance Identity                          │
+│     • Prove Theorem 7c: Multi-Step Unscaled Divergence Scaling (tau^n numerator)       │
+│     • Prove Theorem 8, 8b: Fixed Point Identity Equilibrium (1D & 64-dim Vector)       │
+│     • Prove Theorem 9b, 9c: Bounded BPS Range Invariance in [-10000, 10000]            │
+│     • Audit Purge: Removed continuous Float axioms; proved discrete fixed-point theorems│
+│     • Re-verify lake build with 0 sorry and 0 custom axioms in JEPAPersona.lean        │
 │                                           │                                            │
 │                                           ▼                                            │
-│ [x] Session 6: Verification Audit, LaTeX/Whitepaper Export & PR Finalization           │
-│     • Verify entire proof suite passes with zero sorry warnings                        │
-│     • Generate docs/FORMAL_VERIFICATION_REPORT.md audit summary                        │
-│     • Cross-reference verified theorems in Protocol Whitepaper & Security docs         │
-│     • Mark PR #26 ready for review and merge into main                                 │
+│ [x] Session 6: Verification Audit, Axiom Purge, LaTeX Export & CI Gate                 │
+│     • Eliminate all 6 continuous Float axioms; confirm 0 custom axioms across suite    │
+│     • Build kernel-level environment-walking axiom gate (AxiomGate.lean, 134 decls)    │
+│     • Update check-axioms.sh and .github/workflows/lean-verify.yml with kernel gate    │
+│     • Generate docs/FORMAL_VERIFICATION_REPORT.md and WHITEPAPER_FORMAL_VERIFICATION   │
+│     • Mark PR #26 ready for review with 100% verified discrete mathematical core       │
 └────────────────────────────────────────────────────────────────────────────────────────┘
 ```
 

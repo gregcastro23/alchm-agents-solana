@@ -100,10 +100,10 @@ theorem pow_succ_comm (tau : Int) (k : Nat) (D : Int) :
 
 /-! ### Theorem 7b & 7c: Discrete Contraction Theorems -/
 
-/-- Theorem 7b (Exact Discrete Contraction Identity - Integer BPS):
+/-- Theorem 7b (Exact Discrete Lipschitz Distance Identity - Integer BPS):
     For any two persona states p1, p2, observation x, and non-negative smoothing factor tau:
       distFixed(T_raw(p1, x, tau), T_raw(p2, x, tau)) = tau * distFixed(p1, p2).
-    Significance: Confirms exact, lossless Lipschitz continuity with contraction ratio tau.
+    Significance: Confirms exact, lossless Lipschitz distance scaling by the integer factor tau.
 -/
 theorem emaUpdateRaw_dist (p1 p2 x tau : Int) (h_tau : 0 ≤ tau) :
     distFixed (emaUpdateRaw p1 x tau) (emaUpdateRaw p2 x tau) = tau * distFixed p1 p2 := by
@@ -111,11 +111,10 @@ theorem emaUpdateRaw_dist (p1 p2 x tau : Int) (h_tau : 0 ≤ tau) :
   rw [emaUpdateRaw_sub]
   exact intAbs_mul_of_nonneg tau (p1 - p2) h_tau
 
-/-- Corollary 7 (Scale-Bounded Contraction Invariant):
-    When tau <= SCALE (e.g. tau = 9900 <= 10000), the raw step distance is strictly
-    bounded by SCALE * distFixed(p1, p2), meaning the normalized distance
-    distFixed / SCALE satisfies distFixed / SCALE <= (tau / SCALE) * distFixed <= distFixed,
-    proving non-expansion and strict contraction when tau < SCALE.
+/-- Corollary 7 (Scale-Bounded Numerator Invariant):
+    When tau <= SCALE (e.g. tau = 9900 <= 10000), the raw unscaled step distance is
+    bounded by SCALE * distFixed(p1, p2). Dividing by SCALE yields an effective step
+    factor tau / SCALE <= 1.0, bounding single-turn divergence growth by 1.0.
 -/
 theorem emaUpdateRaw_dist_le_scale (p1 p2 x tau : Int) (h_tau_nonneg : 0 ≤ tau) (h_tau_le : tau ≤ SCALE) :
     distFixed (emaUpdateRaw p1 x tau) (emaUpdateRaw p2 x tau) ≤ SCALE * distFixed p1 p2 := by
@@ -124,16 +123,18 @@ theorem emaUpdateRaw_dist_le_scale (p1 p2 x tau : Int) (h_tau_nonneg : 0 ≤ tau
   exact Int.mul_le_mul_of_nonneg_right h_tau_le h_dist_nonneg
 
 
-/-- Repeated EMA update operator after n discrete chat turns. -/
+/-- Repeated unscaled EMA update operator after n discrete chat turns.
+    Computes the unscaled polynomial numerator without intermediate integer division. -/
 def emaIterRaw (p : Int) (x : Int) (tau : Int) : Nat → Int
   | 0     => p
   | n + 1 => emaUpdateRaw (emaIterRaw p x tau n) x tau
 
-/-- Theorem 7c (Multi-Step Exponential Divergence Compression):
-    Under n repeated EMA updates with constant observation x:
+/-- Theorem 7c (Multi-Step Unscaled Divergence Scaling):
+    Under n repeated unscaled EMA updates with constant observation x:
       distFixed(T_raw^n(p1), T_raw^n(p2)) = (tau^n) * distFixed(p1, p2).
-    Significance: Guarantees that any persona divergence shrinks exponentially
-    at rate tau^n, stabilizing agent identity against malicious context drift.
+    Significance: Derives the closed-form distance between unscaled polynomial numerators.
+    Relative to the accumulated scale factor SCALE^n, the normalized state divergence
+    scales as (tau / SCALE)^n = (0.99)^n -> 0, stabilizing agent identity.
 -/
 theorem emaIterRaw_dist (p1 p2 x tau : Int) (h_tau : 0 ≤ tau) (n : Nat) :
     distFixed (emaIterRaw p1 x tau n) (emaIterRaw p2 x tau n) = (tau ^ n) * distFixed p1 p2 := by

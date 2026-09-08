@@ -75,7 +75,7 @@
 \maketitle
 
 \begin{abstract}
-Decentralized autonomous agent economies increasingly intersect continuous physical and metaphysical state-space models with discrete on-chain financial execution. In this paper, we present the formal verification of the \textbf{Planetary Agents} protocol using the \textbf{Lean 4} interactive theorem prover (v4.13.0). We establish machine-checked proofs for four mission-critical subsystems: (1)~\textbf{Celestial Dignity Wavefunctions} $\Psi_a(\vec{v})$ and dynamic chat pricing positivity across both standard and resonance discount regimes ($\text{Cost}_a \ge 0.3 \cdot \text{Base} \cdot M > 0$), eliminating negative-fee prompt exploits; (2)~\textbf{Fixed-Point Discretization Solvency}, proving sub-basis-point simulation accuracy ($< 10^{-4}$) and complete immunity to 1-atom rounding drains; (3)~\textbf{Constellation AMM Virtual Reserves}, verified against the deployed Solana Rust and EVM Solidity division-first contracts, proving constant-product monotonicity ($k' \ge k$), the universal spot ratio lemma ($\text{outAmt} \cdot R_{\text{in}} \le \Delta x \cdot R_{\text{out}}$), and cyclic swap token conservation preventing unbacked mint arbitrage across multi-elemental cycles; and (4)~\textbf{JEPA Latent Persona Memory}, proving that the 64-dimensional Exponential Moving Average (EMA) memory update is a strict scale-bounded contraction mapping with exponential divergence compression ($\tau^n$), fixed-point identity equilibrium, and coordinate-wise bounded range invariance in $[-1.0, 1.0]$. The entire verification suite consists of 4 modules, all 100\% machine-checked by the Lean 4 kernel with \textbf{zero custom \texttt{axiom} declarations}, \textbf{zero unproven goals (\texttt{sorry})}, and \textbf{zero compiler warnings}, relying exclusively on Lean 4 standard foundational axioms (\texttt{propext}, \texttt{Quot.sound}, \texttt{Classical.choice}).
+Decentralized autonomous agent economies increasingly intersect continuous physical and metaphysical state-space models with discrete on-chain financial execution. In this paper, we present the formal verification of the \textbf{Planetary Agents} protocol using the \textbf{Lean 4} interactive theorem prover (v4.13.0). We establish machine-checked proofs for four mission-critical subsystems: (1)~\textbf{Celestial Dignity Wavefunctions} $\Psi_a(\vec{v})$ and dynamic chat pricing positivity across both standard and resonance discount regimes ($\text{Cost}_a \ge 0.3 \cdot \text{Base} \cdot M > 0$), eliminating negative-fee prompt exploits; (2)~\textbf{Fixed-Point Discretization Solvency}, proving exact Euclidean division remainder bounds ($0 \le R < E$) on the discrete dignity wave and complete immunity to 1-atom rounding drains; (3)~\textbf{Constellation AMM Virtual Reserves}, verified against the deployed Solana Rust and EVM Solidity division-first contracts, proving constant-product monotonicity ($k' \ge k$), the universal spot ratio lemma ($\text{outAmt} \cdot R_{\text{in}} \le \Delta x \cdot R_{\text{out}}$), and cyclic swap token conservation preventing unbacked mint arbitrage across multi-elemental cycles; and (4)~\textbf{JEPA Latent Persona Memory}, proving that the 64-dimensional Exponential Moving Average (EMA) memory update satisfies an exact Lipschitz distance identity with normalized exponential divergence compression ($(\tau/\text{SCALE})^n \to 0$), fixed-point identity equilibrium, and coordinate-wise bounded range invariance in $[-\text{SCALE}, \text{SCALE}]$ ($[-10000, 10000]$ BPS). The entire verification suite consists of 4 modules, all 100\% machine-checked by the Lean 4 kernel with \textbf{zero custom \texttt{axiom} declarations}, \textbf{zero unproven goals (\texttt{sorry})}, and \textbf{zero compiler warnings}, relying exclusively on Lean 4 standard foundational axioms (\texttt{propext}, \texttt{Quot.sound}, \texttt{Classical.choice}) across all 134 library declarations.
 \end{abstract}
 
 \tableofcontents
@@ -212,13 +212,13 @@ Machine-checked by computation (\texttt{rfl}) in \texttt{zero\_energy\_degenerac
 
 \section{Domain B: Fixed-Point Discretization Precision \& Truncation Solvency}
 
-\begin{theorem}[Discretization Epsilon Bound]
+\begin{theorem}[Discrete Wavefunction Euclidean Remainder Bound]
 \label{thm:discretization_eps}
 For any non-zero energy $E > 0$ and elemental potential $|v_a| \le E$, the discrete basis-point evaluation satisfies:
 \begin{equation}
     0 \le 2 \cdot v_a \cdot \text{SCALE} - \Psi_{\text{fixed}} \cdot E < E
 \end{equation}
-Consequently, the normalized approximation error between continuous $\Psi$ and discrete $\Psi_{\text{fixed}} / \text{SCALE}$ is strictly bounded by $1 / \text{SCALE} = 10^{-4}$ ($< 0.01\%$).
+Dividing through by $E \cdot \text{SCALE}$ bounds the normalized integer division truncation error strictly within $[0, 1 / \text{SCALE}) = [0, 10^{-4})$.
 \end{theorem}
 \begin{proof}
 Machine-checked in \texttt{Proofs/Discretization.lean} (Theorem 3.1, \texttt{dignityWaveFixed\_remainder\_bound}) via Euclidean division remainder invariance (\texttt{Int.emod\_lt\_of\_pos}, \texttt{Int.emod\_nonneg}).
@@ -333,7 +333,7 @@ Machine-checked in \texttt{validateSwapExecution} in \texttt{Proofs/Constellatio
 
 \section{Domain D: JEPA Latent Persona Memory Stability}
 
-\begin{theorem}[Lipschitz Identity \& Scale-Bounded Contraction]
+\begin{theorem}[Lipschitz Distance Identity \& Scale-Bounded Numerator]
 \label{thm:jepa_contraction}
 For the discrete unscaled EMA operator $T_{\text{raw}}(p, x, \tau) = \tau \cdot p + (\text{SCALE} - \tau) \cdot x$:
 \begin{equation}
@@ -343,21 +343,22 @@ Furthermore, for all $\tau \le \text{SCALE}$:
 \begin{equation}
     \text{distFixed}(T_{\text{raw}}(p_1, x, \tau),\, T_{\text{raw}}(p_2, x, \tau)) \le \text{SCALE} \cdot \text{distFixed}(p_1, p_2)
 \end{equation}
-Normalized by $\text{SCALE}$, this establishes that the EMA update is a non-expansion for all $\tau \le \text{SCALE}$, and a strict contraction when $\tau < \text{SCALE}$ (as deployed: $\tau = 9900 < 10000 = \text{SCALE}$, ratio $\tau / \text{SCALE} = 0.99$).
+Dividing through by $\text{SCALE}$ bounds the single-step expansion factor by $\le 1.0$ (non-expansion), with deployed factor $\tau / \text{SCALE} = 9900/10000 = 0.99 < 1$ providing strict contraction.
 \end{theorem}
 \begin{proof}
 Machine-checked in \texttt{Proofs/JEPAPersona.lean} (Theorem 7, \texttt{emaUpdateRaw\_dist} and \texttt{emaUpdateRaw\_dist\_le\_scale}).
 \end{proof}
 
-\begin{theorem}[Multi-Step Exponential Divergence Compression]
+\begin{theorem}[Multi-Step Unscaled Divergence Scaling]
 \label{thm:jepa_multistep}
-Under $n \in \mathbb{N}$ successive conversation turns with context $x$, the divergence between two latent persona states satisfies:
+Under $n \in \mathbb{N}$ successive conversation turns with context $x$, the distance between unscaled polynomial numerators satisfies:
 \begin{equation}
     \text{distFixed}(T_{\text{raw}}^n(p_1), T_{\text{raw}}^n(p_2)) = \tau^n \cdot \text{distFixed}(p_1, p_2)
 \end{equation}
+Relative to the accumulated scale factor $\text{SCALE}^n$, the normalized divergence scales as $(\tau / \text{SCALE})^n = (0.99)^n \to 0$.
 \end{theorem}
 \begin{proof}
-Proved by induction on $n \in \mathbb{N}$ using Lean's induction tactic. Machine-checked in \texttt{Proofs/JEPAPersona.lean} (Theorem 7b, \texttt{emaIterRaw\_dist}).
+Proved by induction on $n \in \mathbb{N}$ using Lean's induction tactic. Machine-checked in \texttt{Proofs/JEPAPersona.lean} (Theorem 7c, \texttt{emaIterRaw\_dist}).
 \end{proof}
 
 \begin{theorem}[Fixed-Point Identity Equilibrium]
@@ -410,10 +411,10 @@ Table~\ref{tab:security_matrix} maps each protocol threat class to its formal Le
 \textbf{Threat Class} & \textbf{Vulnerability Mechanism} & \textbf{Lean 4 Formal Guarantee} & \textbf{Proved Theorem} \\ \midrule
 \textbf{Negative-Fee Exploit} & Extreme transit alignments cause negative cost & Minimum cost $\ge 0.3 \cdot \text{Base} \cdot M > 0$; fee $\ge 0$ & Thm 2, 2b, Safety Lemma \\
 \textbf{1-Atom Rounding Drain} & Repeated micro-swaps extract fractional tokens & Output $\Delta y = 0$ below threshold & Thm 3.2c \\
-\textbf{Cyclic AMM Arbitrage} & Multi-pool swaps loop unbacked soulbound tokens & Net cycle output $\le \text{initial input}$ & Thm 5, Corollaries \\
+\textbf{Cyclic AMM Arbitrage} & Multi-pool swaps loop unbacked soulbound tokens & Net cycle output $\le \text{initial input}$ (conditional); round-trip unconditional & Thm 5, Corollaries \\
 \textbf{Slippage Frontrunning} & Miner/validator sandwiches user swap & Strict transaction rejection if $\text{out} < \text{minOut}$ & Thm 6 \\
-\textbf{Persona Jailbreak Drift} & Adversarial prompts hijack agent identity & State divergence contracts at rate $\tau^n$ & Thm 7, 7b, Drift Lemma \\
-\textbf{Latent Numerical Overflow} & Indefinite conversations compound vector bounds & State remains strictly in $[-\text{SCALE}, \text{SCALE}]$ & Thm 9, 9b, Vector Invariant \\
+\textbf{Persona Jailbreak Drift} & Adversarial prompts hijack agent identity & Normalized divergence contracts at rate $(\tau/\text{SCALE})^n$ & Thm 7, 7b, Drift Lemma \\
+\textbf{Latent Numerical Overflow} & Indefinite conversations compound vector bounds & State remains strictly in $[-\text{SCALE}, \text{SCALE}]$ BPS & Thm 9b, 9c, Vector Invariant \\
 \bottomrule
 \end{tabular}
 \caption{Protocol Threat Model and Corresponding Machine-Checked Formal Guarantees.}
@@ -424,7 +425,7 @@ Table~\ref{tab:security_matrix} maps each protocol threat class to its formal Le
 
 To guarantee that proofs are not vacuous, we execute a rigorous axiom audit. In Lean 4, unproven assumptions declared via \texttt{axiom} can introduce inconsistencies (as seen when asserting continuous real properties over IEEE-754 floating point arithmetic). 
 
-Table~\ref{tab:axiom_audit} provides the exact axiom dependencies for every module in the Planetary Agents formal proof suite, verified using Lean 4's kernel reflection (\texttt{\#print axioms}).
+Table~\ref{tab:axiom_audit} provides the exact axiom dependencies for every module in the Planetary Agents formal proof suite, verified by walking all 134 library declarations using Lean 4's kernel reflection (\texttt{Lean.collectAxioms} and \texttt{AxiomGate.lean}).
 
 \begin{table*}[htbp]
 \centering
@@ -436,10 +437,10 @@ Table~\ref{tab:axiom_audit} provides the exact axiom dependencies for every modu
 \texttt{Proofs.Discretization} & \textbf{0} & \textbf{0} & \texttt{propext}, \texttt{Quot.sound}, \texttt{Classical.choice} \\
 \texttt{Proofs.ConstellationAMM} & \textbf{0} & \textbf{0} & \texttt{propext}, \texttt{Quot.sound} \\
 \texttt{Proofs.JEPAPersona} & \textbf{0} & \textbf{0} & \texttt{propext}, \texttt{Quot.sound} \\ \midrule
-\textbf{Total Suite} & \textbf{0} & \textbf{0} & \textbf{Standard Lean 4 Foundations Only} \\
+\textbf{Total Suite (134 Decls)} & \textbf{0} & \textbf{0} & \textbf{Standard Lean 4 Foundations Only} \\
 \bottomrule
 \end{tabular}
-\caption{Kernel Axiom Dependency Audit across Proof Modules.}
+\caption{Kernel Axiom Dependency Audit across all 134 Library Declarations.}
 \label{tab:axiom_audit}
 \end{table*}
 
@@ -453,7 +454,8 @@ The formal verification suite is structured as a standalone, zero-dependency Lea
 proofs/lean/
 |-- lakefile.lean             # Lake build manifest
 |-- lean-toolchain            # leanprover/lean4:v4.13.0
-|-- check-axioms.sh           # CI verification and axiom audit gate
+|-- AxiomGate.lean            # Kernel-level environment-walking axiom gate
+|-- check-axioms.sh           # CI verification and axiom audit gate runner
 |-- Proofs.lean               # Root library module
 `-- Proofs/
     |-- Wavefunction.lean     # Celestial waveharmonics & pricing
@@ -464,26 +466,24 @@ proofs/lean/
 
 \subsection{Automated CI Gate}
 
-To prevent unproven assumptions or custom axioms from ever entering the codebase, the GitHub Actions workflow (\texttt{.github/workflows/lean-verify.yml}) executes \texttt{check-axioms.sh}:
+To prevent unproven assumptions or custom axioms from ever entering the codebase, the GitHub Actions workflow (\texttt{.github/workflows/lean-verify.yml}) executes \texttt{check-axioms.sh}, which runs the kernel environment-walking gate \texttt{AxiomGate.lean}:
 
 \begin{lstlisting}[language=bash]
 #!/usr/bin/env bash
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# 1. Check for any sorry keywords
+# 1. Fast text check for any sorry keywords
 if grep -rn "sorry" Proofs/; then
   echo "FAIL: Found 'sorry' obligations in Proofs/"
   exit 1
 fi
 
-# 2. Check for any custom axiom declarations
-if grep -rn "^axiom " Proofs/; then
-  echo "FAIL: Found custom 'axiom' declarations in Proofs/"
-  exit 1
-fi
+# 2. Kernel-level environment walk checking all 134+ declarations for non-standard axioms
+echo "--- Running Kernel Environment-Walking Axiom Gate ---"
+lake env lean --run AxiomGate.lean
 
-echo "PASS: Zero 'sorry' obligations and zero custom 'axiom' declarations found."
+echo "PASS: Verified zero 'sorry' obligations and zero non-standard axioms via kernel reflection."
 \end{lstlisting}
 
 \subsection{Reproduction Runbook}
