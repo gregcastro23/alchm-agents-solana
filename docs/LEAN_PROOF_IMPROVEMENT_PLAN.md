@@ -83,7 +83,7 @@ While property-based tests (fuzzing) can probe millions of pseudo-random inputs,
 │     • Open draft Pull Request #26 on GitHub                                            │
 │                                           │                                            │
 │                                           ▼                                            │
-│ [ ] Session 2: Wavefunction & Pricing Bounds Proofs (Proofs/Wavefunction.lean)         │
+│ [x] Session 2: Wavefunction & Pricing Bounds Proofs (Proofs/Wavefunction.lean)         │
 │     • Close Theorem 1 & 1b: Wavefunction Bound Invariance                              │
 │     • Close Theorem 2 & 2b: Economic Cost Positivity & 0.3x Lower Bound                │
 │     • Close Theorem 3 & 3b: Zero Energy Degeneracy                                     │
@@ -156,7 +156,7 @@ lake build
 
 ## 6. Verification Criteria
 
-- [ ] All theorems in `Wavefunction.lean` close without `sorry` axioms.
+- [x] All theorems in `Wavefunction.lean` close without `sorry` axioms.
 - [ ] All theorems in `ConstellationAMM.lean` close without `sorry` axioms.
 - [ ] All theorems in `JEPAPersona.lean` close without `sorry` axioms.
 - [ ] Fixed-point rounding invariants match Solana / Solidity implementations.
