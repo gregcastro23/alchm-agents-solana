@@ -121,7 +121,7 @@ While property-based tests (fuzzing) can probe millions of pseudo-random inputs,
 │     • Re-verify lake build with 0 sorry warnings across the entire suite               │
 │                                           │                                            │
 │                                           ▼                                            │
-│ [ ] Session 6: Verification Audit, LaTeX/Whitepaper Export & PR Finalization           │
+│ [x] Session 6: Verification Audit, LaTeX/Whitepaper Export & PR Finalization           │
 │     • Verify entire proof suite passes with zero sorry warnings                        │
 │     • Generate docs/FORMAL_VERIFICATION_REPORT.md audit summary                        │
 │     • Cross-reference verified theorems in Protocol Whitepaper & Security docs         │
@@ -177,4 +177,5 @@ lake build
 - [x] All theorems in `JEPAPersona.lean` close without `sorry` axioms.
 - [x] Fixed-point rounding invariants match Solana / Solidity implementations.
 - [x] Full Lean 4 verification suite passes with 0 errors and 0 warnings.
-- [ ] Summary mathematical report published to `docs/FORMAL_VERIFICATION_REPORT.md`.
+- [x] Summary mathematical report published to `docs/FORMAL_VERIFICATION_REPORT.md`.
+- [x] Standalone LaTeX whitepaper export published to `docs/WHITEPAPER_FORMAL_VERIFICATION.tex`.

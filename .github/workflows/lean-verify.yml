@@ -36,3 +36,9 @@ jobs:
         run: |
           cd proofs/lean
           lake build
+
+      - name: Verify Zero Unproven Axioms (No Sorries)
+        run: |
+          cd proofs/lean
+          ! grep -rn "sorry" Proofs/
+

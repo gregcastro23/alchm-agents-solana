@@ -197,4 +197,6 @@ Build completed successfully.
 
 All formal verification targets defined in [`docs/LEAN_PROOF_IMPROVEMENT_PLAN.md`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/docs/LEAN_PROOF_IMPROVEMENT_PLAN.md) are **100% complete and machine-checked**.
 
+A standalone, publication-ready LaTeX whitepaper export has been generated at [`docs/WHITEPAPER_FORMAL_VERIFICATION.tex`](file:///Users/cookingwithcastro/Desktop/AlchmAgentsSolana/docs/WHITEPAPER_FORMAL_VERIFICATION.tex), providing theorem environments, mathematical formulations, security matrices, and reproducible Lean 4 code listings suitable for inclusion in the Planetary Agents protocol whitepaper.
+
 The mathematical integrity of Planetary Agents' economic and agentic architecture is formally verified, establishing institutional confidence for audits and production mainnet deployment.

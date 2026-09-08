@@ -88,3 +88,9 @@ proofs/lean/
     ├── ConstellationAMM.lean # AMM virtual reserve conservation
     └── JEPAPersona.lean      # JEPA persona memory contraction
 ```
+
+## Documentation & Audit Reports
+
+- **Complete Formal Verification Report:** [`../../docs/FORMAL_VERIFICATION_REPORT.md`](../../docs/FORMAL_VERIFICATION_REPORT.md)
+- **Lean 4 Master Roadmap:** [`../../docs/LEAN_PROOF_IMPROVEMENT_PLAN.md`](../../docs/LEAN_PROOF_IMPROVEMENT_PLAN.md)
+- **LaTeX Whitepaper Export:** [`../../docs/WHITEPAPER_FORMAL_VERIFICATION.tex`](../../docs/WHITEPAPER_FORMAL_VERIFICATION.tex)

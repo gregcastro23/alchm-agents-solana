@@ -60,7 +60,9 @@ Machine-checked mathematical specifications and interactive proofs in Lean 4 (10
 - [Session 3: Fixed-Point Discretization & Precision Bounds](./LEAN_SESSION_3_OBJECTIVES.md)
 - [Session 4: Constellation AMM Invariants & Virtual Reserve Conservation](./LEAN_SESSION_4_OBJECTIVES.md)
 - [Session 5: JEPA EMA Persona Stability & Contraction](./LEAN_SESSION_5_OBJECTIVES.md)
+- [Session 6: Verification Audit, LaTeX/Whitepaper Export & PR Finalization](./LEAN_SESSION_6_PROMPT.md)
 - [Formal Verification Audit Report](./FORMAL_VERIFICATION_REPORT.md)
+- [LaTeX Whitepaper Export](./WHITEPAPER_FORMAL_VERIFICATION.tex)
 - [Lean Suite Readme](../proofs/lean/README.md)
 
 ### 🚀 [Deployment](./deployment/)
