@@ -1,0 +1,38 @@
+name: Lean 4 Formal Verification
+
+on:
+  push:
+    branches: [main, develop, feat/lean-formal-proofs-plan]
+    paths:
+      - 'proofs/**'
+      - '.github/workflows/lean-verify.yml'
+  pull_request:
+    branches: [main, develop, feat/lean-formal-proofs-plan]
+    paths:
+      - 'proofs/**'
+      - '.github/workflows/lean-verify.yml'
+
+jobs:
+  verify:
+    name: Build & Verify Proofs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install elan (Lean toolchain manager)
+        run: |
+          curl -sSf https://raw.githubusercontent.com/leanprover/elan/master/elan-init.sh | sh -s -- -y --default-toolchain none
+          echo "$HOME/.elan/bin" >> $GITHUB_PATH
+
+      - name: Verify Lean and Lake versions
+        run: |
+          cd proofs/lean
+          elan show
+          lean --version
+          lake --version
+
+      - name: Build Proofs
+        run: |
+          cd proofs/lean
+          lake build
