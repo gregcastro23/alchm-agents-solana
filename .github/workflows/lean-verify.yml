@@ -37,8 +37,10 @@ jobs:
           cd proofs/lean
           lake build
 
-      - name: Verify Zero Unproven Axioms (No Sorries)
+      - name: Verify Zero Unproven Axioms & Sorries (Axiom Audit Gate)
         run: |
           cd proofs/lean
-          ! grep -rn "sorry" Proofs/
+          chmod +x check-axioms.sh
+          ./check-axioms.sh
+
 

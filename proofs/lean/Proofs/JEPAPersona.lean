@@ -24,77 +24,8 @@ def emaUpdate1D (p : Float) (x : Float) (tau : Float) : Float :=
 def dist1D (a : Float) (b : Float) : Float :=
   (a - b).abs
 
-/-! ### Continuous Float Formal Specifications & Theorems -/
-
-/-- Idealized continuous real arithmetic specification for EMA Banach contraction.
-    In ℝ:
-      T(p1) - T(p2) = (tau * p1 + (1 - tau) * x) - (tau * p2 + (1 - tau) * x)
-                    = tau * (p1 - p2)
-    Taking absolute values:
-      |T(p1) - T(p2)| = |tau * (p1 - p2)| = tau * |p1 - p2|
-    Since tau < 1, dist(T(p1), T(p2)) <= tau * dist(p1, p2) is a strict contraction.
--/
-axiom ema_is_contraction_continuous (p1 : Float) (p2 : Float) (x : Float) (tau : Float)
-    (h_tau_lo : tau > 0.0)
-    (h_tau_hi : tau < 1.0) :
-    dist1D (emaUpdate1D p1 x tau) (emaUpdate1D p2 x tau) <= (tau * dist1D p1 p2)
-
-/-- Theorem 7 (EMA Operator Contraction - Float):
-    The EMA update operator is a strict contraction mapping for any two persona states
-    conditioned on the same observation x, with contraction factor tau < 1.
-    dist(T(p1), T(p2)) <= tau * dist(p1, p2)
--/
-theorem ema_is_contraction (p1 : Float) (p2 : Float) (x : Float) (tau : Float)
-    (h_tau_lo : tau > 0.0)
-    (h_tau_hi : tau < 1.0) :
-    dist1D (emaUpdate1D p1 x tau) (emaUpdate1D p2 x tau) <= (tau * dist1D p1 p2) :=
-  ema_is_contraction_continuous p1 p2 x tau h_tau_lo h_tau_hi
-
-/-- Idealized continuous real arithmetic specification for EMA fixed point identity.
-    In ℝ:
-      T(p, p, tau) = tau * p + (1 - tau) * p = (tau + 1 - tau) * p = 1.0 * p = p.
--/
-axiom ema_fixed_point_continuous (p : Float) (tau : Float)
-    (h_tau_lo : tau > 0.0)
-    (h_tau_hi : tau < 1.0) :
-    emaUpdate1D p p tau = p
-
-/-- Theorem 8 (Fixed Point Identity - Float):
-    When the observation vector X coincides with the current persona P,
-    the EMA state remains completely invariant (fixed point of the operator).
--/
-theorem ema_fixed_point (p : Float) (tau : Float)
-    (h_tau_lo : tau > 0.0)
-    (h_tau_hi : tau < 1.0) :
-    emaUpdate1D p p tau = p :=
-  ema_fixed_point_continuous p tau h_tau_lo h_tau_hi
-
-/-- Idealized continuous real arithmetic specification for EMA bounded output range.
-    In ℝ, since tau in [0, 1] and (1 - tau) in [0, 1] with tau + (1 - tau) = 1,
-    T(p, x, tau) is a convex combination of p and x.
-    Since p >= -1.0 and x >= -1.0: T(p, x, tau) >= tau * (-1.0) + (1 - tau) * (-1.0) = -1.0.
-    Since p <= 1.0 and x <= 1.0: T(p, x, tau) <= tau * (1.0) + (1 - tau) * (1.0) = 1.0.
--/
-axiom ema_bounded_range_continuous (p : Float) (x : Float) (tau : Float)
-    (h_tau : tau >= 0.0 ∧ tau <= 1.0)
-    (h_p : p >= -1.0 ∧ p <= 1.0)
-    (h_x : x >= -1.0 ∧ x <= 1.0) :
-    let p_next := emaUpdate1D p x tau
-    p_next >= -1.0 ∧ p_next <= 1.0
-
-/-- Theorem 9 (Bounded Output Range - Float):
-    If both the previous persona P and the incoming observation X are bounded
-    in [-1.0, 1.0], the updated persona remains strictly bounded in [-1.0, 1.0].
--/
-theorem ema_bounded_range (p : Float) (x : Float) (tau : Float)
-    (h_tau : tau >= 0.0 ∧ tau <= 1.0)
-    (h_p : p >= -1.0 ∧ p <= 1.0)
-    (h_x : x >= -1.0 ∧ x <= 1.0) :
-    let p_next := emaUpdate1D p x tau;
-    p_next >= -1.0 ∧ p_next <= 1.0 :=
-  ema_bounded_range_continuous p x tau h_tau h_p h_x
-
 /-! ### Discrete Integer Fixed-Point Formal Model (BPS Scaled) -/
+
 
 /-- Basis points scaling factor (10,000 = 1.0). -/
 def SCALE : Int := 10000
@@ -179,6 +110,19 @@ theorem emaUpdateRaw_dist (p1 p2 x tau : Int) (h_tau : 0 ≤ tau) :
   dsimp [distFixed]
   rw [emaUpdateRaw_sub]
   exact intAbs_mul_of_nonneg tau (p1 - p2) h_tau
+
+/-- Corollary 7 (Scale-Bounded Contraction Invariant):
+    When tau <= SCALE (e.g. tau = 9900 <= 10000), the raw step distance is strictly
+    bounded by SCALE * distFixed(p1, p2), meaning the normalized distance
+    distFixed / SCALE satisfies distFixed / SCALE <= (tau / SCALE) * distFixed <= distFixed,
+    proving non-expansion and strict contraction when tau < SCALE.
+-/
+theorem emaUpdateRaw_dist_le_scale (p1 p2 x tau : Int) (h_tau_nonneg : 0 ≤ tau) (h_tau_le : tau ≤ SCALE) :
+    distFixed (emaUpdateRaw p1 x tau) (emaUpdateRaw p2 x tau) ≤ SCALE * distFixed p1 p2 := by
+  rw [emaUpdateRaw_dist p1 p2 x tau h_tau_nonneg]
+  have h_dist_nonneg : 0 ≤ distFixed p1 p2 := (intAbs_bounds (p1 - p2)).2.2
+  exact Int.mul_le_mul_of_nonneg_right h_tau_le h_dist_nonneg
+
 
 /-- Repeated EMA update operator after n discrete chat turns. -/
 def emaIterRaw (p : Int) (x : Int) (tau : Int) : Nat → Int

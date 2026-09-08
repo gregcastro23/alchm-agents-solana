@@ -18,35 +18,9 @@ namespace Discretization
 open Wavefunction
 open ConstellationAMM
 
-/-! ### Theorem 3.1: Wavefunction Discretization Epsilon Bound -/
+/-! ### Theorem 3.1: Wavefunction Discretization Remainder & Precision Bound -/
 
-/-- Idealized continuous Float specification:
-    Off-chain simulation in TypeScript (chat-pricing.ts) differs from the
-    on-chain scaled integer dignity wave (Solana / Solidity) by strictly
-    less than 1 basis point (1 / SCALE = 10^-4 = 0.01%).
--/
-axiom dignityWave_discretization_epsilon_continuous
-    (pCont : ElementalPotentials) (pFixed : ElementalPotentialsFixed) (e : Element)
-    (hE_cont : totalEnergy pCont > 0.0)
-    (hE_fixed : totalEnergyFixed pFixed > 0)
-    (h_match : getPotential pCont e = Float.ofInt (getPotentialFixed pFixed e))
-    (h_energy_match : totalEnergy pCont = Float.ofInt (totalEnergyFixed pFixed)) :
-    (dignityWave pCont e - (Float.ofInt (dignityWaveFixed pFixed e) / 10000.0)).abs < (1.0 / 10000.0)
-
-/-- Theorem 3.1 (Float Model - Wavefunction Discretization Epsilon Bound):
-    The maximum divergence between continuous real simulation and discrete
-    integer evaluation is strictly bounded by 10^-4 (1 BPS).
--/
-theorem dignityWave_discretization_epsilon
-    (pCont : ElementalPotentials) (pFixed : ElementalPotentialsFixed) (e : Element)
-    (hE_cont : totalEnergy pCont > 0.0)
-    (hE_fixed : totalEnergyFixed pFixed > 0)
-    (h_match : getPotential pCont e = Float.ofInt (getPotentialFixed pFixed e))
-    (h_energy_match : totalEnergy pCont = Float.ofInt (totalEnergyFixed pFixed)) :
-    (dignityWave pCont e - (Float.ofInt (dignityWaveFixed pFixed e) / 10000.0)).abs < (1.0 / 10000.0) :=
-  dignityWave_discretization_epsilon_continuous pCont pFixed e hE_cont hE_fixed h_match h_energy_match
-
-/-- Theorem 3.1b (Discrete Integer Model - Exact Remainder & Precision Bound):
+/-- Theorem 3.1 (Discrete Integer Model - Exact Remainder & Precision Bound):
     For any integer potential vector with total energy E > 0:
     The difference between the scaled numerator (2 * v_a * SCALE) and the on-chain
     discrete wave value scaled by E is exactly the Euclidean division remainder R,
@@ -111,31 +85,32 @@ theorem calculateCostFixed_truncation_le
   · omega
 
 /-- Theorem 3.2b (AMM Output Truncation Solvency Invariant):
-    In ConstellationAMM (contracts/src/ConstellationAMM.sol and
-    programs/asol_program/src/state/amm.rs):
-      outAmt = (inWithFee * reserveOut) / (reserveIn * BPS + inWithFee)
+    In ConstellationAMM (contracts/src/ConstellationAMM.sol lines 260-261 and
+    programs/asol_program/src/state/amm.rs lines 119-122):
+      inWithFee = (amtIn * (BPS - fee)) / BPS
+      outAmt = (inWithFee * reserveOut) / (reserveIn + inWithFee)
     Integer division floors trader output:
-      outAmt * ((reserveIn * BPS) + inWithFee) <= inWithFee * reserveOut
+      outAmt * (reserveIn + inWithFee) <= inWithFee * reserveOut
     Significance: Truncation strictly operates in favor of pool reserves,
     ensuring that the constant product k' >= k is preserved or increased.
 -/
 theorem amm_getAmountOut_truncation_le
     (amtIn : Nat) (resIn : Nat) (resOut : Nat) (fee : Nat) :
-    let inWithFee := amtIn * (BPS - fee)
+    let inWithFee := (amtIn * (BPS - fee)) / BPS
     let num := inWithFee * resOut
-    let den := (resIn * BPS) + inWithFee
+    let den := resIn + inWithFee
     getAmountOut amtIn resIn resOut fee * den <= num := by
   dsimp [getAmountOut]
   by_cases h : (amtIn == 0 ∨ resIn == 0 ∨ resOut == 0)
   · rw [if_pos h]
     omega
   · rw [if_neg h]
-    exact Nat.div_mul_le_self (amtIn * (BPS - fee) * resOut) ((resIn * BPS) + amtIn * (BPS - fee))
+    exact Nat.div_mul_le_self (((amtIn * (BPS - fee)) / BPS) * resOut) (resIn + (amtIn * (BPS - fee)) / BPS)
 
 /-- Theorem 3.2c (AMM Sub-Atom Extraction Prevention / 1-Atom Drain Immunity):
     If the scaled fee-adjusted input amount is too small to buy even 1 atomic
     unit of the output reserve:
-      inWithFee * reserveOut < (reserveIn * BPS) + inWithFee
+      inWithFee * reserveOut < reserveIn + inWithFee
     the integer output is strictly 0.
     Significance: An attacker attempting to siphon pool liquidity via repeated
     micro-swaps (e.g. 1-atom swaps) receives 0 output tokens, completely
@@ -143,13 +118,14 @@ theorem amm_getAmountOut_truncation_le
 -/
 theorem amm_sub_atom_zero
     (amtIn : Nat) (resIn : Nat) (resOut : Nat) (fee : Nat)
-    (h_small : amtIn * (BPS - fee) * resOut < (resIn * BPS) + amtIn * (BPS - fee)) :
+    (h_small : ((amtIn * (BPS - fee)) / BPS) * resOut < resIn + ((amtIn * (BPS - fee)) / BPS)) :
     getAmountOut amtIn resIn resOut fee = 0 := by
   dsimp [getAmountOut]
   by_cases h : (amtIn == 0 ∨ resIn == 0 ∨ resOut == 0)
   · rw [if_pos h]
   · rw [if_neg h]
     exact Nat.div_eq_of_lt h_small
+
 
 /-! ### Theorem 3.3: Strict Sub-Threshold Non-Negativity -/
 

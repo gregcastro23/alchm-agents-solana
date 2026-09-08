@@ -115,23 +115,9 @@ theorem getPotential_bounds (p : ElementalPotentialsFixed) (e : Element) :
 
 /-! ### Formal Theorem Specifications -/
 
-/-- Idealized continuous real arithmetic specification for dignity wave boundedness.
-    In the continuous limit (ℝ), |v_a| <= E implies |v_a| / (E / 2) = 2 * |v_a| / E <= 2.
--/
-axiom dignityWave_bounded_continuous (p : ElementalPotentials) (e : Element)
-    (h_pos : totalEnergy p > 0.0) :
-    (dignityWave p e) >= -2.0 ∧ (dignityWave p e) <= 2.0
-
-/-- Theorem 1 (Bound Invariance - Float):
-    For any non-zero energy potentials, the continuous dignity wave is bounded in [-2.0, 2.0].
--/
-theorem dignityWave_bounded (p : ElementalPotentials) (e : Element)
-    (h_pos : totalEnergy p > 0.0) :
-    (dignityWave p e) >= -2.0 ∧ (dignityWave p e) <= 2.0 :=
-  dignityWave_bounded_continuous p e h_pos
-
-/-- Theorem 1b (Bound Invariance - Fixed Point):
-    For any non-zero energy potentials in fixed point, the dignity wave is bounded in [-20000, 20000].
+/-- Theorem 1 (Bound Invariance - Fixed Point Basis Points):
+    For any non-zero energy potentials in fixed point, the dignity wave is strictly bounded in [-20000, 20000].
+    Significance: Formally guarantees that no celestial transit alignment can cause overflow or exceed [-2.0, 2.0].
 -/
 theorem dignityWaveFixed_bounded (p : ElementalPotentialsFixed) (e : Element)
     (h_pos : totalEnergyFixed p > 0) :
@@ -160,32 +146,7 @@ theorem dignityWaveFixed_bounded (p : ElementalPotentialsFixed) (e : Element)
 
   exact ⟨h_div_ge, h_div_le⟩
 
-/-- Idealized continuous real arithmetic specification for chat pricing positivity.
-    Since boundedFactor = max(0.3, 1.0 - 0.35 * psi) >= 0.3,
-    Cost_a = baseCost * boundedFactor * multiplier >= 0.3 * baseCost * multiplier > 0.0.
--/
-axiom calculateCost_positive_continuous (baseCost : Float) (psi : Float) (multiplier : Float)
-    (h_base : baseCost > 0.0)
-    (h_mult : multiplier >= 1.0)
-    (h_psi_lo : psi >= -2.0)
-    (h_psi_hi : psi <= 2.0) :
-    calculateCost baseCost psi multiplier >= (0.3 * baseCost * multiplier) ∧
-    calculateCost baseCost psi multiplier > 0.0
-
-/-- Theorem 2 (Economic Positivity & Lower Bound - Float):
-    For any strictly positive base cost, bounded wave, and positive multiplier,
-    the calculated cost is strictly greater than zero and bounded from below.
--/
-theorem calculateCost_positive (baseCost : Float) (psi : Float) (multiplier : Float)
-    (h_base : baseCost > 0.0)
-    (h_mult : multiplier >= 1.0)
-    (h_psi_lo : psi >= -2.0)
-    (h_psi_hi : psi <= 2.0) :
-    calculateCost baseCost psi multiplier >= (0.3 * baseCost * multiplier) ∧
-    calculateCost baseCost psi multiplier > 0.0 :=
-  calculateCost_positive_continuous baseCost psi multiplier h_base h_mult h_psi_lo h_psi_hi
-
-/-- Theorem 2b (Economic Positivity & Lower Bound - Fixed Point):
+/-- Theorem 2 (Economic Positivity & Lower Bound - Neutral/Markup):
     For any base cost >= 4 (the precision threshold ensuring 0.3x discount does not
     discretize to zero in 10,000 BPS scaling) and multiplier >= SCALE (1.0 in fixed-point),
     the calculated cost is bounded from below by (3000 * baseCost * mult) / (SCALE^2)
@@ -198,6 +159,7 @@ theorem calculateCostFixed_positive (baseCost : Int) (psiFixed : Int) (multFixed
     (_h_psi_hi : psiFixed <= 2 * SCALE) :
     calculateCostFixed baseCost psiFixed multFixed >= (3000 * baseCost * multFixed) / (SCALE * SCALE) ∧
     calculateCostFixed baseCost psiFixed multFixed > 0 := by
+
   dsimp [calculateCostFixed]
   generalize hB_def : (if SCALE - 3500 * psiFixed / SCALE < 3000 then 3000 else SCALE - 3500 * psiFixed / SCALE) = B
   have hB : 3000 <= B := by
@@ -238,14 +200,63 @@ theorem calculateCostFixed_positive (baseCost : Int) (psiFixed : Int) (multFixed
     omega
   exact ⟨h_lower, h_pos_goal⟩
 
+/-- Theorem 2b (Economic Positivity & Lower Bound - Resonance Discount Regime):
+    In chat-pricing.ts, CHAT_RESONANCE_DISCOUNT = 0.5 (i.e. multFixed = 5000 bps).
+    For any base cost >= 7 and multiplier >= 5000, 3000 * 7 * 5000 = 105,000,000 > SCALE^2,
+    guaranteeing that resonance-discounted messages strictly produce positive fees (> 0).
+-/
+theorem calculateCostFixed_positive_resonance (baseCost : Int) (psiFixed : Int) (multFixed : Int)
+    (h_base : baseCost >= 7)
+    (h_mult : multFixed >= 5000)
+    (_h_psi_lo : psiFixed >= -2 * SCALE)
+    (_h_psi_hi : psiFixed <= 2 * SCALE) :
+    calculateCostFixed baseCost psiFixed multFixed >= (3000 * baseCost * multFixed) / (SCALE * SCALE) ∧
+    calculateCostFixed baseCost psiFixed multFixed > 0 := by
+  dsimp [calculateCostFixed]
+  generalize hB_def : (if SCALE - 3500 * psiFixed / SCALE < 3000 then 3000 else SCALE - 3500 * psiFixed / SCALE) = B
+  have hB : 3000 <= B := by
+    subst hB_def
+    split <;> omega
+  have h_base_nonneg : 0 <= baseCost := by omega
+  have h_mult_nonneg : 0 <= multFixed := by omega
+  have h1 : baseCost * 3000 <= baseCost * B :=
+    Int.mul_le_mul_of_nonneg_left hB h_base_nonneg
+  have h2 : (baseCost * 3000) * multFixed <= (baseCost * B) * multFixed :=
+    Int.mul_le_mul_of_nonneg_right h1 h_mult_nonneg
+  rw [Int.mul_comm baseCost 3000] at h2
+  have h_pos_denom : 0 < SCALE * SCALE := by decide
+  have h_lower := Int.ediv_le_ediv h_pos_denom h2
+
+  have h_denom_val : SCALE * SCALE = 100000000 := by decide
+  have h_bc : 21000 <= 3000 * baseCost := by omega
+  have _h_step1 : 21000 * multFixed <= (3000 * baseCost) * multFixed :=
+    Int.mul_le_mul_of_nonneg_right h_bc h_mult_nonneg
+  have h_pos21 : 0 <= (21000 : Int) := by decide
+  have _h_step2 : 21000 * 5000 <= 21000 * multFixed :=
+    Int.mul_le_mul_of_nonneg_left h_mult h_pos21
+  have h_num_ge_denom : SCALE * SCALE <= 3000 * baseCost * multFixed := by
+    rw [h_denom_val]
+    omega
+  have h_div_ge_one : (SCALE * SCALE) / (SCALE * SCALE) <= (3000 * baseCost * multFixed) / (SCALE * SCALE) :=
+    Int.ediv_le_ediv h_pos_denom h_num_ge_denom
+  have h_one : (SCALE * SCALE) / (SCALE * SCALE) = 1 := by
+    apply Int.ediv_self
+    decide
+  rw [h_one] at h_div_ge_one
+  have h_pos_goal : baseCost * B * multFixed / (SCALE * SCALE) > 0 := by
+    omega
+  exact ⟨h_lower, h_pos_goal⟩
+
 /-- Lower bound invariant for arbitrary positive base cost (baseCost > 0):
     Even when baseCost < 4, the calculated fee is bounded from below by
     the theoretical floor (3000 * baseCost * multFixed) / (SCALE * SCALE).
+    Holds across all operating regimes, including resonance discount (multFixed >= 0).
 -/
 theorem calculateCostFixed_lower_bound (baseCost : Int) (psiFixed : Int) (multFixed : Int)
     (h_base : baseCost > 0)
-    (h_mult : multFixed >= SCALE) :
+    (h_mult : multFixed >= 0) :
     calculateCostFixed baseCost psiFixed multFixed >= (3000 * baseCost * multFixed) / (SCALE * SCALE) := by
+
   dsimp [calculateCostFixed]
   generalize hB_def : (if SCALE - 3500 * psiFixed / SCALE < 3000 then 3000 else SCALE - 3500 * psiFixed / SCALE) = B
   have hB : 3000 <= B := by

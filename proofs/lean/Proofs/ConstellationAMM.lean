@@ -23,15 +23,18 @@ def constantProduct (pool : PoolState) : Nat :=
   pool.reserveA * pool.reserveB
 
 /-- Amount of output token obtained for a given input amount with fee.
-    Equation: outAmt = (inAmtWithFee * reserveOut) / (reserveIn * BPS + inAmtWithFee)
+    Exact deployed formula matching programs/asol_program/src/state/amm.rs (lines 119-122)
+    and contracts/src/ConstellationAMM.sol (lines 260-261):
+      inWithFee = (amtIn * (BPS - feeBps)) / BPS
+      outAmt = (inWithFee * reserveOut) / (reserveIn + inWithFee)
 -/
 def getAmountOut (amtIn : Nat) (reserveIn : Nat) (reserveOut : Nat) (feeBps : Nat) : Nat :=
   if amtIn == 0 ∨ reserveIn == 0 ∨ reserveOut == 0 then
     0
   else
-    let inWithFee := amtIn * (BPS - feeBps)
+    let inWithFee := (amtIn * (BPS - feeBps)) / BPS
     let numerator := inWithFee * reserveOut
-    let denominator := (reserveIn * BPS) + inWithFee
+    let denominator := reserveIn + inWithFee
     numerator / denominator
 
 /-- State transition when swapping amountIn of token A for token B. -/
@@ -61,29 +64,24 @@ theorem getAmountOut_mul_reserveIn_le (amtIn : Nat) (resIn : Nat) (resOut : Nat)
     exact Nat.zero_le (amtIn * resOut)
   · rw [if_neg h]
     let γ := BPS - fee
-    let inWithFee := amtIn * γ
+    let inWithFee := (amtIn * γ) / BPS
     let num := inWithFee * resOut
-    let den := resIn * BPS + inWithFee
+    let den := resIn + inWithFee
     let amtOut := num / den
     have h_div_le : amtOut * den <= num := Nat.div_mul_le_self num den
-    have h_den_ge : resIn * BPS <= den := by omega
-    have h1 : amtOut * (resIn * BPS) <= amtOut * den := Nat.mul_le_mul_left amtOut h_den_ge
-    have h2 : amtOut * (resIn * BPS) <= num := Nat.le_trans h1 h_div_le
-    have h_comm_in : amtOut * (resIn * BPS) = (amtOut * resIn) * BPS := (Nat.mul_assoc amtOut resIn BPS).symm
-    have h_γ_le : γ <= BPS := by omega
-    have h_num_le : num <= (amtIn * resOut) * BPS := by
-      have : num = (amtIn * resOut) * γ := by
-        change (amtIn * γ) * resOut = (amtIn * resOut) * γ
-        exact Nat.mul_right_comm amtIn γ resOut
-      rw [this]
-      exact Nat.mul_le_mul_left (amtIn * resOut) h_γ_le
-    rw [h_comm_in] at h2
-    have h3 : (amtOut * resIn) * BPS <= (amtIn * resOut) * BPS := Nat.le_trans h2 h_num_le
-    have h_bps_pos : 0 < BPS := by decide
-    have h3' : BPS * (amtOut * resIn) <= BPS * (amtIn * resOut) := by
-      rw [Nat.mul_comm BPS (amtOut * resIn), Nat.mul_comm BPS (amtIn * resOut)]
-      exact h3
-    exact Nat.le_of_mul_le_mul_left h3' h_bps_pos
+    have h_den_ge : resIn <= den := Nat.le_add_right resIn inWithFee
+    have h1 : amtOut * resIn <= amtOut * den := Nat.mul_le_mul_left amtOut h_den_ge
+    have h2 : amtOut * resIn <= num := Nat.le_trans h1 h_div_le
+    have h_div_le_in : inWithFee <= amtIn := by
+      dsimp [inWithFee]
+      have h_mul : amtIn * γ <= amtIn * BPS := by
+        apply Nat.mul_le_mul_left
+        omega
+      exact Nat.div_le_of_le_mul (by rw [Nat.mul_comm BPS amtIn]; exact h_mul)
+    have h_num_le : num <= amtIn * resOut := by
+      dsimp [num]
+      apply Nat.mul_le_mul_right resOut h_div_le_in
+    exact Nat.le_trans h2 h_num_le
 
 /-! ### Formal Theorem Specifications -/
 
@@ -109,40 +107,41 @@ theorem invariant_non_decreasing (pool : PoolState) (amtIn : Nat)
     · have : pool.reserveB = 0 := Nat.eq_of_beq_eq_true h3; omega
   rw [if_neg h_ne]
   let γ := BPS - pool.feeBps
-  let inWithFee := amtIn * γ
+  let inWithFee := (amtIn * γ) / BPS
   let num := inWithFee * pool.reserveB
-  let den := pool.reserveA * BPS + inWithFee
+  let den := pool.reserveA + inWithFee
   let amtOut := num / den
   have h_div_le : amtOut * den <= num := Nat.div_mul_le_self num den
-  have h_γ_le : γ <= BPS := by omega
-  have h1 : pool.reserveA * γ <= pool.reserveA * BPS := Nat.mul_le_mul_left pool.reserveA h_γ_le
-  have h2 : (pool.reserveA + amtIn) * γ <= den := by
-    have h_add : (pool.reserveA + amtIn) * γ = pool.reserveA * γ + amtIn * γ := Nat.add_mul pool.reserveA amtIn γ
-    rw [h_add]
-    exact Nat.add_le_add_right h1 (amtIn * γ)
-  have h3 : amtOut * ((pool.reserveA + amtIn) * γ) <= amtOut * den :=
-    Nat.mul_le_mul_left amtOut h2
-  have h4 : amtOut * ((pool.reserveA + amtIn) * γ) <= num := Nat.le_trans h3 h_div_le
-  have h_assoc : amtOut * ((pool.reserveA + amtIn) * γ) = (amtOut * (pool.reserveA + amtIn)) * γ :=
-    (Nat.mul_assoc amtOut (pool.reserveA + amtIn) γ).symm
-  have h_num : num = (amtIn * pool.reserveB) * γ := Nat.mul_right_comm amtIn γ pool.reserveB
-  have h4' : γ * (amtOut * (pool.reserveA + amtIn)) <= γ * (amtIn * pool.reserveB) := by
-    rw [Nat.mul_comm γ (amtOut * (pool.reserveA + amtIn))]
-    rw [Nat.mul_comm γ (amtIn * pool.reserveB)]
-    rw [← h_assoc, ← h_num]
-    exact h4
+  have h_inWithFee_le : inWithFee <= amtIn := by
+    dsimp [inWithFee]
+    have h_mul : amtIn * γ <= amtIn * BPS := by
+      apply Nat.mul_le_mul_left
+      omega
+    exact Nat.div_le_of_le_mul (by rw [Nat.mul_comm BPS amtIn]; exact h_mul)
+  have h_amtOut_le : amtOut <= pool.reserveB := by
+    have h_le : inWithFee * pool.reserveB <= den * pool.reserveB := by
+      apply Nat.mul_le_mul_right
+      dsimp [den]
+      exact Nat.le_add_left inWithFee pool.reserveA
+    exact Nat.div_le_of_le_mul h_le
+  have h_split : pool.reserveA + amtIn = den + (amtIn - inWithFee) := by
+    dsimp [den]
+    omega
   have h_key : amtOut * (pool.reserveA + amtIn) <= amtIn * pool.reserveB := by
-    by_cases hγ : γ = 0
-    · have h_num_zero : num = 0 := by
-        change (amtIn * γ) * pool.reserveB = 0
-        rw [hγ, Nat.mul_zero, Nat.zero_mul]
-      have : amtOut = 0 := by
-        change num / den = 0
-        rw [h_num_zero, Nat.zero_div]
-      rw [this, Nat.zero_mul]
-      exact Nat.zero_le (amtIn * pool.reserveB)
-    · have hγ_pos : 0 < γ := by omega
-      exact Nat.le_of_mul_le_mul_left h4' hγ_pos
+    rw [h_split, Nat.mul_add]
+    have h_part1 : amtOut * den <= inWithFee * pool.reserveB := h_div_le
+    have h_part2 : amtOut * (amtIn - inWithFee) <= pool.reserveB * (amtIn - inWithFee) :=
+      Nat.mul_le_mul_right (amtIn - inWithFee) h_amtOut_le
+    have h_sum : amtOut * den + amtOut * (amtIn - inWithFee) <=
+                 inWithFee * pool.reserveB + pool.reserveB * (amtIn - inWithFee) :=
+      Nat.add_le_add h_part1 h_part2
+    have h_right : inWithFee * pool.reserveB + pool.reserveB * (amtIn - inWithFee) = amtIn * pool.reserveB := by
+      rw [Nat.mul_comm inWithFee pool.reserveB]
+      rw [← Nat.mul_add]
+      have : inWithFee + (amtIn - inWithFee) = amtIn := Nat.add_sub_of_le h_inWithFee_le
+      rw [this, Nat.mul_comm]
+    rw [h_right] at h_sum
+    exact h_sum
   have h_prod : (pool.reserveA + amtIn) * (pool.reserveB - amtOut) =
       (pool.reserveA + amtIn) * pool.reserveB - (pool.reserveA + amtIn) * amtOut :=
     Nat.mul_sub_left_distrib (pool.reserveA + amtIn) pool.reserveB amtOut
@@ -153,6 +152,7 @@ theorem invariant_non_decreasing (pool : PoolState) (amtIn : Nat)
     Nat.add_mul pool.reserveA amtIn pool.reserveB
   rw [h_base]
   omega
+
 
 /-- Theorem 5 (No-Infinite-Mint Cycle / Cyclic Arbitrage Conservation):
     Under any sequence of swaps through distinct elemental pools forming a closed cycle
@@ -295,16 +295,43 @@ theorem no_infinite_mint_roundtrip (pAB : PoolState) (pBA : PoolState)
     exact h_chain
   exact Nat.le_of_mul_le_mul_left h_final' hK_pos
 
-/-- Theorem 6 (Slippage and Minimum Output Guarantee):
-    If the computed output is strictly less than minOut, the execution condition evaluates to false.
+/-- Contract execution validation predicate modeling on-chain require statements in
+    programs/asol_program/src/state/amm.rs (lines 111-131) and contracts/src/ConstellationAMM.sol (line 262):
+      require!(outAmt >= minOut);
+      require!(outAmt > 0);
+      require!(outAmt < reserveOut);
+-/
+def validateSwapExecution (outAmt : Nat) (minOut : Nat) (reserveOut : Nat) : Bool :=
+  (decide (outAmt >= minOut)) && (decide (outAmt > 0)) && (decide (outAmt < reserveOut))
+
+/-- Theorem 6 (Slippage Reversion Guarantee):
+    If the computed output is strictly less than minOut, on-chain execution strictly reverts
+    (validateSwapExecution evaluates to false).
     Significance: Formally proves that on-chain execution strictly reverts if slippage exceeds user
     tolerance, preventing MEV sandwich attacks and adverse execution.
 -/
-theorem slippage_protection (amtIn : Nat) (resIn : Nat) (resOut : Nat) (fee : Nat) (minOut : Nat) :
-    getAmountOut amtIn resIn resOut fee < minOut →
-    (getAmountOut amtIn resIn resOut fee >= minOut) = false := by
-  intro h
-  have h_not : ¬(getAmountOut amtIn resIn resOut fee >= minOut) := by omega
-  simp [h_not]
+theorem slippage_protection (outAmt : Nat) (minOut : Nat) (reserveOut : Nat)
+    (h_slip : outAmt < minOut) :
+    validateSwapExecution outAmt minOut reserveOut = false := by
+  dsimp [validateSwapExecution]
+  have h_not : ¬(outAmt >= minOut) := by omega
+  have h_dec : decide (outAmt >= minOut) = false := decide_eq_false h_not
+  rw [h_dec]
+  rfl
+
+/-- Reserve Exhaustion Reversion Guarantee:
+    If a swap would drain the entire reserve or exceed it (outAmt >= reserveOut),
+    execution strictly reverts, preserving pool solvency.
+-/
+theorem reserve_exhaustion_protection (outAmt : Nat) (minOut : Nat) (reserveOut : Nat)
+    (h_exhaust : outAmt >= reserveOut) :
+    validateSwapExecution outAmt minOut reserveOut = false := by
+  dsimp [validateSwapExecution]
+  have h_not : ¬(outAmt < reserveOut) := by omega
+  have h_dec : decide (outAmt < reserveOut) = false := decide_eq_false h_not
+  rw [h_dec]
+  simp
+
+
 
 end ConstellationAMM
