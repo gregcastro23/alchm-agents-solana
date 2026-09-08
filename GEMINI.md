@@ -61,8 +61,9 @@ This document outlines the specialized agentic workflows and LangChain integrati
 - **Purpose:** Interactive machine-checked mathematical proofs establishing protocol invariants across celestial waveharmonics, virtual-reserve AMM mechanics, and JEPA memory stability in Lean 4 (`v4.13.0`).
 - **Active Modules:**
   - **`Proofs.Wavefunction` (✅ 100% Machine-Checked):** Proves bounded harmonic range $\Psi_a \in [-2, 2]$ (and $[-20000, 20000]$ BPS), economic positivity ($\text{Cost}_a \ge 0.3 \cdot \text{Base} \cdot M > 0$), and non-negativity against negative-fee prompt exploits.
-  - **`Proofs.ConstellationAMM`:** Constant-product virtual reserve monotonicity ($k' \ge k$) and no-arbitrage cyclic swap conservation.
-  - **`Proofs.JEPAPersona`:** 64-dimensional EMA persona matrix contraction mapping ($\tau = 0.99$) and bounded variance drift stabilization.
+  - **`Proofs.Discretization` (✅ 100% Machine-Checked):** Proves epsilon discretization error bound ($< 10^{-4}$ BPS), exact Euclidean remainder $0 \le R < E$, pricing and AMM swap truncation solvency, and sub-atom extraction immunity (1-atom drain protection).
+  - **`Proofs.ConstellationAMM` (✅ 100% Machine-Checked):** Universal ratio lemma ($outAmt \cdot R_{\text{in}} \le \Delta x \cdot R_{\text{out}}$), constant-product virtual reserve monotonicity ($k' \ge k$), multi-hop cyclic arbitrage conservation ($R_B^{AB} R_C^{BC} R_A^{CA} \le R_A^{AB} R_B^{BC} R_C^{CA} \implies \text{out}_{A,\text{final}} \le \text{in}_{A,\text{initial}}$), symmetric and round-trip swap conservation, and strict slippage bound rejection.
+  - **`Proofs.JEPAPersona` (✅ 100% Machine-Checked):** 64-dimensional EMA persona matrix Banach contraction mapping ($\tau = 0.99$), multi-step exponential divergence compression ($\tau^n \to 0$), fixed point identity equilibrium ($T(P) = P$), single-turn context drift reduction, and bounded variance drift stabilization ($[-1.0, 1.0]$ and BPS $[-10000, 10000]$).
 - **Verification Runner:** `cd proofs/lean && lake build` (Zero external dependencies; executes in < 2 seconds under 16GB RAM / Apple Silicon).
 
 ## ⛓️ On-Chain & Agent Economy

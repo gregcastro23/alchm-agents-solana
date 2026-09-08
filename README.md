@@ -252,6 +252,27 @@ bun run test:ci:chat                 # CI/CD pipeline testing
 bun run test:chat:report             # Display latest test summary
 ```
 
+## 🔬 Formal Verification (Lean 4)
+
+Interactive machine-checked mathematical proofs in Lean 4 (`v4.13.0`) + Lake (`5.0.0`) establishing absolute protocol guarantees with **0 sorry declarations and 0 warnings**:
+
+- **Celestial Dignity Wavefunction (`Proofs.Wavefunction`)**: Proves bounded harmonic range $\Psi_a \in [-2, 2]$ (and $[-20000, 20000]$ BPS), pricing lower bounds ($\text{Cost}_a \ge 0.3 \cdot \text{Base} \cdot M > 0$), and non-negativity against negative-fee prompt injection exploits.
+- **Fixed-Point Discretization Solvency (`Proofs.Discretization`)**: Proves sub-BPS simulation error ($< 10^{-4}$), exact Euclidean integer division remainders ($0 \le R < E$), pricing floor downward truncation, and sub-atom swap protection (1-atom drain immunity).
+- **Constellation AMM Conservation (`Proofs.ConstellationAMM`)**: Proves constant-product virtual reserve monotonicity ($k' \ge k$), universal reserve ratio lemma ($\text{outAmt} \cdot R_{\text{in}} \le \Delta x \cdot R_{\text{out}}$), multi-hop cyclic swap arbitrage conservation ($\text{out}_{A,\text{final}} \le \text{in}_{A,\text{initial}}$), symmetric/round-trip zero-arbitrage corollaries, and slippage rejection.
+- **JEPA EMA Persona Stability (`Proofs.JEPAPersona`)**: Proves strict Banach contraction mapping ($\tau = 0.99 < 1$), discrete exact Lipschitz contraction identity, multi-step exponential divergence compression ($\tau^n \to 0$), fixed point identity equilibrium ($T(P) = P$), and bounded output range invariance in $[-1.0, 1.0]$ and $[-10000, 10000]$ BPS.
+
+### Verification Commands
+
+```bash
+# Build all Lean 4 formal verification proofs
+cd proofs/lean && lake clean && lake build
+
+# Audit zero unproven obligations
+grep -rn "sorry" Proofs/
+```
+
+See [`docs/FORMAL_VERIFICATION_REPORT.md`](docs/FORMAL_VERIFICATION_REPORT.md) and [`proofs/lean/README.md`](proofs/lean/README.md) for full audit specifications.
+
 ## 📦 Development Guidelines
 
 ### Package Manager (Bun)

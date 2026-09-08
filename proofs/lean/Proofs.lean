@@ -5,5 +5,6 @@
 -/
 
 import Proofs.Wavefunction
+import Proofs.Discretization
 import Proofs.ConstellationAMM
 import Proofs.JEPAPersona

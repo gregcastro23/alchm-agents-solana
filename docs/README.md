@@ -52,11 +52,15 @@ Development guides, API documentation, and component integration.
 
 ### 🔬 [Formal Verification (Lean 4)](../proofs/lean/)
 
-Machine-checked mathematical specifications and interactive proofs in Lean 4.
+Machine-checked mathematical specifications and interactive proofs in Lean 4 (100% verified across all modules, 0 sorry declarations).
 
 - [Lean 4 Verification Master Plan](./LEAN_PROOF_IMPROVEMENT_PLAN.md)
 - [Session 1: Toolchain Bootstrapping & Module Root](./LEAN_SESSION_1_OBJECTIVES.md)
 - [Session 2: Wavefunction & Pricing Bounds Proofs](./LEAN_SESSION_2_OBJECTIVES.md)
+- [Session 3: Fixed-Point Discretization & Precision Bounds](./LEAN_SESSION_3_OBJECTIVES.md)
+- [Session 4: Constellation AMM Invariants & Virtual Reserve Conservation](./LEAN_SESSION_4_OBJECTIVES.md)
+- [Session 5: JEPA EMA Persona Stability & Contraction](./LEAN_SESSION_5_OBJECTIVES.md)
+- [Formal Verification Audit Report](./FORMAL_VERIFICATION_REPORT.md)
 - [Lean Suite Readme](../proofs/lean/README.md)
 
 ### 🚀 [Deployment](./deployment/)
