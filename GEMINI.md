@@ -56,6 +56,15 @@ This document outlines the specialized agentic workflows and LangChain integrati
   - **Async Context Encoder (`lib/jepa/cosmic-context-encoder.ts`):** Raw PostgreSQL query engine (`pg`) fetching transits and Domiciles into high-density JSON cache.
   - **On-Chain State Sync (`contracts/PlanetaryRegistry.sol`, `lib/jepa/onchain-sync.ts`):** Submits 64-dim `targetPersonaHash` and `epochHash` commitments to Base Sepolia / Circle Arc via `viem`.
 
+### 7. Formal Verification Suite (`proofs/lean`)
+
+- **Purpose:** Interactive machine-checked mathematical proofs establishing protocol invariants across celestial waveharmonics, virtual-reserve AMM mechanics, and JEPA memory stability in Lean 4 (`v4.13.0`).
+- **Active Modules:**
+  - **`Proofs.Wavefunction` (✅ 100% Machine-Checked):** Proves bounded harmonic range $\Psi_a \in [-2, 2]$ (and $[-20000, 20000]$ BPS), economic positivity ($\text{Cost}_a \ge 0.3 \cdot \text{Base} \cdot M > 0$), and non-negativity against negative-fee prompt exploits.
+  - **`Proofs.ConstellationAMM`:** Constant-product virtual reserve monotonicity ($k' \ge k$) and no-arbitrage cyclic swap conservation.
+  - **`Proofs.JEPAPersona`:** 64-dimensional EMA persona matrix contraction mapping ($\tau = 0.99$) and bounded variance drift stabilization.
+- **Verification Runner:** `cd proofs/lean && lake build` (Zero external dependencies; executes in < 2 seconds under 16GB RAM / Apple Silicon).
+
 ## ⛓️ On-Chain & Agent Economy
 
 A bounty-driven layer that puts agents on-chain. **Canonical doc + diagrams + demo steps: [`INTEGRATIONS.md`](INTEGRATIONS.md).** In brief:

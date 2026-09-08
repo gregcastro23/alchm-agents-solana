@@ -50,6 +50,15 @@ Development guides, API documentation, and component integration.
 - [Claude Upgrade Guide](./development/claude-upgrade-guide.md)
 - [Agent Enhancement Report](./development/agent-enhancement-report.md)
 
+### 🔬 [Formal Verification (Lean 4)](../proofs/lean/)
+
+Machine-checked mathematical specifications and interactive proofs in Lean 4.
+
+- [Lean 4 Verification Master Plan](./LEAN_PROOF_IMPROVEMENT_PLAN.md)
+- [Session 1: Toolchain Bootstrapping & Module Root](./LEAN_SESSION_1_OBJECTIVES.md)
+- [Session 2: Wavefunction & Pricing Bounds Proofs](./LEAN_SESSION_2_OBJECTIVES.md)
+- [Lean Suite Readme](../proofs/lean/README.md)
+
 ### 🚀 [Deployment](./deployment/)
 
 Deployment guides, optimization, and production setup.
