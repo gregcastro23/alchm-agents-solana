@@ -357,12 +357,22 @@ export function QuickChartAttachmentGenerator({
   }, [charts, selectedChartIds, data, format, opts])
 
   useEffect(() => {
-    if (outputText && typeof window !== 'undefined') {
+    if (typeof window !== 'undefined') {
       try {
-        localStorage.setItem('alchm_active_chart_context', outputText)
+        if (outputText) {
+          localStorage.setItem('alchm_active_chart_context', outputText)
+        }
+        const selectedProfiles = charts.filter(c => selectedChartIds.includes(c.id) && c.data)
+        const currentData = selectedProfiles[0]?.data || data
+        if (currentData) {
+          localStorage.setItem(
+            'alchm_active_chart_envelope',
+            JSON.stringify({ version: 1, data: currentData })
+          )
+        }
       } catch {}
     }
-  }, [outputText])
+  }, [outputText, charts, selectedChartIds, data])
 
   const lineCount = useMemo(() => outputText.split('\n').length, [outputText])
   const charCount = useMemo(() => outputText.length, [outputText])

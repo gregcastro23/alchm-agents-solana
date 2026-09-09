@@ -1,161 +1,69 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { generateVoicedText } from '@/lib/agents/persona/voiced-generation'
-import { buildPlanetaryPersonaBlock } from '@/lib/agents/council/planetary-personas'
+import { dispatchTurn, type CouncilRequest } from '@/lib/agents/council/council-chamber'
+import type { CouncilTurnContext } from '@/lib/agents/council/council-context'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-/**
- * The host is the one delegate with a real `CraftedAgent` behind them, so
- * Gregory keeps going through the agent registry. The ten planets have no
- * agent record — they arrive as a `systemOverride` persona block instead. See
- * `lib/agents/council/planetary-personas.ts` for why that indirection exists.
- */
-const HOST_AGENT_ID = 'greg-castro-1991'
-
-interface CouncilTurn {
-  speaker: string
-  text: string
-}
-
-/** Keep the transcript short — this is a round table, not a context dump. */
-const MAX_RECENT_TURNS = 3
-
-function sanitizeTurns(value: unknown): CouncilTurn[] {
-  if (!Array.isArray(value)) return []
-  return value
-    .filter(
-      (t): t is CouncilTurn =>
-        !!t &&
-        typeof t === 'object' &&
-        typeof (t as CouncilTurn).speaker === 'string' &&
-        typeof (t as CouncilTurn).text === 'string' &&
-        (t as CouncilTurn).text.trim().length > 0
-    )
-    .slice(-MAX_RECENT_TURNS)
-    .map(t => ({ speaker: t.speaker.trim(), text: t.text.trim().slice(0, 400) }))
-}
-
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json()
-    const {
-      agentKey,
-      userPrompt,
-      attachedChartContext,
-      fallbackText,
-      narrativePhase,
-      sign,
-      degree,
-      degreeLabel,
-      dignity,
-      retrograde,
-      ingressEvent,
-      movingPlanet,
-      movingSign,
-      movingDegree,
-      isClosestToIngress,
-      angularDistance,
-      isIngressFinalWord,
-      recentTurns,
-      aspectName,
-      aspectOrb,
-      aspectPhase,
-      aspectQuality,
-    } = body || {}
 
-    const key = (agentKey || 'gregory').toLowerCase()
-    const resolvedDegreeLabel =
-      degreeLabel || (typeof degree === 'number' ? `${Math.floor(degree)}°` : '')
-
-    const planetaryPersona = buildPlanetaryPersonaBlock(key, {
-      sign,
-      degreeLabel: resolvedDegreeLabel,
-      dignity,
-      retrograde,
-    })
-
-    // Planets carry their own persona block; the host resolves through the
-    // registry. Anything unrecognised falls back to the host rather than
-    // producing a voiceless delegate.
-    const agentId = HOST_AGENT_ID
-    const systemOverride = planetaryPersona ?? undefined
-
-    const turns = sanitizeTurns(recentTurns)
-    const transcript = turns.length
-      ? `\nWHAT THE COUNCIL JUST SAID (most recent last):\n${turns
-          .map(t => `- ${t.speaker}: "${t.text}"`)
-          .join(
-            '\n'
-          )}\n\nAnswer the last speaker by name. Agree, sharpen, or refuse — do not restate them.`
-      : ''
-
-    const aspectContext =
-      typeof aspectName === 'string' && aspectName
-        ? `\nYOUR GEOMETRY TO THE MOVING BODY: ${aspectName}${
-            typeof aspectOrb === 'number' ? `, orb ${aspectOrb.toFixed(1)}°` : ''
-          }${aspectPhase ? `, ${aspectPhase}` : ''}${
-            aspectQuality ? ` (${aspectQuality})` : ''
-          }.\nLet that geometry shape what you claim. A square does not sound like a trine.`
-        : ''
-
-    let ingressDirective = ''
-    if (ingressEvent) {
-      if (isIngressFinalWord) {
-        ingressDirective = `
-INGRESS — YOU TAKE THE FLOOR LAST:
-You have just arrived at ${resolvedDegreeLabel} ${sign}. Every other delegate has
-weighed in on your arrival. Answer what they said, then claim the degree and set
-the intent for the cycle it opens.`
-      } else if (isClosestToIngress) {
-        ingressDirective = `
-INGRESS — YOU SPEAK FIRST (NEAREST BODY):
-${movingPlanet || 'A fellow delegate'} has moved to ${movingDegree ?? ''}° ${movingSign ?? ''}.
-You are the nearest body in the sky, ${angularDistance ?? 'a few'}° away. Open the
-reaction: say what lands in your own sector before anyone else has framed it.`
-      } else {
-        ingressDirective = `
-INGRESS — COUNCIL REACTION:
-${movingPlanet || 'A fellow delegate'} has moved to ${movingDegree ?? ''}° ${movingSign ?? ''}.
-From ${resolvedDegreeLabel} ${sign || 'your seat'}, react. Say what it changes in the
-balance of the whole — and take a position the previous speaker did not.`
-      }
+    // Adapt request body to internal CouncilRequest format
+    const councilRequest: CouncilRequest = {
+      seekerInquiry: body.seekerInquiry || body.userPrompt,
+      targetDelegate: body.targetDelegate || body.agentKey,
+      attachedNatalEnvelope: body.attachedNatalEnvelope || body.attachedChartContext,
+      ingressEvent:
+        body.ingressEvent && typeof body.ingressEvent === 'object'
+          ? {
+              movingPlanet: body.ingressEvent.movingPlanet || body.movingPlanet || 'Moon',
+              newSign: body.ingressEvent.newSign || body.movingSign || '',
+              newDegree: body.ingressEvent.newDegree ?? body.movingDegree ?? 0,
+              isFinalWord: body.ingressEvent.isFinalWord ?? body.isIngressFinalWord,
+              turnIndex: body.ingressEvent.turnIndex,
+            }
+          : body.ingressEvent
+            ? {
+                movingPlanet: body.movingPlanet || 'Moon',
+                newSign: body.movingSign || '',
+                newDegree: body.movingDegree ?? 0,
+                isFinalWord: body.isIngressFinalWord,
+              }
+            : undefined,
+      recentTurns: Array.isArray(body.recentTurns)
+        ? body.recentTurns.map(
+            (t: any, idx: number): CouncilTurnContext => ({
+              turnId: t.turnId || `turn-${idx}`,
+              speakerKey: t.speakerKey || t.speaker?.toLowerCase?.() || 'gregory',
+              speakerName: t.speakerName || t.speaker || 'Gregory',
+              text: (t.text || '').trim(),
+              claim: (t.claim || t.newClaim || t.text?.slice(0, 100) || '').trim(),
+              speechAct: t.speechAct || 'speak',
+            })
+          )
+        : undefined,
+      selectedAgentFilter: body.selectedAgentFilter,
     }
 
-    const depthDirective =
-      key === 'gregory'
-        ? `VOICE DIRECTIVE FOR HOST GREGORY:
-Speak as the host in 2 to 4 poignant, articulate sentences. Connect the council's observations and the shifting degrees of the current sky directly to human agency and creative resolve. Do not truncate into a 1-sentence quip, but do not write an essay.`
-        : `VOICE DIRECTIVES FOR ${key.toUpperCase()}:
-1. Speak in 2 to 4 poignant, articulate sentences (one well-developed paragraph). Do not truncate into a brief 1-sentence quip, but do not write an essay.
-2. Embody your dignity (${dignity || 'peregrine'}) with clear character.
-3. If the Moon or another body has changed degrees, comment on what this shift changes in the room and the collective current.
-4. Answer the last speaker by name, engaging their specific claim.`
-
-    const promptText = `${ingressDirective}${aspectContext}${transcript}
-
-Topic on the table: "${userPrompt || 'the current sky'}"
-${attachedChartContext ? `\nThe seeker has attached their natal chart: ${attachedChartContext}` : ''}
-${narrativePhase ? `\nCelestial narrative phase: ${narrativePhase}` : ''}
-
-${depthDirective}`
-
-    const text = await generateVoicedText(agentId, promptText, {
-      maxTokens: 320,
-      fallback: fallbackText || '',
-      systemOverride,
-    })
-
-    return NextResponse.json({
-      success: true,
-      text,
-      persona: systemOverride ? key : 'host',
-    })
+    const result = await dispatchTurn(councilRequest)
+    return NextResponse.json(result)
   } catch (err) {
-    console.warn('[api/agents/council-voice] Error generating council voice:', err)
-    return NextResponse.json({
-      success: false,
-      text: null,
-    })
+    console.warn('[api/agents/council-voice] Error in council-voice route:', err)
+    return NextResponse.json(
+      {
+        success: false,
+        text: 'The celestial sphere continues its silent revolution.',
+        speakerKey: 'gregory',
+        speakerName: 'Gregory',
+        newClaim: 'The sky maintains its order through silence.',
+        speechAct: 'synthesize',
+        usedEvidenceIds: [],
+        provenance: {
+          source: 'grounded_briefing',
+        },
+      },
+      { status: 500 }
+    )
   }
 }

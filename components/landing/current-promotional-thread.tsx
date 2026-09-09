@@ -73,6 +73,7 @@ export interface BasketAgentConfig {
   forceVector: string
   quote: string
   isMainStage?: boolean
+  speed?: number
 }
 
 export interface ChatMessage {
@@ -97,6 +98,16 @@ export interface ChatMessage {
   aspectBadge?: string
   /** Colour of that aspect, matching the chord drawn on the wheel. */
   aspectColor?: string
+  /** The speech act category (support, challenge, qualify, reframe, synthesize) */
+  speechAct?: string
+  /** The substantive new proposition advanced in this turn */
+  newClaim?: string
+  /** Generation provenance to distinguish live model generation from grounded astro-reduction */
+  provenance?: {
+    source: 'model' | 'grounded_briefing'
+    modelFamily?: 'fast' | 'substantive'
+    latencyMs?: number
+  }
 }
 
 export interface SkyAndAlchmContext {
@@ -402,18 +413,30 @@ export function orderIngressSpeakers(
   return [...ordered, ...rest]
 }
 
+export interface CouncilVoiceResult {
+  text: string
+  newClaim?: string
+  speechAct?: string
+  provenance?: {
+    source: 'model' | 'grounded_briefing'
+    modelFamily?: 'fast' | 'substantive'
+    latencyMs?: number
+  }
+}
+
 /** Calls live AI backend API /api/agents/council-voice for persona generation */
 async function fetchCouncilVoice(payload: {
   agentKey: BasketAgentKey
   userPrompt?: string
   attachedChartContext?: string
+  attachedNatalEnvelope?: unknown
   fallbackText?: string
   sign?: string
   degree?: number
   degreeLabel?: string
   dignity?: string
   retrograde?: boolean
-  ingressEvent?: boolean
+  ingressEvent?: boolean | object
   movingPlanet?: string
   movingSign?: string
   movingDegree?: number
@@ -426,7 +449,7 @@ async function fetchCouncilVoice(payload: {
   aspectOrb?: number
   aspectPhase?: string
   aspectQuality?: string
-}): Promise<string> {
+}): Promise<CouncilVoiceResult> {
   try {
     const res = await fetch('/api/agents/council-voice', {
       method: 'POST',
@@ -441,13 +464,21 @@ async function fetchCouncilVoice(payload: {
         typeof data.text === 'string' &&
         data.text.trim().length > 0
       ) {
-        return data.text.trim()
+        return {
+          text: data.text.trim(),
+          newClaim: data.newClaim,
+          speechAct: data.speechAct,
+          provenance: data.provenance || { source: 'grounded_briefing' },
+        }
       }
     }
   } catch (err) {
     console.warn('[fetchCouncilVoice] Error calling /api/agents/council-voice:', err)
   }
-  return payload.fallbackText || 'The council speaks with unified presence in the current sky.'
+  return {
+    text: payload.fallbackText || 'The council speaks with unified presence in the current sky.',
+    provenance: { source: 'grounded_briefing' },
+  }
 }
 
 /**
@@ -971,6 +1002,7 @@ export function CurrentPromotionalThread({
           sign: live.sign,
           degree: typeof live.degree === 'number' ? live.degree : 0,
           retrograde: Boolean(live.retrograde),
+          speed: typeof (live as any).speed === 'number' ? (live as any).speed : undefined,
         }
       }
       const calc = fallbackPositions[planetName]
@@ -979,9 +1011,10 @@ export function CurrentPromotionalThread({
           sign: calc.sign,
           degree: calc.degree,
           retrograde: calc.retrograde,
+          speed: calc.speed,
         }
       }
-      return { sign: 'Aries', degree: 0, retrograde: false }
+      return { sign: 'Aries', degree: 0, retrograde: false, speed: undefined }
     }
 
     const buildConfig = (key: BasketAgentKey, planetName: string): BasketAgentConfig => {
@@ -993,7 +1026,7 @@ export function CurrentPromotionalThread({
       const currentSign = override?.sign || live.sign
       const currentRawDegree = override?.degree !== undefined ? override.degree : live.degree
       const intDegree = Math.floor(currentRawDegree)
-      const absDegree = signToLongitude(currentSign, intDegree)
+      const absDegree = signToLongitude(currentSign, currentRawDegree)
       const dignity = getPlanetaryDignity(planetName, currentSign)
       const signElement = normalizeElement(getSignElement(currentSign))
 
@@ -1008,6 +1041,7 @@ export function CurrentPromotionalThread({
         absoluteDegree: absDegree,
         dignity,
         retrograde: live.retrograde,
+        speed: live.speed,
         element: signElement,
         glyph: baseMeta.glyph,
         callSign: `${planetName.toUpperCase()}_${currentSign.toUpperCase()}_${intDegree}°`,
@@ -1257,8 +1291,20 @@ export function CurrentPromotionalThread({
       // which would be a render behind inside this async loop.
       const transcript: ChatMessage[] = [...messagesRef.current, ingressMsg]
 
-      // 4. Sequential response loop through the ordered council
-      for (const speaker of speakers) {
+      // 4. Sequential response loop through the purposeful reaction speakers (capped at 2-3 voices before final word)
+      const nearestSpeaker = speakers.find(s => s.role === 'nearest') || speakers[0]
+      const aspectSpeaker = speakers.find(s => s.role === 'aspect' && s.key !== nearestSpeaker.key)
+      const otherDelegates = speakers.filter(
+        s => s.key !== nearestSpeaker.key && (!aspectSpeaker || s.key !== aspectSpeaker.key)
+      )
+
+      const reactionSpeakers: IngressSpeaker[] = [nearestSpeaker]
+      if (aspectSpeaker) reactionSpeakers.push(aspectSpeaker)
+      if (otherDelegates.length > 0 && reactionSpeakers.length < 3) {
+        reactionSpeakers.push(otherDelegates[0])
+      }
+
+      for (const speaker of reactionSpeakers) {
         const otherCfg = agentsConfig[speaker.key]
         const { distance: dist, hit, role } = speaker
         const isClosest = role === 'nearest'
@@ -1287,7 +1333,7 @@ export function CurrentPromotionalThread({
           { sign: newSign, degreeLabel: `${newDegree}°` }
         )
 
-        const responseText = await fetchCouncilVoice({
+        const voiceResult = await fetchCouncilVoice({
           agentKey: speaker.key,
           fallbackText: fallback,
           sign: otherCfg.sign,
@@ -1320,12 +1366,15 @@ export function CurrentPromotionalThread({
           senderRole: roleLabel,
           senderGlyph: otherCfg.glyph,
           element: otherCfg.element,
-          content: responseText,
+          content: voiceResult.text,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           isClosestNeighbor: isClosest,
           angularDistance: dist,
           aspectBadge: badge ?? undefined,
           aspectColor: hit?.definition.color,
+          speechAct: voiceResult.speechAct,
+          newClaim: voiceResult.newClaim,
+          provenance: voiceResult.provenance,
         }
 
         transcript.push(reaction)
@@ -1351,7 +1400,7 @@ export function CurrentPromotionalThread({
         { sign: newSign, degreeLabel: `${newDegree}°` }
       )
 
-      const finalResponseText = await fetchCouncilVoice({
+      const finalResult = await fetchCouncilVoice({
         agentKey: movingKey,
         fallbackText: finalFallback,
         sign: newSign,
@@ -1378,11 +1427,14 @@ export function CurrentPromotionalThread({
           senderRole: `${newDegree}° ${newSign} · New Degree Delegate (Final Word)`,
           senderGlyph: currentMovingCfg.glyph,
           element,
-          content: finalResponseText,
+          content: finalResult.text,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
           isFinalWord: true,
           newDegree,
           newSign,
+          speechAct: finalResult.speechAct,
+          newClaim: finalResult.newClaim,
+          provenance: finalResult.provenance,
         },
       ])
 
@@ -1433,7 +1485,7 @@ export function CurrentPromotionalThread({
           undefined,
           lastSpeakerFrom(history)
         )
-        const responseText = await fetchCouncilVoice({
+        const voiceResult = await fetchCouncilVoice({
           agentKey: nextKey,
           fallbackText,
           sign: nextCfg.sign,
@@ -1453,8 +1505,11 @@ export function CurrentPromotionalThread({
             senderRole: `${nextCfg.degreeLabel} ${nextCfg.sign}`,
             senderGlyph: nextCfg.glyph,
             element: nextCfg.element,
-            content: responseText,
+            content: voiceResult.text,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            speechAct: voiceResult.speechAct,
+            newClaim: voiceResult.newClaim,
+            provenance: voiceResult.provenance,
           },
         ])
         setIsTyping(false)
@@ -1471,9 +1526,14 @@ export function CurrentPromotionalThread({
     if (!text || isTyping || isReactionPlaying) return
 
     const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    let fullPromptForCouncil = text
-    if (attachedChartContext) {
-      fullPromptForCouncil = `${attachedChartContext}\n\n[USER QUESTION]: ${text}`
+
+    // Check for saved versioned natal envelope or active chart context
+    let natalEnvelope: unknown = undefined
+    if (typeof window !== 'undefined') {
+      try {
+        const rawEnvelope = localStorage.getItem('alchm_active_chart_envelope')
+        if (rawEnvelope) natalEnvelope = JSON.parse(rawEnvelope)
+      } catch {}
     }
 
     setMessages(prev => [
@@ -1484,7 +1544,7 @@ export function CurrentPromotionalThread({
         content: text,
         timestamp: nowStr,
         isUser: true,
-        hasContextAttachment: !!attachedChartContext,
+        hasContextAttachment: !!attachedChartContext || !!natalEnvelope,
       },
     ])
     setInputPrompt('')
@@ -1505,13 +1565,14 @@ export function CurrentPromotionalThread({
       const fallback1 = generateSpontaneousCouncilResponse(
         primaryAgentKey,
         agentsConfig,
-        fullPromptForCouncil,
+        text,
         lastSpeakerFrom(history1)
       )
-      const text1 = await fetchCouncilVoice({
+      const res1 = await fetchCouncilVoice({
         agentKey: primaryAgentKey,
-        userPrompt: fullPromptForCouncil,
+        userPrompt: text,
         attachedChartContext: attachedChartContext || undefined,
+        attachedNatalEnvelope: natalEnvelope || undefined,
         fallbackText: fallback1,
         sign: primaryCfg.sign,
         degree: primaryCfg.degree,
@@ -1530,8 +1591,11 @@ export function CurrentPromotionalThread({
           senderRole: `${primaryCfg.degreeLabel} ${primaryCfg.sign}`,
           senderGlyph: primaryCfg.glyph,
           element: primaryCfg.element,
-          content: text1,
+          content: res1.text,
           timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          speechAct: res1.speechAct,
+          newClaim: res1.newClaim,
+          provenance: res1.provenance,
         },
       ])
 
@@ -1543,13 +1607,14 @@ export function CurrentPromotionalThread({
         const fallback2 = generateSpontaneousCouncilResponse(
           secondAgentKey,
           agentsConfig,
-          fullPromptForCouncil,
+          text,
           lastSpeakerFrom(history2)
         )
-        const text2 = await fetchCouncilVoice({
+        const res2 = await fetchCouncilVoice({
           agentKey: secondAgentKey,
-          userPrompt: fullPromptForCouncil,
+          userPrompt: text,
           attachedChartContext: attachedChartContext || undefined,
+          attachedNatalEnvelope: natalEnvelope || undefined,
           fallbackText: fallback2,
           sign: secondCfg.sign,
           degree: secondCfg.degree,
@@ -1568,8 +1633,11 @@ export function CurrentPromotionalThread({
             senderRole: `${secondCfg.degreeLabel} ${secondCfg.sign}`,
             senderGlyph: secondCfg.glyph,
             element: secondCfg.element,
-            content: text2,
+            content: res2.text,
             timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+            speechAct: res2.speechAct,
+            newClaim: res2.newClaim,
+            provenance: res2.provenance,
           },
         ])
         setIsTyping(false)
@@ -1866,6 +1934,34 @@ export function CurrentPromotionalThread({
                         {isMovingPlanetFinal && (
                           <span className="px-1.5 py-0.2 rounded bg-[#22d3ee]/20 border border-[#22d3ee]/50 text-[#22d3ee] text-[9px] font-mono-label uppercase font-bold animate-pulse">
                             NEW DEGREE INAUGURATION · FINAL WORD
+                          </span>
+                        )}
+
+                        {msg.provenance && (
+                          <span
+                            className="px-1.5 py-0.2 rounded text-[9px] font-mono-label uppercase font-bold"
+                            style={{
+                              backgroundColor:
+                                msg.provenance.source === 'model'
+                                  ? 'rgba(56, 189, 248, 0.15)'
+                                  : 'rgba(184, 252, 75, 0.15)',
+                              borderWidth: 1,
+                              borderStyle: 'solid',
+                              borderColor:
+                                msg.provenance.source === 'model'
+                                  ? 'rgba(56, 189, 248, 0.4)'
+                                  : 'rgba(184, 252, 75, 0.4)',
+                              color: msg.provenance.source === 'model' ? '#38bdf8' : '#b8fc4b',
+                            }}
+                            title={
+                              msg.provenance.source === 'model'
+                                ? `Live Model Generation (${msg.provenance.modelFamily || 'ai'}${msg.provenance.latencyMs ? ` · ${msg.provenance.latencyMs}ms` : ''})`
+                                : 'Interpretive Grounded Briefing (Astro-reduction)'
+                            }
+                          >
+                            {msg.provenance.source === 'model'
+                              ? 'AI Generated'
+                              : 'Grounded Briefing'}
                           </span>
                         )}
 

@@ -14,6 +14,8 @@ export interface CurrentPlanetPosition {
   degree: number
   retrograde: boolean
   longitude: number
+  /** Daily motion in degrees per day (signed, negative = retrograde) */
+  speed?: number
 }
 
 export class DegradedEphemerisError extends Error {
@@ -56,6 +58,7 @@ export function getCurrentPlanetaryPositions(
         degree: Math.round(degree * 100) / 100,
         retrograde: pos.retrograde,
         longitude: Math.round(pos.longitude * 10000) / 10000,
+        speed: typeof pos.speed === 'number' ? Math.round(pos.speed * 10000) / 10000 : undefined,
       }
     } catch {
       // Skip planets that fail calculation

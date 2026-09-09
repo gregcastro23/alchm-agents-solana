@@ -149,13 +149,29 @@ describe('detectAspect', () => {
     expect(detectAspect(0, 137)).toBeNull()
   })
 
-  it('reads applying and separating from the mover direction', () => {
-    // Mover at 88° closing on a square to 0°: direct motion tightens the orb.
-    expect(detectAspect(88, 0, +1)?.phase).toBe('applying')
-    expect(detectAspect(88, 0, -1)?.phase).toBe('separating')
+  it('reads applying and separating from pair relative motion', () => {
+    // Mover at 88° closing on a square to stationary 0°: direct motion tightens the orb.
+    expect(detectAspect(88, 0, +1, 0)?.phase).toBe('applying')
+    expect(detectAspect(88, 0, -1, 0)?.phase).toBe('separating')
     // Past exact, the directions swap.
-    expect(detectAspect(92, 0, +1)?.phase).toBe('separating')
-    expect(detectAspect(92, 0, -1)?.phase).toBe('applying')
+    expect(detectAspect(92, 0, +1, 0)?.phase).toBe('separating')
+    expect(detectAspect(92, 0, -1, 0)?.phase).toBe('applying')
+  })
+
+  it('guarantees relative-motion phase symmetry across body pairs', () => {
+    // Testing pair symmetry: detectAspect(A, B, vA, vB).phase === detectAspect(B, A, vB, vA).phase
+    const phaseAB = detectAspect(88, 0, +1.2, +0.3)?.phase
+    const phaseBA = detectAspect(0, 88, +0.3, +1.2)?.phase
+    expect(phaseAB).toBe(phaseBA)
+
+    // Frozen sky Moon (149.12° @ +14.04°/d) and Saturn (13.22° @ -0.04°/d)
+    const moonSaturn = detectAspect(149.12, 13.22, 14.04, -0.04)?.phase
+    const saturnMoon = detectAspect(13.22, 149.12, -0.04, 14.04)?.phase
+    expect(moonSaturn).toBe(saturnMoon)
+  })
+
+  it('reports unknown phase when velocities are undefined', () => {
+    expect(detectAspect(88, 0)?.phase).toBe('unknown')
   })
 })
 
@@ -185,7 +201,7 @@ describe('findAspects / tightestAspectTo', () => {
 
 describe('formatAspectBadge / describeAspect', () => {
   it('renders an orb and phase', () => {
-    const hit = detectAspect(88, 0, +1)!
+    const hit = detectAspect(88, 0, +1, 0)!
     expect(formatAspectBadge(hit)).toBe('SQUARE 2.0° APPLYING')
     expect(describeAspect(hit)).toContain('applying square')
   })
@@ -197,19 +213,25 @@ describe('formatAspectBadge / describeAspect', () => {
     expect(describeAspectPhrase(hit)).toBe('an exact trine')
   })
 
+  it('renders badge without phase when velocity is unknown', () => {
+    const hit = detectAspect(88, 0)!
+    expect(formatAspectBadge(hit)).toBe('SQUARE 2.0°')
+    expect(describeAspectPhrase(hit)).toBe('a square')
+  })
+
   it('agrees the article with the phase, not the aspect name', () => {
     // `applying quincunx` leads with a vowel even though `quincunx` does not.
-    const applying = detectAspect(148, 0, +1)!
+    const applying = detectAspect(148, 0, +1, 0)!
     expect(applying.name).toBe('Quincunx')
     expect(describeAspectPhrase(applying)).toBe('an applying quincunx')
 
-    const separating = detectAspect(152, 0, +1)!
+    const separating = detectAspect(152, 0, +1, 0)!
     expect(describeAspectPhrase(separating)).toBe('a separating quincunx')
 
     // And never the other way round.
     for (const deg of [88, 92, 118, 122, 2, 178]) {
       for (const speed of [+1, -1]) {
-        const hit = detectAspect(deg, 0, speed)
+        const hit = detectAspect(deg, 0, speed, 0)
         if (!hit) continue
         expect(describeAspectPhrase(hit), `${deg}° @ ${speed}`).not.toMatch(/^a applying/)
         expect(describeAspectPhrase(hit), `${deg}° @ ${speed}`).not.toMatch(/^an separating/)
@@ -497,7 +519,7 @@ describe('component fallback generators', () => {
     }
   })
 
-  it('incorporates dignity resonance when dignity is present', () => {
+  it('incorporates dignity posture without reciting labels into prose', () => {
     const testAgents = {
       mars: agent('mars', 'Mars', 'Aries', 4, { dignity: 'domicile' }),
       saturn: agent('saturn', 'Saturn', 'Aries', 10, { dignity: 'fall' }),
@@ -505,13 +527,16 @@ describe('component fallback generators', () => {
     } as Record<BasketAgentKey, BasketAgentConfig>
 
     const marsLine = generateSpontaneousCouncilResponse('mars', testAgents)
-    expect(marsLine).toContain('domicile')
+    expect(marsLine).toContain('native authority')
+    expect(marsLine).not.toContain('domicile')
 
     const saturnLine = generateSpontaneousCouncilResponse('saturn', testAgents)
-    expect(saturnLine).toContain('fall')
+    expect(saturnLine).toContain('superficial comfort')
+    expect(saturnLine).not.toContain('fall')
 
     const venusLine = generateSpontaneousCouncilResponse('venus', testAgents)
-    expect(venusLine).toContain('detriment')
+    expect(venusLine).toContain('generative friction')
+    expect(venusLine).not.toContain('detriment')
   })
 
   it('delivers poised, articulate host voice for Gregory Castro without poem insertions', () => {
@@ -597,11 +622,12 @@ describe('buildPlanetaryPersonaBlock', () => {
     }
   })
 
-  it('enforces 2 to 4 sentences and dignity awareness', () => {
+  it('enforces well-developed paragraph and dignity awareness without reciting labels', () => {
     for (const key of keys) {
       const block = buildPlanetaryPersonaBlock(key)!
-      expect(block, key).toContain('2 to 4 sentences')
+      expect(block, key).toContain('well-developed paragraph')
       expect(block, key).toContain('Embody your dignity')
+      expect(block, key).toContain('Do NOT recite your dignity label')
       expect(block, key).toContain('When the Moon or another body shifts degrees')
     }
 
