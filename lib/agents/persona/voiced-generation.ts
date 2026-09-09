@@ -49,7 +49,7 @@ export async function generateVoicedText(
       model: gatewayGroq(model) as any,
       system: systemPrompt,
       prompt: promptForAgent,
-      maxOutputTokens: options.maxTokens ?? 650,
+      maxOutputTokens: options.maxTokens ?? 320,
     })
     const trimmed = (text || '').trim()
     return trimmed || options.fallback
