@@ -463,6 +463,69 @@ describe('component fallback generators', () => {
       expect(line).not.toBe('The celestial current moves in living harmony.')
     }
   })
+
+  it('generates multi-paragraph verbose claims for all delegates and host', () => {
+    const allKeys: BasketAgentKey[] = [
+      'sun',
+      'moon',
+      'mercury',
+      'venus',
+      'mars',
+      'jupiter',
+      'saturn',
+      'uranus',
+      'neptune',
+      'pluto',
+      'gregory',
+    ]
+    const fullAgents = Object.fromEntries(
+      allKeys.map(k => [k, agent(k, k.toUpperCase(), 'Aries', 15)])
+    ) as Record<BasketAgentKey, BasketAgentConfig>
+
+    for (const key of allKeys) {
+      const spontaneous = generateSpontaneousCouncilResponse(key, fullAgents)
+      expect(spontaneous.length, `${key} spontaneous length`).toBeGreaterThan(250)
+      const paragraphs = spontaneous.split('\n\n')
+      expect(paragraphs.length, `${key} spontaneous paragraphs`).toBeGreaterThanOrEqual(2)
+
+      const answered = generateSpontaneousCouncilResponse(
+        key,
+        fullAgents,
+        'How does the current degree influence my work?'
+      )
+      expect(answered.length, `${key} answered length`).toBeGreaterThan(250)
+      const answeredParas = answered.split('\n\n')
+      expect(answeredParas.length, `${key} answered paragraphs`).toBeGreaterThanOrEqual(2)
+    }
+  })
+
+  it('incorporates dignity resonance when dignity is present', () => {
+    const testAgents = {
+      mars: agent('mars', 'Mars', 'Aries', 4, { dignity: 'domicile' }),
+      saturn: agent('saturn', 'Saturn', 'Aries', 10, { dignity: 'fall' }),
+      venus: agent('venus', 'Venus', 'Aries', 20, { dignity: 'detriment' }),
+    } as Record<BasketAgentKey, BasketAgentConfig>
+
+    const marsLine = generateSpontaneousCouncilResponse('mars', testAgents)
+    expect(marsLine).toContain('domicile')
+
+    const saturnLine = generateSpontaneousCouncilResponse('saturn', testAgents)
+    expect(saturnLine).toContain('fall')
+
+    const venusLine = generateSpontaneousCouncilResponse('venus', testAgents)
+    expect(venusLine).toContain('detriment')
+  })
+
+  it('delivers poetic multi-paragraph voice for Host Gregory Castro', () => {
+    const hostAgent = {
+      gregory: agent('gregory', 'Gregory Castro', 'Leo', 19),
+    } as Record<BasketAgentKey, BasketAgentConfig>
+
+    const line = generateSpontaneousCouncilResponse('gregory', hostAgent)
+    expect(line).toContain('living agents')
+    expect(line).toContain('psalm')
+    expect(line.split('\n\n').length).toBe(2)
+  })
 })
 
 // ---------------------------------------------------------------------------
@@ -533,5 +596,18 @@ describe('buildPlanetaryPersonaBlock', () => {
       expect(voice.tensionWith.length).toBeGreaterThan(0)
       expect(voice.affinityWith.length).toBeGreaterThan(0)
     }
+  })
+
+  it('enforces two substantial evocative paragraphs and dignity awareness', () => {
+    for (const key of keys) {
+      const block = buildPlanetaryPersonaBlock(key)!
+      expect(block, key).toContain('two substantial, evocative paragraphs')
+      expect(block, key).toContain('Embody your dignity')
+      expect(block, key).toContain('When the Moon or another body shifts degrees')
+    }
+
+    const seatedBlock = buildPlanetaryPersonaBlock('mars', { dignity: 'domicile' })!
+    expect(seatedBlock).toContain('### Dignity Stance')
+    expect(seatedBlock).toContain('You sit in your domicile')
   })
 })
