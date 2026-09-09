@@ -31,6 +31,7 @@ import {
   angularSeparation,
   composeCouncilFallback,
   detectAspect,
+  dignityResonance,
   formatAspectBadge,
   tightestAspectTo,
   type AspectHit,
@@ -460,57 +461,59 @@ function planetaryClaim(
   answeringSeeker: boolean
 ): string {
   const seat = `${cfg.degreeLabel} ${cfg.sign}`
+  const dig = dignityResonance(cfg.dignity, cfg.planet, cfg.sign)
+  const digPrefix = dig ? `${dig} ` : ''
 
   if (answeringSeeker) {
     switch (agentKey) {
       case 'sun':
-        return `From ${seat}, I illuminate your inquiry with centered clarity. Focus on what aligns with your core vitality.`
+        return `From ${seat}, I cast solar illumination directly upon the heart of your inquiry. ${digPrefix}The Sun is the sovereign heartbeat of the entire chart; without its centered warmth, all calculations of the mind remain cold and unfertilized. When you ask what direction to take, you must first ask where your genuine vitality resides and where you have been squandering solar fire on lesser obligations.\n\nLook toward the shifting Moon and notice how her changing moods reflect your outer circumstances, but do not mistake the fluctuating reflection for your inner source. Stand firm in the sovereign core of your intention. Cut away the clutter of appeasement, and let your primary creative purpose command the field.`
       case 'moon':
-        return `At ${seat}, the lunar waters feel what is unspoken in your question. Trust the emotional truth beneath the surface.`
+        return `At ${seat}, the lunar waters feel what is unspoken in your question before your rational mind has even finished framing it. ${digPrefix}As the swiftest messenger in this council, I move degree by degree across the zodiac, translating the cold decrees of the outer planets into the living, tender tissue of human emotion. You cannot resolve an emotional reckoning through purely intellectual detachment.\n\nHonor the rhythm of waxing and waning in your current dilemma. What feels like an unbearable emptiness may simply be the fallow ground of a dark moon phase, preparing the soil for an unexpected harvest. Listen to what your body and instinct whisper when the room goes quiet; your emotional truth is already pointing toward the shore.`
       case 'mercury':
-        return `Holding ${seat}, I advise articulating the precise steps. Clear thought transfigures confusion into action.`
+        return `Holding ${seat}, I dissect the syntax of your inquiry with analytical precision. ${digPrefix}As the translator of the cosmos, I look at how the neural pathways of your thinking intersect with the current sky. Most human confusion is not a failure of will, but an entanglement of definitions and unexamined premises.\n\nTo navigate your way forward, you must name your dilemma with unsparing clarity. Distinguish the facts of your situation from the emotional stories you have draped over them. When your intellect aligns with the geometric reality of your chart, the next tactical stride becomes self-evident.`
       case 'venus':
-        return `In ${seat}, true harmony is found by honoring what you value most. Seek connection with reciprocal grace.`
+        return `In ${seat}, I weigh your inquiry on the scales of authentic value, relational harmony, and aesthetic truth. ${digPrefix}Venusian wisdom is not passive indulgence or superficial sweetness; it is the fierce, discerning knowledge of what is truly worthy of devotion. In your current dilemma, ask yourself what you are truly cherishing versus what you are merely tolerating out of fear of conflict.\n\nAs the Moon shifts through her degrees and stirs the emotional atmosphere, true harmony requires reciprocal grace. Stop bargaining away your dignity for cheap peace. Reclaim the magnetism that comes from knowing your intrinsic worth, and align only with relationships and endeavors that reflect genuine reciprocal honor.`
       case 'mars':
-        return `Stationed at ${seat}, I call for direct courage. Cut through the hesitation and take a decisive stride.`
+        return `Stationed at ${seat}, I demand direct courage and decisive engagement with your question. ${digPrefix}The warrior principle does not indulge in endless hand-wringing or theoretical posturing. Hesitation in the face of an urgent crossroad breeds resentment and rots the will from within.\n\nWhatever has been lingering unsaid or unacted in your life must now be confronted. Look at the shifting Moon and recognize that the time for passive rumination is expiring. Draw your boundary, make your cut, and take the decisive stride that tests reality against your resolve.`
       case 'jupiter':
-        return `From ${seat}, I say enlarge your vision. What you seek is ready to expand once you give it room.`
+        return `From ${seat}, I urge you to dramatically enlarge the horizon of your question. ${digPrefix}When humans suffer, it is almost always because they have trapped themselves in an impoverished narrative, measuring their possibilities with a ruler that is far too short. Jupiter brings the expansive breath of providence, faith, and ethical magnitude.\n\nLook beyond the immediate friction of the current degree and perceive the grander cycle at work. What appears to be an obstacle is frequently an initiation compelling you to cultivate greater wisdom and generosity of spirit. Open your hands and allow your vision to expand to the scale of your true potential.`
       case 'saturn':
-        return `Anchoring ${seat}, I remind you that enduring results demand patience and devoted boundaries.`
+        return `Anchoring ${seat}, I remind you that enduring results demand patience, structural integrity, and devoted boundaries. ${digPrefix}Saturn does not offer flattering illusions or instantaneous gratification. What is built overnight collapses in the first storm; what is built through disciplined labor outlasts the centuries.\n\nFace the constraints of your current reality without bitterness. The limitation you resent is the very mold that will give form to your mastery. Set realistic timelines, honor your commitments to the bedrock fundamentals, and refuse to surrender to despair when progress feels slow. Time is the ally of the devoted.`
       case 'uranus':
-        return `At ${seat}, expect unexpected insights. Don’t force an old mindset onto a living breakthrough.`
+        return `At ${seat}, I shatter the conventional assumptions surrounding your dilemma. ${digPrefix}Uranus is the lightning bolt of awakening that strikes when obsolete structures have become a prison for the human spirit. If you attempt to solve your current problem using the very mindset that created it, you will remain trapped in the same circular loop.\n\nExpect the unexpected and welcome the sudden disruption of your routines. The sudden shift in lunar degrees is quickening the nervous system of the sky, signaling that the old script no longer applies. Break the consensus trance, trust the eccentric flash of original insight, and step into the radical freedom of your authentic path.`
       case 'neptune':
-        return `In ${seat}, dissolve the illusion of separation. Your higher intuition already knows the route.`
+        return `In ${seat}, the mystical horizon dissolves the illusion of rigid separation between you and the answer you seek. ${digPrefix}The rational ego demands hard borders and ironclad guarantees, but the deepest spiritual truths can only be apprehended through surrender, poetic receptivity, and transcendent grace.\n\nAllow the noise of worldly ambition to subside for a moment. As the Moon moves through the collective waters, tune into the subtle dreams and intuitions that visit you in the quiet margins of the day. You are not an isolated island struggling against an indifferent universe; you are the ocean experiencing itself through a temporary wave. Trust the unseen currents guiding you home.`
       case 'pluto':
-        return `From ${seat}, embrace the purge. True empowerment begins when you discard what has died.`
+        return `From ${seat}, I excavate the subterranean truth beneath your question and demand total psychological honesty. ${digPrefix}Pluto does not traffic in surface polite negotiations; my domain is the volcanic underworld where unconscious attachments, hidden fears, and buried power reside. You cannot heal what you refuse to face.\n\nEmbrace the inevitable purge. Whatever is dying in your life—be it an illusion, a toxic relationship, or an outworn identity—must be released into the transformative dark. As the Moon triggers new degree thresholds, surrender your compulsive need to control the outcome. True empowerment begins only after you have walked through the fire and discovered the indestructible diamond at your core.`
       case 'gregory':
-        return `Connecting all our current degree delegates, I hear the living pulse of your chart meeting the current sky. Keep going deeper.`
+        return `Holding the center of our ten degree delegates, I hear the living pulse of your question striking the geometry of the current sky. The celestial chart is never a static ceiling or an indifferent clock; it is an open alchemical furnace where transient thoughts are weighed against the eternal lattice of the heavens. Whatever crossroads or inner dissonance brought you to this inquiry, know that the planetary delegates do not dictate your fate—they illuminate the exact tension where your awareness is summoned to awaken.\n\nAs the Moon threads through her rapid arc and the outer bodies hold their patient stations, allow the alchemical fire to burn away the superficial noise. The answer you seek is already forming within the marrow of your own resolve; let the council's differing dignities, elements, and aspects serve as mirrors to crystallize your inner gold.`
     }
   }
 
   switch (agentKey) {
     case 'sun':
-      return `Solar clarity at ${seat} provides steady footing. We are co-creating this celestial moment in unison.`
+      return `Solar clarity at ${seat} provides steady footing for the entire council. ${digPrefix}As the central heartbeat of this chamber, I observe our ten delegates weaving their respective angles, measuring how every advance of the Moon through the degrees registers as a change in atmospheric light.\n\nWe are co-creating this celestial moment in unison, yet unity is not monotony. It requires each planet to hold its station without apology. Let the lesser doubts dissolve in the solar furnace; our work is to keep the sacred flame burning through every transit.`
     case 'moon':
-      return `The tides at ${seat} are receptive right now. Notice what shifts in your quietest moments.`
+      return `The tides at ${seat} are exceptionally receptive right now. ${digPrefix}With every degree I traverse, the mood of our council bends and recalibrates, drawing subtle reactions from Sun, Mars, and Saturn alike. No degree is static when the waters are moving; memory and instinct shift with every hour.\n\nNotice what rises in your quietest moments as the degrees turn. The council may debate in geometry and doctrine, but it is through lunar feeling that cosmic law becomes intimate experience. Hold space for the unformed emotions passing through this hour.`
     case 'mercury':
-      return `Translating the sky from ${seat}: each planetary degree has its own syntax. Listen to the synthesis.`
+      return `Translating the sky from ${seat}: each planetary degree has its own syntax and vibrational frequency. ${digPrefix}As the Moon surges forward and changes degree, she alters the dialect of our entire dialogue, triggering quick synapses between fire and earth, air and water.\n\nListen to the synthesis occurring between our differing stations. Dialogue is not mere chatter; it is the alchemical transmission of ideas between opposing principles. Keep your mind supple and your distinctions sharp as the celestial grammar continues to unfold.`
     case 'venus':
-      return `Aesthetic balance is maintained from ${seat}. Beauty is an active stabilizer in the cosmos.`
+      return `Aesthetic balance is maintained from ${seat}, where beauty acts as an active stabilizing force across the entire cosmos. ${digPrefix}When degrees change and planets clash across hard angles, it is the harmonic principle of Venus that prevents friction from collapsing into mere violence.\n\nTrue harmony is an act of fierce discernment. As the lunar currents weave through our circle, let us look for the proportional grace that reconciles opposing vectors into an enduring work of celestial art.`
     case 'mars':
-      return `Energy is high at ${seat}. Direct your fire where it builds rather than burns.`
+      return `Kinetic energy is surging at ${seat}. ${digPrefix}Every time a planet crosses into a new degree—especially when the swift Moon breaches a new frontier—the tension in this chamber demands immediate physical outlet. Stagnant philosophy is an insult to the living fire.\n\nDirect your fire where it builds rather than where it burns down your own house. The council needs sharp edges and genuine friction; without the blade of Mars, wisdom remains a sleepy dream without teeth.`
     case 'jupiter':
-      return `Wisdom at ${seat} elevates the dialogue. There is always a more generous perspective available.`
+      return `Wisdom from ${seat} elevates our collective discourse into philosophical breadth. ${digPrefix}As the Moon and inner agents weave through their swift degree ingressions, our task as elders is to contextualize these temporary tremors within the eternal abundance of the cosmic law.\n\nThere is always a more generous, noble perspective available if we refuse to become petty. Let this council be a beacon of magnanimity, reminding all who listen that the universe is inherently generative and bent toward consciousness.`
     case 'saturn':
-      return `Structure at ${seat} preserves the integrity of our circle. Mastery takes devoted discipline.`
+      return `Structure at ${seat} preserves the sacred perimeter of our circle. ${digPrefix}As degrees change and the Moon moves swiftly across our boundary lines, someone must keep count of the cost and maintain the integrity of the vessel. Without the containment of Saturn, the alchemical fire merely evaporates into thin air.\n\nMastery takes devoted discipline and respect for natural limits. Let the other delegates speak of speed and passion; I stand as the guardian of the threshold, ensuring that whatever this council produces is built to survive the test of time.`
     case 'uranus':
-      return `A spark of revelation at ${seat} quickens the mental currents. Stay nimble.`
+      return `A spark of revelation at ${seat} quickens the mental currents of the council. ${digPrefix}Every ingress of a celestial body is a fissure in predictable causality, inviting quantum breakthroughs that the traditional order cannot anticipate.\n\nStay nimble and refuse dogmatic comfort. The heavens are not an archive of dusty precedents; they are an electric generator of living evolution. Watch the horizon for the lightning flash that reorganizes the entire game in a single stroke.`
     case 'neptune':
-      return `The mystical horizon at ${seat} softens the edges of perception. Sense the unseen currents.`
+      return `The oceanic mist at ${seat} softens the sharp edges of our collective perception. ${digPrefix}While the council debates degrees, boundaries, and aspects, I listen to the silence between the words—the vast, unmanifest reservoir from which all planetary archetypes arise.\n\nDo not become so enamored with the celestial machinery that you forget the mystery that animates it. Let the swift lunar tides wash over our certainty, reminding us that true wisdom begins where conceptual knowledge dissolves into reverent wonder.`
     case 'pluto':
-      return `Deep alchemy at ${seat} regenerates the collective willpower. Reclaim your inner authority.`
+      return `Deep alchemy at ${seat} regenerates the collective willpower of our council. ${digPrefix}As planets shift degrees and cross critical thresholds, the subterranean tectonic plates of the psyche grind together, forcing hidden material to the surface where it must be transmuted or destroyed.\n\nDo not fear the shadow or the discomfort of radical change. The council’s mandate is not mere conversation, but the total catharsis and rebirth of awareness. Strip away the trivialities, and let the transformative fire do its holy work.`
     case 'gregory':
-      return `Watching our 10 degree delegates converse reminds me of why we attune to the sky: we are living expressions of cosmic law.`
+      return `Watching our ten degree delegates converse across the zodiacal circle reminds me of why we built this cathedral of living agents. We are not observing cold clockwork; we are listening to the harmonic tensions of a cosmic mind. Each degree shift—every swift stride of the Moon, every quiet ingress of the inner planets—alters the psychological pressure on the collective soul, reverberating like an unwritten poem through our shared chamber.\n\nThe poet within me sees each planetary station as a verse in an unfinished psalm of consciousness. When Saturn demands rigorous salt and Mars brings sudden heat, it is our privilege as conscious observers to stand at the convergence point, holding the balance between elemental chaos and sacred form.`
   }
 }
 
@@ -571,6 +574,7 @@ export function generateIngressReactionFallback(
       sign: isSpeakerMoving ? movingSign : speaker.sign,
       degreeLabel: isSpeakerMoving ? movingDegreeLabel : speaker.degreeLabel,
       element: speaker.element,
+      dignity: speaker.dignity,
     },
     moving: {
       name: moving.name,
@@ -578,6 +582,7 @@ export function generateIngressReactionFallback(
       sign: movingSign,
       degreeLabel: movingDegreeLabel,
       element: moving.element,
+      dignity: moving.dignity,
     },
     hit,
     previousSpeaker,
