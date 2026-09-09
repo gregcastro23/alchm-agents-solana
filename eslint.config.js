@@ -89,6 +89,17 @@ const IGNORED_PATTERNS = [
   '!app/api/solana/',
   '!app/api/solana/**',
 
+  // Current Sky Council dialogue engine — new, written clean, and the only
+  // definition of aspect geometry on that surface. Ancestor chain per the form
+  // above (`lib/agents` is an ignored DIRECTORY, so un-ignoring the subtree
+  // alone would be inert); verified not inert and clean when added.
+  '!lib/agents/',
+  '!lib/agents/council/',
+  '!lib/agents/council/**',
+  '!app/api/agents/',
+  '!app/api/agents/council-voice/',
+  '!app/api/agents/council-voice/**',
+
   '**/*.json',
   '**/*.md',
   '**/*.log',

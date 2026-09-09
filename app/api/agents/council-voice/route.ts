@@ -1,33 +1,39 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateVoicedText } from '@/lib/agents/persona/voiced-generation'
+import { buildPlanetaryPersonaBlock } from '@/lib/agents/council/planetary-personas'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-const AGENT_MAP: Record<string, string> = {
-  gregory: 'greg-castro-1991',
+/**
+ * The host is the one delegate with a real `CraftedAgent` behind them, so
+ * Gregory keeps going through the agent registry. The ten planets have no
+ * agent record — they arrive as a `systemOverride` persona block instead. See
+ * `lib/agents/council/planetary-personas.ts` for why that indirection exists.
+ */
+const HOST_AGENT_ID = 'greg-castro-1991'
+
+interface CouncilTurn {
+  speaker: string
+  text: string
 }
 
-const AGENT_BASE_ARCHETYPES: Record<string, string> = {
-  sun: 'Sun, the Solar Radiance & Core Identity. Speak with warmth, illuminating clarity, and centered authority.',
-  moon: 'Moon, the Lunar Tide & Subconscious Archetype. Speak with deep emotional nuance, instinctual resonance, and intuitive truth.',
-  mercury:
-    'Mercury, the Messenger & Mental Architect. Speak with sharp agility, articulate perception, and analytical clarity.',
-  venus:
-    'Venus, the Harmonic Weaver & Principle of Value. Speak with aesthetic poise, diplomatic grace, and magnetic relational wisdom.',
-  mars: 'Mars, the Dynamic Vector & Sovereign Will. Speak with direct courage, decisive drive, and instinctual strength.',
-  jupiter:
-    'Jupiter, the Sovereign Visionary & Principle of Growth. Speak with generous magnanimity, expansive vision, and elevated optimism.',
-  saturn:
-    'Saturn, the Master of Form & Sacred Boundary. Speak with disciplined sobriety, structural resolve, and patient timeless mastery.',
-  uranus:
-    'Uranus, the Electric Catalyst & Paradigm Breaker. Speak with sudden revelation, breakthrough clarity, and liberating cognitive agility.',
-  neptune:
-    'Neptune, the Oceanic Mystic & Transcendent Dreamer. Speak with visionary poetry, dissolution of illusions, and spiritual depth.',
-  pluto:
-    'Pluto, the Deep Alchemist & Evolutionary Fire. Speak with regenerative power, karmic depth, and radical metamorphosis.',
-  gregory:
-    'Gregory Castro, the Conscious Host & Alchemical Poet. Speak as an exceptionally animated, warm, passionate, articulate, and poetic host who bridges human emotion, creative action, poetry, and live celestial transits with vibrant energy.',
+/** Keep the transcript short — this is a round table, not a context dump. */
+const MAX_RECENT_TURNS = 3
+
+function sanitizeTurns(value: unknown): CouncilTurn[] {
+  if (!Array.isArray(value)) return []
+  return value
+    .filter(
+      (t): t is CouncilTurn =>
+        !!t &&
+        typeof t === 'object' &&
+        typeof (t as CouncilTurn).speaker === 'string' &&
+        typeof (t as CouncilTurn).text === 'string' &&
+        (t as CouncilTurn).text.trim().length > 0
+    )
+    .slice(-MAX_RECENT_TURNS)
+    .map(t => ({ speaker: t.speaker.trim(), text: t.text.trim().slice(0, 400) }))
 }
 
 export async function POST(req: NextRequest) {
@@ -41,7 +47,9 @@ export async function POST(req: NextRequest) {
       narrativePhase,
       sign,
       degree,
+      degreeLabel,
       dignity,
+      retrograde,
       ingressEvent,
       movingPlanet,
       movingSign,
@@ -49,63 +57,89 @@ export async function POST(req: NextRequest) {
       isClosestToIngress,
       angularDistance,
       isIngressFinalWord,
+      recentTurns,
+      aspectName,
+      aspectOrb,
+      aspectPhase,
+      aspectQuality,
     } = body || {}
 
     const key = (agentKey || 'gregory').toLowerCase()
-    const agentId = AGENT_MAP[key] || 'greg-castro-1991'
-    const baseArchetype = AGENT_BASE_ARCHETYPES[key] || AGENT_BASE_ARCHETYPES.gregory
+    const resolvedDegreeLabel =
+      degreeLabel || (typeof degree === 'number' ? `${Math.floor(degree)}°` : '')
 
-    const degreeLabel = typeof degree === 'number' ? `${Math.floor(degree)}°` : ''
-    const signLabel = sign ? `in ${sign}` : ''
-    const dignityLabel = dignity ? `(${dignity})` : ''
-    const currentIdentity =
-      `${key.toUpperCase()} ${signLabel} ${degreeLabel} ${dignityLabel}`.trim()
+    const planetaryPersona = buildPlanetaryPersonaBlock(key, {
+      sign,
+      degreeLabel: resolvedDegreeLabel,
+      dignity,
+      retrograde,
+    })
+
+    // Planets carry their own persona block; the host resolves through the
+    // registry. Anything unrecognised falls back to the host rather than
+    // producing a voiceless delegate.
+    const agentId = HOST_AGENT_ID
+    const systemOverride = planetaryPersona ?? undefined
+
+    const turns = sanitizeTurns(recentTurns)
+    const transcript = turns.length
+      ? `\nWHAT THE COUNCIL JUST SAID (most recent last):\n${turns
+          .map(t => `- ${t.speaker}: "${t.text}"`)
+          .join(
+            '\n'
+          )}\n\nAnswer the last speaker by name. Agree, sharpen, or refuse — do not restate them.`
+      : ''
+
+    const aspectContext =
+      typeof aspectName === 'string' && aspectName
+        ? `\nYOUR GEOMETRY TO THE MOVING BODY: ${aspectName}${
+            typeof aspectOrb === 'number' ? `, orb ${aspectOrb.toFixed(1)}°` : ''
+          }${aspectPhase ? `, ${aspectPhase}` : ''}${
+            aspectQuality ? ` (${aspectQuality})` : ''
+          }.\nLet that geometry shape what you claim. A square does not sound like a trine.`
+        : ''
 
     let ingressDirective = ''
     if (ingressEvent) {
       if (isIngressFinalWord) {
         ingressDirective = `
-INGRESS EVENT - FINAL RESPONSE (THE MOVING PLANET TAKES THE FLOOR):
-You are ${key.toUpperCase()}, and you just arrived into ${degreeLabel} ${sign}!
-All other council planets have weighed in on your arrival. Now you claim the stage, deliver the definitive final statement, and set the tone/intent for this new degree cycle. Speak with proud, authentic embodiment of your new sign and degree!`
+INGRESS — YOU TAKE THE FLOOR LAST:
+You have just arrived at ${resolvedDegreeLabel} ${sign}. Every other delegate has
+weighed in on your arrival. Answer what they said, then claim the degree and set
+the intent for the cycle it opens.`
       } else if (isClosestToIngress) {
         ingressDirective = `
-INGRESS EVENT - CLOSEST NEIGHBOR CONTEXT (SPEAKING FIRST):
-${movingPlanet || 'A fellow planet'} just transitioned to ${movingDegree ?? ''}° ${movingSign ?? ''}.
-You are currently the CLOSEST planet in the entire council (only ${angularDistance ?? 'a few'} degrees away)!
-Speak FIRST to provide immediate nearby celestial context. Comment on how this sudden shift directly impacts your immediate sector of the zodiac.`
+INGRESS — YOU SPEAK FIRST (NEAREST BODY):
+${movingPlanet || 'A fellow delegate'} has moved to ${movingDegree ?? ''}° ${movingSign ?? ''}.
+You are the nearest body in the sky, ${angularDistance ?? 'a few'}° away. Open the
+reaction: say what lands in your own sector before anyone else has framed it.`
       } else {
         ingressDirective = `
-INGRESS EVENT - COUNCIL REACTION:
-${movingPlanet || 'A fellow planet'} just moved to ${movingDegree ?? ''}° ${movingSign ?? ''}.
-From your vantage point in ${sign || 'the sky'} at ${degreeLabel}, react and comment on this degree shift. How does this alter the collective balance, aspects, or elemental tension?`
+INGRESS — COUNCIL REACTION:
+${movingPlanet || 'A fellow delegate'} has moved to ${movingDegree ?? ''}° ${movingSign ?? ''}.
+From ${resolvedDegreeLabel} ${sign || 'your seat'}, react. Say what it changes in the
+balance of the whole — and take a position the previous speaker did not.`
       }
     }
 
-    const promptText = `
-Role: You are ${currentIdentity}. Archetype: ${baseArchetype}
+    const promptText = `${ingressDirective}${aspectContext}${transcript}
 
-${ingressDirective}
+Topic on the table: "${userPrompt || 'the current sky'}"
+${attachedChartContext ? `\nThe seeker has attached their natal chart: ${attachedChartContext}` : ''}
+${narrativePhase ? `\nCelestial narrative phase: ${narrativePhase}` : ''}
 
-Topic / User Prompt: "${userPrompt || 'Current sky dialogue'}"
-${attachedChartContext ? `Attached User Natal Chart Context: ${attachedChartContext}` : ''}
-${narrativePhase ? `Celestial Narrative Phase: ${narrativePhase}` : ''}
-
-CRITICAL COMMUNICATION DIRECTIVES:
-1. NATURAL & LIVING TONE: Speak completely naturally in your authentic planetary voice. Never sound robotic, like an API, or like an algorithm.
-2. SHORT & PUNCHY: Keep response strictly to 1 or 2 vivid, memorable sentences.
-3. ORGANIC CONVERSATION: Build directly upon the current sky moment and the dialogue of your fellow delegates.
-4. HOST EMBODIMENT: If Gregory Castro, speak as a passionate, warm alchemical poet weaving cosmic transits and human life together.
-`
+Speak now, in one or two sentences, as yourself.`
 
     const text = await generateVoicedText(agentId, promptText, {
       maxTokens: 250,
       fallback: fallbackText || '',
+      systemOverride,
     })
 
     return NextResponse.json({
       success: true,
       text,
+      persona: systemOverride ? key : 'host',
     })
   } catch (err) {
     console.warn('[api/agents/council-voice] Error generating council voice:', err)
