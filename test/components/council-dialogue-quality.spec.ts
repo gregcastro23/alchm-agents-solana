@@ -464,7 +464,7 @@ describe('component fallback generators', () => {
     }
   })
 
-  it('generates multi-paragraph verbose claims for all delegates and host', () => {
+  it('generates calibrated claims of slightly increased length (2-3 sentences) for all delegates and host', () => {
     const allKeys: BasketAgentKey[] = [
       'sun',
       'moon',
@@ -484,18 +484,16 @@ describe('component fallback generators', () => {
 
     for (const key of allKeys) {
       const spontaneous = generateSpontaneousCouncilResponse(key, fullAgents)
-      expect(spontaneous.length, `${key} spontaneous length`).toBeGreaterThan(250)
-      const paragraphs = spontaneous.split('\n\n')
-      expect(paragraphs.length, `${key} spontaneous paragraphs`).toBeGreaterThanOrEqual(2)
+      expect(spontaneous.length, `${key} spontaneous length`).toBeGreaterThan(90)
+      expect(spontaneous.length, `${key} spontaneous length max`).toBeLessThan(350)
 
       const answered = generateSpontaneousCouncilResponse(
         key,
         fullAgents,
         'How does the current degree influence my work?'
       )
-      expect(answered.length, `${key} answered length`).toBeGreaterThan(250)
-      const answeredParas = answered.split('\n\n')
-      expect(answeredParas.length, `${key} answered paragraphs`).toBeGreaterThanOrEqual(2)
+      expect(answered.length, `${key} answered length`).toBeGreaterThan(90)
+      expect(answered.length, `${key} answered length max`).toBeLessThan(350)
     }
   })
 
@@ -516,15 +514,16 @@ describe('component fallback generators', () => {
     expect(venusLine).toContain('detriment')
   })
 
-  it('delivers poetic multi-paragraph voice for Host Gregory Castro', () => {
+  it('delivers poised, articulate host voice for Gregory Castro without poem insertions', () => {
     const hostAgent = {
       gregory: agent('gregory', 'Gregory Castro', 'Leo', 19),
     } as Record<BasketAgentKey, BasketAgentConfig>
 
     const line = generateSpontaneousCouncilResponse('gregory', hostAgent)
-    expect(line).toContain('living agents')
-    expect(line).toContain('psalm')
-    expect(line.split('\n\n').length).toBe(2)
+    expect(line).toContain('living balance')
+    expect(line).toContain('Moon')
+    expect(line).not.toContain('psalm')
+    expect(line).not.toContain('poem')
   })
 })
 
@@ -598,10 +597,10 @@ describe('buildPlanetaryPersonaBlock', () => {
     }
   })
 
-  it('enforces two substantial evocative paragraphs and dignity awareness', () => {
+  it('enforces 2 to 4 sentences and dignity awareness', () => {
     for (const key of keys) {
       const block = buildPlanetaryPersonaBlock(key)!
-      expect(block, key).toContain('two substantial, evocative paragraphs')
+      expect(block, key).toContain('2 to 4 sentences')
       expect(block, key).toContain('Embody your dignity')
       expect(block, key).toContain('When the Moon or another body shifts degrees')
     }
