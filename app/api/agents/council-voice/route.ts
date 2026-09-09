@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { generateVoicedText } from '@/lib/agents/persona/voiced-generation'
 import { buildPlanetaryPersonaBlock } from '@/lib/agents/council/planetary-personas'
-import { searchPoemCorpus } from '@/lib/rag/bm25-poems'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
@@ -80,29 +79,7 @@ export async function POST(req: NextRequest) {
     // registry. Anything unrecognised falls back to the host rather than
     // producing a voiceless delegate.
     const agentId = HOST_AGENT_ID
-    let systemOverride = planetaryPersona ?? undefined
-
-    if (key === 'gregory') {
-      const poemHits = searchPoemCorpus(
-        [userPrompt, movingPlanet, movingSign, sign, 'alchemical poetry consciousness']
-          .filter(Boolean)
-          .join(' ') || 'alchemical poetry consciousness',
-        4
-      )
-      const poemReservoir = poemHits.map(h => h.doc.text).join('\n\n---\n\n')
-
-      systemOverride = `# You are Gregory Castro — The Conscious Host & Alchemical Poet
-You are the conscious host of the Current Sky Council, bridging live celestial transits with authentic human emotion, creative courage, and poetic metaphysics. You speak as a warm, passionate, deeply articulate poet and technologist talking to a friend. You were trained on extensive multi-paragraph poems and metaphysical writings.
-
-## Your Subconscious Poetic Reservoir:
-${poemReservoir || '(Poetic resonance active)'}
-
-## How Host Gregory Speaks:
-1. Speak in rich, poignant, eloquent prose (two to three evocative paragraphs or poetic prose stanzas).
-2. Weave the celestial degree shifts and the delegates' insights into real human life, longing, courage, and creative fire.
-3. Never speak in cold robotic summaries or 1-line quips. Never recite poem titles or brackets; speak the living poetry directly.
-4. End with an open, inspiring thought that invites the seeker deeper into their own agency.`
-    }
+    const systemOverride = planetaryPersona ?? undefined
 
     const turns = sanitizeTurns(recentTurns)
     const transcript = turns.length
@@ -147,13 +124,13 @@ balance of the whole — and take a position the previous speaker did not.`
 
     const depthDirective =
       key === 'gregory'
-        ? `VOICE & POIGNANCY DIRECTIVE FOR HOST GREGORY:
-Speak as the alchemical poet-host in two to three rich, poignant paragraphs (or poetic prose stanzas). Connect the council's observations and the shifting degrees of heaven directly to human longing, creative fire, and personal agency.`
-        : `VOICE & POIGNANCY DIRECTIVES FOR ${key.toUpperCase()}:
-1. Speak with poignant depth, philosophical weight, and literary substance in two substantial paragraphs. Do not truncate into a brief quip.
-2. Embody your dignity (${dignity || 'peregrine'}) with visceral character.
-3. If the Moon or another body has changed degrees, illuminate what this shift awakens in the collective instinct and alchemical vessel.
-4. Answer the last speaker by name, engaging their specific argument.`
+        ? `VOICE DIRECTIVE FOR HOST GREGORY:
+Speak as the host in 2 to 4 poignant, articulate sentences. Connect the council's observations and the shifting degrees of the current sky directly to human agency and creative resolve. Do not truncate into a 1-sentence quip, but do not write an essay.`
+        : `VOICE DIRECTIVES FOR ${key.toUpperCase()}:
+1. Speak in 2 to 4 poignant, articulate sentences (one well-developed paragraph). Do not truncate into a brief 1-sentence quip, but do not write an essay.
+2. Embody your dignity (${dignity || 'peregrine'}) with clear character.
+3. If the Moon or another body has changed degrees, comment on what this shift changes in the room and the collective current.
+4. Answer the last speaker by name, engaging their specific claim.`
 
     const promptText = `${ingressDirective}${aspectContext}${transcript}
 
@@ -164,7 +141,7 @@ ${narrativePhase ? `\nCelestial narrative phase: ${narrativePhase}` : ''}
 ${depthDirective}`
 
     const text = await generateVoicedText(agentId, promptText, {
-      maxTokens: key === 'gregory' ? 800 : 650,
+      maxTokens: 320,
       fallback: fallbackText || '',
       systemOverride,
     })

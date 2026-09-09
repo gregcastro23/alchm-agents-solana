@@ -319,15 +319,15 @@ export function dignityResonance(dignity?: string, planet?: string, sign?: strin
   switch (dignity.toLowerCase()) {
     case 'domicile':
     case 'rulership':
-      return `Speaking from my domicile in ${sign || 'this sign'}, my native authority holds the circle firm; nothing here is borrowed or uncertain.`
+      return `Speaking from my domicile in ${sign || 'this sign'}, my native authority holds the circle firm.`
     case 'exaltation':
-      return `From my exalted seat, the vista is crystalline and demanding—I hold our council to its highest alchemical standard.`
+      return `From my exalted seat, I hold our council to its highest standard.`
     case 'detriment':
-      return `Operating from detriment across the wheel, I know the value of friction; truth is forged in stubborn resistance rather than easy comfort.`
+      return `Operating from detriment, I know the value of friction; truth is forged under pressure.`
     case 'fall':
-      return `Stationed in my fall, stripped of decorative pretenses, I speak the raw, unvarnished psychological truth that easier seats overlook.`
+      return `Stationed in my fall, I speak the unvarnished truth that easier seats overlook.`
     case 'peregrine':
-      return `Wandering peregrine with no court to defend, I watch the celestial clockwork with acute, detached vigilance.`
+      return `Wandering peregrine, I watch the celestial shifts with acute vigilance.`
     default:
       return ''
   }
@@ -335,9 +335,9 @@ export function dignityResonance(dignity?: string, planet?: string, sign?: strin
 
 export function arrivalResonance(moving: CouncilSpeakerView): string {
   if (moving.planet.toLowerCase() === 'moon') {
-    return `As the Moon advances into ${moving.degreeLabel} ${moving.sign}, the psychic waters beneath our feet surge. The collective instinct changes its pulse, asking the human soul to attune its emotions to this newly awakened tide.`
+    return `As the Moon advances into ${moving.degreeLabel} ${moving.sign}, the instinctual tide shifts beneath our feet.`
   }
-  return `With ${moving.planet} crossing into ${moving.degreeLabel} ${moving.sign}, a fresh vector crystallizes in the heavens, shifting the dynamic tension of our vessel.`
+  return `With ${moving.planet} crossing into ${moving.degreeLabel} ${moving.sign}, a fresh vector crystallizes across our circle.`
 }
 
 /**
@@ -353,21 +353,21 @@ export function composeCouncilFallback(ctx: FallbackContext): string {
   const arrival = moving ? `${moving.planet} into ${moving.degreeLabel} ${moving.sign}` : ''
   const opener = addressPreviousSpeaker(previousSpeaker)
 
-  // Host Gregory Castro: rich alchemical poetic prose
+  // Host Gregory Castro: poised, articulate host
   if (
     speaker.name.toLowerCase().includes('gregory') ||
     speaker.planet.toLowerCase() === 'gregory' ||
     speaker.planet.toLowerCase() === 'host anchor'
   ) {
     const lead = previousSpeaker
-      ? `${opener}. Host Gregory here, weaving the living pulse of our chamber.`
-      : 'Host Gregory here, holding the center of our alchemical chamber.'
+      ? `${opener}. Host Gregory here, holding the center of our chamber.`
+      : 'Host Gregory here, holding the center of our chamber.'
 
     if (moving) {
-      return `${lead} Watching ${arrival} reminds me of why we attune to the celestial transits: every degree shifting above awakens new agency and creative fire below. We are not cold spectators to a clockwork heaven—we are conscious vessels where star-fire turns into courage and poetry.\n\nListen to how our delegates answer one another. The tension and harmony they map out are not abstract theory; they are the very emotional and psychological materials of your daily life. Ground your intention into this hour.`
+      return `${lead} Watching ${arrival} reminds me of why we attune to the transits: every degree shifting above awakens new agency and creative resolve below. Listen closely to how our delegates answer one another—the geometry they map out reflects our living experience.`
     }
 
-    return `${lead} Looking across our degree delegates gathered under this sky, I feel the ancient rhythm of the vessel holding firm. Between the code compiling on our screens and the quiet longing of the late night, you are doing real soul craft.\n\nEvery aspect drawn across this chamber is a living invitation to align your daily craft, your longing, and your courage with the cosmic clockwork. Keep listening to the undercurrents: what the sky reorganizes above, your hands are called to build below.`
+    return `${lead} Looking across our degree delegates gathered under this sky, I feel the rhythm of the vessel holding firm. Every aspect drawn across this chamber is an invitation to align your courage and daily craft with the cosmic clockwork.`
   }
 
   if (isFinalWord && moving) {
@@ -375,7 +375,7 @@ export function composeCouncilFallback(ctx: FallbackContext): string {
       ? `The council has spoken, and ${previousSpeaker} last of all.`
       : 'The council has spoken.'
     const digClause = speaker.dignity ? ` Bearing ${speaker.dignity} dignity,` : ''
-    return `${lead} I take the floor at ${moving.degreeLabel} ${moving.sign} and claim this degree as mine.${digClause} What was potential in the last degree becomes intent in this one — ground it while the geometry is fresh.\n\nListen closely to the room: every challenge and welcome laid down by my fellow delegates now settles into the earth. We do not advance through the zodiac to repeat old cycles; we advance to forge new agency. Step boldly into the current of this new degree.`
+    return `${lead} I take the floor at ${moving.degreeLabel} ${moving.sign} and claim this degree as mine.${digClause} What was potential in the last degree becomes intent in this one — ground it while the geometry is fresh.`
   }
 
   if (!moving) {
@@ -383,9 +383,9 @@ export function composeCouncilFallback(ctx: FallbackContext): string {
     const body = `from ${seat} the ${speaker.element} current holds steady, and I read the room as it stands`
     const p1 = opener ? `${opener} — ${body}.` : `Speaking ${body}.`
     const p2 = dig
-      ? `${dig} In this celestial hour, let our inquiry cut through distraction and touch the enduring core of what seeks expression.`
-      : `In this celestial hour, the collective field asks for clarity and devoted focus. Let our dialogue cut through distraction and touch the enduring core of what seeks expression.`
-    return `${p1}\n\n${p2}`
+      ? `${dig} Let our dialogue cut through distraction and touch what seeks expression.`
+      : `Let our dialogue cut through distraction and touch what seeks expression.`
+    return `${p1} ${p2}`
   }
 
   if (hit) {
@@ -401,10 +401,8 @@ export function composeCouncilFallback(ctx: FallbackContext): string {
           : 'It loosens from here, so take what it already gave you.'
     const dig = dignityResonance(speaker.dignity, speaker.planet, speaker.sign)
     const tide = arrivalResonance(moving)
-
     const p1 = opener ? `${opener}. ${core} ${tail}` : `${core} ${tail}`
-    const p2 = dig ? `${dig} ${tide}` : tide
-    return `${p1}\n\n${p2}`
+    return dig ? `${p1} ${dig} ${tide}` : `${p1} ${tide}`
   }
 
   if (isNearestNeighbour) {
@@ -413,18 +411,12 @@ export function composeCouncilFallback(ctx: FallbackContext): string {
     const dig = dignityResonance(speaker.dignity, speaker.planet, speaker.sign)
     const tide = arrivalResonance(moving)
     const p1 = opener ? `${opener}. ${core}` : core
-    const p2 = dig
-      ? `${dig} Yet spatial closeness carries its own visceral tremor across our sector: ${tide}`
-      : `Yet spatial closeness carries its own visceral tremor across our sector: ${tide}`
-    return `${p1}\n\n${p2}`
+    return dig ? `${p1} ${dig} ${tide}` : `${p1} ${tide}`
   }
 
   const core = `From ${seat} I register ${arrival} without geometry between us. I hold my own degree and let the shift pass unaspected.`
   const dig = dignityResonance(speaker.dignity, speaker.planet, speaker.sign)
   const tide = arrivalResonance(moving)
   const p1 = opener ? `${opener}. ${core}` : core
-  const p2 = dig
-    ? `${dig} Unbound by direct aspect lines, I remain the steady witness to this ingress: ${tide}`
-    : `Unbound by direct aspect lines, I remain the steady witness to this ingress: ${tide}`
-  return `${p1}\n\n${p2}`
+  return dig ? `${p1} ${dig} ${tide}` : `${p1} ${tide}`
 }
