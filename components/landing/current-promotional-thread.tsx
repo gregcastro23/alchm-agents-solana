@@ -27,9 +27,7 @@ import type { PlanetaryPosition, AlchemicalQuantities } from '@/hooks/usePlaneta
 import { getCurrentPlanetaryPositions } from '@/lib/calculate-transits'
 import { getPlanetaryDignity, getSignElement } from '@/lib/astrological-data'
 import {
-  addressPreviousSpeaker,
   angularSeparation,
-  composeCouncilFallback,
   detectAspect,
   dignityResonance,
   formatAspectBadge,
@@ -38,19 +36,8 @@ import {
 } from '@/lib/agents/council/aspect-dialogue-engine'
 import { ExchangeStateMachine } from '@/lib/agents/council/exchange-state-machine'
 import type { CouncilTurnContext } from '@/lib/agents/council/council-context'
-
-export type BasketAgentKey =
-  | 'sun'
-  | 'moon'
-  | 'mercury'
-  | 'venus'
-  | 'mars'
-  | 'jupiter'
-  | 'saturn'
-  | 'uranus'
-  | 'neptune'
-  | 'pluto'
-  | 'gregory'
+import { type BasketAgentKey } from '@/lib/agents/council/council-schema'
+export type { BasketAgentKey }
 
 export type ElementType = 'fire' | 'air' | 'water' | 'earth'
 
@@ -424,223 +411,6 @@ export function orderIngressSpeakers(
     .map(m => ({ ...m, role: 'delegate' as const }))
 
   return [...ordered, ...rest]
-}
-
-export interface CouncilVoiceResult {
-  text: string
-  newClaim?: string
-  speechAct?: string
-  provenance?: {
-    source: 'model' | 'grounded_briefing'
-    modelFamily?: 'fast' | 'substantive'
-    latencyMs?: number
-  }
-}
-
-/** Calls live AI backend API /api/agents/council-voice for persona generation */
-async function fetchCouncilVoice(payload: {
-  agentKey: BasketAgentKey
-  userPrompt?: string
-  attachedChartContext?: string
-  attachedNatalEnvelope?: unknown
-  fallbackText?: string
-  sign?: string
-  degree?: number
-  degreeLabel?: string
-  dignity?: string
-  retrograde?: boolean
-  ingressEvent?: boolean | object
-  movingPlanet?: string
-  movingSign?: string
-  movingDegree?: number
-  isClosestToIngress?: boolean
-  angularDistance?: number
-  isIngressFinalWord?: boolean
-  /** The last few turns, so a delegate can answer whoever just spoke. */
-  recentTurns?: CouncilTurn[]
-  aspectName?: string
-  aspectOrb?: number
-  aspectPhase?: string
-  aspectQuality?: string
-}): Promise<CouncilVoiceResult> {
-  try {
-    const res = await fetch('/api/agents/council-voice', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-    if (res.ok) {
-      const data = await res.json()
-      if (
-        data.success &&
-        data.text &&
-        typeof data.text === 'string' &&
-        data.text.trim().length > 0
-      ) {
-        return {
-          text: data.text.trim(),
-          newClaim: data.newClaim,
-          speechAct: data.speechAct,
-          provenance: data.provenance || { source: 'grounded_briefing' },
-        }
-      }
-    }
-  } catch (err) {
-    console.warn('[fetchCouncilVoice] Error calling /api/agents/council-voice:', err)
-  }
-  return {
-    text: payload.fallbackText || 'The council speaks with unified presence in the current sky.',
-    provenance: { source: 'grounded_briefing' },
-  }
-}
-
-/**
- * The planet-specific claim each delegate brings when there is no ingress to
- * react to. These are the substance; the threading clause is added on top so
- * the offline path still reads as a conversation.
- */
-function planetaryClaim(
-  agentKey: BasketAgentKey,
-  cfg: BasketAgentConfig,
-  answeringSeeker: boolean
-): string {
-  const dignityPosture: Record<string, string> = {
-    domicile: 'speaking with native authority and grounded ease',
-    rulership: 'speaking with native authority and grounded ease',
-    exaltation: 'elevating the perspective into luminous clarity',
-    detriment: 'forging insight through generative friction and resilience',
-    fall: 'cutting through superficial comfort to name the unadorned truth',
-    peregrine: 'observing the shifting current with vigilant discernment',
-  }
-  const cleanDignity = (cfg.dignity || 'peregrine').toLowerCase().trim()
-  const posture = dignityPosture[cleanDignity] || 'attuned to the living celestial sphere'
-
-  if (answeringSeeker) {
-    switch (agentKey) {
-      case 'sun':
-        return `I illuminate the core of your inquiry, ${posture}. Focus on what aligns with your authentic vitality, and let distractions fall away in the light of purposeful action.`
-      case 'moon':
-        return `The lunar waters register the unspoken currents beneath your question, ${posture}. Honor your emotional truth and allow what is changing to settle naturally.`
-      case 'mercury':
-        return `I translate the subtle syntax of your dilemma, ${posture}. Clear distinctions transform confusion into action; articulate the next practical step with precision.`
-      case 'venus':
-        return `Authentic balance is forged through devotion to what you value most, ${posture}. Seek connection with reciprocal grace, and refuse to compromise your inner dignity.`
-      case 'mars':
-        return `I call for direct courage and decisive engagement, ${posture}. Cut through hesitation and take an intentional stride that tests reality.`
-      case 'jupiter':
-        return `Enlarge the horizon around your question, ${posture}. What appears as friction is an invitation to expand your understanding and embrace generous wisdom.`
-      case 'saturn':
-        return `Enduring work demands patience and devoted boundaries, ${posture}. Build on bedrock fundamentals, respecting the natural timeline required for true mastery.`
-      case 'uranus':
-        return `Breakthrough insights shatter stale assumptions, ${posture}. Stay nimble as the currents quicken, and welcome the unexpected angle.`
-      case 'neptune':
-        return `Dissolve the illusion of rigid separation around your dilemma, ${posture}. Tune into the subtler intuitive currents, allowing quiet trust to guide your way.`
-      case 'pluto':
-        return `Embrace honest catharsis and psychological truth, ${posture}. Release what has run its course so your authentic inner authority can regenerate.`
-      case 'gregory':
-        return `Holding the center of our ten degree delegates, I hear your question meeting the living geometry of the current sky. Let the council's insights anchor your awareness and creative resolve.`
-    }
-  }
-
-  switch (agentKey) {
-    case 'sun':
-      return `Solar clarity provides steady footing for the council, ${posture}. We keep our creative vitality aligned as the living sphere moves.`
-    case 'moon':
-      return `The tides are exceptionally receptive right now, ${posture}. Notice what stirs beneath the surface of the collective discourse.`
-    case 'mercury':
-      return `Translating the dialogue between our stations, ${posture}. Listen as the celestial currents click into cohesive rhythm.`
-    case 'venus':
-      return `Aesthetic balance is maintained across our circle, ${posture}. Reciprocal harmony acts as an active stabilizer as the sky turns.`
-    case 'mars':
-      return `Kinetic charge drives our inquiry, ${posture}. Direct your fire where it builds rather than burns; decisive momentum tests reality.`
-    case 'jupiter':
-      return `Wisdom elevates our collective discourse into greater breadth, ${posture}. There is always a more generous perspective available when transits are viewed with philosophical depth.`
-    case 'saturn':
-      return `Structure preserves the perimeter of our circle, ${posture}. Disciplined focus ensures our shared inquiry endures over time.`
-    case 'uranus':
-      return `A spark of revelation quickens our dialogue, ${posture}. Celestial shifts invite fresh breakthroughs that defy conventional expectation.`
-    case 'neptune':
-      return `The oceanic horizon softens the edges of perception, ${posture}. Listen to the intuitive currents that connect our distinct voices into a unified field.`
-    case 'pluto':
-      return `Deep alchemy regenerates collective willpower, ${posture}. Every shift is an opportunity to strip away trivialities and renew core purpose.`
-    case 'gregory':
-      return `Watching our ten delegates converse reminds me of why we attune to the sky. As the Moon and inner agents shift through new degrees, we hold the living balance between celestial geometry and human agency.`
-  }
-}
-
-/**
- * Offline line for a delegate speaking outside an ingress.
- *
- * Renders for unauthenticated visitors and whenever `GROQ_API_KEY` is absent,
- * so it is the landing page's first impression more often than the generated
- * path is. It must name the previous speaker rather than monologue.
- */
-export function generateSpontaneousCouncilResponse(
-  agentKey: BasketAgentKey,
-  agents: Record<BasketAgentKey, BasketAgentConfig>,
-  userPrompt?: string,
-  previousSpeaker?: string
-): string {
-  const cfg = agents[agentKey]
-  if (!cfg) return 'The celestial current moves in living harmony.'
-
-  const claim = planetaryClaim(agentKey, cfg, !!userPrompt)
-  const opener = addressPreviousSpeaker(previousSpeaker)
-  return opener ? `${opener}. ${claim}` : claim
-}
-
-/**
- * Offline line for an ingress reaction. Delegates to the council engine so the
- * geometry that ordered the speakers is the same geometry they talk about.
- */
-export function generateIngressReactionFallback(
-  speakerKey: BasketAgentKey,
-  movingKey: BasketAgentKey,
-  agents: Record<BasketAgentKey, BasketAgentConfig>,
-  isClosest: boolean,
-  angularDistance: number,
-  isFinalWord: boolean,
-  hit?: AspectHit | null,
-  previousSpeaker?: string,
-  /**
-   * Where the moving body has just arrived. `agents` still holds its previous
-   * seat at this point in the ingress — the degree override has been queued but
-   * not yet folded back into the memo — so without this the whole council
-   * reacts to the degree the planet has already left.
-   */
-  movingPosition?: { sign: string; degreeLabel: string }
-): string {
-  const speaker = agents[speakerKey]
-  const moving = agents[movingKey]
-  if (!speaker || !moving) return 'The celestial current moves in living harmony.'
-
-  const movingSign = movingPosition?.sign ?? moving.sign
-  const movingDegreeLabel = movingPosition?.degreeLabel ?? moving.degreeLabel
-  const isSpeakerMoving = speakerKey === movingKey
-
-  return composeCouncilFallback({
-    speaker: {
-      name: speaker.name,
-      planet: speaker.planet,
-      sign: isSpeakerMoving ? movingSign : speaker.sign,
-      degreeLabel: isSpeakerMoving ? movingDegreeLabel : speaker.degreeLabel,
-      element: speaker.element,
-      dignity: speaker.dignity,
-    },
-    moving: {
-      name: moving.name,
-      planet: moving.planet,
-      sign: movingSign,
-      degreeLabel: movingDegreeLabel,
-      element: moving.element,
-      dignity: moving.dignity,
-    },
-    hit,
-    previousSpeaker,
-    isNearestNeighbour: isClosest,
-    isFinalWord,
-    angularDistance,
-  })
 }
 
 const PRESET_PROMPTS = [
@@ -1329,17 +1099,23 @@ export function CurrentPromotionalThread({
       setTransitioningPlanet(movingKey)
 
       const currentMovingCfg = agentsConfig[movingKey]
-      const oldDegree = Math.floor(currentMovingCfg.degree)
-      let newDegree = (oldDegree + stepDegrees) % 30
+      const oldDegree = currentMovingCfg.degree
+      let newDegree = oldDegree + stepDegrees
       let newSign = currentMovingCfg.sign
 
-      // Handle sign roll-over if moving past 29°
-      if (oldDegree + stepDegrees >= 30) {
+      // Handle sign roll-over if moving past 30°
+      if (newDegree >= 30) {
         const signIdx = SIGN_ORDER.findIndex(
           s => s.toLowerCase() === currentMovingCfg.sign.toLowerCase()
         )
         newSign = SIGN_ORDER[(signIdx + 1) % 12]
-        newDegree = (oldDegree + stepDegrees) % 30
+        newDegree = newDegree % 30
+      } else if (newDegree < 0) {
+        const signIdx = SIGN_ORDER.findIndex(
+          s => s.toLowerCase() === currentMovingCfg.sign.toLowerCase()
+        )
+        newSign = SIGN_ORDER[(signIdx + 11) % 12]
+        newDegree = (newDegree + 30) % 30
       }
 
       // 1. Update degree overrides immediately so coordinates reflect the new position
@@ -1438,7 +1214,7 @@ export function CurrentPromotionalThread({
     exchangeMachineRef.current.startExchange({
       seekerInquiry: text,
       targetDelegate: selectedAgentFilter !== 'all' ? selectedAgentFilter : undefined,
-      attachedNatalEnvelope: natalEnvelope,
+      attachedNatalEnvelope: natalEnvelope || attachedChartContext,
       recentTurns: recentTurnsFrom(messagesRef.current),
       turnDelayMs: () => (skipDelaysRef.current ? 0 : 1200),
       maxTurns: 2,

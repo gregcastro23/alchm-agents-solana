@@ -17,20 +17,9 @@ import {
   type AspectQuality,
 } from './aspect-dialogue-engine'
 import { getPlanetaryDignity, getSignElement } from '@/lib/astrological-data'
+import { type BasketAgentKey, type SpeechAct } from './council-schema'
+export type { BasketAgentKey, SpeechAct }
 export type ElementType = 'fire' | 'water' | 'air' | 'earth'
-
-export type BasketAgentKey =
-  | 'sun'
-  | 'moon'
-  | 'mercury'
-  | 'venus'
-  | 'mars'
-  | 'jupiter'
-  | 'saturn'
-  | 'uranus'
-  | 'neptune'
-  | 'pluto'
-  | 'gregory'
 
 export type ModalityType = 'cardinal' | 'fixed' | 'mutable'
 
@@ -103,7 +92,7 @@ export interface CouncilTurnContext {
   speakerName: string
   text: string
   claim?: string
-  speechAct?: 'support' | 'challenge' | 'qualify' | 'reframe' | 'synthesize'
+  speechAct?: SpeechAct
   usedEvidenceIds?: string[]
 }
 

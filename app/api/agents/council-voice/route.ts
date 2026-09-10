@@ -12,6 +12,7 @@ export async function POST(req: NextRequest) {
 
     // 1. Strict Zod schema validation
     const parsed = CouncilApiRequestSchema.safeParse({
+      turnIndex: rawBody.turnIndex ?? rawBody.ingressEvent?.turnIndex,
       seekerInquiry: rawBody.seekerInquiry || rawBody.userPrompt,
       targetDelegate: rawBody.targetDelegate || rawBody.agentKey,
       attachedNatalEnvelope: rawBody.attachedNatalEnvelope || rawBody.attachedChartContext,
@@ -45,6 +46,7 @@ export async function POST(req: NextRequest) {
 
     // 2. Adapt to internal CouncilRequest (only allow targetDelegate when seekerInquiry exists)
     const councilRequest: CouncilRequest = {
+      turnIndex: valid.turnIndex,
       seekerInquiry: valid.seekerInquiry,
       targetDelegate: valid.seekerInquiry ? valid.targetDelegate : undefined,
       attachedNatalEnvelope: valid.attachedNatalEnvelope,

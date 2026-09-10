@@ -92,6 +92,8 @@ export class ExchangeStateMachine {
    * Cancel any in-flight exchange immediately.
    */
   public cancel(): void {
+    const wasExecuting = this.isExecuting
+    const prevExchangeId = this.currentExchangeId
     if (this.skipDelayResolver) {
       this.skipDelayResolver()
       this.skipDelayResolver = null
@@ -102,6 +104,13 @@ export class ExchangeStateMachine {
     }
     this.currentExchangeId = null
     this.isExecuting = false
+    if (wasExecuting && prevExchangeId) {
+      this.emit({
+        type: 'TYPING_CHANGE',
+        exchangeId: prevExchangeId,
+        isTyping: false,
+      })
+    }
   }
 
   /**
@@ -152,6 +161,7 @@ export class ExchangeStateMachine {
 
         // Determine request for this turn
         const turnRequest = {
+          turnIndex: turnIdx,
           seekerInquiry: options.seekerInquiry,
           targetDelegate: turnIdx === 0 ? options.targetDelegate : undefined,
           attachedNatalEnvelope: options.attachedNatalEnvelope,

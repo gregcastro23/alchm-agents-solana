@@ -267,15 +267,16 @@ export function directAutonomousTurn(
 }
 
 /**
- * Directs an Ingress reaction sequence capped at 3 to 4 purposeful voices.
- * Uses the genuine NEW ingress longitude to calculate spatial distances and aspects.
+ * Directs an individual Ingress turn (0 through 3), ensuring that each turn
+ * dynamically threads to the preceding turn's claim.
  */
-export function directIngressSequence(
+export function directIngressTurn(
   ctx: CouncilContext,
   movingKey: BasketAgentKey,
   newSign: string,
-  newDegree: number
-): TurnDirective[] {
+  newDegree: number,
+  turnIndex: number
+): TurnDirective {
   const movingPlanet = planetFromCouncilKey(movingKey) || 'Moon'
   const newLongitude = signToLongitude(newSign, newDegree)
 
@@ -315,11 +316,15 @@ export function directIngressSequence(
     }
   }
 
-  const sequence: TurnDirective[] = []
+  const secondKey =
+    strongestAspectKey && strongestAspectKey !== nearestKey ? strongestAspectKey : counterKey
+  const thirdKey = counterKey !== secondKey && counterKey !== nearestKey ? counterKey : 'gregory'
 
-  // Voice 1 (turnIndex 0): Nearest body (spatial reaction)
-  sequence.push(
-    buildTurnDirective({
+  const lastTurn = ctx.recentTurns[ctx.recentTurns.length - 1]
+
+  if (turnIndex === 0) {
+    // Voice 1 (turnIndex 0): Nearest body (spatial reaction)
+    return buildTurnDirective({
       ctx,
       speakerKey: nearestKey,
       speechAct: 'reframe',
@@ -328,48 +333,102 @@ export function directIngressSequence(
         1
       )}° away). Speak first: report what lands in your sector before anyone else frames it.`,
     })
-  )
+  }
 
-  // Voice 2 (turnIndex 1): Strongest aspect partner or distinct countervoice
-  const secondKey =
-    strongestAspectKey && strongestAspectKey !== nearestKey ? strongestAspectKey : counterKey
-  sequence.push(
-    buildTurnDirective({
+  if (turnIndex === 1) {
+    // Voice 2 (turnIndex 1): Strongest aspect partner or distinct countervoice, answering Voice 1
+    const targetTurn = lastTurn
+      ? { turnId: lastTurn.turnId, speakerName: lastTurn.speakerName, claim: lastTurn.claim || '' }
+      : {
+          speakerName: planetFromCouncilKey(nearestKey) || 'Nearest Delegate',
+          claim: 'the immediate vector',
+        }
+    return buildTurnDirective({
       ctx,
       speakerKey: secondKey,
       speechAct: secondKey === strongestAspectKey ? 'challenge' : 'qualify',
       isSeekerTurn: false,
-      directive: `React to ${movingPlanet}'s arrival at ${newDegree}° ${newSign}. Shape your claim to the new celestial geometry.`,
+      targetTurn,
+      directive: `React directly to ${
+        targetTurn.speakerName
+      }'s claim ("${targetTurn.claim}"). Shape your claim to the new celestial geometry.`,
     })
-  )
+  }
 
-  // Voice 3 (turnIndex 2): Countervoice or Host Synthesis
-  const thirdKey = counterKey !== secondKey && counterKey !== nearestKey ? counterKey : 'gregory'
-  sequence.push(
-    buildTurnDirective({
+  if (turnIndex === 2) {
+    // Voice 3 (turnIndex 2): Countervoice or Host Gregory synthesizing the dialogue so far
+    const targetTurn = lastTurn
+      ? { turnId: lastTurn.turnId, speakerName: lastTurn.speakerName, claim: lastTurn.claim || '' }
+      : {
+          speakerName: planetFromCouncilKey(secondKey) || 'Second Delegate',
+          claim: 'the prevailing reaction',
+        }
+    return buildTurnDirective({
       ctx,
       speakerKey: thirdKey,
       speechAct: thirdKey === 'gregory' ? 'synthesize' : 'qualify',
       isSeekerTurn: false,
+      targetTurn,
       directive:
         thirdKey === 'gregory'
-          ? `Host Gregory: Synthesize the shift of ${movingPlanet} into ${newDegree}° ${newSign} and connect it to creative agency.`
-          : `Provide an ideological counter-weight to the prevailing reaction.`,
+          ? `Host Gregory: Synthesize the dialogue between the chamber delegates, specifically addressing ${
+              targetTurn.speakerName
+            }'s assertion ("${
+              targetTurn.claim
+            }"). Weave the shift of ${movingPlanet} into ${newDegree}° ${newSign} into practical human agency.`
+          : `Provide an ideological counter-weight to the prevailing reaction, specifically answering: "${targetTurn.claim}".`,
     })
-  )
+  }
 
   // Voice 4 (turnIndex 3): Moving body takes the floor last (Inauguration)
-  sequence.push(
-    buildTurnDirective({
-      ctx,
-      speakerKey: movingKey,
-      speechAct: 'support',
-      isSeekerTurn: false,
-      directive: `You have arrived at ${newDegree}° ${newSign}. Answer the chamber's reactions and inaugurate your degree with decisive intent.`,
-    })
-  )
+  const targetTurn = lastTurn
+    ? { turnId: lastTurn.turnId, speakerName: lastTurn.speakerName, claim: lastTurn.claim || '' }
+    : {
+        speakerName: planetFromCouncilKey(thirdKey) || 'Chamber Anchor',
+        claim: 'the synthesis',
+      }
+  return buildTurnDirective({
+    ctx,
+    speakerKey: movingKey,
+    speechAct: 'inaugurate',
+    isSeekerTurn: false,
+    targetTurn,
+    directive: `You have arrived in ${newDegree}° ${newSign}. Answer the chamber's reactions (specifically addressing ${
+      targetTurn.speakerName
+    }'s claim: "${targetTurn.claim}") and inaugurate your station with decisive intent.`,
+  })
+}
 
-  return sequence
+/**
+ * Directs an Ingress reaction sequence capped at 3 to 4 purposeful voices.
+ */
+export function directIngressSequence(
+  ctx: CouncilContext,
+  movingKey: BasketAgentKey,
+  newSign: string,
+  newDegree: number
+): TurnDirective[] {
+  const directives: TurnDirective[] = []
+  const workingRecentTurns = [...ctx.recentTurns]
+
+  for (let i = 0; i < 4; i++) {
+    const turnCtx = {
+      ...ctx,
+      recentTurns: workingRecentTurns,
+    }
+    const dir = directIngressTurn(turnCtx, movingKey, newSign, newDegree, i)
+    directives.push(dir)
+    workingRecentTurns.push({
+      turnId: `ingress-seq-${i}`,
+      speakerKey: dir.speakerKey,
+      speakerName: dir.speakerName,
+      text: dir.directive,
+      claim: dir.directive,
+      speechAct: dir.speechAct,
+    })
+  }
+
+  return directives
 }
 
 function buildTurnDirective(params: {

@@ -16,7 +16,7 @@ import type { CurrentPlanetPosition } from '@/lib/calculate-transits'
 import {
   directSeekerExchange,
   directAutonomousTurn,
-  directIngressSequence,
+  directIngressTurn,
   type TurnDirective,
 } from './conversation-director'
 import { compileTurnBrief, type TurnBrief } from './turn-brief'
@@ -27,11 +27,11 @@ import {
   type CouncilTurnResponse,
 } from './council-schema'
 import { generateStructuredVoice } from '@/lib/agents/persona/voiced-generation'
-import { buildPlanetaryPersonaBlock } from './planetary-personas'
 import { parseNatalContext } from '@/lib/context-card/natal-parser'
 import { buildAgentContext } from '@/lib/agents/persona/build-agent-context'
 
 export interface CouncilRequest {
+  turnIndex?: number
   seekerInquiry?: string
   targetDelegate?: string
   attachedNatalEnvelope?: unknown
@@ -47,7 +47,19 @@ export interface CouncilRequest {
   skyOverride?: Record<string, CurrentPlanetPosition>
 }
 
-const HOST_AGENT_ID = 'greg-castro-1991'
+export function auditEvidence(
+  usedIds: string[],
+  allowedIds: Set<string>
+): { valid: boolean; reason?: string } {
+  if (!usedIds || usedIds.length === 0) {
+    return { valid: false, reason: 'Empty evidence list' }
+  }
+  const fabricated = usedIds.filter(id => !allowedIds.has(id))
+  if (fabricated.length > 0) {
+    return { valid: false, reason: `Fabricated evidence IDs: ${fabricated.join(', ')}` }
+  }
+  return { valid: true }
+}
 
 export async function dispatchTurn(request: CouncilRequest): Promise<CouncilTurnResponse> {
   // 1. Parse & validate attached natal envelope if present
@@ -65,7 +77,7 @@ export async function dispatchTurn(request: CouncilRequest): Promise<CouncilTurn
       }
     : undefined
 
-  // 2. Build internal server-side CouncilContext
+  // 2. Build complete server-side council context
   const ctx = buildServerCouncilContext({
     positions: request.skyOverride,
     overrides: ingressOverride,
@@ -78,16 +90,15 @@ export async function dispatchTurn(request: CouncilRequest): Promise<CouncilTurn
   let directive: TurnDirective
 
   if (request.ingressEvent) {
-    const { movingPlanet, newSign, newDegree, turnIndex = 0 } = request.ingressEvent
+    const { movingPlanet, newSign, newDegree } = request.ingressEvent
+    const turnIndex = request.turnIndex ?? request.ingressEvent.turnIndex ?? 0
     const movingKey = movingPlanet.toLowerCase() as BasketAgentKey
-    const sequence = directIngressSequence(ctx, movingKey, newSign, newDegree)
-    directive = sequence[Math.min(turnIndex, sequence.length - 1)]
+    directive = directIngressTurn(ctx, movingKey, newSign, newDegree, turnIndex)
   } else if (request.seekerInquiry) {
     const preferred = request.targetDelegate?.toLowerCase() as BasketAgentKey | undefined
     const [t1, t2] = directSeekerExchange(ctx, request.seekerInquiry, preferred)
-    // If recent turns already have the first response, return the second
-    const hasFirstSpoken = ctx.recentTurns.some(t => t.speakerKey === t1.speakerKey)
-    directive = hasFirstSpoken ? t2 : t1
+    const turnIndex = request.turnIndex ?? 0
+    directive = turnIndex === 0 ? t1 : t2
   } else {
     // Autonomous turn
     const lastSpeakerKey = ctx.recentTurns[ctx.recentTurns.length - 1]?.speakerKey
@@ -97,26 +108,16 @@ export async function dispatchTurn(request: CouncilRequest): Promise<CouncilTurn
   // 4. Compile TurnBrief
   const brief: TurnBrief = compileTurnBrief(directive, request.seekerInquiry)
 
-  // 5. Determine system prompt
-  const isHost = directive.speakerKey === 'gregory'
-  let systemPrompt: string
-
-  if (isHost) {
-    systemPrompt =
-      buildAgentContext(HOST_AGENT_ID)?.personaBlock ||
-      'You are Host Gregory Castro, holding the center of the Current Sky Council.'
-  } else {
-    const placement = ctx.sky[directive.speakerKey]
-    systemPrompt =
-      buildPlanetaryPersonaBlock(directive.speakerKey, {
-        sign: placement?.sign,
-        degreeLabel: placement?.degreeLabel,
-        dignity: placement?.dignity,
-        retrograde: placement?.retrograde,
-      }) || ''
-  }
+  // 5. Determine system prompt using Canonical CraftedAgent Persona Block
+  const agentCtx = buildAgentContext(directive.speakerKey)
+  const systemPrompt =
+    agentCtx?.personaBlock ||
+    (directive.speakerKey === 'gregory'
+      ? 'You are Host Gregory Castro, holding the center of the Current Sky Council.'
+      : `You are the ${directive.speakerName} delegate on the Current Sky Council.`)
 
   const isSeekerTurn = !!request.seekerInquiry
+  const isHost = directive.speakerKey === 'gregory'
   const tier = isSeekerTurn || isHost ? 'substantive' : 'ambient'
 
   // 6. Schema-constrained generation
@@ -130,14 +131,13 @@ export async function dispatchTurn(request: CouncilRequest): Promise<CouncilTurn
     }
   )
 
-  // 7. Validate evidence usage and assemble response
+  // 7. Validate evidence usage and assemble response (Strict: any fabricated ID falls back)
   if (generationResult.object && generationResult.source === 'model') {
     const allowedIds = new Set(brief.evidence.map(e => e.id))
-    const validUsedIds = (generationResult.object.usedEvidenceIds || []).filter(id =>
-      allowedIds.has(id)
-    )
+    const rawIds = generationResult.object.usedEvidenceIds || []
+    const audit = auditEvidence(rawIds, allowedIds)
 
-    if (validUsedIds.length > 0) {
+    if (audit.valid) {
       return {
         success: true,
         speakerKey: directive.speakerKey,
@@ -145,7 +145,7 @@ export async function dispatchTurn(request: CouncilRequest): Promise<CouncilTurn
         text: generationResult.object.text.trim(),
         newClaim: generationResult.object.newClaim.trim(),
         speechAct: directive.speechAct,
-        usedEvidenceIds: validUsedIds,
+        usedEvidenceIds: rawIds,
         targetTurnId: directive.targetTurnId,
         provenance: {
           source: 'model',

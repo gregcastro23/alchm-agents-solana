@@ -36,6 +36,10 @@ const FORBIDDEN_STRINGS = [
   'my detriment',
   'my fall',
   'speaking from my',
+  'domicile',
+  'detriment',
+  'exaltation',
+  'peregrine',
 ]
 
 interface EvalResult {
@@ -66,14 +70,24 @@ function evaluateTurnText(
   const violations: string[] = []
   const lowerText = text.toLowerCase()
 
-  // 1. Forbidden copy check
+  // 1. Forbidden copy and dignity telemetry check
   for (const forbidden of FORBIDDEN_STRINGS) {
-    if (lowerText.includes(forbidden)) {
-      violations.push(`Contains forbidden copy: "${forbidden}"`)
+    if (new RegExp(`\\b${forbidden}\\b`, 'i').test(lowerText)) {
+      violations.push(`Contains forbidden copy/telemetry: "${forbidden}"`)
     }
   }
 
-  // 2. Length check
+  // 2. Degree symbol or coordinate recitation check
+  if (/\d+°/.test(text) || /\b\d+\s+degrees\b/i.test(text)) {
+    violations.push('Contains degree coordinate recitation into prose')
+  }
+
+  // 3. Percentage or metric jargon check
+  if (/\d+%/.test(text) || /\b(monica constant|bps|eigenvector)\b/i.test(text)) {
+    violations.push('Contains system metric/percentage jargon in prose')
+  }
+
+  // 4. Length check
   if (text.length < 80) {
     violations.push(`Text too short: ${text.length} chars`)
   }
@@ -81,12 +95,12 @@ function evaluateTurnText(
     violations.push(`Text too long: ${text.length} chars`)
   }
 
-  // 3. Claim validity
+  // 5. Claim validity
   if (!claim || claim.trim().length < 10) {
     violations.push(`New claim missing or too short: "${claim}"`)
   }
 
-  // 4. Evidence check
+  // 6. Evidence check (must not be empty, no fabricated IDs)
   if (!usedEvidenceIds || usedEvidenceIds.length === 0) {
     violations.push('No evidence IDs attributed')
   }
@@ -144,6 +158,7 @@ async function runEvaluation() {
 
   // Turn 1: Seeker inquiry -> First delegate
   const turn1 = await dispatchTurn({
+    turnIndex: 0,
     seekerInquiry,
     attachedNatalEnvelope: sampleNatalEnvelope,
     skyOverride: FROZEN_SCREENSHOT_SKY as any,
@@ -151,19 +166,28 @@ async function runEvaluation() {
 
   accumulatedClaims.add(turn1.newClaim.toLowerCase().trim())
 
-  results.push(
-    evaluateTurnText(
-      'Scenario 1 (Seeker Turn 1)',
-      1,
-      turn1.speakerName,
-      turn1.text,
-      turn1.newClaim,
-      turn1.speechAct,
-      turn1.provenance.source,
-      turn1.usedEvidenceIds,
-      turn1.targetTurnId
-    )
+  const res1 = evaluateTurnText(
+    'Scenario 1 (Seeker Turn 1)',
+    1,
+    turn1.speakerName,
+    turn1.text,
+    turn1.newClaim,
+    turn1.speechAct,
+    turn1.provenance.source,
+    turn1.usedEvidenceIds,
+    turn1.targetTurnId
   )
+
+  const engagesDilemma1 =
+    /\b(corporate|creative|enterprise|venture|risk|discipline|crossroads|dilemma)\b/i.test(
+      turn1.text
+    )
+  if (!engagesDilemma1) {
+    res1.violations.push('Turn 1 does not engage seeker corporate vs creative dilemma')
+    res1.passedQualityChecks = false
+  }
+
+  results.push(res1)
 
   // Turn 2: Second delegate responds to Turn 1 (Idea-to-Idea Threading)
   const turn2RecentTurns: CouncilTurnContext[] = [
@@ -179,6 +203,7 @@ async function runEvaluation() {
   ]
 
   const turn2 = await dispatchTurn({
+    turnIndex: 1,
     seekerInquiry,
     attachedNatalEnvelope: sampleNatalEnvelope,
     recentTurns: turn2RecentTurns,
@@ -201,6 +226,15 @@ async function runEvaluation() {
     turn2.usedEvidenceIds,
     turn2.targetTurnId
   )
+
+  const engagesDilemma2 =
+    /\b(corporate|creative|enterprise|venture|risk|discipline|crossroads|dilemma|craft|institution)\b/i.test(
+      turn2.text
+    )
+  if (!engagesDilemma2) {
+    res2.violations.push('Turn 2 does not engage seeker corporate vs creative dilemma')
+    res2.passedQualityChecks = false
+  }
 
   if (!isNovelClaim) {
     res2.violations.push('Claim is repetitive with Turn 1 claim')
@@ -299,6 +333,13 @@ async function runEvaluation() {
 
     if (!isNovel) {
       turnRes.violations.push('Repetitive claim across ingress sequence')
+      turnRes.passedQualityChecks = false
+    }
+
+    if (idx === 3 && turn.speechAct !== 'inaugurate') {
+      turnRes.violations.push(
+        `Expected Voice 4 speechAct "inaugurate", received "${turn.speechAct}"`
+      )
       turnRes.passedQualityChecks = false
     }
 

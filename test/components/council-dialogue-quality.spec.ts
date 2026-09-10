@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
   ASPECT_DEFINITIONS,
   addressPreviousSpeaker,
@@ -18,8 +18,6 @@ import {
   PLANETARY_VOICES,
 } from '@/lib/agents/council/planetary-personas'
 import {
-  generateIngressReactionFallback,
-  generateSpontaneousCouncilResponse,
   lastSpeakerFrom,
   orderIngressSpeakers,
   recentTurnsFrom,
@@ -28,6 +26,17 @@ import {
   type BasketAgentKey,
   type ChatMessage,
 } from '@/components/landing/current-promotional-thread'
+import { generateInterpretiveBriefing } from '@/lib/agents/council/grounded-briefing'
+import { compileTurnBrief } from '@/lib/agents/council/turn-brief'
+import {
+  directSeekerExchange,
+  directIngressSequence,
+} from '@/lib/agents/council/conversation-director'
+import { buildServerCouncilContext } from '@/lib/agents/council/council-context'
+import { auditEvidence } from '@/lib/agents/council/council-chamber'
+import { ExchangeStateMachine } from '@/lib/agents/council/exchange-state-machine'
+import { parseNatalContext } from '@/lib/context-card/natal-parser'
+import { FROZEN_SCREENSHOT_SKY } from '../fixtures/frozen-screenshot-sky'
 
 // ---------------------------------------------------------------------------
 // Fixtures
@@ -410,145 +419,125 @@ describe('composeCouncilFallback', () => {
   })
 })
 
-describe('component fallback generators', () => {
-  const agents = {
-    mars: agent('mars', 'Mars', 'Aries', 4),
-    saturn: agent('saturn', 'Saturn', 'Libra', 0),
-    moon: agent('moon', 'Moon', 'Aries', 0),
-  } as Record<BasketAgentKey, BasketAgentConfig>
-
-  it('cites the previous speaker in a spontaneous turn', () => {
-    const line = generateSpontaneousCouncilResponse('mars', agents, undefined, 'Venus Agent')
-    expect(line).toContain('Venus Agent')
+describe('server dialogue engine and briefing generators', () => {
+  const ctx = buildServerCouncilContext({
+    positions: FROZEN_SCREENSHOT_SKY as any,
   })
 
-  it('omits the citation when nobody has spoken', () => {
-    const line = generateSpontaneousCouncilResponse('mars', agents)
-    expect(line).not.toContain('undefined')
-    expect(line.length).toBeGreaterThan(20)
-  })
-
-  it('carries the aspect into the ingress reaction', () => {
-    const hit = detectAspect(signToLongitude('Aries', 0), signToLongitude('Libra', 0))
-    const line = generateIngressReactionFallback(
-      'saturn',
-      'moon',
-      agents,
-      false,
-      180,
-      false,
-      hit,
-      'Mars Agent'
+  it('generateInterpretiveBriefing produces distinct, high-quality turns without reciting telemetry', () => {
+    const [t0] = directSeekerExchange(
+      ctx,
+      'Should I take the leap into a creative venture or stay at my corporate job?',
+      'mars'
     )
-    expect(line.toLowerCase()).toContain('opposition')
-    expect(line).toContain('Mars Agent')
-  })
-
-  it('reacts to where the mover arrived, not where it left', () => {
-    // `agents` still holds the Moon at its pre-ingress seat when the council
-    // reacts, so the new position has to be passed in explicitly.
-    const line = generateIngressReactionFallback(
-      'saturn',
-      'moon',
-      agents,
-      false,
-      180,
-      false,
-      null,
-      undefined,
-      { sign: 'Virgo', degreeLabel: '1°' }
+    const brief = compileTurnBrief(
+      t0,
+      'Should I take the leap into a creative venture or stay at my corporate job?'
     )
-    expect(line).toContain('1° Virgo')
-    expect(line).not.toContain('0° Aries')
+    const briefing = generateInterpretiveBriefing(brief, true)
+
+    expect(briefing.newClaim.length).toBeGreaterThan(10)
+    expect(briefing.text.length).toBeGreaterThan(80)
+    expect(briefing.text).not.toContain('0°')
+    expect(briefing.text.toLowerCase()).not.toContain('domicile')
+    expect(briefing.text.toLowerCase()).not.toContain('fall')
+    expect(briefing.text.toLowerCase()).not.toContain('detriment')
+    expect(briefing.text).not.toMatch(/\d+%/)
+    expect(briefing.text.toLowerCase()).not.toContain('monica constant')
   })
 
-  it('gives the moving planet its new seat in the final word', () => {
-    const line = generateIngressReactionFallback(
-      'moon',
-      'moon',
-      agents,
-      false,
-      0,
-      true,
-      null,
-      'Saturn Agent',
-      { sign: 'Virgo', degreeLabel: '1°' }
-    )
-    expect(line).toContain('1° Virgo')
-    expect(line).toContain('Saturn Agent')
-    expect(line).not.toContain('0° Aries')
+  it('directs 4 ingress turns with dynamic threading ending in inaugurate', () => {
+    const sequence = directIngressSequence(ctx, 'saturn', 'Aries', 14)
+
+    expect(sequence.length).toBe(4)
+    expect(sequence[0].speechAct).toBe('reframe')
+    expect(sequence[1].speechAct).toBe('challenge')
+    expect(sequence[1].targetSpeakerName).toBe(sequence[0].speakerName)
+    expect(sequence[2].speechAct).toBe('synthesize')
+    expect(sequence[2].targetSpeakerName).toBe(sequence[1].speakerName)
+    expect(sequence[3].speechAct).toBe('inaugurate')
+    expect(sequence[3].targetSpeakerName).toBe(sequence[2].speakerName)
   })
 
-  it('never emits a bare fallback string for a known delegate', () => {
-    for (const key of ['mars', 'saturn', 'moon'] as BasketAgentKey[]) {
-      const line = generateSpontaneousCouncilResponse(key, agents)
-      expect(line).not.toBe('The celestial current moves in living harmony.')
+  it('sequences seeker exchange independently of unrelated past turns', () => {
+    const [t0, t1] = directSeekerExchange(ctx, 'Career crossroads', 'mars')
+    expect(t0.speakerKey).toBe('mars')
+    expect(t1.speakerKey).not.toBe('mars')
+    expect(t1.targetSpeakerName).toBe(t0.speakerName)
+  })
+
+  it('evidence audit strictly rejects fabricated IDs and empty evidence', () => {
+    const allowed = new Set(['ev-1', 'ev-2'])
+
+    const validAudit = auditEvidence(['ev-1'], allowed)
+    expect(validAudit.valid).toBe(true)
+
+    const fabricatedAudit = auditEvidence(['ev-fake'], allowed)
+    expect(fabricatedAudit.valid).toBe(false)
+
+    const emptyAudit = auditEvidence([], allowed)
+    expect(emptyAudit.valid).toBe(false)
+  })
+
+  it('ExchangeStateMachine.cancel() resets typing state and cancels in-flight turn', () => {
+    const machine = new ExchangeStateMachine()
+    const events: any[] = []
+    machine.subscribe(e => events.push(e))
+
+    // Mock fetch that doesn't return immediately
+    const mockFetch = vi.fn().mockImplementation(() => new Promise(() => {}))
+    machine.startExchange({
+      seekerInquiry: 'Test prompt',
+      fetchFn: mockFetch as any,
+    })
+
+    expect(machine.isActive()).toBe(true)
+    machine.cancel()
+    expect(machine.isActive()).toBe(false)
+
+    const typingEvents = events.filter(e => e.type === 'TYPING_CHANGE')
+    expect(typingEvents.length).toBeGreaterThanOrEqual(2)
+    expect(typingEvents[typingEvents.length - 1].isTyping).toBe(false)
+  })
+
+  it('parseNatalContext strictly enforces version: 1, bounds coordinates, and retains houses', () => {
+    const validEnvelope = {
+      version: 1,
+      data: {
+        points: [
+          { body: 'Sun', sign: 'Leo', deg: 15.5 },
+          { body: 'Moon', sign: 'Cancer', deg: 3.2 },
+        ],
+        houses: [{ house: 1, sign: 'Aries', deg: 0.0 }],
+      },
     }
-  })
 
-  it('generates calibrated claims of slightly increased length (2-3 sentences) for all delegates and host', () => {
-    const allKeys: BasketAgentKey[] = [
-      'sun',
-      'moon',
-      'mercury',
-      'venus',
-      'mars',
-      'jupiter',
-      'saturn',
-      'uranus',
-      'neptune',
-      'pluto',
-      'gregory',
-    ]
-    const fullAgents = Object.fromEntries(
-      allKeys.map(k => [k, agent(k, k.toUpperCase(), 'Aries', 15)])
-    ) as Record<BasketAgentKey, BasketAgentConfig>
+    const parsed = parseNatalContext(validEnvelope)
+    expect(parsed).not.toBeNull()
+    expect(parsed?.placements.length).toBe(2)
+    expect(parsed?.houses?.length).toBe(1)
+    expect(parsed?.houses?.[0].house).toBe(1)
 
-    for (const key of allKeys) {
-      const spontaneous = generateSpontaneousCouncilResponse(key, fullAgents)
-      expect(spontaneous.length, `${key} spontaneous length`).toBeGreaterThan(90)
-      expect(spontaneous.length, `${key} spontaneous length max`).toBeLessThan(350)
+    // Rejects invalid version
+    expect(parseNatalContext({ version: 2, data: validEnvelope.data })).toBeNull()
 
-      const answered = generateSpontaneousCouncilResponse(
-        key,
-        fullAgents,
-        'How does the current degree influence my work?'
-      )
-      expect(answered.length, `${key} answered length`).toBeGreaterThan(90)
-      expect(answered.length, `${key} answered length max`).toBeLessThan(350)
+    // Rejects coordinate >= 30
+    const outOfBoundsEnvelope = {
+      version: 1,
+      data: {
+        points: [{ body: 'Sun', sign: 'Leo', deg: 30.0 }],
+      },
     }
-  })
+    expect(parseNatalContext(outOfBoundsEnvelope)).toBeNull()
 
-  it('incorporates dignity posture without reciting labels into prose', () => {
-    const testAgents = {
-      mars: agent('mars', 'Mars', 'Aries', 4, { dignity: 'domicile' }),
-      saturn: agent('saturn', 'Saturn', 'Aries', 10, { dignity: 'fall' }),
-      venus: agent('venus', 'Venus', 'Aries', 20, { dignity: 'detriment' }),
-    } as Record<BasketAgentKey, BasketAgentConfig>
-
-    const marsLine = generateSpontaneousCouncilResponse('mars', testAgents)
-    expect(marsLine).toContain('native authority')
-    expect(marsLine).not.toContain('domicile')
-
-    const saturnLine = generateSpontaneousCouncilResponse('saturn', testAgents)
-    expect(saturnLine).toContain('superficial comfort')
-    expect(saturnLine).not.toContain('fall')
-
-    const venusLine = generateSpontaneousCouncilResponse('venus', testAgents)
-    expect(venusLine).toContain('generative friction')
-    expect(venusLine).not.toContain('detriment')
-  })
-
-  it('delivers poised, articulate host voice for Gregory Castro without poem insertions', () => {
-    const hostAgent = {
-      gregory: agent('gregory', 'Gregory Castro', 'Leo', 19),
-    } as Record<BasketAgentKey, BasketAgentConfig>
-
-    const line = generateSpontaneousCouncilResponse('gregory', hostAgent)
-    expect(line).toContain('living balance')
-    expect(line).toContain('Moon')
-    expect(line).not.toContain('psalm')
-    expect(line).not.toContain('poem')
+    // Rejects missing degree
+    const missingDegEnvelope = {
+      version: 1,
+      data: {
+        points: [{ body: 'Sun', sign: 'Leo' }],
+      },
+    }
+    expect(parseNatalContext(missingDegEnvelope)).toBeNull()
   })
 })
 

@@ -37,7 +37,7 @@ export const StructuredNatalPlacementSchema = z.object({
   sign: z.string().refine(s => VALID_SIGNS.some(v => v.toLowerCase() === s.toLowerCase()), {
     message: 'Invalid zodiac sign',
   }),
-  deg: z.number().min(0).max(30),
+  deg: z.number().min(0).lt(30),
   house: z.number().int().min(1).max(12).optional(),
   retro: z.boolean().optional(),
   dignity: z.string().optional(),
@@ -57,8 +57,10 @@ export const StructuredNatalDataSchema = z.object({
     .array(
       z.object({
         house: z.number().int().min(1).max(12),
-        sign: z.string(),
-        deg: z.number().min(0).max(30),
+        sign: z.string().refine(s => VALID_SIGNS.some(v => v.toLowerCase() === s.toLowerCase()), {
+          message: 'Invalid zodiac sign',
+        }),
+        deg: z.number().min(0).lt(30),
       })
     )
     .optional(),
@@ -83,7 +85,10 @@ export function parseNatalContext(input: unknown): StructuredNatalData | null {
   if (!input) return null
 
   // 1. Direct object or envelope check
-  if (typeof input === 'object') {
+  if (typeof input === 'object' && input !== null) {
+    if ('version' in input && (input as any).version !== 1) {
+      return null
+    }
     const rawData = (input as any).data || input
     return extractFromStructuredObject(rawData)
   }
@@ -96,8 +101,13 @@ export function parseNatalContext(input: unknown): StructuredNatalData | null {
   if (trimmed.startsWith('{')) {
     try {
       const parsed = JSON.parse(trimmed)
-      const rawData = parsed.data || parsed
-      return extractFromStructuredObject(rawData)
+      if (typeof parsed === 'object' && parsed !== null) {
+        if ('version' in parsed && parsed.version !== 1) {
+          return null
+        }
+        const rawData = parsed.data || parsed
+        return extractFromStructuredObject(rawData)
+      }
     } catch {
       // Fall through to markdown parsing
     }
@@ -109,6 +119,7 @@ export function parseNatalContext(input: unknown): StructuredNatalData | null {
 
 function extractFromStructuredObject(raw: any): StructuredNatalData | null {
   try {
+    if (!raw || typeof raw !== 'object') return null
     const bigThree = raw.birth?.bigThree || raw.bigThree
     const points = Array.isArray(raw.points) ? raw.points : raw.placements || []
 
@@ -117,11 +128,21 @@ function extractFromStructuredObject(raw: any): StructuredNatalData | null {
       .map((p: any) => ({
         body: String(p.body).trim(),
         sign: String(p.sign).trim(),
-        deg: typeof p.deg === 'number' ? p.deg : 0,
+        deg: typeof p.deg === 'number' ? p.deg : undefined,
         house: typeof p.house === 'number' ? p.house : undefined,
         retro: Boolean(p.retro),
         dignity: typeof p.dignity === 'string' ? p.dignity : undefined,
       }))
+
+    const houses = Array.isArray(raw.houses)
+      ? raw.houses
+          .filter((h: any) => h && typeof h.house === 'number' && typeof h.sign === 'string')
+          .map((h: any) => ({
+            house: h.house,
+            sign: String(h.sign).trim(),
+            deg: typeof h.deg === 'number' ? h.deg : undefined,
+          }))
+      : undefined
 
     const aspects = Array.isArray(raw.aspects)
       ? raw.aspects
@@ -133,7 +154,7 @@ function extractFromStructuredObject(raw: any): StructuredNatalData | null {
             orb: typeof a.orb === 'number' ? a.orb : 0,
             applying: typeof a.applying === 'boolean' ? a.applying : undefined,
           }))
-      : []
+      : undefined
 
     const result = {
       handle: typeof raw.birth?.handle === 'string' ? raw.birth.handle : undefined,
@@ -145,6 +166,7 @@ function extractFromStructuredObject(raw: any): StructuredNatalData | null {
           }
         : undefined,
       placements,
+      houses,
       aspects,
     }
 
@@ -187,7 +209,9 @@ function parseLegacyMarkdown(md: string): StructuredNatalData | null {
     if (placementMatch) {
       const body = placementMatch[1].trim()
       const sign = placementMatch[2].trim()
-      const deg = placementMatch[3] ? parseFloat(placementMatch[3]) : 0
+      if (!placementMatch[3]) continue
+      const deg = parseFloat(placementMatch[3])
+      if (isNaN(deg) || deg < 0 || deg >= 30) continue
 
       // Skip non-body headers
       if (!['Subject', 'Data Provenance', 'Methodology', 'Core Signature'].includes(body)) {
@@ -214,9 +238,9 @@ function parseLegacyMarkdown(md: string): StructuredNatalData | null {
     }
   }
 
-  if (placements.length === 0 && !sunSign) return null
+  if (placements.length === 0) return null
 
-  return {
+  const result = {
     bigThree: {
       sun: sunSign,
       moon: moonSign,
@@ -225,4 +249,7 @@ function parseLegacyMarkdown(md: string): StructuredNatalData | null {
     placements,
     aspects,
   }
+
+  const validated = StructuredNatalDataSchema.safeParse(result)
+  return validated.success ? validated.data : null
 }
