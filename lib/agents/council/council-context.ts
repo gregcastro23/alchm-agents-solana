@@ -49,6 +49,8 @@ const SIGN_MODALITIES: Record<string, ModalityType> = {
   Pisces: 'mutable',
 }
 
+export type CelestialPlacement = CouncilContextPlacement
+
 export interface CouncilContextPlacement {
   key: BasketAgentKey
   planet: string

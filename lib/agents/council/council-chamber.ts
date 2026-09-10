@@ -12,6 +12,7 @@ import {
   type BasketAgentKey,
   type CouncilTurnContext,
 } from './council-context'
+import type { CurrentPlanetPosition } from '@/lib/calculate-transits'
 import {
   directSeekerExchange,
   directAutonomousTurn,
@@ -43,6 +44,7 @@ export interface CouncilRequest {
   }
   recentTurns?: CouncilTurnContext[]
   selectedAgentFilter?: string
+  skyOverride?: Record<string, CurrentPlanetPosition>
 }
 
 const HOST_AGENT_ID = 'greg-castro-1991'
@@ -53,8 +55,20 @@ export async function dispatchTurn(request: CouncilRequest): Promise<CouncilTurn
     ? parseNatalContext(request.attachedNatalEnvelope)
     : undefined
 
+  // Pre-calculate ingress override if present so full context and downstream aspect detection reflect the new position
+  const ingressOverride = request.ingressEvent
+    ? {
+        [request.ingressEvent.movingPlanet.toLowerCase() as BasketAgentKey]: {
+          sign: request.ingressEvent.newSign,
+          degree: request.ingressEvent.newDegree,
+        },
+      }
+    : undefined
+
   // 2. Build internal server-side CouncilContext
   const ctx = buildServerCouncilContext({
+    positions: request.skyOverride,
+    overrides: ingressOverride,
     seekerInquiry: request.seekerInquiry,
     attachedNatalChart: structuredNatal || undefined,
     recentTurns: request.recentTurns || [],
@@ -78,15 +92,6 @@ export async function dispatchTurn(request: CouncilRequest): Promise<CouncilTurn
     // Autonomous turn
     const lastSpeakerKey = ctx.recentTurns[ctx.recentTurns.length - 1]?.speakerKey
     directive = directAutonomousTurn(ctx, lastSpeakerKey)
-  }
-
-  // If a specific target delegate is forced
-  if (request.targetDelegate && !request.seekerInquiry) {
-    const forcedKey = request.targetDelegate.toLowerCase() as BasketAgentKey
-    if (ctx.sky[forcedKey]) {
-      directive.speakerKey = forcedKey
-      directive.speakerName = ctx.sky[forcedKey].planet
-    }
   }
 
   // 4. Compile TurnBrief
@@ -132,24 +137,26 @@ export async function dispatchTurn(request: CouncilRequest): Promise<CouncilTurn
       allowedIds.has(id)
     )
 
-    return {
-      success: true,
-      speakerKey: directive.speakerKey,
-      speakerName: directive.speakerName,
-      text: generationResult.object.text.trim(),
-      newClaim: generationResult.object.newClaim.trim(),
-      speechAct: directive.speechAct,
-      usedEvidenceIds: validUsedIds.length > 0 ? validUsedIds : [brief.evidence[0].id],
-      targetTurnId: directive.targetTurnId,
-      provenance: {
-        source: 'model',
-        modelFamily: generationResult.modelFamily,
-        latencyMs: generationResult.latencyMs,
-      },
+    if (validUsedIds.length > 0) {
+      return {
+        success: true,
+        speakerKey: directive.speakerKey,
+        speakerName: directive.speakerName,
+        text: generationResult.object.text.trim(),
+        newClaim: generationResult.object.newClaim.trim(),
+        speechAct: directive.speechAct,
+        usedEvidenceIds: validUsedIds,
+        targetTurnId: directive.targetTurnId,
+        provenance: {
+          source: 'model',
+          modelFamily: generationResult.modelFamily,
+          latencyMs: generationResult.latencyMs,
+        },
+      }
     }
   }
 
-  // 8. Grounded Sky Briefing Fallback (zero canned copy, qualitative interpretation)
+  // 8. Grounded Sky Briefing Fallback (zero canned copy, dynamic qualitative interpretation)
   const briefing = generateInterpretiveBriefing(brief, isSeekerTurn)
 
   return {

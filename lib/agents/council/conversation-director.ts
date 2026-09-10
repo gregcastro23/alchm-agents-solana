@@ -9,14 +9,13 @@
  */
 
 import {
-  type BasketAgentKey,
   type CouncilContext,
   type CouncilContextAspect,
+  type CelestialPlacement,
 } from './council-context'
-import { PLANETARY_VOICES } from './planetary-personas'
-import { planetFromCouncilKey } from './planetary-personas'
-
-export type SpeechAct = 'support' | 'challenge' | 'qualify' | 'reframe' | 'synthesize'
+import { type BasketAgentKey, type SpeechAct } from './council-schema'
+import { PLANETARY_VOICES, planetFromCouncilKey } from './planetary-personas'
+import { detectAspect, signToLongitude } from './aspect-dialogue-engine'
 
 export interface SelectedEvidenceItem {
   id: string
@@ -40,45 +39,26 @@ export interface TurnDirective {
 }
 
 const TOPIC_KEYWORD_MAP: Record<string, BasketAgentKey[]> = {
-  // Discipline & work
+  career: ['saturn', 'mars', 'sun'],
+  work: ['saturn', 'mercury', 'mars'],
+  ambition: ['mars', 'sun', 'jupiter'],
   discipline: ['saturn', 'mars'],
-  career: ['saturn', 'sun', 'mars'],
-  structure: ['saturn', 'mercury'],
-  boundary: ['saturn', 'mars'],
-  time: ['saturn', 'jupiter'],
-  mastery: ['saturn', 'mars'],
-
-  // Emotion & soul
-  emotion: ['moon', 'venus', 'neptune'],
-  feeling: ['moon', 'neptune'],
-  grief: ['neptune', 'pluto', 'moon'],
-  family: ['moon', 'saturn'],
-  intuition: ['moon', 'neptune'],
-
-  // Communication & intellect
-  clarity: ['mercury', 'sun'],
-  writing: ['mercury', 'uranus'],
-  dilemma: ['mercury', 'saturn'],
-  decision: ['mars', 'mercury'],
-  truth: ['sun', 'pluto', 'mercury'],
-
-  // Value & relationships
-  relationship: ['venus', 'moon', 'mars'],
+  risk: ['mars', 'uranus', 'jupiter'],
+  enterprise: ['saturn', 'jupiter', 'sun'],
+  creative: ['venus', 'neptune', 'sun'],
+  art: ['venus', 'neptune'],
   love: ['venus', 'moon'],
-  value: ['venus', 'jupiter'],
-  harmony: ['venus', 'neptune'],
-  money: ['venus', 'saturn', 'jupiter'],
-
-  // Transformation & courage
-  courage: ['mars', 'sun'],
-  action: ['mars', 'sun'],
-  fear: ['mars', 'pluto', 'saturn'],
-  change: ['uranus', 'pluto'],
-  breakthrough: ['uranus', 'mercury'],
-  rebirth: ['pluto', 'mars'],
-  shadow: ['pluto', 'moon'],
-
-  // Expansion & vision
+  relationship: ['venus', 'moon', 'jupiter'],
+  crossroads: ['mercury', 'uranus', 'saturn'],
+  decision: ['mercury', 'saturn', 'mars'],
+  fear: ['saturn', 'pluto', 'moon'],
+  shadow: ['pluto', 'saturn'],
+  transformation: ['pluto', 'uranus'],
+  breakthrough: ['uranus', 'jupiter'],
+  money: ['venus', 'saturn', 'taurus' as any],
+  wealth: ['jupiter', 'venus'],
+  healing: ['moon', 'neptune', 'venus'],
+  spirit: ['neptune', 'sun', 'jupiter'],
   growth: ['jupiter', 'sun'],
   purpose: ['sun', 'jupiter'],
   vision: ['jupiter', 'uranus', 'sun'],
@@ -87,7 +67,7 @@ const TOPIC_KEYWORD_MAP: Record<string, BasketAgentKey[]> = {
 
 /**
  * Directs who should answer a Seeker inquiry, selecting a primary voice
- * and a complementary countervoice/synthesizer.
+ * and a complementary countervoice/synthesizer with idea-to-idea threading.
  */
 export function directSeekerExchange(
   ctx: CouncilContext,
@@ -101,7 +81,6 @@ export function directSeekerExchange(
   if (preferredSpeaker && preferredSpeaker !== 'gregory') {
     primaryKey = preferredSpeaker
   } else {
-    // Score all candidates by keyword relevance + active celestial aspects
     const scores: Record<BasketAgentKey, number> = {
       sun: 1,
       moon: 1,
@@ -119,7 +98,9 @@ export function directSeekerExchange(
     for (const [kw, keys] of Object.entries(TOPIC_KEYWORD_MAP)) {
       if (lowerInquiry.includes(kw)) {
         keys.forEach((k, idx) => {
-          scores[k] += 4 - idx
+          if (scores[k] !== undefined) {
+            scores[k] += 4 - idx
+          }
         })
       }
     }
@@ -132,7 +113,6 @@ export function directSeekerExchange(
       }
     }
 
-    // Find highest scoring
     let highestScore = -1
     for (const [key, score] of Object.entries(scores) as [BasketAgentKey, number][]) {
       if (key === 'gregory') continue
@@ -155,7 +135,7 @@ export function directSeekerExchange(
     }
   }
 
-  // 3. Build directives for both turns
+  // 3. Build directives with idea-to-idea threading
   const turn1 = buildTurnDirective({
     ctx,
     speakerKey: primaryKey,
@@ -164,19 +144,31 @@ export function directSeekerExchange(
     directive: `Address the seeker's inquiry directly. Provide articulate, grounded orientation from your celestial seat. Do not recite your degree or dignity label aloud; embody your condition as posture.`,
   })
 
+  // Inspect ctx.recentTurns to see if primaryKey has already spoken in this exchange
+  const prevTurn =
+    [...ctx.recentTurns].reverse().find(t => t.speakerKey === primaryKey) ||
+    ctx.recentTurns[ctx.recentTurns.length - 1]
+
+  const turn2Claim =
+    prevTurn?.claim || 'Seeker must align their inner focus with authentic cosmic purpose.'
+  const turn2TargetId = prevTurn?.turnId
+  const turn2TargetSpeaker =
+    prevTurn?.speakerName || ctx.sky[primaryKey]?.planet || 'First Delegate'
+
   const turn2 = buildTurnDirective({
     ctx,
     speakerKey: secondaryKey,
     speechAct: secondaryKey === 'gregory' ? 'synthesize' : 'challenge',
     isSeekerTurn: true,
     targetTurn: {
-      speakerName: ctx.sky[primaryKey]?.planet || 'First Delegate',
-      claim: `Focus on the immediate alchemical vector`,
+      turnId: turn2TargetId,
+      speakerName: turn2TargetSpeaker,
+      claim: turn2Claim,
     },
     directive:
       secondaryKey === 'gregory'
-        ? `Synthesize the primary delegate's reading, connecting the geometry directly to human agency and creative resolve.`
-        : `Respond to ${ctx.sky[primaryKey]?.planet}'s reading. Add a distinct counter-perspective or necessary qualification.`,
+        ? `Synthesize ${turn2TargetSpeaker}'s reading (specifically addressing: "${turn2Claim}"), connecting the geometry directly to human agency and creative resolve.`
+        : `Respond directly to ${turn2TargetSpeaker}'s claim: "${turn2Claim}". Introduce a sharp counter-perspective or necessary qualification.`,
   })
 
   return [turn1, turn2]
@@ -205,7 +197,6 @@ export function directAutonomousTurn(
     ] as BasketAgentKey[]
   ).filter(k => k !== lastSpeakerKey)
 
-  // Find candidate with strongest aspect or tension with last speaker
   let chosenSpeaker: BasketAgentKey = candidates[0]
   let bestScore = -1
   let chosenSpeechAct: SpeechAct = 'qualify'
@@ -215,6 +206,7 @@ export function directAutonomousTurn(
 
   for (const candidate of candidates) {
     let score = 1
+    let candidateSpeechAct: SpeechAct = 'qualify'
     const candidatePlanet = planetFromCouncilKey(candidate)
     const candidateVoice = candidatePlanet ? PLANETARY_VOICES[candidatePlanet] : null
 
@@ -226,30 +218,31 @@ export function directAutonomousTurn(
       if (aspectWithLast) {
         if (aspectWithLast.quality === 'dynamic') {
           score += 5
-          chosenSpeechAct = 'challenge'
+          candidateSpeechAct = 'challenge'
         } else if (aspectWithLast.quality === 'harmonious') {
           score += 4
-          chosenSpeechAct = 'support'
+          candidateSpeechAct = 'support'
         } else {
           score += 3
-          chosenSpeechAct = 'qualify'
+          candidateSpeechAct = 'qualify'
         }
       }
 
       // Check archetypal tension
       if (lastVoice && candidatePlanet && lastVoice.tensionWith.includes(candidatePlanet)) {
         score += 4
-        chosenSpeechAct = 'challenge'
+        candidateSpeechAct = 'challenge'
       }
       if (candidateVoice && lastPlanet && candidateVoice.tensionWith.includes(lastPlanet)) {
         score += 3
-        chosenSpeechAct = 'challenge'
+        candidateSpeechAct = 'challenge'
       }
     }
 
     if (score > bestScore) {
       bestScore = score
       chosenSpeaker = candidate
+      chosenSpeechAct = candidateSpeechAct
     }
   }
 
@@ -262,9 +255,9 @@ export function directAutonomousTurn(
     isSeekerTurn: false,
     targetTurn: lastTurn
       ? {
-          speakerName: lastTurn.speakerName,
-          claim: lastTurn.claim || lastTurn.text.slice(0, 80),
           turnId: lastTurn.turnId,
+          speakerName: lastTurn.speakerName,
+          claim: lastTurn.claim || '',
         }
       : undefined,
     directive: `Respond directly to ${
@@ -275,6 +268,7 @@ export function directAutonomousTurn(
 
 /**
  * Directs an Ingress reaction sequence capped at 3 to 4 purposeful voices.
+ * Uses the genuine NEW ingress longitude to calculate spatial distances and aspects.
  */
 export function directIngressSequence(
   ctx: CouncilContext,
@@ -283,28 +277,27 @@ export function directIngressSequence(
   newDegree: number
 ): TurnDirective[] {
   const movingPlanet = planetFromCouncilKey(movingKey) || 'Moon'
-  const movingCfg = ctx.sky[movingKey]
-  const movingLong = movingCfg?.absoluteDegree ?? 0
+  const newLongitude = signToLongitude(newSign, newDegree)
 
-  // 1. Nearest celestial body
+  // 1. Nearest celestial body from the NEW ingress longitude
   let nearestKey: BasketAgentKey = 'sun'
   let nearestDist = 360
 
-  // 2. Strongest aspect partner
+  // 2. Strongest aspect partner from the NEW ingress longitude
   let strongestAspectKey: BasketAgentKey | null = null
   let tightestOrb = 360
 
-  for (const [key, body] of Object.entries(ctx.sky) as [BasketAgentKey, any][]) {
+  for (const [key, body] of Object.entries(ctx.sky) as [BasketAgentKey, CelestialPlacement][]) {
     if (key === movingKey || key === 'gregory') continue
 
-    const dist = Math.abs(((((body.absoluteDegree - movingLong) % 360) + 540) % 360) - 180)
+    const dist = Math.abs(((((body.absoluteDegree - newLongitude) % 360) + 540) % 360) - 180)
     if (dist < nearestDist) {
       nearestDist = dist
       nearestKey = key
     }
 
-    const aspect = ctx.speakerAspects[movingKey]?.find(a => a.bodyA === key || a.bodyB === key)
-    if (aspect && aspect.major && aspect.orb < tightestOrb) {
+    const aspect = detectAspect(newLongitude, body.absoluteDegree)
+    if (aspect && aspect.definition.major && aspect.orb < tightestOrb) {
       tightestOrb = aspect.orb
       strongestAspectKey = key
     }
@@ -324,7 +317,7 @@ export function directIngressSequence(
 
   const sequence: TurnDirective[] = []
 
-  // Voice 1: Nearest body (spatial reaction)
+  // Voice 1 (turnIndex 0): Nearest body (spatial reaction)
   sequence.push(
     buildTurnDirective({
       ctx,
@@ -337,34 +330,35 @@ export function directIngressSequence(
     })
   )
 
-  // Voice 2: Strongest aspect partner (geometric reaction, if distinct)
-  if (strongestAspectKey && strongestAspectKey !== nearestKey) {
-    sequence.push(
-      buildTurnDirective({
-        ctx,
-        speakerKey: strongestAspectKey,
-        speechAct: 'challenge',
-        isSeekerTurn: false,
-        directive: `React to ${movingPlanet}'s arrival through your aspect relationship. Shape your claim to the geometry.`,
-      })
-    )
-  }
-
-  // Voice 3: Countervoice or Host Synthesis
+  // Voice 2 (turnIndex 1): Strongest aspect partner or distinct countervoice
+  const secondKey =
+    strongestAspectKey && strongestAspectKey !== nearestKey ? strongestAspectKey : counterKey
   sequence.push(
     buildTurnDirective({
       ctx,
-      speakerKey: counterKey,
-      speechAct: counterKey === 'gregory' ? 'synthesize' : 'qualify',
+      speakerKey: secondKey,
+      speechAct: secondKey === strongestAspectKey ? 'challenge' : 'qualify',
+      isSeekerTurn: false,
+      directive: `React to ${movingPlanet}'s arrival at ${newDegree}° ${newSign}. Shape your claim to the new celestial geometry.`,
+    })
+  )
+
+  // Voice 3 (turnIndex 2): Countervoice or Host Synthesis
+  const thirdKey = counterKey !== secondKey && counterKey !== nearestKey ? counterKey : 'gregory'
+  sequence.push(
+    buildTurnDirective({
+      ctx,
+      speakerKey: thirdKey,
+      speechAct: thirdKey === 'gregory' ? 'synthesize' : 'qualify',
       isSeekerTurn: false,
       directive:
-        counterKey === 'gregory'
+        thirdKey === 'gregory'
           ? `Host Gregory: Synthesize the shift of ${movingPlanet} into ${newDegree}° ${newSign} and connect it to creative agency.`
           : `Provide an ideological counter-weight to the prevailing reaction.`,
     })
   )
 
-  // Voice 4: Moving body takes the floor last (Inauguration)
+  // Voice 4 (turnIndex 3): Moving body takes the floor last (Inauguration)
   sequence.push(
     buildTurnDirective({
       ctx,
@@ -419,13 +413,29 @@ function buildTurnDirective(params: {
     label: `${speakerName} in ${speaker.sign} ${speaker.dignity} posture`,
   })
 
-  // Evidence 3: Transit contact with seeker natal chart if available
+  // Evidence 3: Transit contact with seeker natal chart ONLY if an actual aspect exists within orb
   if (ctx.attachedNatalChart && ctx.attachedNatalChart.placements.length > 0) {
-    const contact = ctx.attachedNatalChart.placements[0]
-    evidenceItems.push({
-      id: `natal-contact-${contact.body.toLowerCase()}`,
-      label: `Current ${speakerName} transiting seeker's natal ${contact.body} in ${contact.sign}`,
-    })
+    let bestNatalAspect: { placement: any; aspect: any } | null = null
+    let minOrb = 4.5
+
+    for (const np of ctx.attachedNatalChart.placements) {
+      const natalLong = signToLongitude(np.sign, np.deg)
+      const hit = detectAspect(speaker.absoluteDegree, natalLong)
+      if (hit && hit.orb < minOrb) {
+        minOrb = hit.orb
+        bestNatalAspect = { placement: np, aspect: hit }
+      }
+    }
+
+    if (bestNatalAspect) {
+      const { placement, aspect } = bestNatalAspect
+      evidenceItems.push({
+        id: `ev-natal-${speakerKey}-${placement.body.toLowerCase()}`,
+        label: `Transit ${speakerName} at ${speaker.degreeLabel} ${speaker.sign} ${aspect.name.toLowerCase()} seeker's natal ${placement.body} at ${Math.round(placement.deg)}° ${placement.sign} (orb ${aspect.orb.toFixed(1)}°)`,
+        aspectName: aspect.name,
+        orb: aspect.orb,
+      })
+    }
   }
 
   // Ensure 2 or 3 items

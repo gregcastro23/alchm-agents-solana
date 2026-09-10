@@ -10,22 +10,41 @@
 import { z } from 'zod'
 import type { StructuredNatalData } from '@/lib/agents/council/council-context'
 
-export interface ContextCardEnvelope {
-  version: 1
-  data: any
-}
+const VALID_SIGNS = [
+  'Aries',
+  'Taurus',
+  'Gemini',
+  'Cancer',
+  'Leo',
+  'Virgo',
+  'Libra',
+  'Scorpio',
+  'Sagittarius',
+  'Capricorn',
+  'Aquarius',
+  'Pisces',
+] as const
+
+export const ContextCardEnvelopeSchema = z.object({
+  version: z.literal(1),
+  data: z.record(z.unknown()),
+})
+
+export type ContextCardEnvelope = z.infer<typeof ContextCardEnvelopeSchema>
 
 export const StructuredNatalPlacementSchema = z.object({
-  body: z.string(),
-  sign: z.string(),
-  deg: z.number(),
-  house: z.number().optional(),
+  body: z.string().min(1).max(30),
+  sign: z.string().refine(s => VALID_SIGNS.some(v => v.toLowerCase() === s.toLowerCase()), {
+    message: 'Invalid zodiac sign',
+  }),
+  deg: z.number().min(0).max(30),
+  house: z.number().int().min(1).max(12).optional(),
   retro: z.boolean().optional(),
   dignity: z.string().optional(),
 })
 
 export const StructuredNatalDataSchema = z.object({
-  handle: z.string().optional(),
+  handle: z.string().max(50).optional(),
   bigThree: z
     .object({
       sun: z.string().optional(),
@@ -33,13 +52,13 @@ export const StructuredNatalDataSchema = z.object({
       rising: z.string().optional(),
     })
     .optional(),
-  placements: z.array(StructuredNatalPlacementSchema),
+  placements: z.array(StructuredNatalPlacementSchema).min(1),
   houses: z
     .array(
       z.object({
-        house: z.number(),
+        house: z.number().int().min(1).max(12),
         sign: z.string(),
-        deg: z.number(),
+        deg: z.number().min(0).max(30),
       })
     )
     .optional(),
@@ -49,7 +68,7 @@ export const StructuredNatalDataSchema = z.object({
         a: z.string(),
         b: z.string(),
         type: z.string(),
-        orb: z.number(),
+        orb: z.number().min(0).max(15),
         applying: z.boolean().optional(),
       })
     )

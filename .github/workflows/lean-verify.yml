@@ -42,5 +42,3 @@ jobs:
           cd proofs/lean
           chmod +x check-axioms.sh
           ./check-axioms.sh
-
-

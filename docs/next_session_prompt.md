@@ -266,6 +266,7 @@ The upcoming session focuses on operator execution of the **5-Stage Mainnet Depl
      - Outbox queue depth and dead-letter queue (DLQ) health.
 
 3. **Activate Settlement Daemon:**
+
    ```bash
    bun run solana:sync
    ```

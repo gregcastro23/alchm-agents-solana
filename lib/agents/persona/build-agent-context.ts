@@ -1,6 +1,7 @@
 import { createHash } from 'node:crypto'
 import { HISTORICAL_AGENTS, getHistoricalAgent } from '@/lib/agents/historical'
 import { STAR_AGENTS, getStarAgent } from '@/lib/agents/star-agents'
+import { getPlanetaryAgent } from '@/lib/agents/council/planetary-agents'
 import type { CraftedAgent } from '@/lib/agent-types'
 import { formatPersonaBlock } from './format-persona-block'
 import { buildSolanaAgentMetadata, type SolanaAgentMetadata } from '@/lib/solana/agent-metadata'
@@ -16,6 +17,8 @@ export interface AgentContext {
 const cache = new Map<string, AgentContext>()
 
 function findAgent(agentId: string): CraftedAgent | undefined {
+  const planetary = getPlanetaryAgent(agentId)
+  if (planetary) return planetary
   const star = getStarAgent(agentId)
   if (star) return star
   const byId = getHistoricalAgent(agentId)

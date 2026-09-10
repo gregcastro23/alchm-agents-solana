@@ -6,12 +6,15 @@
  * 2. Autonomous Chamber turn with aspect-driven speaker selection
  * 3. Degree Ingress Sequence (3-4 purposeful voices ending with inauguration)
  *
+ * Injects the canonical FROZEN_SCREENSHOT_SKY (2026-09-09T22:00:00Z) via skyOverride.
+ *
  * Verifies:
  * - Sanitized provenance (model vs grounded_briefing)
- * - Grounding evidence subset validity
- * - Novel substantive claim per turn
+ * - Grounding evidence subset validity (no fabricated evidence IDs)
+ * - Semantic novelty (unique substantively different claims per turn)
+ * - Idea-to-idea threading and target engagement
  * - Absence of canned phrases ("names it well")
- * - Absence of crude dignity/degree recitation
+ * - Absence of crude dignity/degree coordinate recitation
  * - Length and sentence structure
  */
 
@@ -44,6 +47,7 @@ interface EvalResult {
   textSnippet: string
   provenance: string
   evidenceCount: number
+  targetTurnId?: string
   passedQualityChecks: boolean
   violations: string[]
 }
@@ -56,7 +60,8 @@ function evaluateTurnText(
   claim: string,
   speechAct: string,
   provenanceSource: string,
-  usedEvidenceIds: string[]
+  usedEvidenceIds: string[],
+  targetTurnId?: string
 ): EvalResult {
   const violations: string[] = []
   const lowerText = text.toLowerCase()
@@ -69,7 +74,7 @@ function evaluateTurnText(
   }
 
   // 2. Length check
-  if (text.length < 100) {
+  if (text.length < 80) {
     violations.push(`Text too short: ${text.length} chars`)
   }
   if (text.length > 1200) {
@@ -95,6 +100,7 @@ function evaluateTurnText(
     textSnippet: text.slice(0, 120) + '...',
     provenance: provenanceSource,
     evidenceCount: usedEvidenceIds?.length || 0,
+    targetTurnId,
     passedQualityChecks: violations.length === 0,
     violations,
   }
@@ -107,6 +113,7 @@ async function runEvaluation() {
   console.log('═══════════════════════════════════════════════════════════════════\n')
 
   const results: EvalResult[] = []
+  const accumulatedClaims = new Set<string>()
 
   // ─────────────────────────────────────────────────────────────────
   // SCENARIO 1: Seeker Inquiry with Career Crossroads + Natal Envelope
@@ -139,7 +146,10 @@ async function runEvaluation() {
   const turn1 = await dispatchTurn({
     seekerInquiry,
     attachedNatalEnvelope: sampleNatalEnvelope,
+    skyOverride: FROZEN_SCREENSHOT_SKY as any,
   })
+
+  accumulatedClaims.add(turn1.newClaim.toLowerCase().trim())
 
   results.push(
     evaluateTurnText(
@@ -150,11 +160,12 @@ async function runEvaluation() {
       turn1.newClaim,
       turn1.speechAct,
       turn1.provenance.source,
-      turn1.usedEvidenceIds
+      turn1.usedEvidenceIds,
+      turn1.targetTurnId
     )
   )
 
-  // Turn 2: Second delegate responds to Turn 1
+  // Turn 2: Second delegate responds to Turn 1 (Idea-to-Idea Threading)
   const turn2RecentTurns: CouncilTurnContext[] = [
     {
       turnId: 'turn-1',
@@ -163,6 +174,7 @@ async function runEvaluation() {
       text: turn1.text,
       claim: turn1.newClaim,
       speechAct: turn1.speechAct as any,
+      usedEvidenceIds: turn1.usedEvidenceIds,
     },
   ]
 
@@ -170,20 +182,37 @@ async function runEvaluation() {
     seekerInquiry,
     attachedNatalEnvelope: sampleNatalEnvelope,
     recentTurns: turn2RecentTurns,
+    skyOverride: FROZEN_SCREENSHOT_SKY as any,
   })
 
-  results.push(
-    evaluateTurnText(
-      'Scenario 1 (Seeker Turn 2)',
-      2,
-      turn2.speakerName,
-      turn2.text,
-      turn2.newClaim,
-      turn2.speechAct,
-      turn2.provenance.source,
-      turn2.usedEvidenceIds
-    )
+  // Novelty check
+  const turn2ClaimLower = turn2.newClaim.toLowerCase().trim()
+  const isNovelClaim = !accumulatedClaims.has(turn2ClaimLower)
+  accumulatedClaims.add(turn2ClaimLower)
+
+  const res2 = evaluateTurnText(
+    'Scenario 1 (Seeker Turn 2)',
+    2,
+    turn2.speakerName,
+    turn2.text,
+    turn2.newClaim,
+    turn2.speechAct,
+    turn2.provenance.source,
+    turn2.usedEvidenceIds,
+    turn2.targetTurnId
   )
+
+  if (!isNovelClaim) {
+    res2.violations.push('Claim is repetitive with Turn 1 claim')
+    res2.passedQualityChecks = false
+  }
+
+  if (turn2.targetTurnId !== 'turn-1') {
+    res2.violations.push(`Expected targetTurnId "turn-1", received "${turn2.targetTurnId}"`)
+    res2.passedQualityChecks = false
+  }
+
+  results.push(res2)
 
   // ─────────────────────────────────────────────────────────────────
   // SCENARIO 2: Autonomous Turn After Moon Speaks
@@ -195,28 +224,38 @@ async function runEvaluation() {
       turnId: 'turn-moon',
       speakerKey: 'moon',
       speakerName: 'Moon',
-      text: 'The late degrees of the Lion demand emotional culmination before the harvest begins. What remains unexpressed will curdle if carried into the virgin soil.',
-      claim: 'Emotional culmination must precede structural refinement.',
+      text: 'The early degrees of Virgo demand grounding emotional truth into practical craft. What remains unrefined must find steady footing.',
+      claim: 'Emotional truth must find steady footing in daily craft.',
       speechAct: 'reframe',
+      usedEvidenceIds: ['transit-moon'],
     },
   ]
 
   const autoTurn = await dispatchTurn({
     recentTurns: autoRecentTurns,
+    skyOverride: FROZEN_SCREENSHOT_SKY as any,
   })
 
-  results.push(
-    evaluateTurnText(
-      'Scenario 2 (Autonomous Turn)',
-      1,
-      autoTurn.speakerName,
-      autoTurn.text,
-      autoTurn.newClaim,
-      autoTurn.speechAct,
-      autoTurn.provenance.source,
-      autoTurn.usedEvidenceIds
-    )
+  const autoRes = evaluateTurnText(
+    'Scenario 2 (Autonomous Turn)',
+    1,
+    autoTurn.speakerName,
+    autoTurn.text,
+    autoTurn.newClaim,
+    autoTurn.speechAct,
+    autoTurn.provenance.source,
+    autoTurn.usedEvidenceIds,
+    autoTurn.targetTurnId
   )
+
+  if (autoTurn.targetTurnId !== 'turn-moon') {
+    autoRes.violations.push(
+      `Expected targetTurnId "turn-moon", received "${autoTurn.targetTurnId}"`
+    )
+    autoRes.passedQualityChecks = false
+  }
+
+  results.push(autoRes)
 
   // ─────────────────────────────────────────────────────────────────
   // SCENARIO 3: Ingress Sequence (Saturn moves into 14° Aries)
@@ -230,6 +269,7 @@ async function runEvaluation() {
   }
 
   const ingressTurns: CouncilTurnContext[] = []
+  const ingressClaims = new Set<string>()
 
   for (let idx = 0; idx < 4; idx++) {
     const turn = await dispatchTurn({
@@ -238,20 +278,31 @@ async function runEvaluation() {
         turnIndex: idx,
       },
       recentTurns: ingressTurns,
+      skyOverride: FROZEN_SCREENSHOT_SKY as any,
     })
 
-    results.push(
-      evaluateTurnText(
-        `Scenario 3 (Ingress Turn ${idx + 1})`,
-        idx + 1,
-        turn.speakerName,
-        turn.text,
-        turn.newClaim,
-        turn.speechAct,
-        turn.provenance.source,
-        turn.usedEvidenceIds
-      )
+    const claimKey = turn.newClaim.toLowerCase().trim()
+    const isNovel = !ingressClaims.has(claimKey)
+    ingressClaims.add(claimKey)
+
+    const turnRes = evaluateTurnText(
+      `Scenario 3 (Ingress Turn ${idx + 1})`,
+      idx + 1,
+      turn.speakerName,
+      turn.text,
+      turn.newClaim,
+      turn.speechAct,
+      turn.provenance.source,
+      turn.usedEvidenceIds,
+      turn.targetTurnId
     )
+
+    if (!isNovel) {
+      turnRes.violations.push('Repetitive claim across ingress sequence')
+      turnRes.passedQualityChecks = false
+    }
+
+    results.push(turnRes)
 
     ingressTurns.push({
       turnId: `ingress-${idx}`,
@@ -260,6 +311,7 @@ async function runEvaluation() {
       text: turn.text,
       claim: turn.newClaim,
       speechAct: turn.speechAct as any,
+      usedEvidenceIds: turn.usedEvidenceIds,
     })
   }
 

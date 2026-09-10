@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { dispatchTurn, type CouncilRequest } from '@/lib/agents/council/council-chamber'
+import { CouncilApiRequestSchema } from '@/lib/agents/council/council-schema'
 import type { CouncilTurnContext } from '@/lib/agents/council/council-context'
 
 export const dynamic = 'force-dynamic'
@@ -7,43 +8,58 @@ export const runtime = 'nodejs'
 
 export async function POST(req: NextRequest) {
   try {
-    const body = await req.json()
+    const rawBody = await req.json()
 
-    // Adapt request body to internal CouncilRequest format
-    const councilRequest: CouncilRequest = {
-      seekerInquiry: body.seekerInquiry || body.userPrompt,
-      targetDelegate: body.targetDelegate || body.agentKey,
-      attachedNatalEnvelope: body.attachedNatalEnvelope || body.attachedChartContext,
+    // 1. Strict Zod schema validation
+    const parsed = CouncilApiRequestSchema.safeParse({
+      seekerInquiry: rawBody.seekerInquiry || rawBody.userPrompt,
+      targetDelegate: rawBody.targetDelegate || rawBody.agentKey,
+      attachedNatalEnvelope: rawBody.attachedNatalEnvelope || rawBody.attachedChartContext,
       ingressEvent:
-        body.ingressEvent && typeof body.ingressEvent === 'object'
+        rawBody.ingressEvent && typeof rawBody.ingressEvent === 'object'
           ? {
-              movingPlanet: body.ingressEvent.movingPlanet || body.movingPlanet || 'Moon',
-              newSign: body.ingressEvent.newSign || body.movingSign || '',
-              newDegree: body.ingressEvent.newDegree ?? body.movingDegree ?? 0,
-              isFinalWord: body.ingressEvent.isFinalWord ?? body.isIngressFinalWord,
-              turnIndex: body.ingressEvent.turnIndex,
+              movingPlanet: rawBody.ingressEvent.movingPlanet || rawBody.movingPlanet,
+              newSign: rawBody.ingressEvent.newSign || rawBody.movingSign,
+              newDegree: rawBody.ingressEvent.newDegree ?? rawBody.movingDegree,
+              turnIndex: rawBody.ingressEvent.turnIndex,
+              isFinalWord: rawBody.ingressEvent.isFinalWord ?? rawBody.isIngressFinalWord,
             }
-          : body.ingressEvent
-            ? {
-                movingPlanet: body.movingPlanet || 'Moon',
-                newSign: body.movingSign || '',
-                newDegree: body.movingDegree ?? 0,
-                isFinalWord: body.isIngressFinalWord,
-              }
-            : undefined,
-      recentTurns: Array.isArray(body.recentTurns)
-        ? body.recentTurns.map(
-            (t: any, idx: number): CouncilTurnContext => ({
-              turnId: t.turnId || `turn-${idx}`,
-              speakerKey: t.speakerKey || t.speaker?.toLowerCase?.() || 'gregory',
-              speakerName: t.speakerName || t.speaker || 'Gregory',
-              text: (t.text || '').trim(),
-              claim: (t.claim || t.newClaim || t.text?.slice(0, 100) || '').trim(),
-              speechAct: t.speechAct || 'speak',
-            })
-          )
+          : undefined,
+      recentTurns: rawBody.recentTurns,
+      selectedAgentFilter: rawBody.selectedAgentFilter,
+      skyOverride: rawBody.skyOverride,
+    })
+
+    if (!parsed.success) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Invalid council request payload',
+          details: parsed.error.issues,
+        },
+        { status: 400 }
+      )
+    }
+
+    const valid = parsed.data
+
+    // 2. Adapt to internal CouncilRequest (only allow targetDelegate when seekerInquiry exists)
+    const councilRequest: CouncilRequest = {
+      seekerInquiry: valid.seekerInquiry,
+      targetDelegate: valid.seekerInquiry ? valid.targetDelegate : undefined,
+      attachedNatalEnvelope: valid.attachedNatalEnvelope,
+      ingressEvent: valid.ingressEvent
+        ? {
+            movingPlanet: valid.ingressEvent.movingPlanet,
+            newSign: valid.ingressEvent.newSign,
+            newDegree: valid.ingressEvent.newDegree,
+            turnIndex: valid.ingressEvent.turnIndex,
+            isFinalWord: valid.ingressEvent.isFinalWord,
+          }
         : undefined,
-      selectedAgentFilter: body.selectedAgentFilter,
+      recentTurns: valid.recentTurns as CouncilTurnContext[] | undefined,
+      selectedAgentFilter: valid.selectedAgentFilter,
+      skyOverride: valid.skyOverride as any,
     }
 
     const result = await dispatchTurn(councilRequest)

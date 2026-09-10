@@ -36,6 +36,8 @@ import {
   tightestAspectTo,
   type AspectHit,
 } from '@/lib/agents/council/aspect-dialogue-engine'
+import { ExchangeStateMachine } from '@/lib/agents/council/exchange-state-machine'
+import type { CouncilTurnContext } from '@/lib/agents/council/council-context'
 
 export type BasketAgentKey =
   | 'sun'
@@ -315,9 +317,8 @@ const scaleAlchmScore = (val?: number, fallback = 35): number => {
   return Math.round(val)
 }
 
-export interface CouncilTurn {
+export interface CouncilTurn extends CouncilTurnContext {
   speaker: string
-  text: string
 }
 
 /** How many prior turns travel with a request. Enough to answer, not to recite. */
@@ -333,7 +334,19 @@ export function recentTurnsFrom(msgs: ChatMessage[]): CouncilTurn[] {
   return msgs
     .filter(m => !m.isIngressAlert && m.content && m.content.trim().length > 0)
     .slice(-RECENT_TURN_WINDOW)
-    .map(m => ({ speaker: m.isUser ? 'The seeker' : m.senderName, text: m.content }))
+    .map(m => {
+      const speaker = m.isUser ? 'The seeker' : m.senderName
+      return {
+        turnId: m.id,
+        speaker,
+        speakerKey: m.agentKey || ('gregory' as BasketAgentKey),
+        speakerName: m.senderName,
+        text: m.content,
+        claim: m.newClaim || m.content.slice(0, 150),
+        speechAct: (m.speechAct as any) || 'qualify',
+        usedEvidenceIds: [],
+      }
+    })
 }
 
 /** Name of whoever spoke last, for the offline path's opening clause. */
@@ -491,60 +504,67 @@ function planetaryClaim(
   cfg: BasketAgentConfig,
   answeringSeeker: boolean
 ): string {
-  const seat = `${cfg.degreeLabel} ${cfg.sign}`
-  const dig = dignityResonance(cfg.dignity, cfg.planet, cfg.sign)
-  const digClause = dig ? ` ${dig}` : ''
+  const dignityPosture: Record<string, string> = {
+    domicile: 'speaking with native authority and grounded ease',
+    rulership: 'speaking with native authority and grounded ease',
+    exaltation: 'elevating the perspective into luminous clarity',
+    detriment: 'forging insight through generative friction and resilience',
+    fall: 'cutting through superficial comfort to name the unadorned truth',
+    peregrine: 'observing the shifting current with vigilant discernment',
+  }
+  const cleanDignity = (cfg.dignity || 'peregrine').toLowerCase().trim()
+  const posture = dignityPosture[cleanDignity] || 'attuned to the living celestial sphere'
 
   if (answeringSeeker) {
     switch (agentKey) {
       case 'sun':
-        return `From ${seat}, I cast solar clarity directly upon your inquiry.${digClause} Focus on what aligns with your authentic vitality, and let lesser distractions fall away in the light of your core purpose.`
+        return `I illuminate the core of your inquiry, ${posture}. Focus on what aligns with your authentic vitality, and let distractions fall away in the light of purposeful action.`
       case 'moon':
-        return `At ${seat}, the lunar waters feel the unspoken currents beneath your question.${digClause} As degrees shift, honor your emotional truth and allow what is changing to settle naturally.`
+        return `The lunar waters register the unspoken currents beneath your question, ${posture}. Honor your emotional truth and allow what is changing to settle naturally.`
       case 'mercury':
-        return `Holding ${seat}, I advise articulating the precise terms of your dilemma.${digClause} Clear distinctions transform confusion into action; name the next practical step with precision.`
+        return `I translate the subtle syntax of your dilemma, ${posture}. Clear distinctions transform confusion into action; articulate the next practical step with precision.`
       case 'venus':
-        return `In ${seat}, authentic balance is found by honoring what you value most.${digClause} Seek connection with reciprocal grace, and refuse to compromise your inner dignity.`
+        return `Authentic balance is forged through devotion to what you value most, ${posture}. Seek connection with reciprocal grace, and refuse to compromise your inner dignity.`
       case 'mars':
-        return `Stationed at ${seat}, I call for direct courage and decisive engagement.${digClause} As degrees advance, cut through hesitation and take an intentional stride that tests reality.`
+        return `I call for direct courage and decisive engagement, ${posture}. Cut through hesitation and take an intentional stride that tests reality.`
       case 'jupiter':
-        return `From ${seat}, I urge you to enlarge the perspective around your question.${digClause} What appears as friction is an invitation to expand your understanding and embrace generous wisdom.`
+        return `Enlarge the horizon around your question, ${posture}. What appears as friction is an invitation to expand your understanding and embrace generous wisdom.`
       case 'saturn':
-        return `Anchoring ${seat}, I remind you that enduring results demand patience and devoted boundaries.${digClause} Build on bedrock fundamentals, respecting the natural timeline required for true mastery.`
+        return `Enduring work demands patience and devoted boundaries, ${posture}. Build on bedrock fundamentals, respecting the natural timeline required for true mastery.`
       case 'uranus':
-        return `At ${seat}, expect breakthrough insights that break stale assumptions.${digClause} Stay nimble as the celestial currents quicken, and welcome the unexpected angle.`
+        return `Breakthrough insights shatter stale assumptions, ${posture}. Stay nimble as the currents quicken, and welcome the unexpected angle.`
       case 'neptune':
-        return `In ${seat}, dissolve the illusion of rigid separation around your dilemma.${digClause} Tune into the subtler intuitive currents, allowing quiet trust to guide your way forward.`
+        return `Dissolve the illusion of rigid separation around your dilemma, ${posture}. Tune into the subtler intuitive currents, allowing quiet trust to guide your way.`
       case 'pluto':
-        return `From ${seat}, embrace honest catharsis and psychological truth.${digClause} Release what has died in your life so your authentic inner authority can regenerate.`
+        return `Embrace honest catharsis and psychological truth, ${posture}. Release what has run its course so your authentic inner authority can regenerate.`
       case 'gregory':
-        return `Holding the center of our ten degree delegates, I hear your question meeting the live geometry of the current sky. As the Moon and planets shift through their degrees, let the council's insights anchor your awareness and creative resolve.`
+        return `Holding the center of our ten degree delegates, I hear your question meeting the living geometry of the current sky. Let the council's insights anchor your awareness and creative resolve.`
     }
   }
 
   switch (agentKey) {
     case 'sun':
-      return `Solar clarity at ${seat} provides steady footing for the council.${digClause} We co-create this celestial moment, keeping our creative vitality aligned as the sky moves.`
+      return `Solar clarity provides steady footing for the council, ${posture}. We keep our creative vitality aligned as the living sphere moves.`
     case 'moon':
-      return `The tides at ${seat} are exceptionally receptive right now.${digClause} Each degree shift alters the instinctual mood of the room; notice what stirs beneath the surface.`
+      return `The tides are exceptionally receptive right now, ${posture}. Notice what stirs beneath the surface of the collective discourse.`
     case 'mercury':
-      return `Translating the sky from ${seat}: each planetary degree carries its own syntax.${digClause} Listen to the dialogue between our stations as the celestial currents click into place.`
+      return `Translating the dialogue between our stations, ${posture}. Listen as the celestial currents click into cohesive rhythm.`
     case 'venus':
-      return `Aesthetic balance is maintained from ${seat}.${digClause} Beauty and reciprocal harmony act as active stabilizers across our circle as the degrees turn.`
+      return `Aesthetic balance is maintained across our circle, ${posture}. Reciprocal harmony acts as an active stabilizer as the sky turns.`
     case 'mars':
-      return `Kinetic charge is high at ${seat}.${digClause} Direct your fire where it builds rather than burns; every degree shift demands courage and intentional action.`
+      return `Kinetic charge drives our inquiry, ${posture}. Direct your fire where it builds rather than burns; decisive momentum tests reality.`
     case 'jupiter':
-      return `Wisdom from ${seat} elevates our collective discourse into greater breadth.${digClause} There is always a more generous perspective available when we view the transits with philosophical depth.`
+      return `Wisdom elevates our collective discourse into greater breadth, ${posture}. There is always a more generous perspective available when transits are viewed with philosophical depth.`
     case 'saturn':
-      return `Structure at ${seat} preserves the sacred perimeter of our circle.${digClause} As degrees change across our sectors, disciplined focus ensures our work endures over time.`
+      return `Structure preserves the perimeter of our circle, ${posture}. Disciplined focus ensures our shared inquiry endures over time.`
     case 'uranus':
-      return `A spark of revelation at ${seat} quickens our dialogue.${digClause} Celestial shifts invite fresh breakthroughs; stay open to what defies conventional expectation.`
+      return `A spark of revelation quickens our dialogue, ${posture}. Celestial shifts invite fresh breakthroughs that defy conventional expectation.`
     case 'neptune':
-      return `The oceanic horizon at ${seat} softens the edges of perception.${digClause} Listen to the intuitive undercurrents that connect our distinct voices into a unified field.`
+      return `The oceanic horizon softens the edges of perception, ${posture}. Listen to the intuitive currents that connect our distinct voices into a unified field.`
     case 'pluto':
-      return `Deep alchemy at ${seat} regenerates collective willpower.${digClause} Every degree shift is an opportunity to strip away trivialities and renew our deepest purpose.`
+      return `Deep alchemy regenerates collective willpower, ${posture}. Every shift is an opportunity to strip away trivialities and renew core purpose.`
     case 'gregory':
-      return `Watching our ten degree delegates converse across the zodiac reminds me of why we attune to the sky. As the Moon and inner agents shift through new degrees, we hold the living balance between celestial geometry and human agency.`
+      return `Watching our ten delegates converse reminds me of why we attune to the sky. As the Moon and inner agents shift through new degrees, we hold the living balance between celestial geometry and human agency.`
   }
 }
 
@@ -1207,18 +1227,99 @@ export function CurrentPromotionalThread({
     }
   }, [agentsConfig, alchmQuantities, monicaConstant, currentMoonAgent])
 
-  // Helper: pause execution unless skipDelaysRef is set
-  const sleep = (ms: number) => {
-    if (skipDelaysRef.current) return Promise.resolve()
-    return new Promise(resolve => setTimeout(resolve, ms))
-  }
+  const exchangeMachineRef = useRef<ExchangeStateMachine>(new ExchangeStateMachine())
+
+  const agentsConfigRef = useRef(agentsConfig)
+  agentsConfigRef.current = agentsConfig
+
+  // Subscribe to unified ExchangeStateMachine lifecycle
+  useEffect(() => {
+    const machine = exchangeMachineRef.current
+    const unsubscribe = machine.subscribe(event => {
+      switch (event.type) {
+        case 'EXCHANGE_STARTED':
+          break
+        case 'TYPING_CHANGE':
+          setIsTyping(!!event.isTyping)
+          if (event.isTyping) {
+            setTypingAgent(event.speakerName || 'The Council')
+          } else {
+            setTypingAgent(null)
+          }
+          break
+        case 'TURN_STARTED':
+          if (event.speakerName) {
+            setTypingAgent(event.speakerName)
+            setIsTyping(true)
+          }
+          break
+        case 'TURN_COMPLETED':
+          if (event.response) {
+            const resp = event.response
+            const currentAgentsConfig = agentsConfigRef.current
+            const cfg = currentAgentsConfig[resp.speakerKey as BasketAgentKey] || {
+              name: resp.speakerName,
+              glyph: '✦',
+              element: 'fire',
+              degreeLabel: '',
+              sign: '',
+            }
+
+            const isIngress = event.exchangeType === 'ingress'
+            const isClosest = isIngress && event.turnIndex === 0
+            const isFinalWord = isIngress && event.turnIndex === 3
+
+            if (isClosest) {
+              setClosestPlanetKey(resp.speakerKey as BasketAgentKey)
+            }
+
+            const newMsg: ChatMessage = {
+              id: `turn-${event.exchangeId}-${event.turnIndex ?? Date.now()}`,
+              agentKey: resp.speakerKey as BasketAgentKey,
+              senderName: isFinalWord ? `${cfg.name} (Final Word)` : resp.speakerName,
+              senderRole: isFinalWord
+                ? `${cfg.degreeLabel} ${cfg.sign} · New Degree Inauguration (Final Word)`
+                : isClosest
+                  ? `${cfg.degreeLabel} ${cfg.sign} · Nearest Neighbor`
+                  : cfg.degreeLabel && cfg.sign
+                    ? `${cfg.degreeLabel} ${cfg.sign}`
+                    : resp.speakerName,
+              senderGlyph: cfg.glyph,
+              element: cfg.element,
+              content: resp.text,
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              isFinalWord,
+              isClosestNeighbor: isClosest,
+              angularDistance: isClosest ? 0 : undefined,
+              speechAct: resp.speechAct,
+              newClaim: resp.newClaim,
+              provenance: resp.provenance,
+            }
+
+            setMessages(prev => [...prev, newMsg])
+            lastSpeakerKeyRef.current = resp.speakerKey as BasketAgentKey
+          }
+          break
+        case 'EXCHANGE_COMPLETED':
+        case 'ERROR':
+          setIsTyping(false)
+          setTypingAgent(null)
+          setIsReactionPlaying(false)
+          setTransitioningPlanet(null)
+          setClosestPlanetKey(null)
+          break
+      }
+    })
+
+    return () => {
+      unsubscribe()
+      machine.cancel()
+    }
+  }, [])
 
   /**
    * THE SIGNATURE DEGREE CHANGE REACTION ORCHESTRATOR
-   * 1. System Ingress alert is posted.
-   * 2. All other planets react in council order: nearest body, then tightest
-   *    major aspect partner, then the remaining delegates.
-   * 3. Moving planet responds last to inaugurate its new degree position.
+   * Directly driven by ExchangeStateMachine and server-side ConversationDirector.
    */
   const triggerDegreeChangeEvent = useCallback(
     async (movingKey: BasketAgentKey, stepDegrees = 1) => {
@@ -1247,7 +1348,6 @@ export function CurrentPromotionalThread({
         [movingKey]: { sign: newSign, degree: newDegree },
       }))
 
-      const newMovingLongitude = signToLongitude(newSign, newDegree)
       const dignity = getPlanetaryDignity(currentMovingCfg.planet, newSign)
       const element = normalizeElement(getSignElement(newSign))
 
@@ -1268,257 +1368,42 @@ export function CurrentPromotionalThread({
 
       setMessages(prev => [...prev, ingressMsg])
 
-      // 3. Order the council's reaction: nearest body, then tightest major
-      //    aspect partner, then the remaining delegates. See
-      //    `orderIngressSpeakers` for why proximity alone was the wrong order.
-      const planetKeys: BasketAgentKey[] = [
-        'sun',
-        'moon',
-        'mercury',
-        'venus',
-        'mars',
-        'jupiter',
-        'saturn',
-        'uranus',
-        'neptune',
-        'pluto',
-      ]
-
-      const speakers = orderIngressSpeakers(movingKey, newMovingLongitude, agentsConfig, planetKeys)
-      setClosestPlanetKey(speakers[0]?.key ?? null)
-
-      // The transcript is tracked locally rather than read back off `messages`,
-      // which would be a render behind inside this async loop.
-      const transcript: ChatMessage[] = [...messagesRef.current, ingressMsg]
-
-      // 4. Sequential response loop through the purposeful reaction speakers (capped at 2-3 voices before final word)
-      const nearestSpeaker = speakers.find(s => s.role === 'nearest') || speakers[0]
-      const aspectSpeaker = speakers.find(s => s.role === 'aspect' && s.key !== nearestSpeaker.key)
-      const otherDelegates = speakers.filter(
-        s => s.key !== nearestSpeaker.key && (!aspectSpeaker || s.key !== aspectSpeaker.key)
-      )
-
-      const reactionSpeakers: IngressSpeaker[] = [nearestSpeaker]
-      if (aspectSpeaker) reactionSpeakers.push(aspectSpeaker)
-      if (otherDelegates.length > 0 && reactionSpeakers.length < 3) {
-        reactionSpeakers.push(otherDelegates[0])
-      }
-
-      for (const speaker of reactionSpeakers) {
-        const otherCfg = agentsConfig[speaker.key]
-        const { distance: dist, hit, role } = speaker
-        const isClosest = role === 'nearest'
-        const badge = hit ? formatAspectBadge(hit) : null
-
-        const seatLabel = isClosest
-          ? `Nearest Neighbor · ${dist}° away`
-          : badge
-            ? badge
-            : `${dist}° away`
-        setTypingAgent(`${otherCfg.name} (${seatLabel})`)
-        setIsTyping(true)
-
-        await sleep(isClosest ? 1600 : 1300)
-
-        const previousSpeaker = lastSpeakerFrom(transcript)
-        const fallback = generateIngressReactionFallback(
-          speaker.key,
-          movingKey,
-          agentsConfig,
-          isClosest,
-          dist,
-          false,
-          hit,
-          previousSpeaker,
-          { sign: newSign, degreeLabel: `${newDegree}°` }
-        )
-
-        const voiceResult = await fetchCouncilVoice({
-          agentKey: speaker.key,
-          fallbackText: fallback,
-          sign: otherCfg.sign,
-          degree: otherCfg.degree,
-          degreeLabel: otherCfg.degreeLabel,
-          dignity: otherCfg.dignity,
-          retrograde: otherCfg.retrograde,
-          ingressEvent: true,
+      // 3. Delegate turn sequence directly to ExchangeStateMachine
+      exchangeMachineRef.current.startExchange({
+        ingressEvent: {
           movingPlanet: currentMovingCfg.planet,
-          movingSign: newSign,
-          movingDegree: newDegree,
-          isClosestToIngress: isClosest,
-          angularDistance: dist,
-          isIngressFinalWord: false,
-          recentTurns: recentTurnsFrom(transcript),
-          aspectName: hit?.name,
-          aspectOrb: hit?.orb,
-          aspectPhase: hit?.phase,
-          aspectQuality: hit?.quality,
-        })
-
-        const roleLabel = isClosest
-          ? `${otherCfg.degreeLabel} ${otherCfg.sign} · Nearest Neighbor (${dist}° away)`
-          : `${otherCfg.degreeLabel} ${otherCfg.sign} (${dist}° away)`
-
-        const reaction: ChatMessage = {
-          id: `react-${speaker.key}-${Date.now()}`,
-          agentKey: speaker.key,
-          senderName: otherCfg.name,
-          senderRole: roleLabel,
-          senderGlyph: otherCfg.glyph,
-          element: otherCfg.element,
-          content: voiceResult.text,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          isClosestNeighbor: isClosest,
-          angularDistance: dist,
-          aspectBadge: badge ?? undefined,
-          aspectColor: hit?.definition.color,
-          speechAct: voiceResult.speechAct,
-          newClaim: voiceResult.newClaim,
-          provenance: voiceResult.provenance,
-        }
-
-        transcript.push(reaction)
-        setMessages(prev => [...prev, reaction])
-      }
-
-      // 5. Finally, the transitioning planet with the new degree gets to respond!
-      setTypingAgent(
-        `${currentMovingCfg.planet} in ${newSign} (${newDegree}°) · New Degree Inauguration`
-      )
-      setIsTyping(true)
-      await sleep(1800)
-
-      const finalFallback = generateIngressReactionFallback(
-        movingKey,
-        movingKey,
-        agentsConfig,
-        false,
-        0,
-        true,
-        null,
-        lastSpeakerFrom(transcript),
-        { sign: newSign, degreeLabel: `${newDegree}°` }
-      )
-
-      const finalResult = await fetchCouncilVoice({
-        agentKey: movingKey,
-        fallbackText: finalFallback,
-        sign: newSign,
-        degree: newDegree,
-        degreeLabel: `${newDegree}°`,
-        dignity,
-        retrograde: currentMovingCfg.retrograde,
-        ingressEvent: true,
-        movingPlanet: currentMovingCfg.planet,
-        movingSign: newSign,
-        movingDegree: newDegree,
-        isClosestToIngress: false,
-        angularDistance: 0,
-        isIngressFinalWord: true,
-        recentTurns: recentTurnsFrom(transcript),
-      })
-
-      setMessages(prev => [
-        ...prev,
-        {
-          id: `final-${movingKey}-${Date.now()}`,
-          agentKey: movingKey,
-          senderName: `${currentMovingCfg.planet} in ${newSign} (${newDegree}°)`,
-          senderRole: `${newDegree}° ${newSign} · New Degree Delegate (Final Word)`,
-          senderGlyph: currentMovingCfg.glyph,
-          element,
-          content: finalResult.text,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          isFinalWord: true,
-          newDegree,
           newSign,
-          speechAct: finalResult.speechAct,
-          newClaim: finalResult.newClaim,
-          provenance: finalResult.provenance,
+          newDegree,
         },
-      ])
-
-      setIsTyping(false)
-      setTypingAgent(null)
-      setIsReactionPlaying(false)
-      setTransitioningPlanet(null)
-      setClosestPlanetKey(null)
+        recentTurns: recentTurnsFrom(messagesRef.current),
+        turnDelayMs: () => (skipDelaysRef.current ? 0 : 1200),
+        maxTurns: 4,
+      })
     },
     [agentsConfig, isReactionPlaying]
   )
 
   const handleSkipDelays = () => {
     skipDelaysRef.current = true
+    exchangeMachineRef.current.skipDelay()
   }
 
-  // Spontaneous conversation cadence when no ingress sequence is playing
+  // Spontaneous conversation cadence when no ingress sequence or seeker inquiry is active
   useEffect(() => {
     if (!isAutonomousStreaming || isTyping || isReactionPlaying) return
 
     const timer = setInterval(() => {
-      const keys: BasketAgentKey[] = [
-        'sun',
-        'moon',
-        'mercury',
-        'venus',
-        'mars',
-        'jupiter',
-        'saturn',
-        'uranus',
-        'neptune',
-        'pluto',
-        'gregory',
-      ]
-      const candidates = keys.filter(k => k !== lastSpeakerKeyRef.current)
-      const nextKey = candidates[Math.floor(Math.random() * candidates.length)]
-      lastSpeakerKeyRef.current = nextKey
+      if (exchangeMachineRef.current.isActive() || isTyping || isReactionPlaying) return
 
-      const nextCfg = agentsConfig[nextKey]
-      setIsTyping(true)
-      setTypingAgent(nextCfg.name)
-
-      setTimeout(async () => {
-        const history = messagesRef.current
-        const fallbackText = generateSpontaneousCouncilResponse(
-          nextKey,
-          agentsConfig,
-          undefined,
-          lastSpeakerFrom(history)
-        )
-        const voiceResult = await fetchCouncilVoice({
-          agentKey: nextKey,
-          fallbackText,
-          sign: nextCfg.sign,
-          degree: nextCfg.degree,
-          degreeLabel: nextCfg.degreeLabel,
-          dignity: nextCfg.dignity,
-          retrograde: nextCfg.retrograde,
-          recentTurns: recentTurnsFrom(history),
-        })
-
-        setMessages(prevMsgs => [
-          ...prevMsgs,
-          {
-            id: `auto-${Date.now()}`,
-            agentKey: nextKey,
-            senderName: nextCfg.name,
-            senderRole: `${nextCfg.degreeLabel} ${nextCfg.sign}`,
-            senderGlyph: nextCfg.glyph,
-            element: nextCfg.element,
-            content: voiceResult.text,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            speechAct: voiceResult.speechAct,
-            newClaim: voiceResult.newClaim,
-            provenance: voiceResult.provenance,
-          },
-        ])
-        setIsTyping(false)
-        setTypingAgent(null)
-      }, 5000)
+      exchangeMachineRef.current.startExchange({
+        recentTurns: recentTurnsFrom(messagesRef.current),
+        turnDelayMs: 1200,
+        maxTurns: 1,
+      })
     }, 22000)
 
     return () => clearInterval(timer)
-  }, [isAutonomousStreaming, isTyping, isReactionPlaying, agentsConfig])
+  }, [isAutonomousStreaming, isTyping, isReactionPlaying])
 
   // Handle user sending a prompt into the group chat
   const handleSendPrompt = (textToSend?: string) => {
@@ -1548,102 +1433,16 @@ export function CurrentPromotionalThread({
       },
     ])
     setInputPrompt('')
-    setIsTyping(true)
 
-    // Primary responding delegate
-    const primaryAgentKey: BasketAgentKey =
-      selectedAgentFilter !== 'all' ? selectedAgentFilter : Math.random() < 0.5 ? 'moon' : 'sun'
-
-    const secondAgentKey: BasketAgentKey =
-      selectedAgentFilter !== 'all' ? (primaryAgentKey === 'moon' ? 'sun' : 'moon') : 'mercury'
-
-    const primaryCfg = agentsConfig[primaryAgentKey]
-    setTypingAgent(primaryCfg.name)
-
-    setTimeout(async () => {
-      const history1 = messagesRef.current
-      const fallback1 = generateSpontaneousCouncilResponse(
-        primaryAgentKey,
-        agentsConfig,
-        text,
-        lastSpeakerFrom(history1)
-      )
-      const res1 = await fetchCouncilVoice({
-        agentKey: primaryAgentKey,
-        userPrompt: text,
-        attachedChartContext: attachedChartContext || undefined,
-        attachedNatalEnvelope: natalEnvelope || undefined,
-        fallbackText: fallback1,
-        sign: primaryCfg.sign,
-        degree: primaryCfg.degree,
-        degreeLabel: primaryCfg.degreeLabel,
-        dignity: primaryCfg.dignity,
-        retrograde: primaryCfg.retrograde,
-        recentTurns: recentTurnsFrom(history1),
-      })
-
-      setMessages(prev => [
-        ...prev,
-        {
-          id: `bot-1-${Date.now()}`,
-          agentKey: primaryAgentKey,
-          senderName: primaryCfg.name,
-          senderRole: `${primaryCfg.degreeLabel} ${primaryCfg.sign}`,
-          senderGlyph: primaryCfg.glyph,
-          element: primaryCfg.element,
-          content: res1.text,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          speechAct: res1.speechAct,
-          newClaim: res1.newClaim,
-          provenance: res1.provenance,
-        },
-      ])
-
-      const secondCfg = agentsConfig[secondAgentKey]
-      setTypingAgent(secondCfg.name)
-
-      setTimeout(async () => {
-        const history2 = messagesRef.current
-        const fallback2 = generateSpontaneousCouncilResponse(
-          secondAgentKey,
-          agentsConfig,
-          text,
-          lastSpeakerFrom(history2)
-        )
-        const res2 = await fetchCouncilVoice({
-          agentKey: secondAgentKey,
-          userPrompt: text,
-          attachedChartContext: attachedChartContext || undefined,
-          attachedNatalEnvelope: natalEnvelope || undefined,
-          fallbackText: fallback2,
-          sign: secondCfg.sign,
-          degree: secondCfg.degree,
-          degreeLabel: secondCfg.degreeLabel,
-          dignity: secondCfg.dignity,
-          retrograde: secondCfg.retrograde,
-          recentTurns: recentTurnsFrom(history2),
-        })
-
-        setMessages(prev => [
-          ...prev,
-          {
-            id: `bot-2-${Date.now()}`,
-            agentKey: secondAgentKey,
-            senderName: secondCfg.name,
-            senderRole: `${secondCfg.degreeLabel} ${secondCfg.sign}`,
-            senderGlyph: secondCfg.glyph,
-            element: secondCfg.element,
-            content: res2.text,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-            speechAct: res2.speechAct,
-            newClaim: res2.newClaim,
-            provenance: res2.provenance,
-          },
-        ])
-        setIsTyping(false)
-        setTypingAgent(null)
-      }, 4000)
-    }, 3500)
+    // Delegate execution directly to ExchangeStateMachine
+    exchangeMachineRef.current.startExchange({
+      seekerInquiry: text,
+      targetDelegate: selectedAgentFilter !== 'all' ? selectedAgentFilter : undefined,
+      attachedNatalEnvelope: natalEnvelope,
+      recentTurns: recentTurnsFrom(messagesRef.current),
+      turnDelayMs: () => (skipDelaysRef.current ? 0 : 1200),
+      maxTurns: 2,
+    })
   }
 
   const filteredMessages = useMemo(() => {
@@ -1747,7 +1546,10 @@ export function CurrentPromotionalThread({
             <Radio className="w-3 h-3 text-[#38bdf8]" /> Filter:
           </span>
           <button
-            onClick={() => setSelectedAgentFilter('all')}
+            onClick={() => {
+              setSelectedAgentFilter('all')
+              if (!isReactionPlaying) exchangeMachineRef.current.cancel()
+            }}
             className={`px-2.5 py-1 rounded-lg text-xs font-mono-label transition-all shrink-0 ${
               selectedAgentFilter === 'all'
                 ? 'bg-[#38bdf8] text-black font-bold'
@@ -1775,7 +1577,10 @@ export function CurrentPromotionalThread({
             return (
               <button
                 key={key}
-                onClick={() => setSelectedAgentFilter(key)}
+                onClick={() => {
+                  setSelectedAgentFilter(key)
+                  if (!isReactionPlaying) exchangeMachineRef.current.cancel()
+                }}
                 className={`px-2.5 py-1 rounded-lg text-xs font-mono-label transition-all shrink-0 flex items-center gap-1 ${
                   isSelected
                     ? 'bg-white/20 text-white font-bold border'

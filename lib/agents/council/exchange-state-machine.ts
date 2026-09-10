@@ -21,6 +21,7 @@ export type ExchangeEventType =
 export interface ExchangeEvent {
   type: ExchangeEventType
   exchangeId: string
+  exchangeType?: 'ingress' | 'seeker' | 'autonomous'
   turnIndex?: number
   speakerKey?: string
   speakerName?: string
@@ -46,7 +47,7 @@ export interface StartExchangeOptions {
   selectedAgentFilter?: string
   maxTurns?: number
   fetchFn?: typeof fetch
-  turnDelayMs?: number
+  turnDelayMs?: number | (() => number)
 }
 
 export class ExchangeStateMachine {
@@ -54,6 +55,7 @@ export class ExchangeStateMachine {
   private abortController: AbortController | null = null
   private listeners: Set<ExchangeEventListener> = new Set()
   private isExecuting = false
+  private skipDelayResolver: (() => void) | null = null
 
   /**
    * Subscribe to exchange lifecycle events.
@@ -77,9 +79,23 @@ export class ExchangeStateMachine {
   }
 
   /**
+   * Fast-forward any current inter-turn delay immediately.
+   */
+  public skipDelay(): void {
+    if (this.skipDelayResolver) {
+      this.skipDelayResolver()
+      this.skipDelayResolver = null
+    }
+  }
+
+  /**
    * Cancel any in-flight exchange immediately.
    */
   public cancel(): void {
+    if (this.skipDelayResolver) {
+      this.skipDelayResolver()
+      this.skipDelayResolver = null
+    }
     if (this.abortController) {
       this.abortController.abort()
       this.abortController = null
@@ -111,14 +127,20 @@ export class ExchangeStateMachine {
 
     const { signal } = this.abortController
     const fetchFn = options.fetchFn || fetch
-    const turnDelayMs = options.turnDelayMs ?? 1200
+
+    const exchangeType: 'ingress' | 'seeker' | 'autonomous' = options.ingressEvent
+      ? 'ingress'
+      : options.seekerInquiry
+        ? 'seeker'
+        : 'autonomous'
 
     this.emit({
       type: 'EXCHANGE_STARTED',
       exchangeId,
+      exchangeType,
     })
 
-    const maxTurns = options.maxTurns || (options.seekerInquiry ? 2 : 3)
+    const maxTurns = options.maxTurns || (options.ingressEvent ? 4 : options.seekerInquiry ? 2 : 1)
     const turnsAccumulated: CouncilTurnContext[] = [...(options.recentTurns || [])]
 
     try {
@@ -147,6 +169,7 @@ export class ExchangeStateMachine {
         this.emit({
           type: 'TYPING_CHANGE',
           exchangeId,
+          exchangeType,
           isTyping: true,
         })
 
@@ -175,6 +198,7 @@ export class ExchangeStateMachine {
         this.emit({
           type: 'TYPING_CHANGE',
           exchangeId,
+          exchangeType,
           isTyping: false,
           speakerKey: data.speakerKey,
         })
@@ -182,6 +206,7 @@ export class ExchangeStateMachine {
         this.emit({
           type: 'TURN_STARTED',
           exchangeId,
+          exchangeType,
           turnIndex: turnIdx,
           speakerKey: data.speakerKey,
           speakerName: data.speakerName,
@@ -190,6 +215,7 @@ export class ExchangeStateMachine {
         this.emit({
           type: 'TURN_COMPLETED',
           exchangeId,
+          exchangeType,
           turnIndex: turnIdx,
           speakerKey: data.speakerKey,
           speakerName: data.speakerName,
@@ -204,20 +230,37 @@ export class ExchangeStateMachine {
           text: data.text,
           claim: data.newClaim,
           speechAct: data.speechAct as any,
+          usedEvidenceIds: data.usedEvidenceIds,
         })
 
         // Inter-turn pause if there are more turns
         if (turnIdx < maxTurns - 1) {
-          await new Promise<void>((resolve, reject) => {
-            const timeout = setTimeout(resolve, turnDelayMs)
-            signal.addEventListener('abort', () => {
-              clearTimeout(timeout)
-              reject(new Error('Exchange aborted'))
+          const delay =
+            typeof options.turnDelayMs === 'function'
+              ? options.turnDelayMs()
+              : (options.turnDelayMs ?? 1200)
+
+          if (delay > 0) {
+            await new Promise<void>((resolve, reject) => {
+              let timeout: any = null
+              const onDone = () => {
+                if (timeout) clearTimeout(timeout)
+                this.skipDelayResolver = null
+                resolve()
+              }
+              this.skipDelayResolver = onDone
+              timeout = setTimeout(onDone, delay)
+
+              signal.addEventListener('abort', () => {
+                if (timeout) clearTimeout(timeout)
+                this.skipDelayResolver = null
+                reject(new Error('Exchange aborted'))
+              })
+            }).catch(err => {
+              if (signal.aborted) return
+              throw err
             })
-          }).catch(err => {
-            if (signal.aborted) return
-            throw err
-          })
+          }
         }
       }
 
@@ -225,6 +268,7 @@ export class ExchangeStateMachine {
         this.emit({
           type: 'EXCHANGE_COMPLETED',
           exchangeId,
+          exchangeType,
         })
       }
     } catch (err: any) {
@@ -235,11 +279,13 @@ export class ExchangeStateMachine {
       this.emit({
         type: 'ERROR',
         exchangeId,
+        exchangeType,
         error: err?.message || 'Unknown exchange error',
       })
       this.emit({
         type: 'TYPING_CHANGE',
         exchangeId,
+        exchangeType,
         isTyping: false,
       })
     } finally {

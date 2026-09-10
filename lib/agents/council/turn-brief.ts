@@ -16,8 +16,9 @@ export interface TurnBrief {
     speakerName?: string
     claim?: string
   }
+  targetClaim?: string
   speechAct: string
-  evidence: Array<{ id: string; label: string }>
+  evidence: Array<{ id: string; label: string; aspectName?: string; orb?: number }>
   wordTarget: { min: number; max: number }
   userPrompt?: string
   formattedPrompt: string
@@ -68,8 +69,14 @@ export function compileTurnBrief(directive: TurnDirective, inquiry?: string): Tu
           claim: targetClaim,
         }
       : undefined,
+    targetClaim,
     speechAct,
-    evidence: evidence.map(e => ({ id: e.id, label: e.label })),
+    evidence: evidence.map(e => ({
+      id: e.id,
+      label: e.label,
+      aspectName: e.aspectName,
+      orb: e.orb,
+    })),
     wordTarget,
     userPrompt: inquiry,
     formattedPrompt: promptSections.join('\n'),

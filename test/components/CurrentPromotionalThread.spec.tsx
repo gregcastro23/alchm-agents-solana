@@ -1,4 +1,4 @@
-import { describe, it, expect, vi } from 'vitest'
+import { describe, it, expect, vi, beforeEach } from 'vitest'
 import React from 'react'
 import { render, screen, fireEvent, waitFor } from '@testing-library/react'
 import {
@@ -14,6 +14,41 @@ vi.mock('next/navigation', () => ({
     prefetch: vi.fn(),
   }),
 }))
+
+beforeEach(() => {
+  global.fetch = vi.fn().mockImplementation(async (url: string, opts: any) => {
+    if (typeof url === 'string' && url.includes('/api/agents/council-voice')) {
+      const body = opts?.body ? JSON.parse(opts.body) : {}
+      const turnIndex = body.ingressEvent?.turnIndex ?? 0
+      const isFinal = turnIndex === 3
+      const speakerKey =
+        turnIndex === 0 ? 'sun' : turnIndex === 1 ? 'saturn' : turnIndex === 2 ? 'jupiter' : 'moon'
+      const speakerName =
+        speakerKey === 'sun'
+          ? 'Sun'
+          : speakerKey === 'saturn'
+            ? 'Saturn'
+            : speakerKey === 'jupiter'
+              ? 'Jupiter'
+              : 'Moon'
+
+      return {
+        ok: true,
+        json: async () => ({
+          success: true,
+          speakerKey,
+          speakerName,
+          text: `Council response from ${speakerName} for turn ${turnIndex}.`,
+          newClaim: `${speakerName} grounds the transit vector.`,
+          speechAct: 'reframe',
+          usedEvidenceIds: ['evidence-1'],
+          provenance: { source: 'grounded_briefing' },
+        }),
+      }
+    }
+    return { ok: false, status: 404, json: async () => ({}) }
+  })
+})
 
 describe('CurrentSkyChat / CurrentPromotionalThread - Live Planetary Degree Council', () => {
   it('renders Live Current Sky Chat banner and planetary delegates', () => {
