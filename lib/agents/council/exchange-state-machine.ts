@@ -45,6 +45,7 @@ export interface StartExchangeOptions {
   }
   recentTurns?: CouncilTurnContext[]
   selectedAgentFilter?: string
+  skyOverride?: Record<string, any>
   maxTurns?: number
   fetchFn?: typeof fetch
   turnDelayMs?: number | (() => number)
@@ -173,6 +174,7 @@ export class ExchangeStateMachine {
             : undefined,
           recentTurns: turnsAccumulated,
           selectedAgentFilter: options.selectedAgentFilter,
+          skyOverride: options.skyOverride,
         }
 
         // Emit typing change

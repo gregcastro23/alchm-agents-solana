@@ -115,6 +115,25 @@ describe('CurrentSkyChat / CurrentPromotionalThread - Live Planetary Degree Coun
     expect(screen.getByText('What energy is dominant in the sky today?')).toBeDefined()
   })
 
+  it('displays real-time live sky sync badge and resets overrides to live sky', async () => {
+    render(<CurrentSkyChat />)
+
+    // Check Live Real-Time Sky Chat banner badge
+    expect(screen.getByText(/LIVE CURRENT SKY CHAT ACTIVE/i)).toBeDefined()
+
+    // Simulate shift
+    const advanceBtn = screen.getByText(/⚡ Advance Moon 1° \(Simulate Shift\)/i)
+    fireEvent.click(advanceBtn)
+
+    // Reset button appears
+    const resetBtn = await screen.findByText(/↺ Reset to Live Sky/i)
+    expect(resetBtn).toBeDefined()
+
+    // Click Reset
+    fireEvent.click(resetBtn)
+    expect(screen.queryByText(/↺ Reset to Live Sky/i)).toBeNull()
+  })
+
   it('maintains backward compatible exports for BarbaultBasketPromotionalThread', () => {
     expect(BarbaultBasketPromotionalThread).toBe(CurrentPromotionalThread)
     expect(CurrentSkyChat).toBe(CurrentPromotionalThread)

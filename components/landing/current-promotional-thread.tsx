@@ -24,7 +24,7 @@ import {
   Eye,
 } from 'lucide-react'
 import type { PlanetaryPosition, AlchemicalQuantities } from '@/hooks/usePlanetaryPositions'
-import { getCurrentPlanetaryPositions } from '@/lib/calculate-transits'
+import { getCurrentPlanetaryPositions, type CurrentPlanetPosition } from '@/lib/calculate-transits'
 import { getPlanetaryDignity, getSignElement } from '@/lib/astrological-data'
 import {
   angularSeparation,
@@ -769,6 +769,9 @@ export function CurrentPromotionalThread({
 }: CurrentPromotionalThreadProps) {
   const router = useRouter()
 
+  // Real-time celestial clock ticking continuously in the background
+  const [currentSkyTime, setCurrentSkyTime] = useState<Date>(() => new Date())
+
   // State for simulated/overridden planetary degrees (starts empty, filled when user advances degrees)
   const [degreeOverrides, setDegreeOverrides] = useState<
     Partial<Record<BasketAgentKey, { sign: string; degree: number }>>
@@ -780,10 +783,18 @@ export function CurrentPromotionalThread({
   const [transitioningPlanet, setTransitioningPlanet] = useState<BasketAgentKey | null>(null)
   const [closestPlanetKey, setClosestPlanetKey] = useState<BasketAgentKey | null>(null)
 
-  // Derive dynamic agents configuration from live positions + overrides
+  // Real-time clock interval (updates every 10 seconds)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentSkyTime(new Date())
+    }, 10000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // Derive dynamic agents configuration from live positions + overrides + real-time clock
   const agentsConfig = useMemo<Record<BasketAgentKey, BasketAgentConfig>>(() => {
-    // 1. Get live fallback positions from calculator
-    const fallbackPositions = getCurrentPlanetaryPositions()
+    // 1. Get live fallback positions from calculator for current moment
+    const fallbackPositions = getCurrentPlanetaryPositions(currentSkyTime)
 
     const resolvePosition = (planetName: string) => {
       const live = positions.find(p => p.planet.toLowerCase() === planetName.toLowerCase())
@@ -880,10 +891,14 @@ export function CurrentPromotionalThread({
         isMainStage: false,
       },
     }
-  }, [positions, degreeOverrides])
+  }, [positions, degreeOverrides, currentSkyTime])
 
   // Initial group chat message initialization
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    const initTime =
+      typeof window !== 'undefined'
+        ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : '12:00 PM'
     return [
       {
         id: 'msg-init-1',
@@ -894,7 +909,7 @@ export function CurrentPromotionalThread({
         element: 'water',
         content:
           'Welcome into the Current Sky Council Chamber. Each planetary agent embodies the exact degree it occupies in heaven right now. When any planet advances degree, our council answers in turn — nearest body first, then the tightest aspect to the new degree.',
-        timestamp: '12:00 PM',
+        timestamp: initTime,
       },
       {
         id: 'msg-init-2',
@@ -905,7 +920,7 @@ export function CurrentPromotionalThread({
         element: 'water',
         content:
           'I feel every micro-shift in the celestial waters. Speak into our circle or simulate a degree advancement to see our council react.',
-        timestamp: '12:01 PM',
+        timestamp: initTime,
       },
       {
         id: 'msg-init-3',
@@ -916,7 +931,7 @@ export function CurrentPromotionalThread({
         element: 'fire',
         content:
           'I illuminate the center of consciousness. Whatever questions you bring to our council will be met with full degree precision.',
-        timestamp: '12:02 PM',
+        timestamp: initTime,
       },
     ]
   })
@@ -1001,6 +1016,24 @@ export function CurrentPromotionalThread({
 
   const agentsConfigRef = useRef(agentsConfig)
   agentsConfigRef.current = agentsConfig
+
+  const lastObservedDegreesRef = useRef<Record<string, { sign: string; degree: number }>>({})
+  const hasInitializedSkyRef = useRef<boolean>(false)
+
+  const buildCurrentSkyOverride = useCallback((): Record<string, CurrentPlanetPosition> => {
+    const overrideMap: Record<string, CurrentPlanetPosition> = {}
+    for (const [key, cfg] of Object.entries(agentsConfigRef.current)) {
+      if (key === 'gregory') continue
+      overrideMap[cfg.planet] = {
+        sign: cfg.sign,
+        degree: cfg.degree,
+        retrograde: cfg.retrograde,
+        longitude: cfg.absoluteDegree,
+        speed: cfg.speed,
+      }
+    }
+    return overrideMap
+  }, [])
 
   // Subscribe to unified ExchangeStateMachine lifecycle
   useEffect(() => {
@@ -1090,51 +1123,60 @@ export function CurrentPromotionalThread({
   /**
    * THE SIGNATURE DEGREE CHANGE REACTION ORCHESTRATOR
    * Directly driven by ExchangeStateMachine and server-side ConversationDirector.
+   * Supports both manual degree simulations and automatic real-time astronomical ingress shifts.
    */
   const triggerDegreeChangeEvent = useCallback(
-    async (movingKey: BasketAgentKey, stepDegrees = 1) => {
+    async (
+      movingKey: BasketAgentKey,
+      stepDegrees = 1,
+      explicitTarget?: { sign: string; degree: number; isRealTimeIngress?: boolean }
+    ) => {
       if (isReactionPlaying) return
       setIsReactionPlaying(true)
       skipDelaysRef.current = false
       setTransitioningPlanet(movingKey)
 
       const currentMovingCfg = agentsConfig[movingKey]
-      const oldDegree = currentMovingCfg.degree
-      let newDegree = oldDegree + stepDegrees
-      let newSign = currentMovingCfg.sign
+      let newDegree = explicitTarget ? explicitTarget.degree : currentMovingCfg.degree + stepDegrees
+      let newSign = explicitTarget ? explicitTarget.sign : currentMovingCfg.sign
 
-      // Handle sign roll-over if moving past 30°
-      if (newDegree >= 30) {
-        const signIdx = SIGN_ORDER.findIndex(
-          s => s.toLowerCase() === currentMovingCfg.sign.toLowerCase()
-        )
-        newSign = SIGN_ORDER[(signIdx + 1) % 12]
-        newDegree = newDegree % 30
-      } else if (newDegree < 0) {
-        const signIdx = SIGN_ORDER.findIndex(
-          s => s.toLowerCase() === currentMovingCfg.sign.toLowerCase()
-        )
-        newSign = SIGN_ORDER[(signIdx + 11) % 12]
-        newDegree = (newDegree + 30) % 30
+      if (!explicitTarget) {
+        // Handle sign roll-over if moving past 30°
+        if (newDegree >= 30) {
+          const signIdx = SIGN_ORDER.findIndex(
+            s => s.toLowerCase() === currentMovingCfg.sign.toLowerCase()
+          )
+          newSign = SIGN_ORDER[(signIdx + 1) % 12]
+          newDegree = newDegree % 30
+        } else if (newDegree < 0) {
+          const signIdx = SIGN_ORDER.findIndex(
+            s => s.toLowerCase() === currentMovingCfg.sign.toLowerCase()
+          )
+          newSign = SIGN_ORDER[(signIdx + 11) % 12]
+          newDegree = (newDegree + 30) % 30
+        }
+
+        // 1. Update degree overrides immediately so coordinates reflect the new position
+        setDegreeOverrides(prev => ({
+          ...prev,
+          [movingKey]: { sign: newSign, degree: newDegree },
+        }))
       }
-
-      // 1. Update degree overrides immediately so coordinates reflect the new position
-      setDegreeOverrides(prev => ({
-        ...prev,
-        [movingKey]: { sign: newSign, degree: newDegree },
-      }))
 
       const dignity = getPlanetaryDignity(currentMovingCfg.planet, newSign)
       const element = normalizeElement(getSignElement(newSign))
 
       // 2. Post System Ingress Announcement Card
       const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      const prefix = explicitTarget?.isRealTimeIngress
+        ? '⚡ LIVE REAL-TIME SKY SHIFT DETECTED'
+        : '⚡ SKY SHIFT DETECTED'
       const ingressMsg: ChatMessage = {
         id: `ingress-${Date.now()}`,
         senderName: 'Cosmic Transit Engine',
         senderRole: 'Astronomical Ingress Alert',
         senderGlyph: '⚡',
-        content: `⚡ SKY SHIFT DETECTED: ${currentMovingCfg.planet} has advanced to ${newDegree}° ${newSign} (${dignity.toUpperCase()}, ${element.toUpperCase()})! Active council delegates convene — nearest body first, then the tightest aspect — to integrate the new vector.`,
+        content: `${prefix}: ${currentMovingCfg.planet} has advanced to ${newDegree}° ${newSign} (${dignity.toUpperCase()}, ${element.toUpperCase()})! Active council delegates convene — nearest body first, then the tightest aspect — to integrate the new vector.`,
         timestamp: timeStr,
         isIngressAlert: true,
         ingressPlanet: currentMovingCfg.planet,
@@ -1152,17 +1194,52 @@ export function CurrentPromotionalThread({
           newDegree,
         },
         recentTurns: recentTurnsFrom(messagesRef.current),
+        skyOverride: buildCurrentSkyOverride(),
         turnDelayMs: () => (skipDelaysRef.current ? 0 : 1200),
         maxTurns: 4,
       })
     },
-    [agentsConfig, isReactionPlaying]
+    [agentsConfig, isReactionPlaying, buildCurrentSkyOverride]
   )
 
   const handleSkipDelays = () => {
     skipDelaysRef.current = true
     exchangeMachineRef.current.skipDelay()
   }
+
+  // Automatically detect when any planetary body enters a new integer degree in the real heavens!
+  useEffect(() => {
+    if (isReactionPlaying) return
+
+    // On mount, establish initial sky degree baseline
+    if (!hasInitializedSkyRef.current) {
+      const baseline: Record<string, { sign: string; degree: number }> = {}
+      for (const [key, cfg] of Object.entries(agentsConfig)) {
+        if (key !== 'gregory') {
+          baseline[key] = { sign: cfg.sign, degree: Math.floor(cfg.degree) }
+        }
+      }
+      lastObservedDegreesRef.current = baseline
+      hasInitializedSkyRef.current = true
+      return
+    }
+
+    // Check for celestial body crossing into a new integer degree in the real sky
+    for (const [key, cfg] of Object.entries(agentsConfig)) {
+      if (key === 'gregory') continue
+      const prev = lastObservedDegreesRef.current[key]
+      const currentInt = Math.floor(cfg.degree)
+      if (prev && (prev.degree !== currentInt || prev.sign !== cfg.sign)) {
+        lastObservedDegreesRef.current[key] = { sign: cfg.sign, degree: currentInt }
+        triggerDegreeChangeEvent(key as BasketAgentKey, 0, {
+          sign: cfg.sign,
+          degree: cfg.degree,
+          isRealTimeIngress: true,
+        })
+        break
+      }
+    }
+  }, [agentsConfig, isReactionPlaying, triggerDegreeChangeEvent])
 
   // Spontaneous conversation cadence when no ingress sequence or seeker inquiry is active
   useEffect(() => {
@@ -1173,13 +1250,14 @@ export function CurrentPromotionalThread({
 
       exchangeMachineRef.current.startExchange({
         recentTurns: recentTurnsFrom(messagesRef.current),
+        skyOverride: buildCurrentSkyOverride(),
         turnDelayMs: 1200,
         maxTurns: 1,
       })
     }, 22000)
 
     return () => clearInterval(timer)
-  }, [isAutonomousStreaming, isTyping, isReactionPlaying])
+  }, [isAutonomousStreaming, isTyping, isReactionPlaying, buildCurrentSkyOverride])
 
   // Handle user sending a prompt into the group chat
   const handleSendPrompt = (textToSend?: string) => {
@@ -1216,6 +1294,7 @@ export function CurrentPromotionalThread({
       targetDelegate: selectedAgentFilter !== 'all' ? selectedAgentFilter : undefined,
       attachedNatalEnvelope: natalEnvelope || attachedChartContext,
       recentTurns: recentTurnsFrom(messagesRef.current),
+      skyOverride: buildCurrentSkyOverride(),
       turnDelayMs: () => (skipDelaysRef.current ? 0 : 1200),
       maxTurns: 2,
     })
@@ -1237,7 +1316,12 @@ export function CurrentPromotionalThread({
           <div className="flex items-center gap-2 mb-2 flex-wrap">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 border rounded-full text-[10px] font-mono-label font-bold tracking-widest uppercase bg-[#38bdf8]/20 border-[#38bdf8]/50 text-[#38bdf8]">
               <span className="w-2 h-2 rounded-full bg-[#38bdf8] animate-ping" />
-              LIVE CURRENT SKY CHAT ACTIVE
+              LIVE CURRENT SKY CHAT ACTIVE ·{' '}
+              {currentSkyTime.toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+              })}
             </span>
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-[#fbbf24]/15 border border-[#fbbf24]/30 rounded-full text-[10px] font-mono-label tracking-wider text-[#fbbf24]">
               <Sun className="w-3 h-3" /> SUN {agentsConfig.sun.degreeLabel} {agentsConfig.sun.sign}
@@ -1265,6 +1349,24 @@ export function CurrentPromotionalThread({
 
         {/* Interactive Ingress Simulator Controls */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
+          {Object.keys(degreeOverrides).length > 0 && (
+            <button
+              onClick={() => {
+                exchangeMachineRef.current.cancel()
+                setIsReactionPlaying(false)
+                setTransitioningPlanet(null)
+                setClosestPlanetKey(null)
+                setDegreeOverrides({})
+                hasInitializedSkyRef.current = false
+              }}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-[#fbbf24]/15 hover:bg-[#fbbf24]/25 border border-[#fbbf24]/40 rounded-xl text-xs font-mono-label font-bold text-[#fbbf24] transition-all active:scale-95"
+              title="Reset all degree overrides and resynchronize with the live astronomical sky"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>↺ Reset to Live Sky</span>
+            </button>
+          )}
+
           <button
             onClick={() => triggerDegreeChangeEvent('moon', 1)}
             disabled={isReactionPlaying}
