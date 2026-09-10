@@ -25,8 +25,8 @@ export type AspectName =
 /** Whether the geometry reads as flowing, frictional, or ambivalent. */
 export type AspectQuality = 'harmonious' | 'dynamic' | 'neutral'
 
-/** Where the pair sits relative to exactitude, given the mover's direction. */
-export type AspectPhase = 'applying' | 'separating' | 'exact'
+/** Where the pair sits relative to exactitude, given the pair's relative motion. */
+export type AspectPhase = 'applying' | 'separating' | 'exact' | 'unknown'
 
 export interface AspectDefinition {
   name: AspectName
@@ -124,6 +124,27 @@ export interface AspectHit {
   phase: AspectPhase
 }
 
+export const SIGN_ORDER = [
+  'Aries',
+  'Taurus',
+  'Gemini',
+  'Cancer',
+  'Leo',
+  'Virgo',
+  'Libra',
+  'Scorpio',
+  'Sagittarius',
+  'Capricorn',
+  'Aquarius',
+  'Pisces',
+] as const
+
+export function signToLongitude(sign: string, degree: number): number {
+  const idx = SIGN_ORDER.findIndex(s => s.toLowerCase() === (sign || '').toLowerCase())
+  if (idx === -1) return degree
+  return (idx * 30 + degree + 360) % 360
+}
+
 /** Signed shortest path from `from` to `to`, in (-180, 180]. */
 export function signedDelta(from: number, to: number): number {
   const raw = (((to - from) % 360) + 360) % 360
@@ -146,12 +167,16 @@ const EXACT_THRESHOLD = 0.25
 /**
  * Classify the separation between two bodies.
  *
- * `moverSpeed` is the daily motion of `degA` in degrees — positive for direct,
- * negative for retrograde. It only decides `phase`; pass 0 when direction is
- * unknown and every hit reports `exact`-adjacent neutrality via 'separating'
- * only when it genuinely is.
+ * `speedA` and `speedB` are daily motions in degrees per day (signed).
+ * When either speed is missing/undefined, returns `phase: 'unknown'` unless within exact threshold.
+ * Stepping both bodies preserves mathematical symmetry: detectAspect(A, B, vA, vB).phase === detectAspect(B, A, vB, vA).phase.
  */
-export function detectAspect(degA: number, degB: number, moverSpeed = 1): AspectHit | null {
+export function detectAspect(
+  degA: number,
+  degB: number,
+  speedA?: number,
+  speedB?: number
+): AspectHit | null {
   const separation = angularSeparation(degA, degB)
 
   let best: AspectHit | null = null
@@ -170,7 +195,7 @@ export function detectAspect(degA: number, degB: number, moverSpeed = 1): Aspect
   }
 
   if (!best) return null
-  best.phase = resolvePhase(degA, degB, best.definition, best.orb, moverSpeed)
+  best.phase = resolvePhase(degA, degB, best.definition, best.orb, speedA, speedB)
   return best
 }
 
@@ -179,15 +204,18 @@ function resolvePhase(
   degB: number,
   definition: AspectDefinition,
   orb: number,
-  moverSpeed: number
+  speedA?: number,
+  speedB?: number
 ): AspectPhase {
   if (orb <= EXACT_THRESHOLD) return 'exact'
-  if (moverSpeed === 0) return 'separating'
+  if (speedA === undefined || speedB === undefined) return 'unknown'
+  if (speedA === 0 && speedB === 0) return 'separating'
 
-  // Step the mover a hair along its actual direction of travel and see whether
-  // that shrinks the orb. This is direction-only, so magnitude does not matter.
-  const step = moverSpeed > 0 ? 0.01 : -0.01
-  const nextOrb = Math.abs(angularSeparation(degA + step, degB) - definition.angle)
+  // Step both bodies along their daily velocities
+  const dt = 0.001
+  const stepA = speedA * dt
+  const stepB = speedB * dt
+  const nextOrb = Math.abs(angularSeparation(degA + stepA, degB + stepB) - definition.angle)
   return nextOrb < orb ? 'applying' : 'separating'
 }
 
@@ -205,14 +233,14 @@ export interface AspectPartner<T> {
  */
 export function findAspects<T>(
   longitude: number,
-  bodies: ReadonlyArray<{ body: T; longitude: number }>,
+  bodies: ReadonlyArray<{ body: T; longitude: number; speed?: number }>,
   options: { moverSpeed?: number; majorOnly?: boolean } = {}
 ): AspectPartner<T>[] {
-  const { moverSpeed = 1, majorOnly = false } = options
+  const { moverSpeed, majorOnly = false } = options
   const hits: AspectPartner<T>[] = []
 
-  for (const { body, longitude: other } of bodies) {
-    const hit = detectAspect(longitude, other, moverSpeed)
+  for (const { body, longitude: other, speed: otherSpeed } of bodies) {
+    const hit = detectAspect(longitude, other, moverSpeed, otherSpeed)
     if (!hit) continue
     if (majorOnly && !hit.definition.major) continue
     hits.push({ partner: body, longitude: other, hit })
@@ -224,7 +252,7 @@ export function findAspects<T>(
 /** The single tightest aspect `longitude` makes, or null if it stands unaspected. */
 export function tightestAspectTo<T>(
   longitude: number,
-  bodies: ReadonlyArray<{ body: T; longitude: number }>,
+  bodies: ReadonlyArray<{ body: T; longitude: number; speed?: number }>,
   options: { moverSpeed?: number; majorOnly?: boolean } = {}
 ): AspectPartner<T> | null {
   return findAspects(longitude, bodies, options)[0] ?? null
@@ -234,6 +262,7 @@ export function tightestAspectTo<T>(
 export function formatAspectBadge(hit: AspectHit): string {
   const orb = hit.orb.toFixed(1)
   if (hit.phase === 'exact') return `${hit.name.toUpperCase()} EXACT`
+  if (hit.phase === 'unknown') return `${hit.name.toUpperCase()} ${orb}°`
   return `${hit.name.toUpperCase()} ${orb}° ${hit.phase.toUpperCase()}`
 }
 
@@ -245,6 +274,10 @@ export function formatAspectBadge(hit: AspectHit): string {
  */
 export function describeAspectPhrase(hit: AspectHit): string {
   if (hit.phase === 'exact') return `an exact ${hit.name.toLowerCase()}`
+  if (hit.phase === 'unknown') {
+    const article = /^[aeiou]/i.test(hit.name) ? 'an' : 'a'
+    return `${article} ${hit.name.toLowerCase()}`
+  }
   const article = /^[aeiou]/i.test(hit.phase) ? 'an' : 'a'
   return `${article} ${hit.phase} ${hit.name.toLowerCase()}`
 }
@@ -319,15 +352,15 @@ export function dignityResonance(dignity?: string, planet?: string, sign?: strin
   switch (dignity.toLowerCase()) {
     case 'domicile':
     case 'rulership':
-      return `Speaking from my domicile in ${sign || 'this sign'}, my native authority holds the circle firm.`
+      return `Anchored in native authority, our presence holds sovereign ground.`
     case 'exaltation':
-      return `From my exalted seat, I hold our council to its highest standard.`
+      return `From an elevated standard, our deliberation aims for uncompromised clarity.`
     case 'detriment':
-      return `Operating from detriment, I know the value of friction; truth is forged under pressure.`
+      return `Forged through generative friction, truth is sharpened under resistance.`
     case 'fall':
-      return `Stationed in my fall, I speak the unvarnished truth that easier seats overlook.`
+      return `Stripped of superficial comfort, we address what easier seats overlook.`
     case 'peregrine':
-      return `Wandering peregrine, I watch the celestial shifts with acute vigilance.`
+      return `Unbeholden to a single court, we observe the shifting currents with acute vigilance.`
     default:
       return ''
   }

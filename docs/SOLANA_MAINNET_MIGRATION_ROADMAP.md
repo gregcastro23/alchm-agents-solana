@@ -1228,6 +1228,7 @@ This section contains the authoritative, prompt-by-prompt execution blueprint fo
 > Because `solana program deploy` initializes the final ProgramData account before it closes and refunds the temporary buffer, the deployer wallet must hold the peak concurrent allocation of **$\approx 13.85\text{ SOL}$** plus transaction fees. Once finalized, the 6.92 SOL buffer is refunded, bringing net rent cost to ~6.92 SOL.
 
 1. **Verify Deployer Account Balance ($\ge 14.5\text{ SOL}$):**
+
    ```bash
    solana balance --url https://api.mainnet-beta.solana.com --keypair ~/.config/solana/id.json
    ```

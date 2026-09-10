@@ -11,6 +11,7 @@ import {
   getPlanetaryPositionsAction,
   getAlchemicalQuantitiesAction,
 } from '@/lib/actions/backend-actions'
+import { getCurrentPlanetaryPositions } from '@/lib/calculate-transits'
 
 export interface PlanetaryPosition {
   planet: string
@@ -137,7 +138,7 @@ export function usePlanetaryPositions(options: UsePlanetaryPositionsOptions = {}
       if (posPayload.error) throw new Error(posPayload.error)
       if (alchmPayload.error) throw new Error(alchmPayload.error)
 
-      const planetaryPositions: PlanetaryPosition[] = Object.entries(
+      let planetaryPositions: PlanetaryPosition[] = Object.entries(
         posPayload?.planetary_positions || {}
       ).map(([name, body]) => ({
         planet: name,
@@ -145,6 +146,16 @@ export function usePlanetaryPositions(options: UsePlanetaryPositionsOptions = {}
         degree: typeof body?.degree === 'number' ? body.degree : 0,
         retrograde: Boolean(body?.isRetrograde),
       }))
+
+      if (planetaryPositions.length === 0) {
+        const liveFallback = getCurrentPlanetaryPositions(new Date())
+        planetaryPositions = Object.entries(liveFallback).map(([name, body]) => ({
+          planet: name,
+          sign: body.sign,
+          degree: body.degree,
+          retrograde: body.retrograde,
+        }))
+      }
 
       const alchmQuantities: AlchemicalQuantities = {
         spirit: Number(alchmPayload?.spirit_score ?? 0),
@@ -175,14 +186,25 @@ export function usePlanetaryPositions(options: UsePlanetaryPositionsOptions = {}
       if (!backendWarnedRef.current) {
         backendWarnedRef.current = true
         console.warn(
-          'usePlanetaryPositions: Backend unavailable, using defaults (silenced for further retries):',
+          'usePlanetaryPositions: Backend unavailable, utilizing live astronomical ephemeris:',
           (error as Error)?.message || error
         )
       }
+      const liveFallback = getCurrentPlanetaryPositions(new Date())
+      const fallbackPositions: PlanetaryPosition[] = Object.entries(liveFallback).map(
+        ([name, body]) => ({
+          planet: name,
+          sign: body.sign,
+          degree: body.degree,
+          retrograde: body.retrograde,
+        })
+      )
       setData(prev => ({
         ...prev,
+        planetaryPositions: fallbackPositions,
         loading: false,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        lastUpdated: new Date(),
+        error: null,
       }))
     }
   }, [opts.enabled])
@@ -192,7 +214,7 @@ export function usePlanetaryPositions(options: UsePlanetaryPositionsOptions = {}
     fetchPlanetaryData()
   }, [fetchPlanetaryData])
 
-  // Initial fetch
+  // Initial fetch and real-time polling interval
   useEffect(() => {
     if (!opts.enabled) {
       setData(prev => ({ ...prev, loading: false, error: null }))
@@ -200,7 +222,15 @@ export function usePlanetaryPositions(options: UsePlanetaryPositionsOptions = {}
     }
 
     fetchPlanetaryData()
-  }, [fetchPlanetaryData, opts.enabled])
+
+    if (opts.refreshInterval > 0) {
+      const intervalId = setInterval(() => {
+        fetchPlanetaryData()
+      }, opts.refreshInterval)
+      return () => clearInterval(intervalId)
+    }
+    return undefined
+  }, [fetchPlanetaryData, opts.enabled, opts.refreshInterval])
 
   return {
     ...data,

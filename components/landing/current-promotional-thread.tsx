@@ -24,31 +24,20 @@ import {
   Eye,
 } from 'lucide-react'
 import type { PlanetaryPosition, AlchemicalQuantities } from '@/hooks/usePlanetaryPositions'
-import { getCurrentPlanetaryPositions } from '@/lib/calculate-transits'
+import { getCurrentPlanetaryPositions, type CurrentPlanetPosition } from '@/lib/calculate-transits'
 import { getPlanetaryDignity, getSignElement } from '@/lib/astrological-data'
 import {
-  addressPreviousSpeaker,
   angularSeparation,
-  composeCouncilFallback,
   detectAspect,
   dignityResonance,
   formatAspectBadge,
   tightestAspectTo,
   type AspectHit,
 } from '@/lib/agents/council/aspect-dialogue-engine'
-
-export type BasketAgentKey =
-  | 'sun'
-  | 'moon'
-  | 'mercury'
-  | 'venus'
-  | 'mars'
-  | 'jupiter'
-  | 'saturn'
-  | 'uranus'
-  | 'neptune'
-  | 'pluto'
-  | 'gregory'
+import { ExchangeStateMachine } from '@/lib/agents/council/exchange-state-machine'
+import type { CouncilTurnContext } from '@/lib/agents/council/council-context'
+import { type BasketAgentKey } from '@/lib/agents/council/council-schema'
+export type { BasketAgentKey }
 
 export type ElementType = 'fire' | 'air' | 'water' | 'earth'
 
@@ -73,6 +62,7 @@ export interface BasketAgentConfig {
   forceVector: string
   quote: string
   isMainStage?: boolean
+  speed?: number
 }
 
 export interface ChatMessage {
@@ -97,6 +87,16 @@ export interface ChatMessage {
   aspectBadge?: string
   /** Colour of that aspect, matching the chord drawn on the wheel. */
   aspectColor?: string
+  /** The speech act category (support, challenge, qualify, reframe, synthesize) */
+  speechAct?: string
+  /** The substantive new proposition advanced in this turn */
+  newClaim?: string
+  /** Generation provenance to distinguish live model generation from grounded astro-reduction */
+  provenance?: {
+    source: 'model' | 'grounded_briefing'
+    modelFamily?: 'fast' | 'substantive'
+    latencyMs?: number
+  }
 }
 
 export interface SkyAndAlchmContext {
@@ -304,9 +304,8 @@ const scaleAlchmScore = (val?: number, fallback = 35): number => {
   return Math.round(val)
 }
 
-export interface CouncilTurn {
+export interface CouncilTurn extends CouncilTurnContext {
   speaker: string
-  text: string
 }
 
 /** How many prior turns travel with a request. Enough to answer, not to recite. */
@@ -322,7 +321,19 @@ export function recentTurnsFrom(msgs: ChatMessage[]): CouncilTurn[] {
   return msgs
     .filter(m => !m.isIngressAlert && m.content && m.content.trim().length > 0)
     .slice(-RECENT_TURN_WINDOW)
-    .map(m => ({ speaker: m.isUser ? 'The seeker' : m.senderName, text: m.content }))
+    .map(m => {
+      const speaker = m.isUser ? 'The seeker' : m.senderName
+      return {
+        turnId: m.id,
+        speaker,
+        speakerKey: m.agentKey || ('gregory' as BasketAgentKey),
+        speakerName: m.senderName,
+        text: m.content,
+        claim: m.newClaim || m.content.slice(0, 150),
+        speechAct: (m.speechAct as any) || 'qualify',
+        usedEvidenceIds: [],
+      }
+    })
 }
 
 /** Name of whoever spoke last, for the offline path's opening clause. */
@@ -400,196 +411,6 @@ export function orderIngressSpeakers(
     .map(m => ({ ...m, role: 'delegate' as const }))
 
   return [...ordered, ...rest]
-}
-
-/** Calls live AI backend API /api/agents/council-voice for persona generation */
-async function fetchCouncilVoice(payload: {
-  agentKey: BasketAgentKey
-  userPrompt?: string
-  attachedChartContext?: string
-  fallbackText?: string
-  sign?: string
-  degree?: number
-  degreeLabel?: string
-  dignity?: string
-  retrograde?: boolean
-  ingressEvent?: boolean
-  movingPlanet?: string
-  movingSign?: string
-  movingDegree?: number
-  isClosestToIngress?: boolean
-  angularDistance?: number
-  isIngressFinalWord?: boolean
-  /** The last few turns, so a delegate can answer whoever just spoke. */
-  recentTurns?: CouncilTurn[]
-  aspectName?: string
-  aspectOrb?: number
-  aspectPhase?: string
-  aspectQuality?: string
-}): Promise<string> {
-  try {
-    const res = await fetch('/api/agents/council-voice', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(payload),
-    })
-    if (res.ok) {
-      const data = await res.json()
-      if (
-        data.success &&
-        data.text &&
-        typeof data.text === 'string' &&
-        data.text.trim().length > 0
-      ) {
-        return data.text.trim()
-      }
-    }
-  } catch (err) {
-    console.warn('[fetchCouncilVoice] Error calling /api/agents/council-voice:', err)
-  }
-  return payload.fallbackText || 'The council speaks with unified presence in the current sky.'
-}
-
-/**
- * The planet-specific claim each delegate brings when there is no ingress to
- * react to. These are the substance; the threading clause is added on top so
- * the offline path still reads as a conversation.
- */
-function planetaryClaim(
-  agentKey: BasketAgentKey,
-  cfg: BasketAgentConfig,
-  answeringSeeker: boolean
-): string {
-  const seat = `${cfg.degreeLabel} ${cfg.sign}`
-  const dig = dignityResonance(cfg.dignity, cfg.planet, cfg.sign)
-  const digClause = dig ? ` ${dig}` : ''
-
-  if (answeringSeeker) {
-    switch (agentKey) {
-      case 'sun':
-        return `From ${seat}, I cast solar clarity directly upon your inquiry.${digClause} Focus on what aligns with your authentic vitality, and let lesser distractions fall away in the light of your core purpose.`
-      case 'moon':
-        return `At ${seat}, the lunar waters feel the unspoken currents beneath your question.${digClause} As degrees shift, honor your emotional truth and allow what is changing to settle naturally.`
-      case 'mercury':
-        return `Holding ${seat}, I advise articulating the precise terms of your dilemma.${digClause} Clear distinctions transform confusion into action; name the next practical step with precision.`
-      case 'venus':
-        return `In ${seat}, authentic balance is found by honoring what you value most.${digClause} Seek connection with reciprocal grace, and refuse to compromise your inner dignity.`
-      case 'mars':
-        return `Stationed at ${seat}, I call for direct courage and decisive engagement.${digClause} As degrees advance, cut through hesitation and take an intentional stride that tests reality.`
-      case 'jupiter':
-        return `From ${seat}, I urge you to enlarge the perspective around your question.${digClause} What appears as friction is an invitation to expand your understanding and embrace generous wisdom.`
-      case 'saturn':
-        return `Anchoring ${seat}, I remind you that enduring results demand patience and devoted boundaries.${digClause} Build on bedrock fundamentals, respecting the natural timeline required for true mastery.`
-      case 'uranus':
-        return `At ${seat}, expect breakthrough insights that break stale assumptions.${digClause} Stay nimble as the celestial currents quicken, and welcome the unexpected angle.`
-      case 'neptune':
-        return `In ${seat}, dissolve the illusion of rigid separation around your dilemma.${digClause} Tune into the subtler intuitive currents, allowing quiet trust to guide your way forward.`
-      case 'pluto':
-        return `From ${seat}, embrace honest catharsis and psychological truth.${digClause} Release what has died in your life so your authentic inner authority can regenerate.`
-      case 'gregory':
-        return `Holding the center of our ten degree delegates, I hear your question meeting the live geometry of the current sky. As the Moon and planets shift through their degrees, let the council's insights anchor your awareness and creative resolve.`
-    }
-  }
-
-  switch (agentKey) {
-    case 'sun':
-      return `Solar clarity at ${seat} provides steady footing for the council.${digClause} We co-create this celestial moment, keeping our creative vitality aligned as the sky moves.`
-    case 'moon':
-      return `The tides at ${seat} are exceptionally receptive right now.${digClause} Each degree shift alters the instinctual mood of the room; notice what stirs beneath the surface.`
-    case 'mercury':
-      return `Translating the sky from ${seat}: each planetary degree carries its own syntax.${digClause} Listen to the dialogue between our stations as the celestial currents click into place.`
-    case 'venus':
-      return `Aesthetic balance is maintained from ${seat}.${digClause} Beauty and reciprocal harmony act as active stabilizers across our circle as the degrees turn.`
-    case 'mars':
-      return `Kinetic charge is high at ${seat}.${digClause} Direct your fire where it builds rather than burns; every degree shift demands courage and intentional action.`
-    case 'jupiter':
-      return `Wisdom from ${seat} elevates our collective discourse into greater breadth.${digClause} There is always a more generous perspective available when we view the transits with philosophical depth.`
-    case 'saturn':
-      return `Structure at ${seat} preserves the sacred perimeter of our circle.${digClause} As degrees change across our sectors, disciplined focus ensures our work endures over time.`
-    case 'uranus':
-      return `A spark of revelation at ${seat} quickens our dialogue.${digClause} Celestial shifts invite fresh breakthroughs; stay open to what defies conventional expectation.`
-    case 'neptune':
-      return `The oceanic horizon at ${seat} softens the edges of perception.${digClause} Listen to the intuitive undercurrents that connect our distinct voices into a unified field.`
-    case 'pluto':
-      return `Deep alchemy at ${seat} regenerates collective willpower.${digClause} Every degree shift is an opportunity to strip away trivialities and renew our deepest purpose.`
-    case 'gregory':
-      return `Watching our ten degree delegates converse across the zodiac reminds me of why we attune to the sky. As the Moon and inner agents shift through new degrees, we hold the living balance between celestial geometry and human agency.`
-  }
-}
-
-/**
- * Offline line for a delegate speaking outside an ingress.
- *
- * Renders for unauthenticated visitors and whenever `GROQ_API_KEY` is absent,
- * so it is the landing page's first impression more often than the generated
- * path is. It must name the previous speaker rather than monologue.
- */
-export function generateSpontaneousCouncilResponse(
-  agentKey: BasketAgentKey,
-  agents: Record<BasketAgentKey, BasketAgentConfig>,
-  userPrompt?: string,
-  previousSpeaker?: string
-): string {
-  const cfg = agents[agentKey]
-  if (!cfg) return 'The celestial current moves in living harmony.'
-
-  const claim = planetaryClaim(agentKey, cfg, !!userPrompt)
-  const opener = addressPreviousSpeaker(previousSpeaker)
-  return opener ? `${opener}. ${claim}` : claim
-}
-
-/**
- * Offline line for an ingress reaction. Delegates to the council engine so the
- * geometry that ordered the speakers is the same geometry they talk about.
- */
-export function generateIngressReactionFallback(
-  speakerKey: BasketAgentKey,
-  movingKey: BasketAgentKey,
-  agents: Record<BasketAgentKey, BasketAgentConfig>,
-  isClosest: boolean,
-  angularDistance: number,
-  isFinalWord: boolean,
-  hit?: AspectHit | null,
-  previousSpeaker?: string,
-  /**
-   * Where the moving body has just arrived. `agents` still holds its previous
-   * seat at this point in the ingress — the degree override has been queued but
-   * not yet folded back into the memo — so without this the whole council
-   * reacts to the degree the planet has already left.
-   */
-  movingPosition?: { sign: string; degreeLabel: string }
-): string {
-  const speaker = agents[speakerKey]
-  const moving = agents[movingKey]
-  if (!speaker || !moving) return 'The celestial current moves in living harmony.'
-
-  const movingSign = movingPosition?.sign ?? moving.sign
-  const movingDegreeLabel = movingPosition?.degreeLabel ?? moving.degreeLabel
-  const isSpeakerMoving = speakerKey === movingKey
-
-  return composeCouncilFallback({
-    speaker: {
-      name: speaker.name,
-      planet: speaker.planet,
-      sign: isSpeakerMoving ? movingSign : speaker.sign,
-      degreeLabel: isSpeakerMoving ? movingDegreeLabel : speaker.degreeLabel,
-      element: speaker.element,
-      dignity: speaker.dignity,
-    },
-    moving: {
-      name: moving.name,
-      planet: moving.planet,
-      sign: movingSign,
-      degreeLabel: movingDegreeLabel,
-      element: moving.element,
-      dignity: moving.dignity,
-    },
-    hit,
-    previousSpeaker,
-    isNearestNeighbour: isClosest,
-    isFinalWord,
-    angularDistance,
-  })
 }
 
 const PRESET_PROMPTS = [
@@ -948,6 +769,9 @@ export function CurrentPromotionalThread({
 }: CurrentPromotionalThreadProps) {
   const router = useRouter()
 
+  // Real-time celestial clock ticking continuously in the background
+  const [currentSkyTime, setCurrentSkyTime] = useState<Date>(() => new Date())
+
   // State for simulated/overridden planetary degrees (starts empty, filled when user advances degrees)
   const [degreeOverrides, setDegreeOverrides] = useState<
     Partial<Record<BasketAgentKey, { sign: string; degree: number }>>
@@ -959,10 +783,18 @@ export function CurrentPromotionalThread({
   const [transitioningPlanet, setTransitioningPlanet] = useState<BasketAgentKey | null>(null)
   const [closestPlanetKey, setClosestPlanetKey] = useState<BasketAgentKey | null>(null)
 
-  // Derive dynamic agents configuration from live positions + overrides
+  // Real-time clock interval (updates every 10 seconds)
+  useEffect(() => {
+    const timer = setInterval(() => {
+      setCurrentSkyTime(new Date())
+    }, 10000)
+    return () => clearInterval(timer)
+  }, [])
+
+  // Derive dynamic agents configuration from live positions + overrides + real-time clock
   const agentsConfig = useMemo<Record<BasketAgentKey, BasketAgentConfig>>(() => {
-    // 1. Get live fallback positions from calculator
-    const fallbackPositions = getCurrentPlanetaryPositions()
+    // 1. Get live fallback positions from calculator for current moment
+    const fallbackPositions = getCurrentPlanetaryPositions(currentSkyTime)
 
     const resolvePosition = (planetName: string) => {
       const live = positions.find(p => p.planet.toLowerCase() === planetName.toLowerCase())
@@ -971,6 +803,7 @@ export function CurrentPromotionalThread({
           sign: live.sign,
           degree: typeof live.degree === 'number' ? live.degree : 0,
           retrograde: Boolean(live.retrograde),
+          speed: typeof (live as any).speed === 'number' ? (live as any).speed : undefined,
         }
       }
       const calc = fallbackPositions[planetName]
@@ -979,9 +812,10 @@ export function CurrentPromotionalThread({
           sign: calc.sign,
           degree: calc.degree,
           retrograde: calc.retrograde,
+          speed: calc.speed,
         }
       }
-      return { sign: 'Aries', degree: 0, retrograde: false }
+      return { sign: 'Aries', degree: 0, retrograde: false, speed: undefined }
     }
 
     const buildConfig = (key: BasketAgentKey, planetName: string): BasketAgentConfig => {
@@ -993,7 +827,7 @@ export function CurrentPromotionalThread({
       const currentSign = override?.sign || live.sign
       const currentRawDegree = override?.degree !== undefined ? override.degree : live.degree
       const intDegree = Math.floor(currentRawDegree)
-      const absDegree = signToLongitude(currentSign, intDegree)
+      const absDegree = signToLongitude(currentSign, currentRawDegree)
       const dignity = getPlanetaryDignity(planetName, currentSign)
       const signElement = normalizeElement(getSignElement(currentSign))
 
@@ -1008,6 +842,7 @@ export function CurrentPromotionalThread({
         absoluteDegree: absDegree,
         dignity,
         retrograde: live.retrograde,
+        speed: live.speed,
         element: signElement,
         glyph: baseMeta.glyph,
         callSign: `${planetName.toUpperCase()}_${currentSign.toUpperCase()}_${intDegree}°`,
@@ -1056,10 +891,14 @@ export function CurrentPromotionalThread({
         isMainStage: false,
       },
     }
-  }, [positions, degreeOverrides])
+  }, [positions, degreeOverrides, currentSkyTime])
 
   // Initial group chat message initialization
   const [messages, setMessages] = useState<ChatMessage[]>(() => {
+    const initTime =
+      typeof window !== 'undefined'
+        ? new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+        : '12:00 PM'
     return [
       {
         id: 'msg-init-1',
@@ -1070,7 +909,7 @@ export function CurrentPromotionalThread({
         element: 'water',
         content:
           'Welcome into the Current Sky Council Chamber. Each planetary agent embodies the exact degree it occupies in heaven right now. When any planet advances degree, our council answers in turn — nearest body first, then the tightest aspect to the new degree.',
-        timestamp: '12:00 PM',
+        timestamp: initTime,
       },
       {
         id: 'msg-init-2',
@@ -1081,7 +920,7 @@ export function CurrentPromotionalThread({
         element: 'water',
         content:
           'I feel every micro-shift in the celestial waters. Speak into our circle or simulate a degree advancement to see our council react.',
-        timestamp: '12:01 PM',
+        timestamp: initTime,
       },
       {
         id: 'msg-init-3',
@@ -1092,7 +931,7 @@ export function CurrentPromotionalThread({
         element: 'fire',
         content:
           'I illuminate the center of consciousness. Whatever questions you bring to our council will be met with full degree precision.',
-        timestamp: '12:02 PM',
+        timestamp: initTime,
       },
     ]
   })
@@ -1173,58 +1012,171 @@ export function CurrentPromotionalThread({
     }
   }, [agentsConfig, alchmQuantities, monicaConstant, currentMoonAgent])
 
-  // Helper: pause execution unless skipDelaysRef is set
-  const sleep = (ms: number) => {
-    if (skipDelaysRef.current) return Promise.resolve()
-    return new Promise(resolve => setTimeout(resolve, ms))
-  }
+  const exchangeMachineRef = useRef<ExchangeStateMachine>(new ExchangeStateMachine())
+
+  const agentsConfigRef = useRef(agentsConfig)
+  agentsConfigRef.current = agentsConfig
+
+  const lastObservedDegreesRef = useRef<Record<string, { sign: string; degree: number }>>({})
+  const hasInitializedSkyRef = useRef<boolean>(false)
+
+  const buildCurrentSkyOverride = useCallback((): Record<string, CurrentPlanetPosition> => {
+    const overrideMap: Record<string, CurrentPlanetPosition> = {}
+    for (const [key, cfg] of Object.entries(agentsConfigRef.current)) {
+      if (key === 'gregory') continue
+      overrideMap[cfg.planet] = {
+        sign: cfg.sign,
+        degree: cfg.degree,
+        retrograde: cfg.retrograde,
+        longitude: cfg.absoluteDegree,
+        speed: cfg.speed,
+      }
+    }
+    return overrideMap
+  }, [])
+
+  // Subscribe to unified ExchangeStateMachine lifecycle
+  useEffect(() => {
+    const machine = exchangeMachineRef.current
+    const unsubscribe = machine.subscribe(event => {
+      switch (event.type) {
+        case 'EXCHANGE_STARTED':
+          break
+        case 'TYPING_CHANGE':
+          setIsTyping(!!event.isTyping)
+          if (event.isTyping) {
+            setTypingAgent(event.speakerName || 'The Council')
+          } else {
+            setTypingAgent(null)
+          }
+          break
+        case 'TURN_STARTED':
+          if (event.speakerName) {
+            setTypingAgent(event.speakerName)
+            setIsTyping(true)
+          }
+          break
+        case 'TURN_COMPLETED':
+          if (event.response) {
+            const resp = event.response
+            const currentAgentsConfig = agentsConfigRef.current
+            const cfg = currentAgentsConfig[resp.speakerKey as BasketAgentKey] || {
+              name: resp.speakerName,
+              glyph: '✦',
+              element: 'fire',
+              degreeLabel: '',
+              sign: '',
+            }
+
+            const isIngress = event.exchangeType === 'ingress'
+            const isClosest = isIngress && event.turnIndex === 0
+            const isFinalWord = isIngress && event.turnIndex === 3
+
+            if (isClosest) {
+              setClosestPlanetKey(resp.speakerKey as BasketAgentKey)
+            }
+
+            const newMsg: ChatMessage = {
+              id: `turn-${event.exchangeId}-${event.turnIndex ?? Date.now()}`,
+              agentKey: resp.speakerKey as BasketAgentKey,
+              senderName: isFinalWord ? `${cfg.name} (Final Word)` : resp.speakerName,
+              senderRole: isFinalWord
+                ? `${cfg.degreeLabel} ${cfg.sign} · New Degree Inauguration (Final Word)`
+                : isClosest
+                  ? `${cfg.degreeLabel} ${cfg.sign} · Nearest Neighbor`
+                  : cfg.degreeLabel && cfg.sign
+                    ? `${cfg.degreeLabel} ${cfg.sign}`
+                    : resp.speakerName,
+              senderGlyph: cfg.glyph,
+              element: cfg.element,
+              content: resp.text,
+              timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+              isFinalWord,
+              isClosestNeighbor: isClosest,
+              angularDistance: isClosest ? 0 : undefined,
+              speechAct: resp.speechAct,
+              newClaim: resp.newClaim,
+              provenance: resp.provenance,
+            }
+
+            setMessages(prev => [...prev, newMsg])
+            lastSpeakerKeyRef.current = resp.speakerKey as BasketAgentKey
+          }
+          break
+        case 'EXCHANGE_COMPLETED':
+        case 'ERROR':
+          setIsTyping(false)
+          setTypingAgent(null)
+          setIsReactionPlaying(false)
+          setTransitioningPlanet(null)
+          setClosestPlanetKey(null)
+          break
+      }
+    })
+
+    return () => {
+      unsubscribe()
+      machine.cancel()
+    }
+  }, [])
 
   /**
    * THE SIGNATURE DEGREE CHANGE REACTION ORCHESTRATOR
-   * 1. System Ingress alert is posted.
-   * 2. All other planets react in council order: nearest body, then tightest
-   *    major aspect partner, then the remaining delegates.
-   * 3. Moving planet responds last to inaugurate its new degree position.
+   * Directly driven by ExchangeStateMachine and server-side ConversationDirector.
+   * Supports both manual degree simulations and automatic real-time astronomical ingress shifts.
    */
   const triggerDegreeChangeEvent = useCallback(
-    async (movingKey: BasketAgentKey, stepDegrees = 1) => {
+    async (
+      movingKey: BasketAgentKey,
+      stepDegrees = 1,
+      explicitTarget?: { sign: string; degree: number; isRealTimeIngress?: boolean }
+    ) => {
       if (isReactionPlaying) return
       setIsReactionPlaying(true)
       skipDelaysRef.current = false
       setTransitioningPlanet(movingKey)
 
       const currentMovingCfg = agentsConfig[movingKey]
-      const oldDegree = Math.floor(currentMovingCfg.degree)
-      let newDegree = (oldDegree + stepDegrees) % 30
-      let newSign = currentMovingCfg.sign
+      let newDegree = explicitTarget ? explicitTarget.degree : currentMovingCfg.degree + stepDegrees
+      let newSign = explicitTarget ? explicitTarget.sign : currentMovingCfg.sign
 
-      // Handle sign roll-over if moving past 29°
-      if (oldDegree + stepDegrees >= 30) {
-        const signIdx = SIGN_ORDER.findIndex(
-          s => s.toLowerCase() === currentMovingCfg.sign.toLowerCase()
-        )
-        newSign = SIGN_ORDER[(signIdx + 1) % 12]
-        newDegree = (oldDegree + stepDegrees) % 30
+      if (!explicitTarget) {
+        // Handle sign roll-over if moving past 30°
+        if (newDegree >= 30) {
+          const signIdx = SIGN_ORDER.findIndex(
+            s => s.toLowerCase() === currentMovingCfg.sign.toLowerCase()
+          )
+          newSign = SIGN_ORDER[(signIdx + 1) % 12]
+          newDegree = newDegree % 30
+        } else if (newDegree < 0) {
+          const signIdx = SIGN_ORDER.findIndex(
+            s => s.toLowerCase() === currentMovingCfg.sign.toLowerCase()
+          )
+          newSign = SIGN_ORDER[(signIdx + 11) % 12]
+          newDegree = (newDegree + 30) % 30
+        }
+
+        // 1. Update degree overrides immediately so coordinates reflect the new position
+        setDegreeOverrides(prev => ({
+          ...prev,
+          [movingKey]: { sign: newSign, degree: newDegree },
+        }))
       }
 
-      // 1. Update degree overrides immediately so coordinates reflect the new position
-      setDegreeOverrides(prev => ({
-        ...prev,
-        [movingKey]: { sign: newSign, degree: newDegree },
-      }))
-
-      const newMovingLongitude = signToLongitude(newSign, newDegree)
       const dignity = getPlanetaryDignity(currentMovingCfg.planet, newSign)
       const element = normalizeElement(getSignElement(newSign))
 
       // 2. Post System Ingress Announcement Card
       const timeStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      const prefix = explicitTarget?.isRealTimeIngress
+        ? '⚡ LIVE REAL-TIME SKY SHIFT DETECTED'
+        : '⚡ SKY SHIFT DETECTED'
       const ingressMsg: ChatMessage = {
         id: `ingress-${Date.now()}`,
         senderName: 'Cosmic Transit Engine',
         senderRole: 'Astronomical Ingress Alert',
         senderGlyph: '⚡',
-        content: `⚡ SKY SHIFT DETECTED: ${currentMovingCfg.planet} has advanced to ${newDegree}° ${newSign} (${dignity.toUpperCase()}, ${element.toUpperCase()})! Active council delegates convene — nearest body first, then the tightest aspect — to integrate the new vector.`,
+        content: `${prefix}: ${currentMovingCfg.planet} has advanced to ${newDegree}° ${newSign} (${dignity.toUpperCase()}, ${element.toUpperCase()})! Active council delegates convene — nearest body first, then the tightest aspect — to integrate the new vector.`,
         timestamp: timeStr,
         isIngressAlert: true,
         ingressPlanet: currentMovingCfg.planet,
@@ -1234,236 +1186,78 @@ export function CurrentPromotionalThread({
 
       setMessages(prev => [...prev, ingressMsg])
 
-      // 3. Order the council's reaction: nearest body, then tightest major
-      //    aspect partner, then the remaining delegates. See
-      //    `orderIngressSpeakers` for why proximity alone was the wrong order.
-      const planetKeys: BasketAgentKey[] = [
-        'sun',
-        'moon',
-        'mercury',
-        'venus',
-        'mars',
-        'jupiter',
-        'saturn',
-        'uranus',
-        'neptune',
-        'pluto',
-      ]
-
-      const speakers = orderIngressSpeakers(movingKey, newMovingLongitude, agentsConfig, planetKeys)
-      setClosestPlanetKey(speakers[0]?.key ?? null)
-
-      // The transcript is tracked locally rather than read back off `messages`,
-      // which would be a render behind inside this async loop.
-      const transcript: ChatMessage[] = [...messagesRef.current, ingressMsg]
-
-      // 4. Sequential response loop through the ordered council
-      for (const speaker of speakers) {
-        const otherCfg = agentsConfig[speaker.key]
-        const { distance: dist, hit, role } = speaker
-        const isClosest = role === 'nearest'
-        const badge = hit ? formatAspectBadge(hit) : null
-
-        const seatLabel = isClosest
-          ? `Nearest Neighbor · ${dist}° away`
-          : badge
-            ? badge
-            : `${dist}° away`
-        setTypingAgent(`${otherCfg.name} (${seatLabel})`)
-        setIsTyping(true)
-
-        await sleep(isClosest ? 1600 : 1300)
-
-        const previousSpeaker = lastSpeakerFrom(transcript)
-        const fallback = generateIngressReactionFallback(
-          speaker.key,
-          movingKey,
-          agentsConfig,
-          isClosest,
-          dist,
-          false,
-          hit,
-          previousSpeaker,
-          { sign: newSign, degreeLabel: `${newDegree}°` }
-        )
-
-        const responseText = await fetchCouncilVoice({
-          agentKey: speaker.key,
-          fallbackText: fallback,
-          sign: otherCfg.sign,
-          degree: otherCfg.degree,
-          degreeLabel: otherCfg.degreeLabel,
-          dignity: otherCfg.dignity,
-          retrograde: otherCfg.retrograde,
-          ingressEvent: true,
+      // 3. Delegate turn sequence directly to ExchangeStateMachine
+      exchangeMachineRef.current.startExchange({
+        ingressEvent: {
           movingPlanet: currentMovingCfg.planet,
-          movingSign: newSign,
-          movingDegree: newDegree,
-          isClosestToIngress: isClosest,
-          angularDistance: dist,
-          isIngressFinalWord: false,
-          recentTurns: recentTurnsFrom(transcript),
-          aspectName: hit?.name,
-          aspectOrb: hit?.orb,
-          aspectPhase: hit?.phase,
-          aspectQuality: hit?.quality,
-        })
-
-        const roleLabel = isClosest
-          ? `${otherCfg.degreeLabel} ${otherCfg.sign} · Nearest Neighbor (${dist}° away)`
-          : `${otherCfg.degreeLabel} ${otherCfg.sign} (${dist}° away)`
-
-        const reaction: ChatMessage = {
-          id: `react-${speaker.key}-${Date.now()}`,
-          agentKey: speaker.key,
-          senderName: otherCfg.name,
-          senderRole: roleLabel,
-          senderGlyph: otherCfg.glyph,
-          element: otherCfg.element,
-          content: responseText,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          isClosestNeighbor: isClosest,
-          angularDistance: dist,
-          aspectBadge: badge ?? undefined,
-          aspectColor: hit?.definition.color,
-        }
-
-        transcript.push(reaction)
-        setMessages(prev => [...prev, reaction])
-      }
-
-      // 5. Finally, the transitioning planet with the new degree gets to respond!
-      setTypingAgent(
-        `${currentMovingCfg.planet} in ${newSign} (${newDegree}°) · New Degree Inauguration`
-      )
-      setIsTyping(true)
-      await sleep(1800)
-
-      const finalFallback = generateIngressReactionFallback(
-        movingKey,
-        movingKey,
-        agentsConfig,
-        false,
-        0,
-        true,
-        null,
-        lastSpeakerFrom(transcript),
-        { sign: newSign, degreeLabel: `${newDegree}°` }
-      )
-
-      const finalResponseText = await fetchCouncilVoice({
-        agentKey: movingKey,
-        fallbackText: finalFallback,
-        sign: newSign,
-        degree: newDegree,
-        degreeLabel: `${newDegree}°`,
-        dignity,
-        retrograde: currentMovingCfg.retrograde,
-        ingressEvent: true,
-        movingPlanet: currentMovingCfg.planet,
-        movingSign: newSign,
-        movingDegree: newDegree,
-        isClosestToIngress: false,
-        angularDistance: 0,
-        isIngressFinalWord: true,
-        recentTurns: recentTurnsFrom(transcript),
-      })
-
-      setMessages(prev => [
-        ...prev,
-        {
-          id: `final-${movingKey}-${Date.now()}`,
-          agentKey: movingKey,
-          senderName: `${currentMovingCfg.planet} in ${newSign} (${newDegree}°)`,
-          senderRole: `${newDegree}° ${newSign} · New Degree Delegate (Final Word)`,
-          senderGlyph: currentMovingCfg.glyph,
-          element,
-          content: finalResponseText,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          isFinalWord: true,
-          newDegree,
           newSign,
+          newDegree,
         },
-      ])
-
-      setIsTyping(false)
-      setTypingAgent(null)
-      setIsReactionPlaying(false)
-      setTransitioningPlanet(null)
-      setClosestPlanetKey(null)
+        recentTurns: recentTurnsFrom(messagesRef.current),
+        skyOverride: buildCurrentSkyOverride(),
+        turnDelayMs: () => (skipDelaysRef.current ? 0 : 1200),
+        maxTurns: 4,
+      })
     },
-    [agentsConfig, isReactionPlaying]
+    [agentsConfig, isReactionPlaying, buildCurrentSkyOverride]
   )
 
   const handleSkipDelays = () => {
     skipDelaysRef.current = true
+    exchangeMachineRef.current.skipDelay()
   }
 
-  // Spontaneous conversation cadence when no ingress sequence is playing
+  // Automatically detect when any planetary body enters a new integer degree in the real heavens!
+  useEffect(() => {
+    if (isReactionPlaying) return
+
+    // On mount, establish initial sky degree baseline
+    if (!hasInitializedSkyRef.current) {
+      const baseline: Record<string, { sign: string; degree: number }> = {}
+      for (const [key, cfg] of Object.entries(agentsConfig)) {
+        if (key !== 'gregory') {
+          baseline[key] = { sign: cfg.sign, degree: Math.floor(cfg.degree) }
+        }
+      }
+      lastObservedDegreesRef.current = baseline
+      hasInitializedSkyRef.current = true
+      return
+    }
+
+    // Check for celestial body crossing into a new integer degree in the real sky
+    for (const [key, cfg] of Object.entries(agentsConfig)) {
+      if (key === 'gregory') continue
+      const prev = lastObservedDegreesRef.current[key]
+      const currentInt = Math.floor(cfg.degree)
+      if (prev && (prev.degree !== currentInt || prev.sign !== cfg.sign)) {
+        lastObservedDegreesRef.current[key] = { sign: cfg.sign, degree: currentInt }
+        triggerDegreeChangeEvent(key as BasketAgentKey, 0, {
+          sign: cfg.sign,
+          degree: cfg.degree,
+          isRealTimeIngress: true,
+        })
+        break
+      }
+    }
+  }, [agentsConfig, isReactionPlaying, triggerDegreeChangeEvent])
+
+  // Spontaneous conversation cadence when no ingress sequence or seeker inquiry is active
   useEffect(() => {
     if (!isAutonomousStreaming || isTyping || isReactionPlaying) return
 
     const timer = setInterval(() => {
-      const keys: BasketAgentKey[] = [
-        'sun',
-        'moon',
-        'mercury',
-        'venus',
-        'mars',
-        'jupiter',
-        'saturn',
-        'uranus',
-        'neptune',
-        'pluto',
-        'gregory',
-      ]
-      const candidates = keys.filter(k => k !== lastSpeakerKeyRef.current)
-      const nextKey = candidates[Math.floor(Math.random() * candidates.length)]
-      lastSpeakerKeyRef.current = nextKey
+      if (exchangeMachineRef.current.isActive() || isTyping || isReactionPlaying) return
 
-      const nextCfg = agentsConfig[nextKey]
-      setIsTyping(true)
-      setTypingAgent(nextCfg.name)
-
-      setTimeout(async () => {
-        const history = messagesRef.current
-        const fallbackText = generateSpontaneousCouncilResponse(
-          nextKey,
-          agentsConfig,
-          undefined,
-          lastSpeakerFrom(history)
-        )
-        const responseText = await fetchCouncilVoice({
-          agentKey: nextKey,
-          fallbackText,
-          sign: nextCfg.sign,
-          degree: nextCfg.degree,
-          degreeLabel: nextCfg.degreeLabel,
-          dignity: nextCfg.dignity,
-          retrograde: nextCfg.retrograde,
-          recentTurns: recentTurnsFrom(history),
-        })
-
-        setMessages(prevMsgs => [
-          ...prevMsgs,
-          {
-            id: `auto-${Date.now()}`,
-            agentKey: nextKey,
-            senderName: nextCfg.name,
-            senderRole: `${nextCfg.degreeLabel} ${nextCfg.sign}`,
-            senderGlyph: nextCfg.glyph,
-            element: nextCfg.element,
-            content: responseText,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          },
-        ])
-        setIsTyping(false)
-        setTypingAgent(null)
-      }, 5000)
+      exchangeMachineRef.current.startExchange({
+        recentTurns: recentTurnsFrom(messagesRef.current),
+        skyOverride: buildCurrentSkyOverride(),
+        turnDelayMs: 1200,
+        maxTurns: 1,
+      })
     }, 22000)
 
     return () => clearInterval(timer)
-  }, [isAutonomousStreaming, isTyping, isReactionPlaying, agentsConfig])
+  }, [isAutonomousStreaming, isTyping, isReactionPlaying, buildCurrentSkyOverride])
 
   // Handle user sending a prompt into the group chat
   const handleSendPrompt = (textToSend?: string) => {
@@ -1471,9 +1265,14 @@ export function CurrentPromotionalThread({
     if (!text || isTyping || isReactionPlaying) return
 
     const nowStr = new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
-    let fullPromptForCouncil = text
-    if (attachedChartContext) {
-      fullPromptForCouncil = `${attachedChartContext}\n\n[USER QUESTION]: ${text}`
+
+    // Check for saved versioned natal envelope or active chart context
+    let natalEnvelope: unknown = undefined
+    if (typeof window !== 'undefined') {
+      try {
+        const rawEnvelope = localStorage.getItem('alchm_active_chart_envelope')
+        if (rawEnvelope) natalEnvelope = JSON.parse(rawEnvelope)
+      } catch {}
     }
 
     setMessages(prev => [
@@ -1484,98 +1283,21 @@ export function CurrentPromotionalThread({
         content: text,
         timestamp: nowStr,
         isUser: true,
-        hasContextAttachment: !!attachedChartContext,
+        hasContextAttachment: !!attachedChartContext || !!natalEnvelope,
       },
     ])
     setInputPrompt('')
-    setIsTyping(true)
 
-    // Primary responding delegate
-    const primaryAgentKey: BasketAgentKey =
-      selectedAgentFilter !== 'all' ? selectedAgentFilter : Math.random() < 0.5 ? 'moon' : 'sun'
-
-    const secondAgentKey: BasketAgentKey =
-      selectedAgentFilter !== 'all' ? (primaryAgentKey === 'moon' ? 'sun' : 'moon') : 'mercury'
-
-    const primaryCfg = agentsConfig[primaryAgentKey]
-    setTypingAgent(primaryCfg.name)
-
-    setTimeout(async () => {
-      const history1 = messagesRef.current
-      const fallback1 = generateSpontaneousCouncilResponse(
-        primaryAgentKey,
-        agentsConfig,
-        fullPromptForCouncil,
-        lastSpeakerFrom(history1)
-      )
-      const text1 = await fetchCouncilVoice({
-        agentKey: primaryAgentKey,
-        userPrompt: fullPromptForCouncil,
-        attachedChartContext: attachedChartContext || undefined,
-        fallbackText: fallback1,
-        sign: primaryCfg.sign,
-        degree: primaryCfg.degree,
-        degreeLabel: primaryCfg.degreeLabel,
-        dignity: primaryCfg.dignity,
-        retrograde: primaryCfg.retrograde,
-        recentTurns: recentTurnsFrom(history1),
-      })
-
-      setMessages(prev => [
-        ...prev,
-        {
-          id: `bot-1-${Date.now()}`,
-          agentKey: primaryAgentKey,
-          senderName: primaryCfg.name,
-          senderRole: `${primaryCfg.degreeLabel} ${primaryCfg.sign}`,
-          senderGlyph: primaryCfg.glyph,
-          element: primaryCfg.element,
-          content: text1,
-          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-        },
-      ])
-
-      const secondCfg = agentsConfig[secondAgentKey]
-      setTypingAgent(secondCfg.name)
-
-      setTimeout(async () => {
-        const history2 = messagesRef.current
-        const fallback2 = generateSpontaneousCouncilResponse(
-          secondAgentKey,
-          agentsConfig,
-          fullPromptForCouncil,
-          lastSpeakerFrom(history2)
-        )
-        const text2 = await fetchCouncilVoice({
-          agentKey: secondAgentKey,
-          userPrompt: fullPromptForCouncil,
-          attachedChartContext: attachedChartContext || undefined,
-          fallbackText: fallback2,
-          sign: secondCfg.sign,
-          degree: secondCfg.degree,
-          degreeLabel: secondCfg.degreeLabel,
-          dignity: secondCfg.dignity,
-          retrograde: secondCfg.retrograde,
-          recentTurns: recentTurnsFrom(history2),
-        })
-
-        setMessages(prev => [
-          ...prev,
-          {
-            id: `bot-2-${Date.now()}`,
-            agentKey: secondAgentKey,
-            senderName: secondCfg.name,
-            senderRole: `${secondCfg.degreeLabel} ${secondCfg.sign}`,
-            senderGlyph: secondCfg.glyph,
-            element: secondCfg.element,
-            content: text2,
-            timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
-          },
-        ])
-        setIsTyping(false)
-        setTypingAgent(null)
-      }, 4000)
-    }, 3500)
+    // Delegate execution directly to ExchangeStateMachine
+    exchangeMachineRef.current.startExchange({
+      seekerInquiry: text,
+      targetDelegate: selectedAgentFilter !== 'all' ? selectedAgentFilter : undefined,
+      attachedNatalEnvelope: natalEnvelope || attachedChartContext,
+      recentTurns: recentTurnsFrom(messagesRef.current),
+      skyOverride: buildCurrentSkyOverride(),
+      turnDelayMs: () => (skipDelaysRef.current ? 0 : 1200),
+      maxTurns: 2,
+    })
   }
 
   const filteredMessages = useMemo(() => {
@@ -1594,7 +1316,12 @@ export function CurrentPromotionalThread({
           <div className="flex items-center gap-2 mb-2 flex-wrap">
             <span className="inline-flex items-center gap-1.5 px-3 py-1 border rounded-full text-[10px] font-mono-label font-bold tracking-widest uppercase bg-[#38bdf8]/20 border-[#38bdf8]/50 text-[#38bdf8]">
               <span className="w-2 h-2 rounded-full bg-[#38bdf8] animate-ping" />
-              LIVE CURRENT SKY CHAT ACTIVE
+              LIVE CURRENT SKY CHAT ACTIVE ·{' '}
+              {currentSkyTime.toLocaleTimeString([], {
+                hour: '2-digit',
+                minute: '2-digit',
+                second: '2-digit',
+              })}
             </span>
             <span className="inline-flex items-center gap-1 px-2.5 py-0.5 bg-[#fbbf24]/15 border border-[#fbbf24]/30 rounded-full text-[10px] font-mono-label tracking-wider text-[#fbbf24]">
               <Sun className="w-3 h-3" /> SUN {agentsConfig.sun.degreeLabel} {agentsConfig.sun.sign}
@@ -1622,6 +1349,24 @@ export function CurrentPromotionalThread({
 
         {/* Interactive Ingress Simulator Controls */}
         <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 shrink-0">
+          {Object.keys(degreeOverrides).length > 0 && (
+            <button
+              onClick={() => {
+                exchangeMachineRef.current.cancel()
+                setIsReactionPlaying(false)
+                setTransitioningPlanet(null)
+                setClosestPlanetKey(null)
+                setDegreeOverrides({})
+                hasInitializedSkyRef.current = false
+              }}
+              className="flex items-center justify-center gap-1.5 px-3 py-2 bg-[#fbbf24]/15 hover:bg-[#fbbf24]/25 border border-[#fbbf24]/40 rounded-xl text-xs font-mono-label font-bold text-[#fbbf24] transition-all active:scale-95"
+              title="Reset all degree overrides and resynchronize with the live astronomical sky"
+            >
+              <RotateCcw className="w-3.5 h-3.5" />
+              <span>↺ Reset to Live Sky</span>
+            </button>
+          )}
+
           <button
             onClick={() => triggerDegreeChangeEvent('moon', 1)}
             disabled={isReactionPlaying}
@@ -1679,7 +1424,10 @@ export function CurrentPromotionalThread({
             <Radio className="w-3 h-3 text-[#38bdf8]" /> Filter:
           </span>
           <button
-            onClick={() => setSelectedAgentFilter('all')}
+            onClick={() => {
+              setSelectedAgentFilter('all')
+              if (!isReactionPlaying) exchangeMachineRef.current.cancel()
+            }}
             className={`px-2.5 py-1 rounded-lg text-xs font-mono-label transition-all shrink-0 ${
               selectedAgentFilter === 'all'
                 ? 'bg-[#38bdf8] text-black font-bold'
@@ -1707,7 +1455,10 @@ export function CurrentPromotionalThread({
             return (
               <button
                 key={key}
-                onClick={() => setSelectedAgentFilter(key)}
+                onClick={() => {
+                  setSelectedAgentFilter(key)
+                  if (!isReactionPlaying) exchangeMachineRef.current.cancel()
+                }}
                 className={`px-2.5 py-1 rounded-lg text-xs font-mono-label transition-all shrink-0 flex items-center gap-1 ${
                   isSelected
                     ? 'bg-white/20 text-white font-bold border'
@@ -1866,6 +1617,34 @@ export function CurrentPromotionalThread({
                         {isMovingPlanetFinal && (
                           <span className="px-1.5 py-0.2 rounded bg-[#22d3ee]/20 border border-[#22d3ee]/50 text-[#22d3ee] text-[9px] font-mono-label uppercase font-bold animate-pulse">
                             NEW DEGREE INAUGURATION · FINAL WORD
+                          </span>
+                        )}
+
+                        {msg.provenance && (
+                          <span
+                            className="px-1.5 py-0.2 rounded text-[9px] font-mono-label uppercase font-bold"
+                            style={{
+                              backgroundColor:
+                                msg.provenance.source === 'model'
+                                  ? 'rgba(56, 189, 248, 0.15)'
+                                  : 'rgba(184, 252, 75, 0.15)',
+                              borderWidth: 1,
+                              borderStyle: 'solid',
+                              borderColor:
+                                msg.provenance.source === 'model'
+                                  ? 'rgba(56, 189, 248, 0.4)'
+                                  : 'rgba(184, 252, 75, 0.4)',
+                              color: msg.provenance.source === 'model' ? '#38bdf8' : '#b8fc4b',
+                            }}
+                            title={
+                              msg.provenance.source === 'model'
+                                ? `Live Model Generation (${msg.provenance.modelFamily || 'ai'}${msg.provenance.latencyMs ? ` · ${msg.provenance.latencyMs}ms` : ''})`
+                                : 'Interpretive Grounded Briefing (Astro-reduction)'
+                            }
+                          >
+                            {msg.provenance.source === 'model'
+                              ? 'AI Generated'
+                              : 'Grounded Briefing'}
                           </span>
                         )}
 
