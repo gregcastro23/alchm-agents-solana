@@ -1,5 +1,7 @@
 [workspace]
 members = ["programs/asol_program"]
+# Standalone crates with their own manifests (alchm-astro-core is vendored into Pentacles).
+exclude = ["alchm-astro-core"]
 resolver = "2"
 
 [profile.release]
