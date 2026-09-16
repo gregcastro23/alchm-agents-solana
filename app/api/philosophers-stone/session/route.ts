@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { requireUserOrService, resolveScopedUserId } from '@/lib/security/privileged-api-auth'
 import galileoLogger, { logQuantitiesToGalileo } from '@/lib/galileo-logger'
 
 export const dynamic = 'force-dynamic'
@@ -8,8 +9,15 @@ export const revalidate = 0
 // Minimal session persistence using UserSession
 
 export async function POST(req: Request) {
+  const access = await requireUserOrService(req)
+  if (!access.ok) return access.response
+
   try {
-    const { userId = 'guest', personalityId = 'stone', snapshot } = await req.json()
+    const { userId: requestedUserId, personalityId = 'stone', snapshot } = await req.json()
+
+    const scoped = resolveScopedUserId(access, requestedUserId)
+    if (!scoped.ok) return scoped.response
+    const userId = scoped.userId
     const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000)
     const created = await prisma.userSession.create({
       data: {
@@ -43,10 +51,16 @@ export async function POST(req: Request) {
 }
 
 export async function GET(req: Request) {
+  const access = await requireUserOrService(req)
+  if (!access.ok) return access.response
+
   try {
     const { searchParams } = new URL(req.url)
-    const userId = searchParams.get('userId') || 'guest'
     const personalityId = searchParams.get('personalityId') || 'stone'
+
+    const scoped = resolveScopedUserId(access, searchParams.get('userId'))
+    if (!scoped.ok) return scoped.response
+    const userId = scoped.userId
     const last = await prisma.userSession.findFirst({
       where: { userId, personalityId },
       orderBy: { lastActive: 'desc' },

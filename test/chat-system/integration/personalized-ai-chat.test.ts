@@ -3,6 +3,7 @@ import { NextRequest } from 'next/server'
 import { POST } from '@/app/api/personalized-ai-chat/route'
 import { createClaudeMessage } from '@/lib/anthropic-client'
 import { prisma, StreakTracker } from '@/lib/db'
+import { getServerSession } from 'next-auth'
 
 vi.mock('@/lib/db', () => ({
   prisma: {
@@ -26,6 +27,11 @@ vi.mock('@/lib/anthropic-client', () => ({
   anthropic: {},
   createClaudeMessage: vi.fn(),
 }))
+
+// The route requires a session: it spends model credits and writes progression
+// records. Present one, as a signed-in user calling it for their own id.
+vi.mock('next-auth', () => ({ getServerSession: vi.fn() }))
+vi.mock('next/headers', () => ({ cookies: () => ({ getAll: () => [] }) }))
 
 vi.mock('@/lib/personalized-ai/xp-system', () => ({
   calculateXP: vi.fn(() => ({
@@ -127,11 +133,17 @@ describe('Personalized AI Chat API Integration', () => {
     vi.mocked(createClaudeMessage).mockResolvedValue({
       content: [{ type: 'text', text: 'A clear agent response.' }],
     } as any)
+
+    vi.mocked(getServerSession).mockResolvedValue({
+      user: { id: 'user-1', email: 'user-1@example.com', name: 'User One', role: 'user' },
+      expires: new Date(Date.now() + 60_000).toISOString(),
+    } as never)
   })
 
   it('returns a non-empty personalized agent response', async () => {
     const request = new NextRequest('http://localhost/api/personalized-ai-chat', {
       method: 'POST',
+      headers: { origin: 'http://localhost', 'content-type': 'application/json' },
       body: JSON.stringify({
         message: 'Help me reflect on today.',
         personalityId: 'sage-1',
@@ -160,6 +172,7 @@ describe('Personalized AI Chat API Integration', () => {
 
     const request = new NextRequest('http://localhost/api/personalized-ai-chat', {
       method: 'POST',
+      headers: { origin: 'http://localhost', 'content-type': 'application/json' },
       body: JSON.stringify({
         message: 'Are you still there?',
         personalityId: 'sage-1',

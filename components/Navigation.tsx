@@ -23,6 +23,7 @@ import {
   NavigationMenuList,
   NavigationMenuTrigger,
 } from '@/components/ui/navigation-menu'
+import { signOutViaApi } from '@/lib/auth-signout'
 
 const navigationGroups = [
   {
@@ -323,7 +324,7 @@ export function Navigation() {
                 </Link>
                 <button
                   onClick={() => {
-                    window.location.href = '/api/logout'
+                    void signOutViaApi()
                   }}
                   className="nav-signout-btn"
                   aria-label="Sign Out"
@@ -426,7 +427,7 @@ export function Navigation() {
                     className="nav-mobile-action nav-mobile-signout"
                     onClick={() => {
                       setMobileMenuOpen(false)
-                      window.location.href = '/api/logout'
+                      void signOutViaApi()
                     }}
                   >
                     <LogOut className="w-4 h-4" /> Sign Out

@@ -7,6 +7,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { requireUserOrService, resolveScopedUserId } from '@/lib/security/privileged-api-auth'
 import {
   markNotificationAsRead,
   dismissNotification,
@@ -22,14 +23,16 @@ export const dynamic = 'force-dynamic'
  * Get specific notification by ID
  */
 export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const access = await requireUserOrService(request)
+  if (!access.ok) return access.response
+
   try {
     const { id } = await params
     const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId')
 
-    if (!userId) {
-      return NextResponse.json({ error: 'userId parameter is required' }, { status: 400 })
-    }
+    const scoped = resolveScopedUserId(access, searchParams.get('userId'))
+    if (!scoped.ok) return scoped.response
+    const userId = scoped.userId
 
     const notification = await prisma.transitNotification.findFirst({
       where: {
@@ -70,14 +73,16 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
  * Update notification (mark as read, dismiss, etc.)
  */
 export async function PUT(request: NextRequest, { params }: { params: Promise<{ id: string }> }) {
+  const access = await requireUserOrService(request)
+  if (!access.ok) return access.response
+
   try {
     const body = await request.json()
     const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId')
 
-    if (!userId) {
-      return NextResponse.json({ error: 'userId parameter is required' }, { status: 400 })
-    }
+    const scoped = resolveScopedUserId(access, searchParams.get('userId'))
+    if (!scoped.ok) return scoped.response
+    const userId = scoped.userId
 
     const { id } = await params
     const { action, ...updateData } = body
@@ -165,13 +170,15 @@ export async function DELETE(
   request: NextRequest,
   { params }: { params: Promise<{ id: string }> }
 ) {
+  const access = await requireUserOrService(request)
+  if (!access.ok) return access.response
+
   try {
     const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId')
 
-    if (!userId) {
-      return NextResponse.json({ error: 'userId parameter is required' }, { status: 400 })
-    }
+    const scoped = resolveScopedUserId(access, searchParams.get('userId'))
+    if (!scoped.ok) return scoped.response
+    const userId = scoped.userId
 
     const { id } = await params
     const notification = await prisma.transitNotification.deleteMany({

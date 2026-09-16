@@ -15,6 +15,7 @@ import {
   updateUserNotificationPreferences,
   getNotificationStatistics,
 } from '@/lib/services/transit-notification-service'
+import { requireUserOrService, resolveScopedUserId } from '@/lib/security/privileged-api-auth'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
@@ -24,13 +25,15 @@ export const dynamic = 'force-dynamic'
  * Get user's notifications
  */
 export async function GET(request: NextRequest) {
+  const access = await requireUserOrService(request)
+  if (!access.ok) return access.response
+
   try {
     const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId')
 
-    if (!userId) {
-      return NextResponse.json({ error: 'userId parameter is required' }, { status: 400 })
-    }
+    const scoped = resolveScopedUserId(access, searchParams.get('userId'))
+    if (!scoped.ok) return scoped.response
+    const userId = scoped.userId
 
     const limit = Math.min(parseInt(searchParams.get('limit') || '50'), 100)
     const includeRead = searchParams.get('includeRead') === 'true'
@@ -75,15 +78,18 @@ export async function GET(request: NextRequest) {
  * Create a new notification (admin/manual creation)
  */
 export async function POST(request: NextRequest) {
+  const access = await requireUserOrService(request)
+  if (!access.ok) return access.response
+
   try {
     const body = await request.json()
 
+    const scoped = resolveScopedUserId(access, body.userId)
+    if (!scoped.ok) return scoped.response
+    const userId = scoped.userId
+
     // If it's a preferences update request from integration test
     if (body.notificationType || body.channels || body.threshold !== undefined) {
-      const userId = body.userId
-      if (!userId) {
-        return NextResponse.json({ error: 'userId is required' }, { status: 400 })
-      }
       await updateUserNotificationPreferences(userId, {
         enabled: body.enabled,
         threshold: body.threshold,
@@ -97,7 +103,6 @@ export async function POST(request: NextRequest) {
 
     // Validate required fields
     const requiredFields = [
-      'userId',
       'natalChartId',
       'title',
       'message',
@@ -161,7 +166,7 @@ export async function POST(request: NextRequest) {
     }
 
     const notification = await createTransitNotification({
-      userId: body.userId,
+      userId,
       natalChartId: body.natalChartId,
       transitSignificanceId: body.transitSignificanceId,
       transitSignificanceData: body.transitSignificanceData,

@@ -3,6 +3,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma, StreakTracker } from '@/lib/db'
 import { anthropic, createClaudeMessage } from '@/lib/anthropic-client'
+import { requireUserOrService, resolveScopedUserId } from '@/lib/security/privileged-api-auth'
 import { calculateXP, calculateInteractionQuality } from '@/lib/personalized-ai/xp-system'
 import { calculateLevel, checkLevelUp } from '@/lib/personalized-ai/level-system'
 import { checkAchievements, ACHIEVEMENT_DEFINITIONS } from '@/lib/personalized-ai/achievements'
@@ -21,21 +22,29 @@ import type {
 } from '@/lib/types/personalized-ai'
 
 export async function POST(request: NextRequest) {
+  // This route spends model credits on the platform's key and writes to the
+  // caller's progression records, so it fails closed: no session, no call.
+  const access = await requireUserOrService(request, { failClosed: true })
+  if (!access.ok) return access.response
+
   try {
     const body: PersonalizedAIChatRequest = await request.json()
 
     // Validate required fields
-    if (!body.message || !body.personalityId || !body.userId) {
+    if (!body.message || !body.personalityId) {
       return NextResponse.json(
-        { success: false, message: 'Missing required fields: message, personalityId, and userId' },
+        { success: false, message: 'Missing required fields: message and personalityId' },
         { status: 400 }
       )
     }
 
+    const scoped = resolveScopedUserId(access, body.userId)
+    if (!scoped.ok) return scoped.response
+    const userId = scoped.userId
+
     const {
       message,
       personalityId,
-      userId,
       trainingFocus,
       feedbackData,
       context,

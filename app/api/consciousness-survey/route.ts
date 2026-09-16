@@ -2,6 +2,7 @@
 
 import { NextRequest, NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { requireUserOrService, resolveScopedUserId } from '@/lib/security/privileged-api-auth'
 import { processSurveyResponses } from '@/lib/consciousness-survey/survey-processor'
 import { initializeConsciousnessState } from '@/lib/consciousness-survey/consciousness-initializer'
 import { createDualChartSystem } from '@/lib/personalized-ai/dual-chart'
@@ -27,21 +28,28 @@ interface ConsciousnessSurveyRequest {
 }
 
 export async function POST(request: NextRequest) {
+  const access = await requireUserOrService(request)
+  if (!access.ok) return access.response
+
   try {
     const body: ConsciousnessSurveyRequest = await request.json()
 
     // Validate required fields
-    if (!body.userId || !body.birthInfo || !body.surveyResponses) {
+    if (!body.birthInfo || !body.surveyResponses) {
       return NextResponse.json(
         {
           success: false,
-          message: 'Missing required fields: userId, birthInfo, and surveyResponses',
+          message: 'Missing required fields: birthInfo and surveyResponses',
         },
         { status: 400 }
       )
     }
 
-    const { userId, birthInfo, surveyResponses, timeSpent, horoscopeData } = body
+    const scoped = resolveScopedUserId(access, body.userId)
+    if (!scoped.ok) return scoped.response
+    const userId = scoped.userId
+
+    const { birthInfo, surveyResponses, timeSpent, horoscopeData } = body
 
     console.log('Processing consciousness survey for user:', userId)
 
@@ -240,13 +248,15 @@ function generateEnhancedTrainingScores(surveyAnalysis: any, birthChart: any): a
 
 // GET /api/consciousness-survey/[userId] - Retrieve user's consciousness data
 export async function GET(request: NextRequest) {
+  const access = await requireUserOrService(request)
+  if (!access.ok) return access.response
+
   try {
     const url = new URL(request.url)
-    const userId = url.pathname.split('/').pop()
 
-    if (!userId) {
-      return NextResponse.json({ success: false, message: 'User ID is required' }, { status: 400 })
-    }
+    const scoped = resolveScopedUserId(access, url.searchParams.get('userId'))
+    if (!scoped.ok) return scoped.response
+    const userId = scoped.userId
 
     // Fetch user's consciousness data
     const consciousnessProfile = await prisma.consciousnessProfile.findFirst({

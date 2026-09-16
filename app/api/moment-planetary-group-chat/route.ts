@@ -4,7 +4,9 @@ import { createMomentPlanetaryAgents } from '@/lib/services/planetary-agent-acti
 
 export async function POST(request: NextRequest) {
   try {
-    const { date, userId = 'demo-user' } = await request.json()
+    // This route derives planetary positions for a date and nothing else. It
+    // takes no identity, because it has nothing to scope to one.
+    const { date } = await request.json()
 
     if (!date) {
       return NextResponse.json({ error: 'Date is required' }, { status: 400 })

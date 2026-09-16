@@ -1,7 +1,7 @@
 import 'server-only'
 
 import { NextResponse } from 'next/server'
-import { auth, type SessionUser } from '@/lib/auth'
+import { resolveAuth, type SessionUser } from '@/lib/auth'
 import { adminErrorResponse, requireAdmin, type AdminAuthSuccess } from '@/lib/admin-auth'
 import { hasPrivilegedInternalApiSecret } from '@/lib/security/internal-auth'
 import type { AdminAuditActor } from '@/lib/admin/audit'
@@ -98,17 +98,35 @@ export async function requireAdminRequest(request: Request): Promise<AdminReques
   return { ok: true, admin }
 }
 
-/** Authorize a signed-in product user or a server-to-server credential. */
+/**
+ * Authorize a signed-in product user or a server-to-server credential.
+ *
+ * `failClosed` is for money routes — anything that spends or credits tokens,
+ * calls the kitchen's economy endpoints, touches Stripe or wallets, or runs a
+ * paid model call on the platform's key. When identity cannot be established
+ * because the kitchen bridge errored or timed out, such a route must refuse
+ * (503) rather than proceed as an anonymous-but-allowed caller. Ordinary read
+ * paths keep degrading to 401.
+ */
 export async function requireUserOrService(
   request: Request,
-  options: { allowAnonymous?: boolean } = {}
+  options: { allowAnonymous?: boolean; failClosed?: boolean } = {}
 ): Promise<UserOrServiceAccess> {
   if (hasPrivilegedInternalApiSecret(request)) {
     return { ok: true, kind: 'service', source: 'internal-secret' }
   }
 
-  const session = await auth()
+  const { session, identityUnavailable } = await resolveAuth()
   if (!session?.user?.id) {
+    if (options.failClosed && identityUnavailable) {
+      return {
+        ok: false,
+        response: NextResponse.json(
+          { error: 'Identity verification unavailable' },
+          { status: 503, headers: { 'Retry-After': '30' } }
+        ),
+      }
+    }
     if (options.allowAnonymous) {
       if (!hasValidMutationOrigin(request)) return invalidOrigin()
       return { ok: true, kind: 'anonymous' }
@@ -121,4 +139,53 @@ export async function requireUserOrService(
   if (!hasValidMutationOrigin(request)) return invalidOrigin()
 
   return { ok: true, kind: 'user', user: session.user }
+}
+
+export type ScopedUserId = { ok: true; userId: string } | { ok: false; response: NextResponse }
+
+/**
+ * Resolve the user id a user-scoped route may act on.
+ *
+ * Identity comes from the session. A caller-supplied `userId` is honoured only
+ * on the service-credential path; for a signed-in user it must match their own
+ * id, and a mismatch is a 403 rather than a silent read of someone else's row.
+ *
+ * Pass the result of `requireUserOrService(request)` — called WITHOUT
+ * `allowAnonymous`, since an anonymous caller has no scope to resolve.
+ */
+export function resolveScopedUserId(
+  access: Extract<UserOrServiceAccess, { ok: true }>,
+  requestedUserId: string | null | undefined
+): ScopedUserId {
+  const requested = typeof requestedUserId === 'string' ? requestedUserId.trim() : ''
+
+  if (access.kind === 'service') {
+    // A service credential acts on behalf of a named user; it must name one.
+    if (!requested) {
+      return {
+        ok: false,
+        response: NextResponse.json(
+          { error: 'userId is required for service requests' },
+          { status: 400 }
+        ),
+      }
+    }
+    return { ok: true, userId: requested }
+  }
+
+  if (access.kind === 'anonymous') {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: 'Authentication required' }, { status: 401 }),
+    }
+  }
+
+  if (requested && requested !== access.user.id) {
+    return {
+      ok: false,
+      response: NextResponse.json({ error: 'Forbidden' }, { status: 403 }),
+    }
+  }
+
+  return { ok: true, userId: access.user.id }
 }

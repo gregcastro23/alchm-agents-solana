@@ -2,7 +2,7 @@ import { getServerSession } from 'next-auth'
 import { authOptions } from './auth-options'
 import { cookies } from 'next/headers'
 import { unstable_rethrow } from 'next/navigation'
-import { resolveBridgeUser } from './auth-bridge'
+import { resolveBridgeOutcome, type BridgeOutcome } from './auth-bridge'
 
 export type SessionUser = {
   id: string
@@ -23,23 +23,35 @@ export type Session = {
   user: SessionUser
 }
 
-export async function auth(): Promise<Session | null> {
-  // 1. Native PA session first (PA's own Google OAuth flow). Existing users
-  //    short-circuit here and pay zero network cost.
+/**
+ * Resolve identity, reporting how confident we are.
+ *
+ * `identityUnavailable` means we could not establish who the caller is — the
+ * kitchen bridge errored or timed out. That is NOT the same as "signed out",
+ * and a route that spends money must refuse rather than serve an anonymous
+ * best-effort. Ordinary read paths may keep degrading to null.
+ */
+export type AuthResolution = {
+  session: Session | null
+  identityUnavailable: boolean
+}
+
+export async function resolveAuth(): Promise<AuthResolution> {
+  let nativeUser: SessionUser | null = null
+
+  // 1. Native PA session first (PA's own Google OAuth flow).
   try {
     const session = await getServerSession(authOptions)
     if (session?.user) {
       const u = session.user as any
       if (u.id) {
-        return {
-          user: {
-            id: u.id,
-            email: u.email ?? null,
-            name: u.name ?? null,
-            image: u.image ?? null,
-            role: u.role ?? null,
-            tier: u.tier ?? null,
-          },
+        nativeUser = {
+          id: u.id,
+          email: u.email ?? null,
+          name: u.name ?? null,
+          image: u.image ?? null,
+          role: u.role ?? null,
+          tier: u.tier ?? null,
         }
       }
     }
@@ -51,8 +63,8 @@ export async function auth(): Promise<Session | null> {
   }
 
   // 2. Cross-site bridge: the user may be signed in on alchm.kitchen, whose
-  //    session cookie is shared on `.alchm.kitchen`. Forward the cookies and let
-  //    the kitchen identify them. See lib/auth-bridge.ts. Never throws.
+  //    session cookie is shared on `.alchm.kitchen`. See lib/auth-bridge.ts.
+  let outcome: BridgeOutcome = { status: 'anonymous' }
   try {
     const c = await cookies()
     const cookieHeader = c
@@ -60,27 +72,51 @@ export async function auth(): Promise<Session | null> {
       .map(ck => `${ck.name}=${ck.value}`)
       .join('; ')
     if (cookieHeader) {
-      const bridged = await resolveBridgeUser(cookieHeader)
-      if (bridged) {
-        return {
-          user: {
-            id: bridged.id,
-            email: bridged.email,
-            name: bridged.name,
-            image: bridged.image,
-            role: bridged.role,
-            tier: bridged.tier,
-            kitchenPremium: bridged.kitchenPremium,
-          },
-        }
-      }
+      outcome = await resolveBridgeOutcome(cookieHeader)
     }
   } catch (err) {
     unstable_rethrow(err)
     console.warn('[auth] bridge resolution failed', err)
+    outcome = { status: 'unavailable' }
   }
 
-  return null
+  if (outcome.status === 'user') {
+    const bridged = outcome.user
+
+    // The two sites disagree about who is signed in. The kitchen is the shared
+    // sign-in of record, so prefer it — otherwise signing out there leaves this
+    // app acting as the previous account.
+    if (nativeUser && nativeUser.email && bridged.email !== nativeUser.email) {
+      console.warn(
+        '[auth] native and bridged identities disagree; preferring the kitchen identity',
+        { nativeUserId: nativeUser.id, bridgedUserId: bridged.id }
+      )
+    }
+
+    return {
+      session: {
+        user: {
+          id: bridged.id,
+          email: bridged.email,
+          name: bridged.name,
+          image: bridged.image,
+          role: bridged.role,
+          tier: bridged.tier,
+          kitchenPremium: bridged.kitchenPremium,
+        },
+      },
+      identityUnavailable: false,
+    }
+  }
+
+  if (nativeUser) return { session: { user: nativeUser }, identityUnavailable: false }
+
+  return { session: null, identityUnavailable: outcome.status === 'unavailable' }
+}
+
+export async function auth(): Promise<Session | null> {
+  const { session } = await resolveAuth()
+  return session
 }
 
 export async function requireAuthOrRedirect(): Promise<SessionUser | null> {

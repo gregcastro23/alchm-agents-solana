@@ -6,6 +6,32 @@ import { getPaTier } from '@/lib/premium/entitlements'
 const DB_TIMEOUT_MS = 5000
 const DEV_AUTH_SECRET = 'consciousness-evolution-secret-dev-only'
 
+/**
+ * Session lifetime policy.
+ *
+ * `IDLE_MAX_AGE_SECONDS` is the rolling window NextAuth already enforced: a
+ * token unused for this long stops being accepted. `ABSOLUTE_MAX_AGE_MS` is the
+ * new ceiling — however actively a session is used, it ends this long after the
+ * sign-in that created it, so a stolen token cannot be renewed forever.
+ */
+export const IDLE_MAX_AGE_SECONDS = 7 * 24 * 60 * 60
+export const ABSOLUTE_MAX_AGE_MS = 30 * 24 * 60 * 60 * 1000
+
+/**
+ * Tokens minted before this policy existed carry no `authTime`. Signing that
+ * whole population out at once would be an outage, so they are stamped on first
+ * sight and their 30 days run from then.
+ */
+export function resolveAuthTime(
+  existing: unknown,
+  now: number
+): { authTime: number; expired: boolean } {
+  if (typeof existing !== 'number' || !Number.isFinite(existing)) {
+    return { authTime: now, expired: false }
+  }
+  return { authTime: existing, expired: now - existing > ABSOLUTE_MAX_AGE_MS }
+}
+
 function getAuthSecret(): string {
   const configured = process.env.AUTH_SECRET || process.env.NEXTAUTH_SECRET
   if (configured) return configured
@@ -36,11 +62,11 @@ export const authOptions: import('next-auth').NextAuthOptions = {
   ],
   session: {
     strategy: 'jwt',
-    maxAge: 7 * 24 * 60 * 60,
+    maxAge: IDLE_MAX_AGE_SECONDS,
   },
   secret: getAuthSecret(),
   jwt: {
-    maxAge: 7 * 24 * 60 * 60,
+    maxAge: IDLE_MAX_AGE_SECONDS,
   },
   pages: {
     signIn: '/auth/signin',
@@ -81,6 +107,20 @@ export const authOptions: import('next-auth').NextAuthOptions = {
       return true
     },
     async jwt({ token, user, account }) {
+      const now = Date.now()
+
+      // Stamp the sign-in instant, then refuse to renew past the absolute cap.
+      // Returning an empty token ends the session: NextAuth cannot resolve a
+      // user from it, so `getServerSession` yields null and the caller is
+      // treated as signed out.
+      if (user && account) {
+        token.authTime = now
+      } else {
+        const { authTime, expired } = resolveAuthTime(token.authTime, now)
+        if (expired) return {}
+        token.authTime = authTime
+      }
+
       // Initial sign-in
       if (user && account?.provider === 'google') {
         try {

@@ -8,6 +8,7 @@ import { Badge } from '@/components/ui/badge'
 import { Sparkles, Crown, Users, Zap, Settings, LogOut, Star } from 'lucide-react'
 import dynamic from 'next/dynamic'
 import { usePerformanceMonitor } from '@/hooks/use-performance-monitor'
+import { signOutViaApi } from '@/lib/auth-signout'
 
 const PlanetaryPositionsMonitor = dynamic(
   () => import('@/components/dashboards/PlanetaryPositionsMonitor'),
@@ -53,7 +54,7 @@ export function DashboardClient({ user }: DashboardClientProps) {
   }, [])
 
   const handleSignOut = () => {
-    window.location.href = '/api/logout'
+    void signOutViaApi()
   }
 
   const getTierColor = (tier: string) => {
