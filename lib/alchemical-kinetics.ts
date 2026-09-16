@@ -1,3 +1,19 @@
+import {
+  hand as computeHand,
+  pillarById,
+  type ChartInput,
+  type Esms,
+  type PillarSpec,
+  type Sect,
+} from '@/lib/alchemy/pillars'
+import {
+  circuitState,
+  potency,
+  resolveDuel,
+  type CircuitState,
+  type DuelOutcome,
+} from '@/lib/alchemical-circuit'
+
 /**
  * Classical Alchemical Kinetics Module
  * -----------------------------------
@@ -697,4 +713,86 @@ export function validateKineticResults(
     ? 'Kinetics align with classical expectations.'
     : 'Kinetics deviate from some classical expectations.'
   return { isValid, warnings, traditionalAssessment }
+}
+
+// ── Fourteen Pillars & Alchemical Circuit Integration ───────────────────────
+
+/**
+ * Determine diurnal vs nocturnal sect from local time / sun hour.
+ * Assumes 6:00 to 18:00 local time is diurnal if no exact solar altitude is provided.
+ */
+export function determineSkySect(
+  date: Date = new Date(),
+  latitude?: number,
+  longitude?: number
+): 'diurnal' | 'nocturnal' {
+  // If geographical coordinates are provided, compute approximate solar altitude
+  if (typeof latitude === 'number' && typeof longitude === 'number') {
+    const utcHours = date.getUTCHours() + date.getUTCMinutes() / 60
+    const solarTime = (utcHours + longitude / 15 + 24) % 24
+    return solarTime >= 6 && solarTime < 18 ? 'diurnal' : 'nocturnal'
+  }
+  const hours = date.getHours()
+  return hours >= 6 && hours < 18 ? 'diurnal' : 'nocturnal'
+}
+
+/**
+ * Evaluate legal Fourteen Pillars hand for a given chart and sky sect.
+ */
+export function getPillarHand(
+  chart: ChartInput,
+  sky: 'diurnal' | 'nocturnal'
+): readonly PillarSpec[] {
+  const ids = computeHand(chart, sky)
+  return ids.map(id => pillarById(id)).filter((p): p is PillarSpec => p !== undefined)
+}
+
+/**
+ * Compute the P = IV alchemical electrical state for a chart and current ESMS pools.
+ */
+export function getPillarCircuitState(chart: ChartInput, pools: Esms): CircuitState {
+  return circuitState(chart, pools)
+}
+
+/**
+ * Select the optimal best-response pillar from an agent's legal hand
+ * against an opponent's known or expected play.
+ */
+export function selectBestPillarResponse(
+  myChart: ChartInput,
+  myPools: Esms,
+  opponentChart: ChartInput,
+  opponentPools: Esms,
+  opponentPillarId: number,
+  sky: 'diurnal' | 'nocturnal'
+): {
+  bestPillar: PillarSpec
+  outcome: DuelOutcome
+  win: boolean
+} | null {
+  const legalPillars = getPillarHand(myChart, sky)
+  if (legalPillars.length === 0) return null
+
+  let bestChoice: { bestPillar: PillarSpec; outcome: DuelOutcome; win: boolean } | null = null
+  let bestRatioDiff = -Infinity
+
+  for (const pillar of legalPillars) {
+    try {
+      const outcome = resolveDuel(
+        { chart: opponentChart, pools: opponentPools, pillarId: opponentPillarId },
+        { chart: myChart, pools: myPools, pillarId: pillar.id }
+      )
+      // We are participant B in this duel simulation
+      const ratioDiff = outcome.ratioB - outcome.ratioA
+      const win = outcome.winner === 'b'
+      if (ratioDiff > bestRatioDiff) {
+        bestRatioDiff = ratioDiff
+        bestChoice = { bestPillar: pillar, outcome, win }
+      }
+    } catch {
+      // Skip invalid pairings
+    }
+  }
+
+  return bestChoice
 }
