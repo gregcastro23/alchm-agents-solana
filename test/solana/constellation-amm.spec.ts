@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 /**
  * Constellation AMM client suite.
  *

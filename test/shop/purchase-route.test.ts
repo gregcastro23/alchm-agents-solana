@@ -1,13 +1,14 @@
-import { mock } from 'bun:test'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
-mock.module('server-only', () => ({}))
+// `server-only` is stubbed globally in test/setup.ts; this file used bun:test's
+// mock.module for it, which is undefined under vitest and broke collection.
 vi.mock('@/lib/auth', () => ({ auth: vi.fn() }))
 vi.mock('@/lib/db', () => ({ prisma: { users: { findUnique: vi.fn() } } }))
 vi.mock('@/lib/shop/entitlement', () => ({
   hasUnlock: vi.fn(),
   grantPurchase: vi.fn(),
   listUnlocks: vi.fn(),
+  isOrderFulfilled: vi.fn(),
 }))
 vi.mock('@/lib/esms-chain/contract', () => ({
   buildRedeemAuthChallenge: vi.fn(),
@@ -25,7 +26,7 @@ vi.mock('@/lib/esms-chain/redeemer', () => ({
 const { POST } = await import('@/app/api/shop/purchase/route')
 const { auth } = await import('@/lib/auth')
 const { prisma } = await import('@/lib/db')
-const { hasUnlock, grantPurchase } = await import('@/lib/shop/entitlement')
+const { hasUnlock, grantPurchase, isOrderFulfilled } = await import('@/lib/shop/entitlement')
 const { buildRedeemAuthChallenge, esmsOnchainConfigured, readEsmsBalances, readEsmsRedeemed } =
   await import('@/lib/esms-chain/contract')
 const { redeemEsmsFor, redeemerConfigured, toOnchainAmounts, verifyRedeem } =
@@ -63,6 +64,8 @@ beforeEach(() => {
   ;(verifyRedeem as any).mockResolvedValue(true)
   ;(hasUnlock as any).mockResolvedValue(false)
   ;(grantPurchase as any).mockResolvedValue(true)
+  // Default: this order has not already been fulfilled on the other rail.
+  ;(isOrderFulfilled as any).mockResolvedValue(false)
 })
 
 describe('POST /api/shop/purchase', () => {
