@@ -42,7 +42,11 @@ jobs:
       - name: Run application test suite
         if: '!cancelled()'
         run: bunx vitest run test/
+      # Independent of the test suite above, for the same reason the Python Kalchm
+      # gate is independent of the TypeScript one: a failing test must not stop
+      # the build from being checked, or a broken build hides behind a red test.
       - name: Build application
+        if: '!cancelled()'
         run: bun run build
         env:
           AUTH_SECRET: ci-build-only-auth-secret
