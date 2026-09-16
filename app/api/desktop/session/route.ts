@@ -1,14 +1,17 @@
 import { NextResponse } from 'next/server'
 
 import { auth } from '@/lib/auth'
-import { prisma } from '@/lib/db'
 import { EconomyService } from '@/lib/services/economyService'
 import { buildProfileYieldStateFromBalances } from '@/lib/profile-yield'
+import {
+  authenticateDesktopApiKey,
+  extractDesktopApiKey,
+  DEV_DESKTOP_API_KEY,
+} from '@/lib/security/desktop-auth'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
-const DEV_DESKTOP_API_KEY = process.env.DESKTOP_DEV_API_KEY || 'dev-desktop-token'
 const DEV_DESKTOP_USER_ID = process.env.DESKTOP_DEV_USER_ID || 'desktop-local'
 
 /**
@@ -59,32 +62,13 @@ export async function GET(req: Request) {
   let userId: string | undefined = undefined
   let token: string | undefined = undefined
 
-  // 1. Try to authenticate via Authorization: Bearer <apiKey> header
-  const authHeader = req.headers.get('Authorization')
-  if (authHeader && authHeader.startsWith('Bearer ')) {
-    token = authHeader.split(' ')[1]
-    if (token && token !== 'dev-desktop-token') {
-      try {
-        const apiKeyRecord = await prisma.desktopApiKey.findFirst({
-          where: {
-            token,
-            isActive: true,
-            OR: [{ expiresAt: null }, { expiresAt: { gt: new Date() } }],
-          },
-        })
-        if (apiKeyRecord) {
-          userId = apiKeyRecord.userId
-          // Update last used timestamp asynchronously
-          prisma.desktopApiKey
-            .update({
-              where: { id: apiKeyRecord.id },
-              data: { lastUsedAt: new Date() },
-            })
-            .catch(err => console.error('Failed to update desktop key lastUsedAt:', err))
-        }
-      } catch (err) {
-        console.error('Failed to authenticate bearer token from database:', err)
-      }
+  // 1. Try to authenticate via Authorization: Bearer <apiKey> or x-api-key header
+  const desktopToken = extractDesktopApiKey(req)
+  if (desktopToken) {
+    const desktopAuth = await authenticateDesktopApiKey(desktopToken)
+    if (desktopAuth.status === 'verified') {
+      userId = desktopAuth.userId
+      token = desktopAuth.token
     }
   }
 
