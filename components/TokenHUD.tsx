@@ -10,6 +10,7 @@ import { DAILY_ESMS_YIELD, type TokenType } from '@/lib/economy-config'
 import { usePathname } from 'next/navigation'
 import { Sparkles, Zap, Box, Droplets } from 'lucide-react'
 import type { TokenBalances } from '@/lib/services/economyService'
+import { AlchmVesselWidget } from '@/components/AlchmVesselWidget'
 
 export function TokenHUD() {
   const { data: session, status } = useSession()
@@ -21,6 +22,7 @@ export function TokenHUD() {
   >(null)
   const [loading, setLoading] = useState(true)
   const [claiming, setClaiming] = useState(false)
+  const [vesselOpen, setVesselOpen] = useState(false)
   const { toast } = useToast()
 
   const fetchBalances = async () => {
@@ -142,6 +144,7 @@ export function TokenHUD() {
                 : 'Claim Daily Yield'}
           </Button>
         </div>
+        {vesselOpen && <AlchmVesselWidget variant="compact" />}
         <div className="flex gap-4 px-2" role="group" aria-label="ESMS Token balances">
           <div
             className="flex flex-col items-center group"
@@ -196,13 +199,24 @@ export function TokenHUD() {
             <span className="font-mono text-sm">{balances.substance}</span>
           </div>
         </div>
-        <Link
-          href="/shop?tab=tokens"
-          className="text-center text-[11px] font-medium text-indigo-300 hover:text-indigo-200"
-          title="Acquire ESMS Bundles in the ESMS Bazaar"
-        >
-          Acquire ESMS Bundles
-        </Link>
+        <div className="flex items-center justify-center gap-4">
+          <button
+            type="button"
+            onClick={() => setVesselOpen(open => !open)}
+            aria-expanded={vesselOpen}
+            className="text-[11px] font-medium text-amber-300 hover:text-amber-200"
+            title="Cross-app Alchm Vessel: duel, yield, arena and kitchen streams"
+          >
+            {vesselOpen ? 'Hide Vessel' : 'Alchm Vessel'}
+          </button>
+          <Link
+            href="/shop?tab=tokens"
+            className="text-center text-[11px] font-medium text-indigo-300 hover:text-indigo-200"
+            title="Acquire ESMS Bundles in the ESMS Bazaar"
+          >
+            Acquire ESMS Bundles
+          </Link>
+        </div>
       </div>
     </Card>
   )

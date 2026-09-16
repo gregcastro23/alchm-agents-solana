@@ -9,6 +9,7 @@ import { fetchRenderSupplementalData } from '@/lib/agents/render-supplemental'
 import { getProfileYieldState, type ProfileYieldState } from '@/lib/profile-yield'
 import { ProfileYieldPanel } from '@/components/profile/ProfileYieldPanel'
 import { QuickChartAttachmentGenerator } from '@/components/landing/quick-chart-attachment-generator'
+import { AlchmVesselWidget } from '@/components/AlchmVesselWidget'
 import { MeClient } from '../me/MeClient'
 import { DesktopLinkBridge } from '@/components/auth/DesktopLinkBridge'
 import '../me/me.css'
@@ -104,6 +105,7 @@ export default async function ProfilePage({
               </p>
             </div>
             <ProfileYieldPanel initialWallet={wallet} />
+            <AlchmVesselWidget />
             <ProfileOnboardingForm />
             <div className="mt-8">
               <QuickChartAttachmentGenerator />
