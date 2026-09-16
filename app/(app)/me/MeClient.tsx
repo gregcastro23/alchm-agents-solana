@@ -8,6 +8,7 @@ import type { ZodiacTheme } from '@/lib/zodiac-utils'
 import type { ProfileYieldState } from '@/lib/profile-yield'
 import { ProfileYieldPanel } from '@/components/profile/ProfileYieldPanel'
 import { QuickChartAttachmentGenerator } from '@/components/landing/quick-chart-attachment-generator'
+import { AlchmVesselWidget } from '@/components/AlchmVesselWidget'
 import {
   Compass,
   Users,
@@ -936,6 +937,7 @@ export function MeClient({
       </div>
 
       <ProfileYieldPanel initialWallet={wallet} />
+      <AlchmVesselWidget />
 
       {/* Explore the Cosmos — Site Tour */}
       <div className="me-section-title">
