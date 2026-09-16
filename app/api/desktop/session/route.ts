@@ -10,6 +10,17 @@ export const revalidate = 0
 
 const DEV_DESKTOP_API_KEY = process.env.DESKTOP_DEV_API_KEY || 'dev-desktop-token'
 const DEV_DESKTOP_USER_ID = process.env.DESKTOP_DEV_USER_ID || 'desktop-local'
+
+/**
+ * The local-dev session is a convenience for running the desktop shell against
+ * a dev server without signing in. It reports balances of 150 that no ledger
+ * backs, so production must never serve it: a client that cannot tell this
+ * apart from a real session shows the user tokens they do not own.
+ */
+function isProductionRuntime(): boolean {
+  return process.env.VERCEL_ENV === 'production' || process.env.NODE_ENV === 'production'
+}
+
 function localDevSession() {
   const balances = { spirit: 150, essence: 150, matter: 150, substance: 150 }
   return {
@@ -83,8 +94,12 @@ export async function GET(req: Request) {
     userId = session?.user.id
   }
 
-  // 3. If still unauthenticated, return the local-dev session
+  // 3. If still unauthenticated: in production this is simply an unauthenticated
+  //    request. Only a non-production runtime may fall back to the fake session.
   if (!userId) {
+    if (isProductionRuntime()) {
+      return NextResponse.json({ error: 'Authentication required' }, { status: 401 })
+    }
     return NextResponse.json(localDevSession())
   }
 

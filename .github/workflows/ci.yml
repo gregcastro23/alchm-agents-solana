@@ -34,7 +34,19 @@ jobs:
         run: python3 scripts/check_no_stray_kalchm_formula.py
       - name: Run Solana protocol unit and metadata tests
         run: bun run test:solana:unit
+      # Until this step existed, `test:solana:unit` was CI's only vitest run and
+      # its include is `test/solana/**`, so the whole `test/` suite — the API
+      # authorization and session tests among it — never ran on a pull request.
+      # `!cancelled()` so a Solana failure cannot stop it, for the same reason
+      # the Python Kalchm gate above runs independently.
+      - name: Run application test suite
+        if: '!cancelled()'
+        run: bunx vitest run test/
+      # Independent of the test suite above, for the same reason the Python Kalchm
+      # gate is independent of the TypeScript one: a failing test must not stop
+      # the build from being checked, or a broken build hides behind a red test.
       - name: Build application
+        if: '!cancelled()'
         run: bun run build
         env:
           AUTH_SECRET: ci-build-only-auth-secret

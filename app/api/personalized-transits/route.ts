@@ -13,6 +13,7 @@ import {
   type DetailedTransitSignificance,
 } from '@/lib/services/transit-significance-scorer'
 import { getNatalChart, incrementAnalysisCount } from '@/lib/services/natal-chart-storage'
+import { requireUserOrService, resolveScopedUserId } from '@/lib/security/privileged-api-auth'
 
 const prisma = new PrismaClient()
 
@@ -24,13 +25,20 @@ export const dynamic = 'force-dynamic'
  * Calculate transit significances for a date range
  */
 export async function POST(request: NextRequest) {
+  const access = await requireUserOrService(request)
+  if (!access.ok) return access.response
+
   try {
     const body = await request.json()
 
     // Validate required fields
-    if (!body.userId || !body.chartId) {
-      return NextResponse.json({ error: 'userId and chartId are required' }, { status: 400 })
+    if (!body.chartId) {
+      return NextResponse.json({ error: 'chartId is required' }, { status: 400 })
     }
+
+    const scopedPost = resolveScopedUserId(access, body.userId)
+    if (!scopedPost.ok) return scopedPost.response
+    body.userId = scopedPost.userId
 
     // Get natal chart
     const chart = await getNatalChart(body.chartId, body.userId)
@@ -172,13 +180,15 @@ export async function POST(request: NextRequest) {
  * Get upcoming significant transits for a user's primary chart
  */
 export async function GET(request: NextRequest) {
+  const access = await requireUserOrService(request)
+  if (!access.ok) return access.response
+
   try {
     const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId')
 
-    if (!userId) {
-      return NextResponse.json({ error: 'userId parameter is required' }, { status: 400 })
-    }
+    const scoped = resolveScopedUserId(access, searchParams.get('userId'))
+    if (!scoped.ok) return scoped.response
+    const userId = scoped.userId
 
     // Get user's primary chart
     const chart = await prisma.user_natal_charts.findFirst({
@@ -196,10 +206,18 @@ export async function GET(request: NextRequest) {
       )
     }
 
-    // Use POST logic with default parameters
+    // This GET has already been authorized. Re-enter POST in-process with the
+    // original headers so its own guard reaches the same conclusion, and stamp
+    // Origin from this request's own URL: a same-origin GET navigation sends no
+    // Origin header, and the mutation guard requires one.
+    const forwardedHeaders = new Headers(request.headers)
+    forwardedHeaders.set('origin', new URL(request.url).origin)
+    forwardedHeaders.set('content-type', 'application/json')
+
     return POST(
       new NextRequest(request.url, {
         method: 'POST',
+        headers: forwardedHeaders,
         body: JSON.stringify({
           userId,
           chartId: chart.id,

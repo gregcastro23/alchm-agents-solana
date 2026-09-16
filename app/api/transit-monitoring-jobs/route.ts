@@ -19,6 +19,11 @@ import {
   cancelJob,
   getActiveJobs,
 } from '@/lib/services/job-management-service'
+import {
+  requireAdminOrService,
+  requireUserOrService,
+  resolveScopedUserId,
+} from '@/lib/security/privileged-api-auth'
 
 // Global scheduler instance
 let globalScheduler: TransitMonitoringScheduler | null = null
@@ -31,13 +36,15 @@ export const dynamic = 'force-dynamic'
  * Get job history and statistics
  */
 export async function GET(request: NextRequest) {
+  const access = await requireUserOrService(request)
+  if (!access.ok) return access.response
+
   try {
     const { searchParams } = new URL(request.url)
-    const userId = searchParams.get('userId')
 
-    if (!userId) {
-      return NextResponse.json({ error: 'userId parameter is required' }, { status: 400 })
-    }
+    const scoped = resolveScopedUserId(access, searchParams.get('userId'))
+    if (!scoped.ok) return scoped.response
+    const userId = scoped.userId
 
     const limit = Math.min(parseInt(searchParams.get('limit') || '20'), 100)
     const offset = Math.max(parseInt(searchParams.get('offset') || '0'), 0)
@@ -81,13 +88,20 @@ export async function GET(request: NextRequest) {
  * Create and run a transit monitoring job
  */
 export async function POST(request: NextRequest) {
+  const access = await requireUserOrService(request)
+  if (!access.ok) return access.response
+
+  // Hoisted so the failure path below can attribute the failed job without
+  // re-reading a request body that has already been consumed.
+  let userId: string | null = null
+
   try {
     const body = await request.json()
-    const { userId, options, runImmediately } = body
+    const { options, runImmediately } = body
 
-    if (!userId) {
-      return NextResponse.json({ error: 'userId is required' }, { status: 400 })
-    }
+    const scoped = resolveScopedUserId(access, body.userId)
+    if (!scoped.ok) return scoped.response
+    userId = scoped.userId
 
     // Validate options
     const validOptions: TransitMonitoringOptions = {}
@@ -175,14 +189,14 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('Error running transit monitoring job:', error)
 
-    // Store failed job in database
+    // Store failed job in database. Only possible once identity resolved — a
+    // request that failed before that has no user to attribute the job to.
     try {
-      if (request.body) {
-        const body = await request.json()
+      if (userId) {
         await prisma.transitMonitoringJob.create({
           data: {
             jobType: 'manual_run',
-            targetUserId: body.userId,
+            targetUserId: userId,
             scheduledFor: new Date(),
             status: 'failed',
             chartsProcessed: 0,
@@ -210,13 +224,12 @@ export async function POST(request: NextRequest) {
  * Control the background scheduler
  */
 export async function PUT(request: NextRequest) {
+  const access = await requireAdminOrService(request)
+  if (!access.ok) return access.response
+
   try {
     const body = await request.json()
-    const { action, intervalMinutes, userId } = body
-
-    if (!userId) {
-      return NextResponse.json({ error: 'userId is required' }, { status: 400 })
-    }
+    const { action, intervalMinutes } = body
 
     switch (action) {
       case 'start': {
@@ -308,14 +321,20 @@ export async function PUT(request: NextRequest) {
  * Cancel a running job
  */
 export async function DELETE(request: NextRequest) {
+  const access = await requireUserOrService(request)
+  if (!access.ok) return access.response
+
   try {
     const url = new URL(request.url)
     const jobId = url.pathname.split('/').pop()
     const { searchParams } = url
-    const userId = searchParams.get('userId')
 
-    if (!jobId || !userId) {
-      return NextResponse.json({ error: 'jobId and userId are required' }, { status: 400 })
+    const scoped = resolveScopedUserId(access, searchParams.get('userId'))
+    if (!scoped.ok) return scoped.response
+    const userId = scoped.userId
+
+    if (!jobId) {
+      return NextResponse.json({ error: 'jobId is required' }, { status: 400 })
     }
 
     // Cancel the job

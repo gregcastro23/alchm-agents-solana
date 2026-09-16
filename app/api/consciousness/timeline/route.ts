@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { unifiedTracker } from '@/lib/consciousness/unified-tracker'
+import { requireUserOrService, resolveScopedUserId } from '@/lib/security/privileged-api-auth'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -15,15 +16,21 @@ export const revalidate = 0
  * - endDate: ISO string (optional, defaults to now)
  */
 export async function GET(request: NextRequest) {
+  const access = await requireUserOrService(request)
+  if (!access.ok) return access.response
+
   try {
     const searchParams = request.nextUrl.searchParams
-    const userId = searchParams.get('userId')
     const agentId = searchParams.get('agentId')
     const startDateParam = searchParams.get('startDate')
     const endDateParam = searchParams.get('endDate')
 
-    if (!userId || !agentId) {
-      return NextResponse.json({ error: 'userId and agentId are required' }, { status: 400 })
+    const scoped = resolveScopedUserId(access, searchParams.get('userId'))
+    if (!scoped.ok) return scoped.response
+    const userId = scoped.userId
+
+    if (!agentId) {
+      return NextResponse.json({ error: 'agentId is required' }, { status: 400 })
     }
 
     // Parse dates

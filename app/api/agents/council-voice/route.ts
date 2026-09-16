@@ -2,11 +2,27 @@ import { NextRequest, NextResponse } from 'next/server'
 import { dispatchTurn, type CouncilRequest } from '@/lib/agents/council/council-chamber'
 import { CouncilApiRequestSchema } from '@/lib/agents/council/council-schema'
 import type { CouncilTurnContext } from '@/lib/agents/council/council-context'
+import { requireUserOrService } from '@/lib/security/privileged-api-auth'
+import { checkModelCallRateLimit } from '@/lib/security/model-call-limiter'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
 export async function POST(req: NextRequest) {
+  // Every turn dispatched here reaches a model on the platform's API key, so
+  // this route fails closed and is rate-limited per caller.
+  const access = await requireUserOrService(req, { failClosed: true })
+  if (!access.ok) return access.response
+
+  const limiterKey = access.kind === 'user' ? `user:${access.user.id}` : 'service'
+  const limit = checkModelCallRateLimit(limiterKey)
+  if (!limit.allowed) {
+    return NextResponse.json(
+      { success: false, error: 'Rate limit exceeded' },
+      { status: 429, headers: { 'Retry-After': String(limit.retryAfterSeconds) } }
+    )
+  }
+
   try {
     const rawBody = await req.json()
 
