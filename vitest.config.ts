@@ -44,6 +44,10 @@ export default defineConfig({
       '@/app': path.resolve(__dirname, './app'),
       '@/hooks': path.resolve(__dirname, './hooks'),
       '@/test': path.resolve(__dirname, './test'),
+      // backend/src/** belongs to a separate Bun service with its own
+      // dependencies. Root tests import it for pure logic, so stub the one
+      // dependency that is not installed here. See test/stubs/winston.ts.
+      winston: path.resolve(__dirname, './test/stubs/winston.ts'),
     },
   },
 })

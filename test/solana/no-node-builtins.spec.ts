@@ -1,3 +1,5 @@
+// @vitest-environment node
+
 /**
  * Guards the Solana client surface against Node built-ins.
  *
