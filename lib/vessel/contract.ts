@@ -20,7 +20,12 @@ export type EsmsTuple = [number, number, number, number]
 
 export type VesselStreamKey = 'jingDuels' | 'staking' | 'pentaclesMelee' | 'kitchenAchievements'
 
-export type VesselSourceKey = 'kitchenLedger' | 'agentsArena' | 'spacetimedb' | 'priceIndex'
+export type VesselSourceKey =
+  | 'kitchenLedger'
+  | 'agentsArena'
+  | 'spacetimedb'
+  | 'priceIndex'
+  | 'onchain'
 
 export interface VesselSourceStatus {
   ok: boolean
@@ -101,6 +106,12 @@ export interface AlchmVesselState {
     }
   }
 
+  onchain?: {
+    cluster: 'devnet' | 'mainnet-beta'
+    wallet: string
+    atoms: [string, string, string, string]
+    slot: number
+  } | null
   ledger: VesselLedgerEntry[]
   sources: Record<VesselSourceKey, VesselSourceStatus>
 }

@@ -686,6 +686,50 @@ describe('constant-product math', () => {
     expect(quoteAmmSwap({ reserveIn: 1_000n, reserveOut: 3n, feeBps: 30, inAmount: 7n })).toBe(0n)
   })
 
+  it('enforces constant-product invariant: (reserveIn + inWithFee) * (reserveOut - out) >= reserveIn * reserveOut', () => {
+    const testCases = [
+      { rIn: 1_000_000n, rOut: 2_000_000n, fee: 30, inAmt: 50_000n },
+      { rIn: 5_000_000n, rOut: 1_000_000n, fee: 100, inAmt: 250_000n },
+      { rIn: 100_000n, rOut: 100_000n, fee: 500, inAmt: 10_000n },
+      { rIn: 80_000n, rOut: 80_000n, fee: 0, inAmt: 8_000n },
+      { rIn: 10_000_000n, rOut: 25_000_000n, fee: 30, inAmt: 1_000_000n },
+    ]
+    for (const { rIn, rOut, fee, inAmt } of testCases) {
+      const out = quoteAmmSwap({ reserveIn: rIn, reserveOut: rOut, feeBps: fee, inAmount: inAmt })
+      expect(out).toBeLessThan(rOut)
+      const inWithFee = (inAmt * (10_000n - BigInt(fee))) / 10_000n
+      const kBefore = rIn * rOut
+      const kAfter = (rIn + inWithFee) * (rOut - out)
+      expect(kAfter).toBeGreaterThanOrEqual(kBefore)
+    }
+  })
+
+  it('enforces fee monotonicity: out never increases when feeBps increases', () => {
+    const rIn = 1_000_000n
+    const rOut = 1_000_000n
+    const inAmt = 100_000n
+    let prevOut = rOut
+    for (const fee of [0, 10, 30, 50, 100, 300, 500, 1000, 10000]) {
+      const out = quoteAmmSwap({ reserveIn: rIn, reserveOut: rOut, feeBps: fee, inAmount: inAmt })
+      expect(out).toBeLessThanOrEqual(prevOut)
+      prevOut = out
+    }
+  })
+
+  it('matches Rust quote_swap on pinned shared vectors', () => {
+    expect(
+      quoteAmmSwap({ reserveIn: 500_000n, reserveOut: 2_000_000n, feeBps: 50, inAmount: 50_000n })
+    ).toBe(180_991n)
+    expect(
+      quoteAmmSwap({
+        reserveIn: 10_000_000n,
+        reserveOut: 5_000_000n,
+        feeBps: 100,
+        inAmount: 1_000_000n,
+      })
+    ).toBe(450_409n)
+  })
+
   it('matches the Rust integer_sqrt', () => {
     expect(integerSqrt(0n)).toBe(0n)
     expect(integerSqrt(1n)).toBe(1n)

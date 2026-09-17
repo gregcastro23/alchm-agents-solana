@@ -1,3 +1,7 @@
+import { Connection, PublicKey } from '@solana/web3.js'
+import { getAssociatedTokenAddressSync } from '@solana/spl-token'
+import { ESMS_DEVNET_MINTS, TOKEN_2022_PROGRAM_ID } from '@/lib/solana/esms'
+import { getSolanaNetworkConfig } from '@/lib/solana/network-config'
 /**
  * Assembles the Alchm Vessel for one already-authenticated user from its four
  * read-only sources. Authentication and the wallet-ownership check live in
@@ -52,6 +56,12 @@ export interface VesselInputs {
   agents: AgentsArenaStats | null
   pentacles: PentaclesVesselStats | null
   usdRail: { perTokenUsd: number; source: string | null } | null
+  onchain?: {
+    cluster: 'devnet' | 'mainnet-beta'
+    wallet: string
+    atoms: [string, string, string, string]
+    slot: number
+  } | null
   sources: Record<VesselSourceKey, VesselSourceStatus>
   now?: number
 }
@@ -131,6 +141,7 @@ export function assembleVesselState(inputs: VesselInputs): AlchmVesselState {
       },
     },
     ledger: kitchen?.recent ?? [],
+    onchain: inputs.onchain ?? null,
     sources: inputs.sources,
   }
 }
@@ -207,6 +218,50 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+async function loadOnchainBalances(walletAddress: string): Promise<{
+  cluster: 'devnet' | 'mainnet-beta'
+  wallet: string
+  atoms: [string, string, string, string]
+  slot: number
+} | null> {
+  const walletPubkey = new PublicKey(walletAddress)
+  const networkConfig = getSolanaNetworkConfig()
+  const rpcUrl = networkConfig.rpcUrls[0] || 'https://api.devnet.solana.com'
+  const connection = new Connection(rpcUrl, 'confirmed')
+  const cluster = networkConfig.network === 'mainnet-beta' ? 'mainnet-beta' : 'devnet'
+
+  const mints = [
+    ESMS_DEVNET_MINTS.Spirit,
+    ESMS_DEVNET_MINTS.Essence,
+    ESMS_DEVNET_MINTS.Matter,
+    ESMS_DEVNET_MINTS.Substance,
+  ]
+
+  const { context } = await connection.getLatestBlockhashAndContext()
+  const slot = context.slot
+
+  const atoms: [string, string, string, string] = ['0', '0', '0', '0']
+
+  await Promise.all(
+    mints.map(async (mint, idx) => {
+      try {
+        const ata = getAssociatedTokenAddressSync(mint, walletPubkey, false, TOKEN_2022_PROGRAM_ID)
+        const bal = await connection.getTokenAccountBalance(ata)
+        atoms[idx] = bal.value.amount
+      } catch {
+        atoms[idx] = '0'
+      }
+    })
+  )
+
+  return {
+    cluster,
+    wallet: walletAddress,
+    atoms,
+    slot,
+  }
+}
+
 export async function loadVesselForUser(opts: {
   userId: string
   email: string | null
@@ -218,6 +273,7 @@ export async function loadVesselForUser(opts: {
     agentsArena: { ok: false },
     spacetimedb: { ok: false },
     priceIndex: { ok: false },
+    onchain: { ok: false },
   }
 
   const track = <T>(key: VesselSourceKey, promise: Promise<T>): Promise<T | null> =>
@@ -232,17 +288,21 @@ export async function loadVesselForUser(opts: {
       }
     )
 
-  const [kitchen, agents, pentacles, priceIndex] = await Promise.all([
+  const [kitchen, agents, pentacles, priceIndex, onchain] = await Promise.all([
     track('kitchenLedger', loadKitchenLedger({ cookie: opts.cookie, email: opts.email })),
     track('agentsArena', loadAgentsArena(opts.userId)),
     opts.walletAddress
       ? track('spacetimedb', loadPentaclesVesselStats(opts.walletAddress))
       : Promise.resolve(null),
     track('priceIndex', loadCanonicalPriceIndex()),
+    opts.walletAddress
+      ? track('onchain', loadOnchainBalances(opts.walletAddress))
+      : Promise.resolve(null),
   ])
 
   if (!opts.walletAddress) {
     sources.spacetimedb = { ok: false, detail: 'no verified Solana wallet' }
+    sources.onchain = { ok: false, detail: 'no verified Solana wallet' }
   } else if (sources.spacetimedb.ok && !pentacles) {
     sources.spacetimedb = { ok: false, detail: 'no Pentacles identity bound to this wallet' }
   } else if (pentacles?.unavailable.length) {
@@ -263,6 +323,7 @@ export async function loadVesselForUser(opts: {
       redeem !== null
         ? { perTokenUsd: redeem, source: priceIndex?.railsUsd.redeemSource ?? null }
         : null,
+    onchain,
     sources,
   })
 }

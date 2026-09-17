@@ -150,9 +150,34 @@ const allOk = {
   agentsArena: { ok: true },
   spacetimedb: { ok: true },
   priceIndex: { ok: true },
+  onchain: { ok: true },
 }
 
 describe('assembleVesselState', () => {
+  it('includes onchain Token-2022 atoms and slot when present', () => {
+    const vessel = assembleVesselState({
+      walletAddress: WALLET,
+      kitchen,
+      agents: null,
+      pentacles: null,
+      usdRail: null,
+      onchain: {
+        cluster: 'devnet',
+        wallet: WALLET,
+        atoms: ['10000', '20000', '30000', '40000'],
+        slot: 123456,
+      },
+      sources: allOk,
+      now: 1,
+    })
+    expect(vessel.onchain).toEqual({
+      cluster: 'devnet',
+      wallet: WALLET,
+      atoms: ['10000', '20000', '30000', '40000'],
+      slot: 123456,
+    })
+  })
+
   it('passes ledger balances through quantized, never adding value', () => {
     const vessel = assembleVesselState({
       walletAddress: WALLET,
