@@ -1,9 +1,8 @@
 import { NextResponse } from 'next/server'
-import { Connection, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js'
+import { Connection } from '@solana/web3.js'
 import {
   CONSTELLATION_PAIRS,
   MAX_AMM_POOL_ID,
-  buildSwapEsmsInstruction,
   decodeConstellationPool,
   getConstellationPoolAddress,
   quoteAmmSwap,
@@ -178,67 +177,27 @@ export async function GET(req: Request) {
 
   const minOutAtoms = (outAtoms * (10000n - BigInt(slippageBps))) / 10000n
 
+  // Simulation status: on-chain execution requires celestial aspect attestation (Ed25519 signature + nonce)
   let simulationResult: {
     simulated: boolean
+    reason: string
     err: any
     logs: string[] | null
     unitsConsumed: number | null
   } | null = null
 
-  // Real RPC simulation via simulateTransaction when trader key is supplied (F2)
   if (traderStr) {
-    let traderKey: PublicKey
-    try {
-      traderKey = new PublicKey(traderStr)
-
-      const swapIx = buildSwapEsmsInstruction({
-        poolId,
-        elementA: pool.elementA,
-        elementB: pool.elementB,
-        inElement,
-        inAmount: inAmountAtoms,
-        minOut: minOutAtoms,
-        trader: traderKey,
-        attestation: {
-          attestor: PublicKey.default,
-          signature: new Uint8Array(64),
-          regionCommit: new Uint8Array(32),
-          visibleStars: 7,
-          nonce: 0n,
-          deadline: BigInt(Math.floor(Date.now() / 1000) + 300),
-          clusterDomain: new Uint8Array(32),
-        },
-      })
-
-      const messageV0 = new TransactionMessage({
-        payerKey: traderKey,
-        recentBlockhash: PublicKey.default.toBase58(),
-        instructions: [swapIx],
-      }).compileToV0Message()
-      const tx = new VersionedTransaction(messageV0)
-
-      const sim = await connection.simulateTransaction(tx, {
-        sigVerify: false,
-        replaceRecentBlockhash: true,
-      })
-
-      simulationResult = {
-        simulated: true,
-        err: sim.value.err,
-        logs: sim.value.logs,
-        unitsConsumed: sim.value.unitsConsumed ?? null,
-      }
-    } catch (simErr) {
-      simulationResult = {
-        simulated: false,
-        err: (simErr as Error).message,
-        logs: null,
-        unitsConsumed: null,
-      }
+    simulationResult = {
+      simulated: false,
+      reason: 'attestation_required',
+      err: null,
+      logs: null,
+      unitsConsumed: null,
     }
   }
 
   return NextResponse.json({
+    ok: true,
     poolId,
     inElement,
     outElement,

@@ -143,31 +143,18 @@ describe('GET /api/solana/amm-quote', () => {
     expect(data.simulation).toBeNull()
   })
 
-  it('provides real RPC simulation telemetry when valid trader key is supplied (F2)', async () => {
+  it('returns simulated: false with attestation_required when trader key is supplied without attestation (F2)', async () => {
     const trader = '4AfRdxPh1RSo2299QFwutzQkMcL92KJNXAU1bzpNJcHp'
     const res = await GET(req(`poolId=0&inElement=0&inAmountAtoms=10000&trader=${trader}`))
     expect(res.status).toBe(200)
     const data = await res.json()
-
-    // Assert RPC simulateTransaction was called with sigVerify:false
-    expect(mockSimulateTransaction).toHaveBeenCalledWith(
-      expect.anything(),
-      expect.objectContaining({
-        sigVerify: false,
-        replaceRecentBlockhash: true,
-      })
-    )
-
-    // Assert telemetry matches RPC output exactly
+    expect(data.ok).toBe(true)
     expect(data.simulation).toEqual({
-      simulated: true,
+      simulated: false,
+      reason: 'attestation_required',
       err: null,
-      logs: [
-        'Program 5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD invoke [1]',
-        'Program log: Instruction: SwapEsms',
-        'Program 5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD success',
-      ],
-      unitsConsumed: 38450,
+      logs: null,
+      unitsConsumed: null,
     })
   })
 })

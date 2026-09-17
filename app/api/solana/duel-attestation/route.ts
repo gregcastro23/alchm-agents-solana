@@ -5,14 +5,10 @@ import { authenticateDesktopApiKey, extractDesktopApiKey } from '@/lib/security/
 import { getSpacetimeConfig } from '@/lib/spacetime/config'
 import { decodeSqlResult, identityHex, type Transport } from '@/lib/vessel/spacetime-stats'
 import { ASOL_SOLANA_PROGRAM_ID, getReceiptAddress } from '@/lib/solana/esms'
-import { mintEsmsClaimSolana, getSolanaClaimSettlementProof } from '@/lib/solana/solana-minter'
 import {
   computeDuelReceiptId,
   computeDuelLedgerReference,
   resolvePillarId,
-  DUEL_WIN_REWARD,
-  DUEL_WIN_DAILY_CAP,
-  DUEL_WIN_PAIR_DAILY_CAP,
 } from '@/lib/solana/duel-attestation'
 
 export const runtime = 'nodejs'
@@ -223,167 +219,15 @@ export async function handleDuelAttestation(
 
   const receiptIdHex = Buffer.from(duelReceiptId).toString('hex')
 
-  // 8. Pre-check: Idempotency / Already settled claim
-  try {
-    const proof = await getSolanaClaimSettlementProof(receiptIdHex)
-    if (proof.settled) {
-      return NextResponse.json(
-        {
-          ok: true,
-          settled: true,
-          txHash: proof.txHash,
-          receiptId: receiptIdHex,
-          receiptAddress: receiptAddress.toBase58(),
-          ledgerReferenceHash: Buffer.from(ledgerReferenceHash).toString('hex'),
-        },
-        { status: 200 }
-      )
-    }
-  } catch {
-    // Continue if proof pre-check failover passes to mint path
-  }
-
-  // 9. Daily Cap & Pair Limit Enforcement (F4, F5: uses dedicated duel_reward_claim table)
-  const utcDay = new Date().toISOString().slice(0, 10)
-  const claimsToday = await prisma.duelRewardClaim.count({
-    where: {
-      wallet: callerWallet,
-      day: utcDay,
-      state: { in: ['pending', 'settled'] },
-    },
-  })
-
-  if (claimsToday >= DUEL_WIN_DAILY_CAP) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: 'Daily duel reward cap reached',
-        code: 'daily_cap_reached',
-        capped: true,
-        claimsToday,
-        dailyCap: DUEL_WIN_DAILY_CAP,
-      },
-      { status: 429 }
-    )
-  }
-
-  const pairClaimsToday = await prisma.duelRewardClaim.count({
-    where: {
-      wallet: callerWallet,
-      opponentIdentity,
-      day: utcDay,
-      state: { in: ['pending', 'settled'] },
-    },
-  })
-
-  if (pairClaimsToday >= DUEL_WIN_PAIR_DAILY_CAP) {
-    return NextResponse.json(
-      {
-        ok: false,
-        error: 'Daily duel reward cap for this opponent pair reached',
-        code: 'pair_cap_exceeded',
-        capped: true,
-        pairClaimsToday,
-        pairDailyCap: DUEL_WIN_PAIR_DAILY_CAP,
-      },
-      { status: 429 }
-    )
-  }
-
-  // Atomic insert: state = 'pending' acts as concurrency lock
-  try {
-    await prisma.duelRewardClaim.create({
-      data: {
-        receiptId: receiptIdHex,
-        userId,
-        wallet: callerWallet,
-        duelId: duelIdStr,
-        dbIdentity,
-        opponentIdentity,
-        day: utcDay,
-        state: 'pending',
-      },
-    })
-  } catch {
-    const existing = await prisma.duelRewardClaim.findUnique({
-      where: { receiptId: receiptIdHex },
-    })
-    if (existing?.state === 'settled' && existing.txHash) {
-      return NextResponse.json(
-        {
-          ok: true,
-          settled: true,
-          txHash: existing.txHash,
-          receiptId: receiptIdHex,
-          receiptAddress: receiptAddress.toBase58(),
-          ledgerReferenceHash: Buffer.from(ledgerReferenceHash).toString('hex'),
-        },
-        { status: 200 }
-      )
-    }
-    return NextResponse.json(
-      {
-        error: 'Claim for this duel is currently being processed',
-        code: 'claim_pending',
-      },
-      { status: 409 }
-    )
-  }
-
-  // 10. Mint on-chain via claim_mint_esms (F6: passing explicit ledgerReferenceHash)
-  let txHash: string
-  try {
-    txHash = await mintEsmsClaimSolana({
-      recipient: callerWallet,
-      claimId: receiptIdHex,
-      amounts: DUEL_WIN_REWARD,
-      ledgerReferenceHash,
-    })
-  } catch (mintErr) {
-    // Re-check settlement proof in case of network timeout after transaction landing
-    const proof = await getSolanaClaimSettlementProof(receiptIdHex).catch(() => ({
-      settled: false as const,
-    }))
-    if (proof.settled) {
-      txHash = proof.txHash
-    } else {
-      await prisma.duelRewardClaim
-        .update({
-          where: { receiptId: receiptIdHex },
-          data: { state: 'failed' },
-        })
-        .catch(() => {})
-      return NextResponse.json(
-        {
-          error: `Solana on-chain claim mint failed: ${(mintErr as Error).message}`,
-          code: 'mint_failed',
-        },
-        { status: 502 }
-      )
-    }
-  }
-
-  await prisma.duelRewardClaim
-    .update({
-      where: { receiptId: receiptIdHex },
-      data: {
-        state: 'settled',
-        txHash,
-      },
-    })
-    .catch(() => {})
-
+  // Duel verification complete. Duel wins earn pentacles off-chain in SpacetimeDB;
+  // no ESMS is minted directly by this route.
   return NextResponse.json(
     {
       ok: true,
-      settled: true,
-      txHash,
+      verified: true,
       receiptId: receiptIdHex,
       receiptAddress: receiptAddress.toBase58(),
       ledgerReferenceHash: Buffer.from(ledgerReferenceHash).toString('hex'),
-      reward: DUEL_WIN_REWARD,
-      claimsToday: claimsToday + 1,
-      dailyCap: DUEL_WIN_DAILY_CAP,
     },
     { status: 200 }
   )

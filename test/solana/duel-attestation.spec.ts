@@ -279,85 +279,17 @@ describe('POST /api/solana/duel-attestation Rejection Gates (Section A5)', () =>
   })
 })
 
-describe('POST /api/solana/duel-attestation Execution & Settlement (Section A3)', () => {
-  it('mints ESMS reward on-chain for verified PvP duel win', async () => {
+describe('POST /api/solana/duel-attestation Verification & Receipt Derivation', () => {
+  it('verifies PvP duel win and returns canonical receipt without minting on-chain ESMS', async () => {
     const transport = mockTransport(mockResolvedDuel())
     const res = await handleDuelAttestation(req({ duelId: '42' }), transport)
     expect(res.status).toBe(200)
     const data = await res.json()
     expect(data.ok).toBe(true)
-    expect(data.settled).toBe(true)
-    expect(data.txHash).toBe('5MockTxHashPillarDuelWin1111111111111111111')
+    expect(data.verified).toBe(true)
     expect(data.receiptId).toBeDefined()
     expect(data.receiptAddress).toBeDefined()
     expect(data.ledgerReferenceHash).toBeDefined()
-    expect(mintEsmsClaimSolana).toHaveBeenCalledTimes(1)
-    expect(prisma.duelRewardClaim.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          state: 'pending',
-          wallet: CALLER_PUBKEY,
-          duelId: '42',
-        }),
-      })
-    )
-    expect(prisma.duelRewardClaim.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          state: 'settled',
-          txHash: '5MockTxHashPillarDuelWin1111111111111111111',
-        }),
-      })
-    )
-  })
-
-  it('idempotently returns already-settled receipt without minting again', async () => {
-    ;(getSolanaClaimSettlementProof as any).mockResolvedValue({
-      settled: true,
-      txHash: '5ExistingSettledTxHash1111111111111111111111',
-    })
-
-    const transport = mockTransport(mockResolvedDuel())
-    const res = await handleDuelAttestation(req({ duelId: '42' }), transport)
-    expect(res.status).toBe(200)
-    const data = await res.json()
-    expect(data.settled).toBe(true)
-    expect(data.txHash).toBe('5ExistingSettledTxHash1111111111111111111111')
-    expect(mintEsmsClaimSolana).not.toHaveBeenCalled()
-  })
-
-  it('enforces daily cap: rejects (N+1)th win with 429', async () => {
-    ;(prisma.duelRewardClaim.count as any).mockResolvedValue(DUEL_WIN_DAILY_CAP)
-
-    const transport = mockTransport(mockResolvedDuel())
-    const res = await handleDuelAttestation(req({ duelId: '42' }), transport)
-    expect(res.status).toBe(429)
-    const data = await res.json()
-    expect(data.code).toBe('daily_cap_reached')
-    expect(mintEsmsClaimSolana).not.toHaveBeenCalled()
-  })
-
-  it('concurrent claims lock on pending state and cannot exceed daily cap (F4)', async () => {
-    ;(prisma.duelRewardClaim.count as any).mockResolvedValueOnce(DUEL_WIN_DAILY_CAP - 1)
-    const transport = mockTransport(mockResolvedDuel())
-    const res1 = await handleDuelAttestation(req({ duelId: '42' }), transport)
-    expect(res1.status).toBe(200)
-
-    // Second concurrent claim observes cap limit reached
-    ;(prisma.duelRewardClaim.count as any).mockResolvedValueOnce(DUEL_WIN_DAILY_CAP)
-    const res2 = await handleDuelAttestation(req({ duelId: '43' }), transport)
-    expect(res2.status).toBe(429)
-    expect((await res2.json()).code).toBe('daily_cap_reached')
-  })
-
-  it('enforces opponent pair cap: rejects when same opponent pair limit is reached (F5)', async () => {
-    ;(prisma.duelRewardClaim.count as any)
-      .mockResolvedValueOnce(0) // total claims today = 0
-      .mockResolvedValueOnce(DUEL_WIN_PAIR_DAILY_CAP) // pair claims today = 2
-    const transport = mockTransport(mockResolvedDuel())
-    const res = await handleDuelAttestation(req({ duelId: '42' }), transport)
-    expect(res.status).toBe(429)
-    expect((await res.json()).code).toBe('pair_cap_exceeded')
     expect(mintEsmsClaimSolana).not.toHaveBeenCalled()
   })
 
@@ -402,11 +334,6 @@ describe('POST /api/solana/duel-attestation Execution & Settlement (Section A3)'
       powerRatioBps: 12500,
       resolvedAtMicros: 1710000005000000n,
     })
-    expect(mintEsmsClaimSolana).toHaveBeenCalledWith(
-      expect.objectContaining({
-        recipient: CALLER_PUBKEY,
-        ledgerReferenceHash: expectedLedgerRef,
-      })
-    )
+    expect(data.ledgerReferenceHash).toBe(Buffer.from(expectedLedgerRef).toString('hex'))
   })
 })

@@ -1806,24 +1806,3 @@ model admin_audit_log {
 }
 
 
-/// Dedup and idempotency lock for 14-Pillars on-chain duel win claims.
-/// Replaces writing to token_transactions for duel rewards (F4).
-model DuelRewardClaim {
-  id               String   @id @default(cuid())
-  receiptId        String   @unique @map("receipt_id")
-  userId           String   @map("user_id")
-  wallet           String   @map("wallet")
-  duelId           String   @map("duel_id")
-  dbIdentity       String   @map("db_identity")
-  opponentIdentity String   @map("opponent_identity")
-  day              String   @map("day")
-  state            String   @map("state")
-  txHash           String?  @map("tx_hash")
-  createdAt        DateTime @default(now()) @map("created_at") @db.Timestamptz
-  updatedAt        DateTime @updatedAt @map("updated_at") @db.Timestamptz
-
-  @@index([wallet, day])
-  @@index([wallet, opponentIdentity, day])
-  @@index([userId, day])
-  @@map("duel_reward_claim")
-}
