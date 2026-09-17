@@ -112,3 +112,28 @@ export function buildRedeemAuthorizationMessage(args: {
     values,
   ])
 }
+
+export const ESMS_ATOMS_PER_POOL_UNIT = 1_000n
+
+/**
+ * Convert Pentacles game pool units (tenths of an ESMS, f64) to Token-2022 raw atoms (u64).
+ * Explicitly floors and returns any remaining sub-atom dust.
+ */
+export function poolUnitsToAtoms(units: number): { atoms: bigint; dustUnits: number } {
+  if (!Number.isFinite(units) || units < 0) {
+    throw new RangeError('pool units must be a non-negative finite number')
+  }
+  const rawMilli = Math.floor(units * 1_000 + 1e-9)
+  const atoms = BigInt(rawMilli)
+  const dustUnits = Math.max(0, units - Number(atoms) / 1_000)
+  return { atoms, dustUnits }
+}
+
+/**
+ * Convert Token-2022 raw atoms (u64) to integer Pentacles game pool units (tenths of an ESMS).
+ * 1 pool unit = 1,000 atoms. Any remainder (< 1,000 atoms) floors to 0 units.
+ */
+export function atomsToPoolUnits(atoms: bigint): number {
+  if (atoms < 0n) throw new RangeError('atoms cannot be negative')
+  return Number(atoms / ESMS_ATOMS_PER_POOL_UNIT)
+}
