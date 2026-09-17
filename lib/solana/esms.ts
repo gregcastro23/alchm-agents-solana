@@ -125,7 +125,7 @@ export function poolUnitsToAtoms(units: number): { atoms: bigint; dustUnits: num
   }
   const rawMilli = Math.floor(units * 1_000 + 1e-9)
   const atoms = BigInt(rawMilli)
-  const dustUnits = Math.max(0, units - Number(atoms) / 1_000)
+  const dustUnits = Math.max(0, Math.round((units - Number(atoms) / 1_000) * 1e9) / 1e9)
   return { atoms, dustUnits }
 }
 

@@ -1,19 +1,57 @@
 import { createHash } from 'node:crypto'
 import { PublicKey } from '@solana/web3.js'
 import type { EsmsClaimAmounts } from './solana-minter'
+import { PILLARS } from '@/lib/alchemy/pillars'
 
-/** Fixed on-chain ESMS reward per verified 14-Pillars duel win (in Token-2022 atoms). */
+/** Fixed on-chain ESMS reward per verified 14-Pillars duel win: 0.1 ESMS (1,000 atoms = 1 pool unit) per element. */
 export const DUEL_WIN_REWARD: EsmsClaimAmounts = {
-  spirit: '1000',
-  essence: '1000',
-  matter: '1000',
-  substance: '1000',
+  spirit: '0.1',
+  essence: '0.1',
+  matter: '0.1',
+  substance: '0.1',
 } as const
 
 /** Maximum duel win claims permitted per wallet per UTC day. */
 export const DUEL_WIN_DAILY_CAP = 5
 
+/** Maximum duel win claims permitted between the same opponent pair per UTC day. */
+export const DUEL_WIN_PAIR_DAILY_CAP = 2
+
 export const DUEL_RECEIPT_DOMAIN = Buffer.from('ASOL_PILLAR_DUEL_RECEIPT_V1')
+
+const PILLAR_NAME_TO_ID = new Map<string, number>(PILLARS.map(p => [p.name.toLowerCase(), p.id]))
+
+/**
+ * Resolves raw opening_pillar from SpacetimeDB SATS rows to canonical 1-based index (1..14).
+ * SATS decodes enums as variant names (e.g. "Distillation" -> 4) or objects.
+ */
+export function resolvePillarId(raw: unknown): number {
+  if (typeof raw === 'number' && Number.isInteger(raw) && raw >= 1 && raw <= 14) {
+    return raw
+  }
+  if (typeof raw === 'string') {
+    const trimmed = raw.trim()
+    if (/^\d+$/.test(trimmed)) {
+      const num = Number(trimmed)
+      if (num >= 1 && num <= 14) return num
+    }
+    const found = PILLAR_NAME_TO_ID.get(trimmed.toLowerCase())
+    if (found) return found
+  }
+  if (raw && typeof raw === 'object') {
+    const obj = raw as Record<string, unknown>
+    const name = obj.name ?? obj.Name ?? obj.some ?? obj.Some
+    if (typeof name === 'string') {
+      const found = PILLAR_NAME_TO_ID.get(name.trim().toLowerCase())
+      if (found) return found
+    }
+    const tag = obj.tag ?? obj.Tag
+    if (typeof tag === 'number' && tag >= 0 && tag < 14) {
+      return tag + 1
+    }
+  }
+  return 1
+}
 
 /**
  * Compute the canonical 32-byte receipt id for a 14-Pillars duel win.

@@ -2,6 +2,7 @@ import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { PublicKey } from '@solana/web3.js'
 
 const mockGetAccountInfoAndContext = vi.fn()
+const mockSimulateTransaction = vi.fn()
 
 vi.mock('@solana/web3.js', async importOriginal => {
   const actual = await importOriginal<typeof import('@solana/web3.js')>()
@@ -9,40 +10,69 @@ vi.mock('@solana/web3.js', async importOriginal => {
     ...actual,
     Connection: vi.fn().mockImplementation(() => ({
       getAccountInfoAndContext: mockGetAccountInfoAndContext,
+      simulateTransaction: mockSimulateTransaction,
     })),
   }
 })
+
+let mockPoolState = {
+  version: 1,
+  poolId: 0,
+  elementA: 0,
+  elementB: 1,
+  feeBps: 30,
+  reserveA: 1_000_000n,
+  reserveB: 2_000_000n,
+  totalShares: 1_414_213n,
+  bootstrapped: true,
+  paused: false,
+  bump: 255,
+}
 
 vi.mock('@/lib/solana/constellation-amm', async importOriginal => {
   const actual = await importOriginal<typeof import('@/lib/solana/constellation-amm')>()
   return {
     ...actual,
-    decodeConstellationPool: vi.fn(() => ({
-      version: 1,
-      poolId: 0,
-      elementA: 0,
-      elementB: 1,
-      feeBps: 30,
-      reserveA: 1_000_000n,
-      reserveB: 2_000_000n,
-      totalShares: 1_414_213n,
-      bootstrapped: true,
-      paused: false,
-      bump: 255,
-    })),
+    decodeConstellationPool: vi.fn(() => mockPoolState),
   }
 })
 
-import { GET } from '@/app/api/solana/amm-quote/route'
+import { GET, clearAmmQuotePoolCache } from '@/app/api/solana/amm-quote/route'
 
 const req = (params: string) =>
   new Request(`http://localhost/api/solana/amm-quote?${params}`, { method: 'GET' })
 
 beforeEach(() => {
   vi.clearAllMocks()
+  clearAmmQuotePoolCache()
+  mockPoolState = {
+    version: 1,
+    poolId: 0,
+    elementA: 0,
+    elementB: 1,
+    feeBps: 30,
+    reserveA: 1_000_000n,
+    reserveB: 2_000_000n,
+    totalShares: 1_414_213n,
+    bootstrapped: true,
+    paused: false,
+    bump: 255,
+  }
   mockGetAccountInfoAndContext.mockResolvedValue({
     context: { slot: 123456 },
     value: { data: Buffer.alloc(100) },
+  })
+  mockSimulateTransaction.mockResolvedValue({
+    context: { slot: 123456 },
+    value: {
+      err: null,
+      logs: [
+        'Program 5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD invoke [1]',
+        'Program log: Instruction: SwapEsms',
+        'Program 5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD success',
+      ],
+      unitsConsumed: 38450,
+    },
   })
 })
 
@@ -71,6 +101,33 @@ describe('GET /api/solana/amm-quote', () => {
     expect((await res.json()).code).toBe('pool_not_found')
   })
 
+  it('409 when pool is paused (F11)', async () => {
+    mockPoolState.paused = true
+    const res = await GET(req('poolId=0&inElement=0&inAmountAtoms=10000'))
+    expect(res.status).toBe(409)
+    const data = await res.json()
+    expect(data.code).toBe('pool_paused')
+    expect(data.outAtoms).toBeUndefined()
+  })
+
+  it('409 when pool is not bootstrapped (F11)', async () => {
+    mockPoolState.bootstrapped = false
+    const res = await GET(req('poolId=0&inElement=0&inAmountAtoms=10000'))
+    expect(res.status).toBe(409)
+    const data = await res.json()
+    expect(data.code).toBe('pool_not_bootstrapped')
+    expect(data.outAtoms).toBeUndefined()
+  })
+
+  it('caches pool account for ~2s avoiding repeated RPC queries (F11)', async () => {
+    await GET(req('poolId=0&inElement=0&inAmountAtoms=10000'))
+    expect(mockGetAccountInfoAndContext).toHaveBeenCalledTimes(1)
+
+    // Second request within cache window uses memory cache
+    await GET(req('poolId=0&inElement=0&inAmountAtoms=20000'))
+    expect(mockGetAccountInfoAndContext).toHaveBeenCalledTimes(1)
+  })
+
   it('quotes from on-chain reserves and returns slot without price index dependency', async () => {
     const res = await GET(req('poolId=0&inElement=0&inAmountAtoms=10000&slippageBps=50'))
     expect(res.status).toBe(200)
@@ -86,14 +143,31 @@ describe('GET /api/solana/amm-quote', () => {
     expect(data.simulation).toBeNull()
   })
 
-  it('provides simulation telemetry when valid trader key is supplied', async () => {
+  it('provides real RPC simulation telemetry when valid trader key is supplied (F2)', async () => {
     const trader = '4AfRdxPh1RSo2299QFwutzQkMcL92KJNXAU1bzpNJcHp'
     const res = await GET(req(`poolId=0&inElement=0&inAmountAtoms=10000&trader=${trader}`))
     expect(res.status).toBe(200)
     const data = await res.json()
-    expect(data.simulation).toMatchObject({
+
+    // Assert RPC simulateTransaction was called with sigVerify:false
+    expect(mockSimulateTransaction).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({
+        sigVerify: false,
+        replaceRecentBlockhash: true,
+      })
+    )
+
+    // Assert telemetry matches RPC output exactly
+    expect(data.simulation).toEqual({
       simulated: true,
-      unitsConsumed: expect.any(Number),
+      err: null,
+      logs: [
+        'Program 5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD invoke [1]',
+        'Program log: Instruction: SwapEsms',
+        'Program 5QheuqaicKvPPRFEoEXwaE5xaFp7gauvJCfsjpQv8WzD success',
+      ],
+      unitsConsumed: 38450,
     })
   })
 })

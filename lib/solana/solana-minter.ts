@@ -166,6 +166,7 @@ export async function mintEsmsClaimSolana(params: {
   recipient: PublicKey | string
   claimId: Hex | string
   amounts: EsmsClaimAmounts
+  ledgerReferenceHash?: Uint8Array | Buffer
   signer?: AsolSolanaWallet | Keypair
   connection?: Connection
 }): Promise<string> {
@@ -190,7 +191,9 @@ export async function mintEsmsClaimSolana(params: {
 
   const claimIdBytes = claimIdToBytes32(params.claimId)
   const onchainAmounts = toSolanaOnchainAmounts(params.amounts)
-  const ledgerHash = computeLedgerReferenceHash(params.claimId, params.amounts)
+  const ledgerHash = params.ledgerReferenceHash
+    ? Uint8Array.from(params.ledgerReferenceHash)
+    : computeLedgerReferenceHash(params.claimId, params.amounts)
 
   // 1. Pre-flight check: if already settled on-chain, return the existing signature
   const preflight = await getSolanaClaimSettlementProof(params.claimId, params.connection)

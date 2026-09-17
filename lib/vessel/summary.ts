@@ -1,6 +1,10 @@
 import { Connection, PublicKey } from '@solana/web3.js'
 import { getAssociatedTokenAddressSync } from '@solana/spl-token'
-import { ESMS_DEVNET_MINTS, TOKEN_2022_PROGRAM_ID } from '@/lib/solana/esms'
+import {
+  getEsmsMintAddresses,
+  ASOL_SOLANA_PROGRAM_ID,
+  TOKEN_2022_PROGRAM_ID,
+} from '@/lib/solana/esms'
 import { getSolanaNetworkConfig } from '@/lib/solana/network-config'
 /**
  * Assembles the Alchm Vessel for one already-authenticated user from its four
@@ -218,7 +222,7 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
-async function loadOnchainBalances(walletAddress: string): Promise<{
+export async function loadOnchainBalances(walletAddress: string): Promise<{
   cluster: 'devnet' | 'mainnet-beta'
   wallet: string
   atoms: [string, string, string, string]
@@ -230,29 +234,33 @@ async function loadOnchainBalances(walletAddress: string): Promise<{
   const connection = new Connection(rpcUrl, 'confirmed')
   const cluster = networkConfig.network === 'mainnet-beta' ? 'mainnet-beta' : 'devnet'
 
-  const mints = [
-    ESMS_DEVNET_MINTS.Spirit,
-    ESMS_DEVNET_MINTS.Essence,
-    ESMS_DEVNET_MINTS.Matter,
-    ESMS_DEVNET_MINTS.Substance,
-  ]
+  const programId = process.env.SOLANA_PROGRAM_ID
+    ? new PublicKey(process.env.SOLANA_PROGRAM_ID)
+    : ASOL_SOLANA_PROGRAM_ID
+  const mints = getEsmsMintAddresses(programId)
 
-  const { context } = await connection.getLatestBlockhashAndContext()
-  const slot = context.slot
+  const atas = mints.map(mint =>
+    getAssociatedTokenAddressSync(mint, walletPubkey, false, TOKEN_2022_PROGRAM_ID)
+  )
+
+  // Single batch query across all 4 ATAs with slot context (F8)
+  const accountInfos = await connection.getMultipleAccountsInfoAndContext(atas)
+  const slot = accountInfos.context.slot
 
   const atoms: [string, string, string, string] = ['0', '0', '0', '0']
 
-  await Promise.all(
-    mints.map(async (mint, idx) => {
-      try {
-        const ata = getAssociatedTokenAddressSync(mint, walletPubkey, false, TOKEN_2022_PROGRAM_ID)
-        const bal = await connection.getTokenAccountBalance(ata)
-        atoms[idx] = bal.value.amount
-      } catch {
+  accountInfos.value.forEach((account, idx) => {
+    if (!account) {
+      atoms[idx] = '0'
+    } else {
+      if (account.data.length >= 72) {
+        const buf = Buffer.from(account.data)
+        atoms[idx] = buf.readBigUInt64LE(64).toString()
+      } else {
         atoms[idx] = '0'
       }
-    })
-  )
+    }
+  })
 
   return {
     cluster,

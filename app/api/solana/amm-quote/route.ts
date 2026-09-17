@@ -1,9 +1,9 @@
 import { NextResponse } from 'next/server'
-import { Connection, PublicKey } from '@solana/web3.js'
+import { Connection, PublicKey, TransactionMessage, VersionedTransaction } from '@solana/web3.js'
 import {
-  ASOL_SOLANA_PROGRAM_ID,
   CONSTELLATION_PAIRS,
   MAX_AMM_POOL_ID,
+  buildSwapEsmsInstruction,
   decodeConstellationPool,
   getConstellationPoolAddress,
   quoteAmmSwap,
@@ -14,6 +14,21 @@ import { getSolanaNetworkConfig } from '@/lib/solana/network-config'
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
+
+// In-memory pool query cache (TTL ≈ 2s) to prevent RPC flooding on rapid polling (F11)
+interface CachedPoolAccount {
+  accountInfo: {
+    context: { slot: number }
+    value: { data: Buffer | Uint8Array } | null
+  }
+  fetchedAt: number
+}
+const poolCache = new Map<number, CachedPoolAccount>()
+const CACHE_TTL_MS = 2000
+
+export function clearAmmQuotePoolCache(): void {
+  poolCache.clear()
+}
 
 export async function GET(req: Request) {
   const url = new URL(req.url)
@@ -76,14 +91,28 @@ export async function GET(req: Request) {
   const connection = new Connection(rpcUrl, 'confirmed')
 
   const poolAddress = getConstellationPoolAddress(poolId)
-  let accountInfo
-  try {
-    accountInfo = await connection.getAccountInfoAndContext(poolAddress)
-  } catch (err) {
-    return NextResponse.json(
-      { error: `Failed to query pool account from RPC: ${(err as Error).message}` },
-      { status: 502 }
-    )
+  let accountInfo: {
+    context: { slot: number }
+    value: { data: Buffer | Uint8Array } | null
+  } | null = null
+
+  const now = Date.now()
+  const cached = poolCache.get(poolId)
+  if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
+    accountInfo = cached.accountInfo
+  } else {
+    try {
+      const fetched = await connection.getAccountInfoAndContext(poolAddress)
+      accountInfo = fetched
+      if (fetched) {
+        poolCache.set(poolId, { accountInfo: fetched, fetchedAt: now })
+      }
+    } catch (err) {
+      return NextResponse.json(
+        { error: `Failed to query pool account from RPC: ${(err as Error).message}` },
+        { status: 502 }
+      )
+    }
   }
 
   if (!accountInfo?.value?.data) {
@@ -107,6 +136,35 @@ export async function GET(req: Request) {
     )
   }
 
+  // Guards (F11): check paused and bootstrapped; return 409 with no outAtoms
+  if (pool.paused) {
+    return NextResponse.json(
+      {
+        error: `ConstellationPool ${poolId} is currently paused`,
+        code: 'pool_paused',
+        poolId,
+        paused: true,
+        bootstrapped: pool.bootstrapped,
+        slot: accountInfo.context.slot,
+      },
+      { status: 409 }
+    )
+  }
+
+  if (!pool.bootstrapped) {
+    return NextResponse.json(
+      {
+        error: `ConstellationPool ${poolId} is not bootstrapped`,
+        code: 'pool_not_bootstrapped',
+        poolId,
+        paused: pool.paused,
+        bootstrapped: false,
+        slot: accountInfo.context.slot,
+      },
+      { status: 409 }
+    )
+  }
+
   const isA = inElement === pool.elementA
   const reserveIn = isA ? pool.reserveA : pool.reserveB
   const reserveOut = isA ? pool.reserveB : pool.reserveA
@@ -127,25 +185,56 @@ export async function GET(req: Request) {
     unitsConsumed: number | null
   } | null = null
 
+  // Real RPC simulation via simulateTransaction when trader key is supplied (F2)
   if (traderStr) {
     let traderKey: PublicKey
     try {
       traderKey = new PublicKey(traderStr)
-      // Simulation placeholder if requested:
-      // Note: Full tx simulation requires a signed Ed25519 precompile instruction matching on-chain ProgramConfig
+
+      const swapIx = buildSwapEsmsInstruction({
+        poolId,
+        elementA: pool.elementA,
+        elementB: pool.elementB,
+        inElement,
+        inAmount: inAmountAtoms,
+        minOut: minOutAtoms,
+        trader: traderKey,
+        attestation: {
+          attestor: PublicKey.default,
+          signature: new Uint8Array(64),
+          regionCommit: new Uint8Array(32),
+          visibleStars: 7,
+          nonce: 0n,
+          deadline: BigInt(Math.floor(Date.now() / 1000) + 300),
+          clusterDomain: new Uint8Array(32),
+        },
+      })
+
+      const messageV0 = new TransactionMessage({
+        payerKey: traderKey,
+        recentBlockhash: PublicKey.default.toBase58(),
+        instructions: [swapIx],
+      }).compileToV0Message()
+      const tx = new VersionedTransaction(messageV0)
+
+      const sim = await connection.simulateTransaction(tx, {
+        sigVerify: false,
+        replaceRecentBlockhash: true,
+      })
+
       simulationResult = {
         simulated: true,
-        err: null,
-        logs: [
-          `Program ${ASOL_SOLANA_PROGRAM_ID.toBase58()} invoke [1]`,
-          `Program log: Instruction: SwapEsms`,
-          `Program log: Swapped ${inAmountAtoms} element ${inElement} -> ${outAtoms} element ${outElement}`,
-          `Program ${ASOL_SOLANA_PROGRAM_ID.toBase58()} success`,
-        ],
-        unitsConsumed: 42000,
+        err: sim.value.err,
+        logs: sim.value.logs,
+        unitsConsumed: sim.value.unitsConsumed ?? null,
       }
-    } catch {
-      // Ignore trader if invalid pubkey, just omit simulation
+    } catch (simErr) {
+      simulationResult = {
+        simulated: false,
+        err: (simErr as Error).message,
+        logs: null,
+        unitsConsumed: null,
+      }
     }
   }
 

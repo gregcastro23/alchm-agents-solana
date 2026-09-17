@@ -9,8 +9,10 @@ import { mintEsmsClaimSolana, getSolanaClaimSettlementProof } from '@/lib/solana
 import {
   computeDuelReceiptId,
   computeDuelLedgerReference,
+  resolvePillarId,
   DUEL_WIN_REWARD,
   DUEL_WIN_DAILY_CAP,
+  DUEL_WIN_PAIR_DAILY_CAP,
 } from '@/lib/solana/duel-attestation'
 
 export const runtime = 'nodejs'
@@ -186,15 +188,25 @@ export async function handleDuelAttestation(
     )
   }
 
-  // 7. Canonical receipt & ledger reference derivation
-  const dbIdentity = process.env.SPACETIMEDB_IDENTITY || '0'.repeat(64)
+  // 7. Canonical receipt & ledger reference derivation (F3: fail closed if missing or invalid)
+  const dbIdentity = process.env.SPACETIMEDB_IDENTITY?.trim()
+  if (!dbIdentity || !/^[0-9a-fA-F]{64}$/.test(dbIdentity)) {
+    return NextResponse.json(
+      {
+        error: 'SpacetimeDB identity misconfigured (SPACETIMEDB_IDENTITY must be a 64-hex string)',
+        code: 'arena_misconfigured',
+      },
+      { status: 503 }
+    )
+  }
+
   const createdAtMicros = BigInt(
     duel.created_at?.__timestamp_micros_since_unix_epoch__ ?? duel.created_at ?? 0
   )
   const resolvedAtMicros = BigInt(
     duel.updated_at?.__timestamp_micros_since_unix_epoch__ ?? duel.updated_at ?? createdAtMicros
   )
-  const openingPillar = typeof duel.opening_pillar === 'number' ? duel.opening_pillar : 1
+  const openingPillar = resolvePillarId(duel.opening_pillar)
   const powerRatio = typeof duel.opening_power_ratio === 'number' ? duel.opening_power_ratio : 1.0
   const powerRatioBps = Math.round(powerRatio * 10_000)
 
@@ -209,16 +221,18 @@ export async function handleDuelAttestation(
     resolvedAtMicros,
   })
 
+  const receiptIdHex = Buffer.from(duelReceiptId).toString('hex')
+
   // 8. Pre-check: Idempotency / Already settled claim
   try {
-    const proof = await getSolanaClaimSettlementProof(Buffer.from(duelReceiptId).toString('hex'))
+    const proof = await getSolanaClaimSettlementProof(receiptIdHex)
     if (proof.settled) {
       return NextResponse.json(
         {
           ok: true,
           settled: true,
           txHash: proof.txHash,
-          receiptId: Buffer.from(duelReceiptId).toString('hex'),
+          receiptId: receiptIdHex,
           receiptAddress: receiptAddress.toBase58(),
           ledgerReferenceHash: Buffer.from(ledgerReferenceHash).toString('hex'),
         },
@@ -229,15 +243,13 @@ export async function handleDuelAttestation(
     // Continue if proof pre-check failover passes to mint path
   }
 
-  // 9. Daily Cap Enforcement
-  const utcDayStart = new Date()
-  utcDayStart.setUTCHours(0, 0, 0, 0)
-  const claimsToday = await prisma.tokenTransaction.count({
+  // 9. Daily Cap & Pair Limit Enforcement (F4, F5: uses dedicated duel_reward_claim table)
+  const utcDay = new Date().toISOString().slice(0, 10)
+  const claimsToday = await prisma.duelRewardClaim.count({
     where: {
-      userId,
-      sourceType: 'pillar_duel_win',
-      tokenType: 'Spirit',
-      createdAt: { gte: utcDayStart },
+      wallet: callerWallet,
+      day: utcDay,
+      state: { in: ['pending', 'settled'] },
     },
   })
 
@@ -255,22 +267,92 @@ export async function handleDuelAttestation(
     )
   }
 
-  // 10. Mint on-chain via claim_mint_esms
+  const pairClaimsToday = await prisma.duelRewardClaim.count({
+    where: {
+      wallet: callerWallet,
+      opponentIdentity,
+      day: utcDay,
+      state: { in: ['pending', 'settled'] },
+    },
+  })
+
+  if (pairClaimsToday >= DUEL_WIN_PAIR_DAILY_CAP) {
+    return NextResponse.json(
+      {
+        ok: false,
+        error: 'Daily duel reward cap for this opponent pair reached',
+        code: 'pair_cap_exceeded',
+        capped: true,
+        pairClaimsToday,
+        pairDailyCap: DUEL_WIN_PAIR_DAILY_CAP,
+      },
+      { status: 429 }
+    )
+  }
+
+  // Atomic insert: state = 'pending' acts as concurrency lock
+  try {
+    await prisma.duelRewardClaim.create({
+      data: {
+        receiptId: receiptIdHex,
+        userId,
+        wallet: callerWallet,
+        duelId: duelIdStr,
+        dbIdentity,
+        opponentIdentity,
+        day: utcDay,
+        state: 'pending',
+      },
+    })
+  } catch {
+    const existing = await prisma.duelRewardClaim.findUnique({
+      where: { receiptId: receiptIdHex },
+    })
+    if (existing?.state === 'settled' && existing.txHash) {
+      return NextResponse.json(
+        {
+          ok: true,
+          settled: true,
+          txHash: existing.txHash,
+          receiptId: receiptIdHex,
+          receiptAddress: receiptAddress.toBase58(),
+          ledgerReferenceHash: Buffer.from(ledgerReferenceHash).toString('hex'),
+        },
+        { status: 200 }
+      )
+    }
+    return NextResponse.json(
+      {
+        error: 'Claim for this duel is currently being processed',
+        code: 'claim_pending',
+      },
+      { status: 409 }
+    )
+  }
+
+  // 10. Mint on-chain via claim_mint_esms (F6: passing explicit ledgerReferenceHash)
   let txHash: string
   try {
     txHash = await mintEsmsClaimSolana({
       recipient: callerWallet,
-      claimId: Buffer.from(duelReceiptId).toString('hex'),
+      claimId: receiptIdHex,
       amounts: DUEL_WIN_REWARD,
+      ledgerReferenceHash,
     })
   } catch (mintErr) {
     // Re-check settlement proof in case of network timeout after transaction landing
-    const proof = await getSolanaClaimSettlementProof(
-      Buffer.from(duelReceiptId).toString('hex')
-    ).catch(() => ({ settled: false as const }))
+    const proof = await getSolanaClaimSettlementProof(receiptIdHex).catch(() => ({
+      settled: false as const,
+    }))
     if (proof.settled) {
       txHash = proof.txHash
     } else {
+      await prisma.duelRewardClaim
+        .update({
+          where: { receiptId: receiptIdHex },
+          data: { state: 'failed' },
+        })
+        .catch(() => {})
       return NextResponse.json(
         {
           error: `Solana on-chain claim mint failed: ${(mintErr as Error).message}`,
@@ -281,19 +363,12 @@ export async function handleDuelAttestation(
     }
   }
 
-  // Track transaction in Prisma for daily cap counting
-  await prisma.tokenTransaction
-    .create({
+  await prisma.duelRewardClaim
+    .update({
+      where: { receiptId: receiptIdHex },
       data: {
-        userId,
-        transactionGroupId: txHash,
-        tokenType: 'Spirit',
-        amount: 0.1 as any,
-        sourceType: 'pillar_duel_win',
-        sourceId: duelIdStr,
-        description: `14-Pillars Duel Win #${duelIdStr}`,
-        idempotencyKey: `pillar_duel:${duelIdStr}`,
-        createdAt: new Date(),
+        state: 'settled',
+        txHash,
       },
     })
     .catch(() => {})
@@ -303,7 +378,7 @@ export async function handleDuelAttestation(
       ok: true,
       settled: true,
       txHash,
-      receiptId: Buffer.from(duelReceiptId).toString('hex'),
+      receiptId: receiptIdHex,
       receiptAddress: receiptAddress.toBase58(),
       ledgerReferenceHash: Buffer.from(ledgerReferenceHash).toString('hex'),
       reward: DUEL_WIN_REWARD,
