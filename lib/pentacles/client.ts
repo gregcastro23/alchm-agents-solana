@@ -527,3 +527,145 @@ export class PentaclesClient {
     }
   }
 }
+
+// ==========================================
+// Phase 4.5: Pentacle ↔ ESMS Conversion Client
+// ==========================================
+
+import { getSpacetimeConfig } from '@/lib/spacetime/config'
+import { decodeSqlResult, type Transport } from '@/lib/vessel/spacetime-stats'
+import type { EsmsElement } from './rate'
+
+export interface PentacleBalances {
+  identity: string
+  freeAtoms: [bigint, bigint, bigint, bigint] // [spirit, essence, matter, substance]
+  boundAtoms: [bigint, bigint, bigint, bigint]
+}
+
+function httpEndpoint(): { base: string; db: string } | null {
+  const cfg = getSpacetimeConfig()
+  if (!cfg) return null
+  const base = cfg.uri
+    .replace(/^wss:\/\//, 'https://')
+    .replace(/^ws:\/\//, 'http://')
+    .replace(/\/+$/, '')
+  return { base, db: cfg.moduleName }
+}
+
+export async function callPentaclesReducer(
+  reducerName: string,
+  args: unknown[],
+  transport: Transport = fetch
+): Promise<{ ok: boolean; status: number; error?: string }> {
+  const target = httpEndpoint()
+  if (!target) throw new Error('SpacetimeDB not configured')
+
+  const res = await transport(`${target.base}/v1/database/${target.db}/call/${reducerName}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(args),
+    signal: AbortSignal.timeout(8_000),
+    cache: 'no-store',
+  })
+
+  if (!res.ok) {
+    const text = (await res.text().catch(() => '')).slice(0, 200)
+    return { ok: false, status: res.status, error: text || `HTTP ${res.status}` }
+  }
+
+  return { ok: true, status: 200 }
+}
+
+export async function queryPentaclesSql(
+  query: string,
+  transport: Transport = fetch
+): Promise<Record<string, any>[]> {
+  const target = httpEndpoint()
+  if (!target) throw new Error('SpacetimeDB not configured')
+
+  const res = await transport(`${target.base}/v1/database/${target.db}/sql`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'text/plain' },
+    body: query,
+    signal: AbortSignal.timeout(6_000),
+    cache: 'no-store',
+  })
+
+  if (!res.ok) {
+    const text = (await res.text().catch(() => '')).slice(0, 120)
+    throw new Error(text || `HTTP ${res.status}`)
+  }
+
+  return decodeSqlResult(await res.json())
+}
+
+/**
+ * Escrows free pentacles for an outbound conversion (⛤ -> ESMS).
+ * Fails if user lacks sufficient free atoms on any requested element.
+ */
+export async function escrowPentaclesForConversion(
+  identity: string,
+  conversionId: string,
+  atoms: [bigint, bigint, bigint, bigint],
+  transport: Transport = fetch
+): Promise<{ ok: boolean; error?: string }> {
+  const atomsArray = atoms.map(a => a.toString())
+  const res = await callPentaclesReducer(
+    'escrow_pentacles_for_conversion',
+    [identity, conversionId, atomsArray],
+    transport
+  )
+  if (!res.ok) {
+    return { ok: false, error: res.error }
+  }
+  return { ok: true }
+}
+
+/**
+ * Settles a pentacle conversion escrow into completed state.
+ */
+export async function settlePentacleConversion(
+  conversionId: string,
+  transport: Transport = fetch
+): Promise<{ ok: boolean; error?: string }> {
+  const res = await callPentaclesReducer('settle_pentacle_conversion', [conversionId], transport)
+  if (!res.ok) {
+    return { ok: false, error: res.error }
+  }
+  return { ok: true }
+}
+
+/**
+ * Refunds an escrowed pentacle conversion back to the user's free balance.
+ */
+export async function refundPentacleConversion(
+  conversionId: string,
+  transport: Transport = fetch
+): Promise<{ ok: boolean; error?: string }> {
+  const res = await callPentaclesReducer('refund_pentacle_conversion', [conversionId], transport)
+  if (!res.ok) {
+    return { ok: false, error: res.error }
+  }
+  return { ok: true }
+}
+
+/**
+ * Credits new free pentacles to an identity from an inbound conversion (ESMS -> ⛤).
+ */
+export async function creditPentaclesFromConversion(
+  identity: string,
+  conversionId: string,
+  atoms: [bigint, bigint, bigint, bigint],
+  transport: Transport = fetch
+): Promise<{ ok: boolean; error?: string }> {
+  const atomsArray = atoms.map(a => a.toString())
+  const res = await callPentaclesReducer(
+    'credit_pentacles_from_conversion',
+    [identity, conversionId, atomsArray],
+    transport
+  )
+  if (!res.ok) {
+    return { ok: false, error: res.error }
+  }
+  return { ok: true }
+}
