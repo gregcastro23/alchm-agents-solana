@@ -32,7 +32,7 @@ vi.mock('@/lib/solana/solana-minter', () => ({
   toSolanaOnchainAmounts: vi.fn((amounts: any) => [1000n, 1000n, 1000n, 1000n]),
 }))
 
-import { handleDuelAttestation } from '@/app/api/solana/duel-attestation/route'
+import { handleDuelAttestation } from '@/lib/solana/duel-attestation-handler'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
 import { extractDesktopApiKey, authenticateDesktopApiKey } from '@/lib/security/desktop-auth'
@@ -45,9 +45,6 @@ import {
   computeDuelReceiptId,
   computeDuelLedgerReference,
   resolvePillarId,
-  DUEL_WIN_REWARD,
-  DUEL_WIN_DAILY_CAP,
-  DUEL_WIN_PAIR_DAILY_CAP,
 } from '@/lib/solana/duel-attestation'
 import { poolUnitsToAtoms, atomsToPoolUnits, ESMS_ATOMS_PER_POOL_UNIT } from '@/lib/solana/esms'
 import { decodeSqlResult } from '@/lib/vessel/spacetime-stats'
@@ -129,20 +126,6 @@ describe('14-Pillars Pool Unit Conversion Math (Section A1 & F1)', () => {
     expect(atomsToPoolUnits(10000n)).toBe(10)
     expect(atomsToPoolUnits(23456n)).toBe(23)
     expect(ESMS_ATOMS_PER_POOL_UNIT).toBe(1000n)
-  })
-
-  it('toSolanaOnchainAmounts(DUEL_WIN_REWARD) equals intended atoms (1,000 per element)', () => {
-    // Unmock to test real toSolanaOnchainAmounts logic
-    const { toSolanaOnchainAmounts: realToSolana } = vi.importActual<any>(
-      '@/lib/solana/solana-minter'
-    )
-    // DUEL_WIN_REWARD is '0.1' per element
-    expect(DUEL_WIN_REWARD).toEqual({
-      spirit: '0.1',
-      essence: '0.1',
-      matter: '0.1',
-      substance: '0.1',
-    })
   })
 })
 
@@ -253,7 +236,7 @@ describe('POST /api/solana/duel-attestation Rejection Gates (Section A5)', () =>
     const transport = mockTransport(mockResolvedDuel({ target_agent: 'Mars', target_player: null }))
     const res = await handleDuelAttestation(req({ duelId: '42' }), transport)
     expect(res.status).toBe(422)
-    expect((await res.json()).code).toBe('agent_duel_not_rewarded')
+    expect((await res.json()).code).toBe('agent_duel_not_eligible')
     expect(mintEsmsClaimSolana).not.toHaveBeenCalled()
   })
 

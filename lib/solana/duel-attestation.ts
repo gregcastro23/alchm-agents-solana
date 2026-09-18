@@ -1,21 +1,6 @@
 import { createHash } from 'node:crypto'
 import { PublicKey } from '@solana/web3.js'
-import type { EsmsClaimAmounts } from './solana-minter'
 import { PILLARS } from '@/lib/alchemy/pillars'
-
-/** Fixed on-chain ESMS reward per verified 14-Pillars duel win: 0.1 ESMS (1,000 atoms = 1 pool unit) per element. */
-export const DUEL_WIN_REWARD: EsmsClaimAmounts = {
-  spirit: '0.1',
-  essence: '0.1',
-  matter: '0.1',
-  substance: '0.1',
-} as const
-
-/** Maximum duel win claims permitted per wallet per UTC day. */
-export const DUEL_WIN_DAILY_CAP = 5
-
-/** Maximum duel win claims permitted between the same opponent pair per UTC day. */
-export const DUEL_WIN_PAIR_DAILY_CAP = 2
 
 export const DUEL_RECEIPT_DOMAIN = Buffer.from('ASOL_PILLAR_DUEL_RECEIPT_V1')
 

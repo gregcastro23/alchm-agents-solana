@@ -8,26 +8,12 @@ import {
   quoteAmmSwap,
   type EsmsElementId,
 } from '@/lib/solana/constellation-amm'
+import { getCachedPoolAccount, setCachedPoolAccount } from '@/lib/solana/amm-pool-cache'
 import { getSolanaNetworkConfig } from '@/lib/solana/network-config'
 
 export const runtime = 'nodejs'
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
-
-// In-memory pool query cache (TTL ≈ 2s) to prevent RPC flooding on rapid polling (F11)
-interface CachedPoolAccount {
-  accountInfo: {
-    context: { slot: number }
-    value: { data: Buffer | Uint8Array } | null
-  }
-  fetchedAt: number
-}
-const poolCache = new Map<number, CachedPoolAccount>()
-const CACHE_TTL_MS = 2000
-
-export function clearAmmQuotePoolCache(): void {
-  poolCache.clear()
-}
 
 export async function GET(req: Request) {
   const url = new URL(req.url)
@@ -95,16 +81,15 @@ export async function GET(req: Request) {
     value: { data: Buffer | Uint8Array } | null
   } | null = null
 
-  const now = Date.now()
-  const cached = poolCache.get(poolId)
-  if (cached && now - cached.fetchedAt < CACHE_TTL_MS) {
+  const cached = getCachedPoolAccount(poolId)
+  if (cached) {
     accountInfo = cached.accountInfo
   } else {
     try {
       const fetched = await connection.getAccountInfoAndContext(poolAddress)
       accountInfo = fetched
       if (fetched) {
-        poolCache.set(poolId, { accountInfo: fetched, fetchedAt: now })
+        setCachedPoolAccount(poolId, fetched)
       }
     } catch (err) {
       return NextResponse.json(

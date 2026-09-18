@@ -37,7 +37,8 @@ vi.mock('@/lib/solana/constellation-amm', async importOriginal => {
   }
 })
 
-import { GET, clearAmmQuotePoolCache } from '@/app/api/solana/amm-quote/route'
+import { GET } from '@/app/api/solana/amm-quote/route'
+import { clearAmmQuotePoolCache } from '@/lib/solana/amm-pool-cache'
 
 const req = (params: string) =>
   new Request(`http://localhost/api/solana/amm-quote?${params}`, { method: 'GET' })
