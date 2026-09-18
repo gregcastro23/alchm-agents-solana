@@ -285,4 +285,16 @@ mod tests {
         assert_eq!(withdrawn_a, deposit_a);
         assert_eq!(withdrawn_b, deposit_b);
     }
+
+    #[test]
+    fn test_quote_swap_golden_vectors() {
+        // Shared parity vectors between TS (constellation-amm.ts) and Rust (F9)
+        // Vector 1: reserve_in: 500k, reserve_out: 2M, fee_bps: 50, in: 50k -> 180_991
+        let out1 = quote_swap(500_000, 2_000_000, 50, 50_000).unwrap();
+        assert_eq!(out1, 180_991);
+
+        // Vector 2: reserve_in: 10M, reserve_out: 5M, fee_bps: 100, in: 1M -> 450_409
+        let out2 = quote_swap(10_000_000, 5_000_000, 100, 1_000_000).unwrap();
+        assert_eq!(out2, 450_409);
+    }
 }

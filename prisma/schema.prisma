@@ -1804,3 +1804,5 @@ model admin_audit_log {
   @@index([actorId])
   @@map("admin_audit_log")
 }
+
+

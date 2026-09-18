@@ -15,7 +15,7 @@ const BASE58_PUBKEY = /^[1-9A-HJ-NP-Za-km-z]{32,44}$/
 const HEX_IDENTITY = /^(0x)?[0-9a-f]{64}$/i
 
 type Row = Record<string, unknown>
-type Transport = typeof fetch
+export type Transport = typeof fetch
 
 export interface PentaclesVesselStats {
   identity: string

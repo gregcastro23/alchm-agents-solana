@@ -92,6 +92,7 @@ const SOURCE_LABEL: Record<VesselSourceKey, string> = {
   agentsArena: 'Agents arena',
   spacetimedb: 'Pentacles (SpacetimeDB)',
   priceIndex: 'Price index',
+  onchain: 'On-chain (Solana Token-2022)',
 }
 
 const fmt = (n: number) => n.toLocaleString(undefined, { maximumFractionDigits: 4 })

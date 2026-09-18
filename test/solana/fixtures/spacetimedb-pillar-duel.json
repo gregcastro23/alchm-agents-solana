@@ -1,0 +1,255 @@
+[
+  {
+    "schema": {
+      "elements": [
+        {
+          "name": {
+            "some": "duel_id"
+          },
+          "algebraic_type": {
+            "U64": []
+          }
+        },
+        {
+          "name": {
+            "some": "initiator"
+          },
+          "algebraic_type": {
+            "Identity": []
+          }
+        },
+        {
+          "name": {
+            "some": "target_player"
+          },
+          "algebraic_type": {
+            "Sum": {
+              "variants": [
+                {
+                  "name": {
+                    "some": "some"
+                  },
+                  "algebraic_type": {
+                    "Identity": []
+                  }
+                },
+                {
+                  "name": {
+                    "some": "none"
+                  },
+                  "algebraic_type": {
+                    "Product": {
+                      "elements": []
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": {
+            "some": "target_agent"
+          },
+          "algebraic_type": {
+            "Sum": {
+              "variants": [
+                {
+                  "name": {
+                    "some": "some"
+                  },
+                  "algebraic_type": {
+                    "String": []
+                  }
+                },
+                {
+                  "name": {
+                    "some": "none"
+                  },
+                  "algebraic_type": {
+                    "Product": {
+                      "elements": []
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": {
+            "some": "sky"
+          },
+          "algebraic_type": {
+            "Sum": {
+              "variants": [
+                {
+                  "name": {
+                    "some": "Diurnal"
+                  }
+                },
+                {
+                  "name": {
+                    "some": "Nocturnal"
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": {
+            "some": "opening_pillar"
+          },
+          "algebraic_type": {
+            "Sum": {
+              "variants": [
+                {
+                  "name": {
+                    "some": "Solution"
+                  }
+                },
+                {
+                  "name": {
+                    "some": "Filtration"
+                  }
+                },
+                {
+                  "name": {
+                    "some": "Evaporation"
+                  }
+                },
+                {
+                  "name": {
+                    "some": "Distillation"
+                  }
+                },
+                {
+                  "name": {
+                    "some": "Separation"
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": {
+            "some": "opening_power_ratio"
+          },
+          "algebraic_type": {
+            "F64": []
+          }
+        },
+        {
+          "name": {
+            "some": "state"
+          },
+          "algebraic_type": {
+            "Sum": {
+              "variants": [
+                {
+                  "name": {
+                    "some": "Open"
+                  }
+                },
+                {
+                  "name": {
+                    "some": "Resolved"
+                  }
+                },
+                {
+                  "name": {
+                    "some": "Canceled"
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": {
+            "some": "winner_is_initiator"
+          },
+          "algebraic_type": {
+            "Sum": {
+              "variants": [
+                {
+                  "name": {
+                    "some": "some"
+                  },
+                  "algebraic_type": {
+                    "Bool": []
+                  }
+                },
+                {
+                  "name": {
+                    "some": "none"
+                  },
+                  "algebraic_type": {
+                    "Product": {
+                      "elements": []
+                    }
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": {
+            "some": "created_at"
+          },
+          "algebraic_type": {
+            "Product": {
+              "elements": [
+                {
+                  "name": {
+                    "some": "__timestamp_micros_since_unix_epoch__"
+                  },
+                  "algebraic_type": {
+                    "I64": []
+                  }
+                }
+              ]
+            }
+          }
+        },
+        {
+          "name": {
+            "some": "updated_at"
+          },
+          "algebraic_type": {
+            "Product": {
+              "elements": [
+                {
+                  "name": {
+                    "some": "__timestamp_micros_since_unix_epoch__"
+                  },
+                  "algebraic_type": {
+                    "I64": []
+                  }
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    "rows": [
+      [
+        42,
+        "000102030405060708090a0b0c0d0e0f101112131415161718191a1b1c1d1e1f",
+        [0, "202122232425262728292a2b2c2d2e2f303132333435363738393a3b3c3d3e3f"],
+        [1, []],
+        [0, []],
+        [3, []],
+        1.25,
+        [1, []],
+        [0, true],
+        [1710000000000000],
+        [1710000005000000]
+      ]
+    ]
+  }
+]

@@ -1,3 +1,4 @@
+import { Connection, PublicKey } from '@solana/web3.js'
 // @vitest-environment node
 
 import { NextRequest } from 'next/server'
@@ -23,6 +24,7 @@ import { prisma } from '@/lib/db'
 import {
   assembleVesselState,
   loadVesselForUser,
+  loadOnchainBalances,
   type KitchenVesselLedger,
 } from '@/lib/vessel/summary'
 import { decodeSqlResult, foldDuels, identityHex } from '@/lib/vessel/spacetime-stats'
@@ -150,9 +152,34 @@ const allOk = {
   agentsArena: { ok: true },
   spacetimedb: { ok: true },
   priceIndex: { ok: true },
+  onchain: { ok: true },
 }
 
 describe('assembleVesselState', () => {
+  it('includes onchain Token-2022 atoms and slot when present', () => {
+    const vessel = assembleVesselState({
+      walletAddress: WALLET,
+      kitchen,
+      agents: null,
+      pentacles: null,
+      usdRail: null,
+      onchain: {
+        cluster: 'devnet',
+        wallet: WALLET,
+        atoms: ['10000', '20000', '30000', '40000'],
+        slot: 123456,
+      },
+      sources: allOk,
+      now: 1,
+    })
+    expect(vessel.onchain).toEqual({
+      cluster: 'devnet',
+      wallet: WALLET,
+      atoms: ['10000', '20000', '30000', '40000'],
+      slot: 123456,
+    })
+  })
+
   it('passes ledger balances through quantized, never adding value', () => {
     const vessel = assembleVesselState({
       walletAddress: WALLET,
@@ -264,5 +291,76 @@ describe('Pentacles SpacetimeDB decoding', () => {
       ['pillar:3', true],
       ['pillar:4', null],
     ])
+  })
+})
+
+describe('loadOnchainBalances (F8 on-chain reader)', () => {
+  it('missing token account (null) returns 0 atoms without failing (F8)', async () => {
+    const mockGetMultiple = vi
+      .spyOn(Connection.prototype, 'getMultipleAccountsInfoAndContext')
+      .mockResolvedValueOnce({
+        context: { slot: 999111 },
+        value: [null, null, null, null],
+      } as any)
+
+    const res = await loadOnchainBalances(WALLET)
+    expect(res).not.toBeNull()
+    expect(res?.atoms).toEqual(['0', '0', '0', '0'])
+    expect(res?.slot).toBe(999111)
+    expect(res?.cluster).toBe('devnet')
+    expect(mockGetMultiple).toHaveBeenCalledTimes(1)
+  })
+
+  it('reads SPL Token-2022 raw amount at offset 64 for present accounts', async () => {
+    const accData = Buffer.alloc(80)
+    accData.writeBigUInt64LE(50000n, 64) // 5.0000 tokens
+
+    vi.spyOn(Connection.prototype, 'getMultipleAccountsInfoAndContext').mockResolvedValueOnce({
+      context: { slot: 999222 },
+      value: [{ data: accData }, null, null, null],
+    } as any)
+
+    const res = await loadOnchainBalances(WALLET)
+    expect(res?.atoms).toEqual(['50000', '0', '0', '0'])
+    expect(res?.slot).toBe(999222)
+  })
+
+  it('propagates RPC errors so track("onchain") records source failure (F8)', async () => {
+    vi.spyOn(Connection.prototype, 'getMultipleAccountsInfoAndContext').mockRejectedValueOnce(
+      new Error('RPC connection refused 503')
+    )
+
+    await expect(loadOnchainBalances(WALLET)).rejects.toThrow('RPC connection refused 503')
+  })
+
+  it('derives mainnet mints and cluster when network is mainnet-beta (F8)', async () => {
+    const prevNet = process.env.SOLANA_NETWORK
+    const prevProg = process.env.SOLANA_PROGRAM_ID
+    const prevRpc = process.env.SOLANA_RPC_URL
+    try {
+      process.env.SOLANA_NETWORK = 'mainnet-beta'
+      process.env.SOLANA_RPC_URL = 'https://api.mainnet-beta.solana.com'
+      process.env.SOLANA_PROGRAM_ID = '9xQeWvG816bUx9EPjHmaT23yvVM2ZWbrrpZb9PusVFin'
+
+      let queriedKeys: PublicKey[] = []
+      vi.spyOn(Connection.prototype, 'getMultipleAccountsInfoAndContext').mockImplementationOnce(
+        async (keys: any) => {
+          queriedKeys = keys
+          return { context: { slot: 12345678 }, value: [null, null, null, null] } as any
+        }
+      )
+
+      const res = await loadOnchainBalances(WALLET)
+      expect(res?.cluster).toBe('mainnet-beta')
+      expect(res?.slot).toBe(12345678)
+      expect(queriedKeys.length).toBe(4)
+    } finally {
+      if (prevNet !== undefined) process.env.SOLANA_NETWORK = prevNet
+      else delete process.env.SOLANA_NETWORK
+      if (prevProg !== undefined) process.env.SOLANA_PROGRAM_ID = prevProg
+      else delete process.env.SOLANA_PROGRAM_ID
+      if (prevRpc !== undefined) process.env.SOLANA_RPC_URL = prevRpc
+      else delete process.env.SOLANA_RPC_URL
+    }
   })
 })

@@ -1,3 +1,11 @@
+import { Connection, PublicKey } from '@solana/web3.js'
+import { getAssociatedTokenAddressSync } from '@solana/spl-token'
+import {
+  getEsmsMintAddresses,
+  ASOL_SOLANA_PROGRAM_ID,
+  TOKEN_2022_PROGRAM_ID,
+} from '@/lib/solana/esms'
+import { getSolanaNetworkConfig } from '@/lib/solana/network-config'
 /**
  * Assembles the Alchm Vessel for one already-authenticated user from its four
  * read-only sources. Authentication and the wallet-ownership check live in
@@ -52,6 +60,12 @@ export interface VesselInputs {
   agents: AgentsArenaStats | null
   pentacles: PentaclesVesselStats | null
   usdRail: { perTokenUsd: number; source: string | null } | null
+  onchain?: {
+    cluster: 'devnet' | 'mainnet-beta'
+    wallet: string
+    atoms: [string, string, string, string]
+    slot: number
+  } | null
   sources: Record<VesselSourceKey, VesselSourceStatus>
   now?: number
 }
@@ -131,6 +145,7 @@ export function assembleVesselState(inputs: VesselInputs): AlchmVesselState {
       },
     },
     ledger: kitchen?.recent ?? [],
+    onchain: inputs.onchain ?? null,
     sources: inputs.sources,
   }
 }
@@ -207,6 +222,54 @@ function describe(error: unknown): string {
   return error instanceof Error ? error.message : String(error)
 }
 
+export async function loadOnchainBalances(walletAddress: string): Promise<{
+  cluster: 'devnet' | 'mainnet-beta'
+  wallet: string
+  atoms: [string, string, string, string]
+  slot: number
+} | null> {
+  const walletPubkey = new PublicKey(walletAddress)
+  const networkConfig = getSolanaNetworkConfig()
+  const rpcUrl = networkConfig.rpcUrls[0] || 'https://api.devnet.solana.com'
+  const connection = new Connection(rpcUrl, 'confirmed')
+  const cluster = networkConfig.network === 'mainnet-beta' ? 'mainnet-beta' : 'devnet'
+
+  const programId = process.env.SOLANA_PROGRAM_ID
+    ? new PublicKey(process.env.SOLANA_PROGRAM_ID)
+    : ASOL_SOLANA_PROGRAM_ID
+  const mints = getEsmsMintAddresses(programId)
+
+  const atas = mints.map(mint =>
+    getAssociatedTokenAddressSync(mint, walletPubkey, false, TOKEN_2022_PROGRAM_ID)
+  )
+
+  // Single batch query across all 4 ATAs with slot context (F8)
+  const accountInfos = await connection.getMultipleAccountsInfoAndContext(atas)
+  const slot = accountInfos.context.slot
+
+  const atoms: [string, string, string, string] = ['0', '0', '0', '0']
+
+  accountInfos.value.forEach((account, idx) => {
+    if (!account) {
+      atoms[idx] = '0'
+    } else {
+      if (account.data.length >= 72) {
+        const buf = Buffer.from(account.data)
+        atoms[idx] = buf.readBigUInt64LE(64).toString()
+      } else {
+        atoms[idx] = '0'
+      }
+    }
+  })
+
+  return {
+    cluster,
+    wallet: walletAddress,
+    atoms,
+    slot,
+  }
+}
+
 export async function loadVesselForUser(opts: {
   userId: string
   email: string | null
@@ -218,6 +281,7 @@ export async function loadVesselForUser(opts: {
     agentsArena: { ok: false },
     spacetimedb: { ok: false },
     priceIndex: { ok: false },
+    onchain: { ok: false },
   }
 
   const track = <T>(key: VesselSourceKey, promise: Promise<T>): Promise<T | null> =>
@@ -232,17 +296,21 @@ export async function loadVesselForUser(opts: {
       }
     )
 
-  const [kitchen, agents, pentacles, priceIndex] = await Promise.all([
+  const [kitchen, agents, pentacles, priceIndex, onchain] = await Promise.all([
     track('kitchenLedger', loadKitchenLedger({ cookie: opts.cookie, email: opts.email })),
     track('agentsArena', loadAgentsArena(opts.userId)),
     opts.walletAddress
       ? track('spacetimedb', loadPentaclesVesselStats(opts.walletAddress))
       : Promise.resolve(null),
     track('priceIndex', loadCanonicalPriceIndex()),
+    opts.walletAddress
+      ? track('onchain', loadOnchainBalances(opts.walletAddress))
+      : Promise.resolve(null),
   ])
 
   if (!opts.walletAddress) {
     sources.spacetimedb = { ok: false, detail: 'no verified Solana wallet' }
+    sources.onchain = { ok: false, detail: 'no verified Solana wallet' }
   } else if (sources.spacetimedb.ok && !pentacles) {
     sources.spacetimedb = { ok: false, detail: 'no Pentacles identity bound to this wallet' }
   } else if (pentacles?.unavailable.length) {
@@ -263,6 +331,7 @@ export async function loadVesselForUser(opts: {
       redeem !== null
         ? { perTokenUsd: redeem, source: priceIndex?.railsUsd.redeemSource ?? null }
         : null,
+    onchain,
     sources,
   })
 }
