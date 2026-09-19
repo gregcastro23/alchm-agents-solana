@@ -9,6 +9,17 @@ export const dynamic = 'force-dynamic'
 export const revalidate = 0
 
 export async function POST(req: Request): Promise<Response> {
+  // 0. Feature Kill-Switch
+  if (process.env.FEATURE_PENTACLE_CONVERT !== 'true') {
+    return NextResponse.json(
+      {
+        error: 'Pentacle conversion is currently disabled pending ecosystem upgrade',
+        code: 'pentacle_conversion_disabled',
+      },
+      { status: 503 }
+    )
+  }
+
   // 1. Auth: session or desktop API key
   let userId: string
   const desktopKey = extractDesktopApiKey(req)

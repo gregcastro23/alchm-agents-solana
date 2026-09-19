@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/db'
 import { G_MIN, type EsmsElement } from './rate'
+import { queryPentaclesSql } from './client'
+import type { Transport } from '@/lib/vessel/spacetime-stats'
 
 export interface ElementalScores {
   spirit: number
@@ -10,11 +12,13 @@ export interface ElementalScores {
 
 export interface NatalGateResult {
   eligible: boolean
-  reason?: 'birth_chart_required' | 'invalid_scores'
+  reason?: 'birth_chart_required' | 'invalid_scores' | 'unsupported'
   message?: string
   gates?: Record<EsmsElement, number>
   dominantElement?: EsmsElement
   normalizedWeights?: Record<EsmsElement, number>
+  source?: 'spacetimedb_pentacle_gate' | 'user_natal_charts'
+  isImmutable?: boolean
 }
 
 /**
@@ -71,9 +75,41 @@ export function computeGatesFromScores(scores: ElementalScores): {
 
 /**
  * Resolves the natal chart for a user and computes their personalized conversion gates.
+ * Prioritizes committed immutable pentacle_gate in SpacetimeDB when an identity is available.
  */
-export async function resolveUserNatalGate(userId: string): Promise<NatalGateResult> {
-  // Query active primary natal chart
+export async function resolveUserNatalGate(
+  userId: string,
+  identity?: string,
+  transport?: Transport
+): Promise<NatalGateResult> {
+  // 1. If identity is known, check SpacetimeDB committed pentacle_gate first
+  if (identity) {
+    try {
+      const rows = await queryPentaclesSql(
+        `SELECT spirit_gate, essence_gate, matter_gate, substance_gate, dominant_element, is_immutable FROM pentacle_gate WHERE identity = '${identity}'`,
+        transport
+      )
+      if (rows && rows.length > 0) {
+        const row = rows[0]
+        return {
+          eligible: true,
+          gates: {
+            spirit: Number(row.spirit_gate),
+            essence: Number(row.essence_gate),
+            matter: Number(row.matter_gate),
+            substance: Number(row.substance_gate),
+          },
+          dominantElement: (row.dominant_element as EsmsElement) || 'spirit',
+          source: 'spacetimedb_pentacle_gate',
+          isImmutable: Boolean(row.is_immutable ?? true),
+        }
+      }
+    } catch {
+      // Table may not exist yet in SpacetimeDB prior to Phase 4 migration; fallback to local
+    }
+  }
+
+  // 2. Query active primary natal chart in local DB
   const chart = await prisma.user_natal_charts.findFirst({
     where: {
       userId,
@@ -129,6 +165,8 @@ export async function resolveUserNatalGate(userId: string): Promise<NatalGateRes
       gates,
       dominantElement,
       normalizedWeights,
+      source: 'user_natal_charts',
+      isImmutable: false,
     }
   }
 
