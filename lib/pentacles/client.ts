@@ -560,9 +560,23 @@ export async function callPentaclesReducer(
   const target = httpEndpoint()
   if (!target) throw new Error('SpacetimeDB not configured')
 
+  const ownerToken = process.env.PENTACLES_SPACETIME_OWNER_TOKEN
+  if (!ownerToken && process.env.NODE_ENV === 'production') {
+    throw new Error(
+      'PENTACLES_SPACETIME_OWNER_TOKEN is required in production for privileged reducer calls'
+    )
+  }
+
+  const headers: Record<string, string> = {
+    'Content-Type': 'application/json',
+  }
+  if (ownerToken) {
+    headers['Authorization'] = `Bearer ${ownerToken}`
+  }
+
   const res = await transport(`${target.base}/v1/database/${target.db}/call/${reducerName}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers,
     body: JSON.stringify(args),
     signal: AbortSignal.timeout(8_000),
     cache: 'no-store',
@@ -668,4 +682,39 @@ export async function creditPentaclesFromConversion(
     return { ok: false, error: res.error }
   }
   return { ok: true }
+}
+
+export interface StalePentacleEscrow {
+  conversionId: string
+  identity: string
+  status: 'escrowed' | 'settled' | 'refunded'
+  createdAt: string
+  atoms: [bigint, bigint, bigint, bigint]
+}
+
+/**
+ * Queries SpacetimeDB for conversion escrows older than the specified threshold
+ * that remain in 'escrowed' state, awaiting reconciliation.
+ */
+export async function queryStalePentacleEscrows(
+  olderThanMinutes = 10,
+  transport: Transport = fetch
+): Promise<StalePentacleEscrow[]> {
+  const cutoffTime = new Date(Date.now() - olderThanMinutes * 60 * 1000).toISOString()
+  const sql = `SELECT conversion_id, identity, status, created_at, atoms FROM pentacle_conversion_escrow WHERE status = 'escrowed' AND created_at < '${cutoffTime}'`
+  try {
+    const rows = await queryPentaclesSql(sql, transport)
+    return rows.map((r: any) => ({
+      conversionId: String(r.conversion_id),
+      identity: String(r.identity),
+      status: r.status,
+      createdAt: String(r.created_at),
+      atoms: Array.isArray(r.atoms)
+        ? (r.atoms.map((a: any) => BigInt(a)) as [bigint, bigint, bigint, bigint])
+        : [0n, 0n, 0n, 0n],
+    }))
+  } catch {
+    // Return empty list if table or database is offline/unmigrated
+    return []
+  }
 }

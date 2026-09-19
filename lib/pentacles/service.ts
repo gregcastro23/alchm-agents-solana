@@ -52,11 +52,18 @@ export interface CreateQuoteParams {
   amountAtoms: bigint
 }
 
-// In-memory set of consumed quote IDs to prevent duplicate execution attempts within ASOL process
+// In-memory set of consumed quote IDs to prevent duplicate execution attempts within process
 const executedQuoteIds = new Set<string>()
 
-function getQuoteSigningSecret(): string {
-  return process.env.INTERNAL_API_SECRET || process.env.AUTH_SECRET || 'asol-vessel-convert-secret'
+export function getQuoteSigningSecret(): string {
+  const secret = process.env.PENTACLE_QUOTE_SECRET
+  if (!secret) {
+    if (process.env.NODE_ENV === 'production') {
+      throw new Error('PENTACLE_QUOTE_SECRET environment variable is required in production')
+    }
+    return 'test-pentacle-quote-secret-do-not-use-in-prod'
+  }
+  return secret
 }
 
 export function signQuoteToken(payload: ConversionQuotePayload): string {
@@ -76,13 +83,20 @@ export function verifyQuoteToken(token: string): ConversionQuotePayload {
   }
 
   const { payload, hmac } = parsed
+  if (!payload || !hmac || typeof hmac !== 'string') {
+    throw new Error('Invalid quote token structure')
+  }
+
   const secret = getQuoteSigningSecret()
   const expectedHmac = crypto
     .createHmac('sha256', secret)
     .update(JSON.stringify(payload))
     .digest('hex')
 
-  if (!crypto.timingSafeEqual(Buffer.from(hmac, 'hex'), Buffer.from(expectedHmac, 'hex'))) {
+  const hmacBuf = Buffer.from(hmac, 'hex')
+  const expectedBuf = Buffer.from(expectedHmac, 'hex')
+
+  if (hmacBuf.length !== expectedBuf.length || !crypto.timingSafeEqual(hmacBuf, expectedBuf)) {
     throw new Error('Quote token signature verification failed')
   }
 
@@ -120,45 +134,22 @@ export async function createConversionQuote(
     where: { userId },
     select: { solanaPubKey: true },
   })
-  const walletAddress = verifiedWallet?.solanaPubKey ?? null
+  const walletAddress = verifiedWallet?.solanaPubKey
   if (!walletAddress) {
     return {
       ok: false,
-      code: 'no_wallet',
-      message: 'No verified Solana wallet linked to account',
-      status: 403,
-    }
-  }
-
-  // 3. Resolve natal gate (Hard gate: must have committed chart)
-  const gateResult = await resolveUserNatalGate(userId)
-  if (!gateResult.eligible || !gateResult.gates) {
-    return {
-      ok: false,
-      code: gateResult.reason || 'birth_chart_required',
-      message:
-        gateResult.message ||
-        'A committed natal birth chart is required to calibrate your conversion rate.',
+      code: 'wallet_required',
+      message: 'Verified Solana wallet required for pentacle conversion identity',
       status: 422,
     }
   }
 
-  const gate = gateResult.gates[element]
-  if (typeof gate !== 'number' || gate < 0.85 || gate > 1.0) {
-    return {
-      ok: false,
-      code: 'invalid_gate',
-      message: 'Invalid natal gate calculated',
-      status: 500,
-    }
-  }
-
-  // 4. Minimum threshold check
+  // 3. Minimum amount validation
   if (direction === 'pentacles_to_esms' && amountAtoms < MIN_PENTACLE_CONVERT_ATOMS) {
     return {
       ok: false,
       code: 'amount_below_minimum',
-      message: `Minimum conversion is ${MIN_PENTACLE_CONVERT_ATOMS / PENTACLE_ATOMS_PER_UNIT} ⛤ (${MIN_PENTACLE_CONVERT_ATOMS} atoms)`,
+      message: `Minimum conversion is 10 ⛤ (${MIN_PENTACLE_CONVERT_ATOMS} atoms)`,
       status: 400,
     }
   }
@@ -166,56 +157,71 @@ export async function createConversionQuote(
     return {
       ok: false,
       code: 'amount_below_minimum',
-      message: `Minimum conversion is ${MIN_ESMS_CONVERT_ATOMS / ESMS_ATOMS_PER_UNIT} ESMS (${MIN_ESMS_CONVERT_ATOMS} atoms)`,
+      message: `Minimum conversion is 1.0 ESMS (${MIN_ESMS_CONVERT_ATOMS} atoms)`,
       status: 400,
     }
   }
 
+  // 4. Resolve Natal Gate
+  const gateRes = await resolveUserNatalGate(userId)
+  if (!gateRes.eligible || !gateRes.gates) {
+    return {
+      ok: false,
+      code: gateRes.reason || 'birth_chart_required',
+      message: gateRes.message || 'Natal birth chart required for pentacle conversion',
+      status: 422,
+    }
+  }
+
+  const gate = gateRes.gates[element]
+  if (typeof gate !== 'number' || Number.isNaN(gate)) {
+    return {
+      ok: false,
+      code: 'invalid_gate',
+      message: `No valid natal gate found for element ${element}`,
+      status: 500,
+    }
+  }
+
   // 5. Load canonical price index
-  let priceIndexPayload
-  try {
-    priceIndexPayload = await loadCanonicalPriceIndex(customTransport)
-  } catch (err: any) {
+  const priceIndexPayload = await loadCanonicalPriceIndex()
+  if (!priceIndexPayload || !priceIndexPayload.compositeIndex) {
     return {
       ok: false,
       code: 'ticker_unavailable',
-      message: `Live price ticker unavailable: ${err.message}`,
+      message: 'Canonical ESMS price index is currently unavailable',
       status: 503,
     }
   }
 
-  if (
-    priceIndexPayload.live !== true ||
-    (priceIndexPayload.degraded && priceIndexPayload.degraded.length > 0)
-  ) {
-    return {
-      ok: false,
-      code: 'ticker_degraded',
-      message: 'Price index is currently degraded or offline. Conversion unavailable.',
-      status: 503,
-    }
-  }
-
-  // Check freshness (bucket age <= 10m)
+  // Freshness check: reject if > 10 minutes stale
   const bucketTime = new Date(priceIndexPayload.bucketStartUtc).getTime()
   if (Date.now() - bucketTime > 600_000) {
     return {
       ok: false,
       code: 'ticker_stale',
-      message: 'Price index bucket is stale (> 10m). Conversion unavailable.',
+      message: 'Canonical ESMS ticker data is stale (> 10m old)',
       status: 503,
     }
   }
 
-  const tokenQuote = priceIndexPayload.tokens.find(
-    t => t.token.toLowerCase() === element.toLowerCase()
-  )
-  if (!tokenQuote) {
+  // Degraded check
+  if (priceIndexPayload.degraded && priceIndexPayload.degraded.length > 0) {
     return {
       ok: false,
-      code: 'token_not_found',
-      message: `No quote found for token ${element}`,
-      status: 500,
+      code: 'ticker_degraded',
+      message: `Canonical ESMS ticker is degraded: ${priceIndexPayload.degraded.join(', ')}`,
+      status: 503,
+    }
+  }
+
+  const tokenQuote = priceIndexPayload.tokens.find(t => t.token.toLowerCase() === element)
+  if (!tokenQuote || !tokenQuote.index || tokenQuote.index <= 0) {
+    return {
+      ok: false,
+      code: 'token_index_unavailable',
+      message: `Price index for element ${element} is unavailable`,
+      status: 503,
     }
   }
 
@@ -234,7 +240,7 @@ export async function createConversionQuote(
   const quoteId = crypto
     .createHash('sha256')
     .update(
-      `${userId}:${direction}:${element}:${amountAtoms.toString()}:${priceIndexPayload.bucketStartUtc}:${now}`
+      `${userId}:${direction}:${element}:${amountAtoms.toString()}:${priceIndexPayload.bucketStartUtc}:${now}:${crypto.randomUUID()}`
     )
     .digest('hex')
 
@@ -359,14 +365,54 @@ export async function executeConversionQuote(
     })
 
     if (!creditRes.ok) {
-      // Release escrow on definitive credit failure
-      await refundPentacleConversion(quote.quoteId, customTransport).catch(() => {})
-      executedQuoteIds.delete(quote.quoteId)
-      return {
-        ok: false,
-        code: 'kitchen_credit_failed',
-        message: `Failed to credit ESMS: ${creditRes.error}`,
-        status: 502,
+      // Determine if rejection was definitive vs unconfirmed network error
+      const errStr = (creditRes.error || '').toLowerCase()
+      const isDefinitiveRejection =
+        errStr.includes('400') ||
+        errStr.includes('404') ||
+        errStr.includes('422') ||
+        errStr.includes('user not found') ||
+        errStr.includes('invalid')
+
+      if (isDefinitiveRejection) {
+        // Safe to refund escrow immediately: Kitchen definitely did not apply credit
+        await refundPentacleConversion(quote.quoteId, customTransport).catch(err => {
+          console.error(`[PentaclesConversion] Escrow refund failed for ${quote.quoteId}:`, err)
+        })
+        executedQuoteIds.delete(quote.quoteId)
+        return {
+          ok: false,
+          code: 'kitchen_credit_failed',
+          message: `Kitchen rejected credit: ${creditRes.error}`,
+          status: 400,
+        }
+      }
+
+      // If network timeout or 5xx: State is UNCERTAIN.
+      // Attempt an immediate idempotent retry to check if Kitchen accepted it
+      const retryRes = await syncCreditToAlchm({
+        userEmail: quote.userEmail,
+        amounts: { [element]: esmsUnits },
+        source: 'pentacle_conversion',
+        idempotencyKey,
+      }).catch(() => null)
+
+      if (retryRes && retryRes.ok) {
+        console.info(
+          `[PentaclesConversion] Kitchen credit confirmed on idempotent retry for ${quote.quoteId}`
+        )
+      } else {
+        // Unconfirmed: Escrow is RETAINED in SpacetimeDB for automated reconciler
+        console.warn(
+          `[PentaclesConversion] Kitchen credit unconfirmed for ${quote.quoteId}. Escrow retained for reconciliation.`
+        )
+        return {
+          ok: false,
+          code: 'kitchen_sync_pending',
+          message:
+            'Credit transaction status unconfirmed with Kitchen. Escrow retained for automated reconciliation.',
+          status: 504,
+        }
       }
     }
 
@@ -385,12 +431,20 @@ export async function executeConversionQuote(
         `Converted ${quote.inAmountAtoms} pentacle atoms into ${quote.outAmountAtoms} ESMS atoms`,
         idempotencyKey
       )
-    } catch {
-      // Mirror update warning logged; Kitchen is source of truth
+    } catch (mirrorErr) {
+      console.error(
+        `[PentaclesConversion] ASOL local mirror credit failed for ${quote.userId}:`,
+        mirrorErr
+      )
     }
 
     // Step 4: Settle SpacetimeDB escrow
-    await settlePentacleConversion(quote.quoteId, customTransport).catch(() => {})
+    await settlePentacleConversion(quote.quoteId, customTransport).catch(settleErr => {
+      console.error(
+        `[PentaclesConversion] Escrow settlement call failed for ${quote.quoteId}:`,
+        settleErr
+      )
+    })
 
     return {
       ok: true,
@@ -425,6 +479,18 @@ export async function executeConversionQuote(
       },
     })
 
+    // Multi-instance serverless replay protection:
+    // Kitchen returns { ok: true, reason: 'already_applied' } on 409 idempotency hit.
+    // If already applied, this quote was previously executed! Do NOT credit SpacetimeDB again!
+    if (debitRes.ok && debitRes.reason === 'already_applied') {
+      return {
+        ok: false,
+        code: 'quote_already_executed',
+        message: 'Quote has already been executed',
+        status: 409,
+      }
+    }
+
     if (!debitRes.ok) {
       executedQuoteIds.delete(quote.quoteId)
       if (debitRes.reason === 'insufficient_funds') {
@@ -458,8 +524,11 @@ export async function executeConversionQuote(
           idempotencyKey,
         }
       )
-    } catch {
-      // Mirror update warning logged; Kitchen is source of truth
+    } catch (mirrorErr) {
+      console.error(
+        `[PentaclesConversion] ASOL local mirror debit failed for ${quote.userId}:`,
+        mirrorErr
+      )
     }
 
     // Step 3: Credit free pentacles in SpacetimeDB
@@ -471,19 +540,52 @@ export async function executeConversionQuote(
     )
 
     if (!creditPentaclesRes.ok) {
-      // Refund Kitchen on definitive failure
-      await syncCreditToAlchm({
-        userEmail: quote.userEmail,
-        amounts: { [element]: esmsUnits },
-        source: 'pentacle_conversion_refund',
-        idempotencyKey: `pentacle_conv_refund:${quote.quoteId}`,
-      }).catch(() => {})
+      console.error(
+        `[PentaclesConversion] SpacetimeDB credit failed for quote ${quote.quoteId}: ${creditPentaclesRes.error}. Compensating Kitchen and ASOL mirror...`
+      )
+
+      // 1. Compensate Kitchen ledger
+      try {
+        await syncCreditToAlchm({
+          userEmail: quote.userEmail,
+          amounts: { [element]: esmsUnits },
+          source: 'pentacle_conversion_refund',
+          idempotencyKey: `pentacle_conv_refund:${quote.quoteId}`,
+        })
+      } catch (compErr) {
+        console.error(
+          `[PentaclesConversion] Kitchen refund compensation failed for ${quote.quoteId}:`,
+          compErr
+        )
+      }
+
+      // 2. Compensate ASOL local mirror
+      try {
+        const num = Number(esmsUnits)
+        await EconomyService.creditTokens(
+          quote.userId,
+          {
+            spirit: element === 'spirit' ? num : 0,
+            essence: element === 'essence' ? num : 0,
+            matter: element === 'matter' ? num : 0,
+            substance: element === 'substance' ? num : 0,
+          },
+          'pentacle_conversion_refund',
+          `Compensate failed pentacle credit for quote ${quote.quoteId}`,
+          `pentacle_conv_refund:${quote.quoteId}`
+        )
+      } catch (mirrorCompErr) {
+        console.error(
+          `[PentaclesConversion] Mirror compensation failed for ${quote.quoteId}:`,
+          mirrorCompErr
+        )
+      }
 
       executedQuoteIds.delete(quote.quoteId)
       return {
         ok: false,
-        code: 'pentacle_credit_failed',
-        message: `Failed to credit pentacles: ${creditPentaclesRes.error}`,
+        code: 'pentacle_credit_failed_compensated',
+        message: `Failed to credit pentacles: ${creditPentaclesRes.error}. Your ESMS debit has been compensated back to your account.`,
         status: 502,
       }
     }
