@@ -7,7 +7,7 @@ import { createServer } from 'http'
 import { WebSocketServer } from 'ws'
 import dotenv from 'dotenv'
 import { logger } from './utils/logger.js'
-import { validateProduction } from './utils/startup-validation.js'
+import { validateAuthConfig, validateProduction } from './utils/startup-validation.js'
 import { errorHandler, notFoundHandler } from './middleware/error-handler.js'
 import { requestLogger } from './middleware/request-logger.js'
 import { featureFlagMiddleware } from './middleware/feature-flags.js'
@@ -217,6 +217,9 @@ async function initializeServices() {
 
 // Start server
 async function startServer() {
+  // Every environment, once: authMiddleware fails closed without JWT_SECRET, and this says why.
+  validateAuthConfig().errors.forEach(error => logger.error(`❌ ${error}`))
+
   // Run production validation first
   if (process.env.NODE_ENV === 'production') {
     const isValid = await validateProduction()
