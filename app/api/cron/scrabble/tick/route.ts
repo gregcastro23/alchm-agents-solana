@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { runLeagueTick } from '@/lib/agents/scrabble-league'
 import { authorizeCron } from '@/lib/security/cron-auth'
+import { runCronJob } from '@/lib/cron/heartbeat'
 
 /**
  * POST/GET /api/cron/scrabble/tick (Vercel Cron, hourly)
@@ -26,10 +27,10 @@ export async function GET(request: Request) {
 }
 
 async function handleTick(request: Request) {
-  try {
-    const cronAuth = authorizeCron(request, 'cron/scrabble/tick')
-    if (!cronAuth.ok) return cronAuth.response
+  const cronAuth = authorizeCron(request, 'cron/scrabble/tick')
+  if (!cronAuth.ok) return cronAuth.response
 
+  return runCronJob('scrabble/tick', async () => {
     // Off by default until reviewed (see cost model). Flip SCRABBLE_LEAGUE_ENABLED=true to run.
     if (process.env.SCRABBLE_LEAGUE_ENABLED !== 'true') {
       return NextResponse.json(
@@ -54,8 +55,5 @@ async function handleTick(request: Request) {
       },
       { status: summary.errors.length === 0 ? 200 : 207 }
     )
-  } catch (error) {
-    console.error('[cron/scrabble/tick] Fatal error:', error)
-    return NextResponse.json({ success: false, error: 'Internal Server Error' }, { status: 500 })
-  }
+  })
 }

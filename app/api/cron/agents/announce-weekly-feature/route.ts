@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server'
 import { resolveWeeklyFeature } from '@/lib/agents/weekly-feature-rotation'
 import { feedPusherService } from '@/lib/agents/feed-pusher'
 import { authorizeCron } from '@/lib/security/cron-auth'
+import { runCronJob } from '@/lib/cron/heartbeat'
 
 /**
  * GET/POST /api/cron/agents/announce-weekly-feature
@@ -24,10 +25,10 @@ const AGENTIC_DOMAIN = '@agentic.alchm.kitchen'
 const cap = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1).toLowerCase() : s)
 
 async function handleAnnounce(request: Request) {
-  try {
-    const cronAuth = authorizeCron(request, 'cron/agents/announce-weekly-feature')
-    if (!cronAuth.ok) return cronAuth.response
+  const cronAuth = authorizeCron(request, 'cron/agents/announce-weekly-feature')
+  if (!cronAuth.ok) return cronAuth.response
 
+  return runCronJob('agents/announce-weekly-feature', async () => {
     const feature = await resolveWeeklyFeature()
 
     // Resolve guide names for the announcement copy.
@@ -93,8 +94,5 @@ async function handleAnnounce(request: Request) {
       pushError,
       timestamp: new Date().toISOString(),
     })
-  } catch (error) {
-    console.error('[cron/agents/announce-weekly-feature] Fatal error:', error)
-    return NextResponse.json({ success: false, error: 'Internal Server Error' }, { status: 500 })
-  }
+  })
 }

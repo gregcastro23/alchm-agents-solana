@@ -50,4 +50,8 @@ export default defineConfig({
       winston: path.resolve(__dirname, './test/stubs/winston.ts'),
     },
   },
+  // Next compiles JSX with the automatic runtime, so components need not import
+  // React. tsconfig's `jsx: preserve` would otherwise make esbuild emit classic
+  // `React.createElement` calls here, and such components fail in tests only.
+  esbuild: { jsx: 'automatic' },
 })

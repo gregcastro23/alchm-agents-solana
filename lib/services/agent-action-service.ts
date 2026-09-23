@@ -31,6 +31,7 @@ import {
   Y_MAX,
 } from '@/lib/economy-config'
 import { EconomyService } from '@/lib/services/economyService'
+import { pastBudget } from '@/lib/cron/registry'
 import { syncDebitToAlchm } from '@/lib/alchm-debit-sync'
 import { syncCreditToAlchm } from '@/lib/alchm-credit-sync'
 import { syncEventToAlchm } from '@/lib/alchm-event-sync'
@@ -109,6 +110,8 @@ export interface DailyYieldSummary {
   processedCount: number
   claimedCount: number
   skippedCount: number
+  /** Agents not attempted because the cron's time budget ran out (next run picks them up). */
+  skippedForBudget: number
   errors: Array<{ userId: string; error: string }>
 }
 
@@ -117,6 +120,8 @@ export interface TickSummary {
   evaluatedCount: number
   activatedCount: number
   actionsExecuted: number
+  /** Activated agents not acted on because the cron's time budget ran out. */
+  skippedForBudget: number
   activations: ActivationResult[]
   errors: Array<{ userId: string; error: string }>
 }
@@ -286,7 +291,7 @@ export class AgentActionService {
    * any agent that has already claimed today (idempotent via the
    * in-transaction daily claim guard).
    */
-  async runDailyYieldForAgents(): Promise<DailyYieldSummary> {
+  async runDailyYieldForAgents(options: { deadlineMs?: number } = {}): Promise<DailyYieldSummary> {
     // Only historical "wallet" agents accrue daily yield. Sky sprites
     // (planetary degree / moon) hold a dignity/phase-derived reservoir they
     // RADIATE — it isn't earned via daily claims — so they're excluded here.
@@ -297,10 +302,16 @@ export class AgentActionService {
       processedCount: agenticUsers.length,
       claimedCount: 0,
       skippedCount: 0,
+      skippedForBudget: 0,
       errors: [],
     }
 
-    for (const agent of agenticUsers) {
+    for (const [index, agent] of agenticUsers.entries()) {
+      // Each claim can call WTEN; stop starting new ones before the cron's deadline.
+      if (pastBudget(options.deadlineMs)) {
+        summary.skippedForBudget = agenticUsers.length - index
+        break
+      }
       try {
         const alreadyClaimed = await EconomyService.hasClaimedAgentsYieldToday(agent.id)
         if (alreadyClaimed) {
@@ -940,12 +951,13 @@ export class AgentActionService {
   /**
    * Full tick: evaluate all agents, execute actions for activated ones.
    */
-  async runTick(): Promise<TickSummary> {
+  async runTick(options: { deadlineMs?: number } = {}): Promise<TickSummary> {
     const activations = await this.evaluateAgentActivations()
     const summary: TickSummary = {
       evaluatedCount: activations.length,
       activatedCount: 0,
       actionsExecuted: 0,
+      skippedForBudget: 0,
       activations,
       errors: [],
     }
@@ -953,6 +965,12 @@ export class AgentActionService {
     for (const activation of activations) {
       if (!activation.activated) continue
       summary.activatedCount++
+      // Actions run in sequence and each calls WTEN (and often a model). Stop
+      // starting new ones before the cron's deadline; the next tick continues.
+      if (pastBudget(options.deadlineMs)) {
+        summary.skippedForBudget++
+        continue
+      }
 
       const result = await this.executeAgentAction(activation)
       if (result.success) {
@@ -968,7 +986,7 @@ export class AgentActionService {
     console.log(
       `[AgentActionService] Tick: ${summary.evaluatedCount} evaluated, ` +
         `${summary.activatedCount} activated, ${summary.actionsExecuted} actions, ` +
-        `${summary.errors.length} errors`
+        `${summary.errors.length} errors, ${summary.skippedForBudget} skipped for budget`
     )
 
     return summary

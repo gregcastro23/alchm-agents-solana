@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { agentActionService } from '@/lib/services/agent-action-service'
 import { authorizeCron } from '@/lib/security/cron-auth'
+import { runCronJob } from '@/lib/cron/heartbeat'
 
 /**
  * POST /api/cron/agents/claim-yield
@@ -21,11 +22,11 @@ export async function GET(request: Request) {
 }
 
 async function handleClaimYield(request: Request) {
-  try {
-    const cronAuth = authorizeCron(request, 'cron/agents/claim-yield')
-    if (!cronAuth.ok) return cronAuth.response
+  const cronAuth = authorizeCron(request, 'cron/agents/claim-yield')
+  if (!cronAuth.ok) return cronAuth.response
 
-    const summary = await agentActionService.runDailyYieldForAgents()
+  return runCronJob('agents/claim-yield', async ({ deadlineMs }) => {
+    const summary = await agentActionService.runDailyYieldForAgents({ deadlineMs })
 
     // Partial failures (some agents errored) return 207 so the run is
     // distinguishable from a clean 200 in Vercel cron logs, without falsely
@@ -38,8 +39,5 @@ async function handleClaimYield(request: Request) {
       },
       { status: summary.errors.length === 0 ? 200 : 207 }
     )
-  } catch (error) {
-    console.error('[cron/agents/claim-yield] Fatal error:', error)
-    return NextResponse.json({ success: false, error: 'Internal Server Error' }, { status: 500 })
-  }
+  })
 }

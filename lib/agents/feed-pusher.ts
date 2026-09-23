@@ -1,3 +1,4 @@
+import { pastBudget } from '@/lib/cron/registry'
 import { deliverToWten, stableEventId } from '@/lib/wten/delivery'
 import { feedActivationEngine, type FeedActionPayload } from './feed-activation-engine'
 import {
@@ -58,7 +59,14 @@ interface PushResult {
   success: boolean
   pushedCount: number
   errors: any[]
+  /** Actions not pushed because the cron's time budget ran out. */
+  skippedForBudget?: number
   messages?: PlanetaryDegreeFeedMessage[]
+}
+
+interface PushOptions {
+  /** Epoch ms deadline from the calling cron; no new push starts too close to it. */
+  deadlineMs?: number
 }
 
 export const FEED_NARRATION_METADATA_FIELDS = [
@@ -151,7 +159,7 @@ export class FeedPusherService {
    * Evaluates current cosmic weather and pushes activated agent
    * actions directly to the WTEN feed ingestion endpoint.
    */
-  async evaluateAndPush(): Promise<PushResult> {
+  async evaluateAndPush(options: PushOptions = {}): Promise<PushResult> {
     try {
       // Evaluate both feeds INDEPENDENTLY. Promise.all rejects on the first
       // throw, so a failure in one branch previously discarded the entire tick —
@@ -184,7 +192,7 @@ export class FeedPusherService {
         return { success: true, pushedCount: 0, errors: [] }
       }
 
-      return await this.pushActions(actions)
+      return await this.pushActions(actions, options)
     } catch (error) {
       console.error('Error in evaluateAndPush:', error)
       return { success: false, pushedCount: 0, errors: [error] }
@@ -202,11 +210,16 @@ export class FeedPusherService {
     }
   }
 
-  async pushActions(actions: FeedActionPayload[]): Promise<PushResult> {
+  async pushActions(actions: FeedActionPayload[], options: PushOptions = {}): Promise<PushResult> {
     let pushedCount = 0
+    let skippedForBudget = 0
     const errors = []
 
-    for (const action of actions) {
+    for (const [index, action] of actions.entries()) {
+      if (pastBudget(options.deadlineMs)) {
+        skippedForBudget = actions.length - index
+        break
+      }
       try {
         this.validateAction(action)
         const eventId = await this.pushToWTEN(action)
@@ -247,7 +260,7 @@ export class FeedPusherService {
       }
     }
 
-    return { success: errors.length === 0, pushedCount, errors }
+    return { success: errors.length === 0, pushedCount, errors, skippedForBudget }
   }
 
   async triggerThreadedDebate(
