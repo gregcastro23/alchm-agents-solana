@@ -8,20 +8,21 @@
  *
  * Retry policy (shared by every endpoint):
  *   - retried: timeouts, network errors, 5xx, 429 (honouring Retry-After),
- *     and a 409 whose body says the first delivery is still in flight
- *     (WTEN's webhook core answers `409 {status:"in_flight"}` for that);
+ *     and any 409 indicating in-flight processing (whether marked with
+ *     `status:"in_flight"` or arriving on endpoints where WTEN answers 409
+ *     only while in flight: sync-event, feed, agent-recipes);
  *   - never retried: any other 4xx. A 409 without the in-flight marker means
- *     "already applied" on the endpoints that say so (sync-credit, sync-debit),
- *     which is success; 402 (insufficient funds) is final.
+ *     "already applied" on sync-credit and sync-debit, which is success;
+ *     402 (insufficient funds) is final.
  *   - bounded exponential backoff with equal jitter, capped per wait, capped
  *     in attempts, and never past the caller's deadline.
  *
- * One deliberate narrowing: an endpoint that does NOT dedupe on the event ID
- * yet (`receiverDedupes: false`) only retries failures that provably never
- * reached its handler — 429, 503 and connect-phase network errors. Retrying a
- * timeout or a 500 there could apply the same event twice, which is exactly
- * the sync-event quest double-count WTEN reported. Flip the flag when WTEN
- * ships its dedupe.
+ * One deliberate narrowing: an endpoint that does NOT safely dedupe on the event ID
+ * (`receiverDedupes: false`, currently only `economy/sync-event`) only retries
+ * failures that provably never reached its handler — 429, 503 and connect-phase
+ * network errors. Retrying a timeout or a 500 there could apply the same event
+ * twice if WTEN re-runs a failed event and QuestService.reportEvent is not atomic.
+ * Flip receiverDedupes when WTEN makes reportEvent atomic.
  */
 import { sha256 } from '@noble/hashes/sha256'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils'
@@ -35,14 +36,16 @@ export type WtenEndpoint =
   | 'internal/agent-recipes'
   | 'feed'
 
+export type ConflictPolicy = 'applied' | 'in_flight' | 'rejected'
+
 export interface EndpointPolicy {
   /** Per-attempt timeout (ms). `timeoutSource` says where the number comes from. */
   timeoutMs: number
   timeoutSource: string
   /** WTEN dedupes on the event ID today, so any failure is safe to retry. */
   receiverDedupes: boolean
-  /** A 409 without an in-flight marker means the event was already applied. */
-  conflictMeansApplied: boolean
+  /** How a 409 without an in-flight marker is classified. */
+  conflict: ConflictPolicy
 }
 
 export const WTEN_ENDPOINT_POLICY: Record<WtenEndpoint, EndpointPolicy> = {
@@ -50,37 +53,37 @@ export const WTEN_ENDPOINT_POLICY: Record<WtenEndpoint, EndpointPolicy> = {
     timeoutMs: 10_000,
     timeoutSource: 'unchanged: lib/alchm-debit-sync.ts has used 10s since it shipped',
     receiverDedupes: true, // token_transactions.idempotency_key, `${key}:%` probe
-    conflictMeansApplied: true,
+    conflict: 'applied',
   },
   'economy/sync-credit': {
     timeoutMs: 10_000,
     timeoutSource: 'matches sync-debit (same WTEN ledger write); previously unbounded',
     receiverDedupes: true, // token_transactions.idempotency_key + daily-yield guard
-    conflictMeansApplied: true,
+    conflict: 'applied',
   },
   'economy/sync-event': {
     timeoutMs: 10_000,
     timeoutSource: 'matches the other economy routes; previously unbounded',
-    receiverDedupes: false, // QuestService.reportEvent increments on every delivery
-    conflictMeansApplied: true, // what WTEN's dedupe will answer once it exists
+    receiverDedupes: false, // WTEN dedupes, but it re-runs a failed event and reportEvent isn't atomic
+    conflict: 'in_flight',
   },
   'internal/agent-sync': {
     timeoutMs: 10_000,
     timeoutSource: 'matches the economy routes; previously unbounded',
     receiverDedupes: true, // upsert by email
-    conflictMeansApplied: false,
+    conflict: 'rejected',
   },
   'internal/agent-recipes': {
     timeoutMs: 8_000,
     timeoutSource: 'unchanged: feed-activation-engine used AbortSignal.timeout(8000)',
-    receiverDedupes: false, // inserts a recipe row per call
-    conflictMeansApplied: false,
+    receiverDedupes: true, // WTEN webhook_events inbox dedupes on Idempotency-Key (5c79ef14)
+    conflict: 'in_flight',
   },
   feed: {
     timeoutMs: 10_000,
     timeoutSource: 'matches the economy routes; previously unbounded',
-    receiverDedupes: false, // WTEN /api/feed inserts; no idempotency handling today
-    conflictMeansApplied: false,
+    receiverDedupes: true, // WTEN webhook_events inbox dedupes on Idempotency-Key (5c79ef14)
+    conflict: 'in_flight',
   },
 }
 
@@ -239,8 +242,8 @@ export function classifyResponse(
 ): DeliveryOutcome | 'retry' {
   if (status >= 200 && status < 300) return 'delivered'
   if (status === 409) {
-    if (isInFlightBody(body)) return 'retry'
-    return policy.conflictMeansApplied ? 'already_applied' : 'rejected'
+    if (isInFlightBody(body) || policy.conflict === 'in_flight') return 'retry'
+    return policy.conflict === 'applied' ? 'already_applied' : 'rejected'
   }
   if (status === 429) return 'retry'
   if (status >= 500) {

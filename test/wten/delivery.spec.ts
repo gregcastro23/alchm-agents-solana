@@ -118,9 +118,69 @@ describe('final answers are not retried', () => {
 
   it('a 409 on an endpoint where it does not mean "applied" is a rejection', async () => {
     const h = harness([{ status: 409, body: { error: 'conflict' } }])
-    const res = await send('feed', h.deps)
+    const res = await send('internal/agent-sync', h.deps)
     expect(res).toMatchObject({ outcome: 'rejected', attempts: 1 })
   })
+})
+
+describe('in-flight 409 handling on sync-event, feed, and agent-recipes', () => {
+  const legacyBodies: Record<'economy/sync-event' | 'feed' | 'internal/agent-recipes', any> = {
+    'economy/sync-event': {
+      ok: false,
+      error: 'conflict',
+      message: 'Event is currently being processed',
+    },
+    feed: { success: false, error: 'conflict', message: 'Event is currently being processed' },
+    'internal/agent-recipes': {
+      success: false,
+      error: 'conflict',
+      message: 'Event is currently being processed',
+    },
+  }
+
+  it.each(['economy/sync-event', 'feed', 'internal/agent-recipes'] as const)(
+    '%s: retries WTEN legacy 409 body without in_flight marker',
+    async endpoint => {
+      const h = harness([
+        { status: 409, body: legacyBodies[endpoint], headers: { 'retry-after': '1' } },
+        { status: 200, body: { ok: true, success: true } },
+      ])
+      const res = await send(endpoint, h.deps)
+      expect(res).toMatchObject({ outcome: 'delivered', attempts: 2 })
+      expect(h.sleeps).toEqual([1000])
+    }
+  )
+
+  it.each(['economy/sync-event', 'feed', 'internal/agent-recipes'] as const)(
+    '%s: retries marker body { status: "in_flight" }',
+    async endpoint => {
+      const h = harness([
+        { status: 409, body: { status: 'in_flight', message: 'processing' } },
+        { status: 200, body: { ok: true, success: true } },
+      ])
+      const res = await send(endpoint, h.deps)
+      expect(res).toMatchObject({ outcome: 'delivered', attempts: 2 })
+    }
+  )
+
+  it.each(['economy/sync-event', 'feed', 'internal/agent-recipes'] as const)(
+    '%s: exhausting attempts while in-flight ends as failed',
+    async endpoint => {
+      const h = harness([
+        { status: 409, body: legacyBodies[endpoint] },
+        { status: 409, body: legacyBodies[endpoint] },
+        { status: 409, body: legacyBodies[endpoint] },
+      ])
+      const res = await send(endpoint, h.deps, { maxAttempts: 3 })
+      expect(res).toMatchObject({
+        outcome: 'failed',
+        ok: false,
+        attempts: 3,
+        status: 409,
+      })
+      expect(h.attempts.at(-1)!.result).toBe('failed')
+    }
+  )
 })
 
 describe('transient answers are retried', () => {
@@ -166,18 +226,21 @@ describe('transient answers are retried', () => {
 })
 
 describe('endpoints WTEN does not dedupe yet', () => {
-  it.each(['economy/sync-event', 'feed', 'internal/agent-recipes'] as const)(
-    '%s: a 500 or a mid-flight network error may have been applied, so it is not retried',
-    async endpoint => {
-      expect(WTEN_ENDPOINT_POLICY[endpoint].receiverDedupes).toBe(false)
-      const h500 = harness([{ status: 500 }, { status: 200, body: {} }])
-      expect(await send(endpoint, h500.deps)).toMatchObject({ outcome: 'failed', attempts: 1 })
+  it('economy/sync-event: a 500 or a mid-flight network error may have been applied, so it is not retried', async () => {
+    expect(WTEN_ENDPOINT_POLICY['economy/sync-event'].receiverDedupes).toBe(false)
+    const h500 = harness([{ status: 500 }, { status: 200, body: {} }])
+    expect(await send('economy/sync-event', h500.deps)).toMatchObject({
+      outcome: 'failed',
+      attempts: 1,
+    })
 
-      const reset = Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } })
-      const hNet = harness([reset, { status: 200, body: {} }])
-      expect(await send(endpoint, hNet.deps)).toMatchObject({ outcome: 'failed', attempts: 1 })
-    }
-  )
+    const reset = Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } })
+    const hNet = harness([reset, { status: 200, body: {} }])
+    expect(await send('economy/sync-event', hNet.deps)).toMatchObject({
+      outcome: 'failed',
+      attempts: 1,
+    })
+  })
 
   it('still retries answers that never reached the handler: 429, 503, connect errors', async () => {
     const refused = Object.assign(new TypeError('fetch failed'), {
@@ -187,6 +250,19 @@ describe('endpoints WTEN does not dedupe yet', () => {
     const res = await send('economy/sync-event', h.deps, { maxAttempts: 4 })
     expect(res).toMatchObject({ outcome: 'delivered', attempts: 4 })
   })
+
+  it.each(['feed', 'internal/agent-recipes'] as const)(
+    '%s: receiverDedupes is true, so 500 and network errors are retried',
+    async endpoint => {
+      expect(WTEN_ENDPOINT_POLICY[endpoint].receiverDedupes).toBe(true)
+      const h500 = harness([{ status: 500 }, { status: 200, body: { ok: true, success: true } }])
+      expect(await send(endpoint, h500.deps)).toMatchObject({ outcome: 'delivered', attempts: 2 })
+
+      const reset = Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } })
+      const hNet = harness([reset, { status: 200, body: { ok: true, success: true } }])
+      expect(await send(endpoint, hNet.deps)).toMatchObject({ outcome: 'delivered', attempts: 2 })
+    }
+  )
 })
 
 describe('bounded backoff', () => {
@@ -286,5 +362,31 @@ describe('helpers', () => {
     expect(classifyResponse(402, null, debit)).toBe('rejected')
     expect(classifyResponse(429, null, debit)).toBe('retry')
     expect(classifyResponse(500, null, debit)).toBe('retry')
+
+    const credit = WTEN_ENDPOINT_POLICY['economy/sync-credit']
+    expect(classifyResponse(409, { reason: 'already_applied' }, credit)).toBe('already_applied')
+    expect(classifyResponse(409, { status: 'in_flight' }, credit)).toBe('retry')
+    expect(classifyResponse(500, null, credit)).toBe('retry')
+
+    const syncEvent = WTEN_ENDPOINT_POLICY['economy/sync-event']
+    expect(classifyResponse(409, { error: 'conflict' }, syncEvent)).toBe('retry')
+    expect(classifyResponse(409, { status: 'in_flight' }, syncEvent)).toBe('retry')
+    expect(classifyResponse(500, null, syncEvent)).toBe('failed')
+    expect(classifyResponse(503, null, syncEvent)).toBe('retry')
+
+    const agentSync = WTEN_ENDPOINT_POLICY['internal/agent-sync']
+    expect(classifyResponse(409, { error: 'conflict' }, agentSync)).toBe('rejected')
+    expect(classifyResponse(409, { status: 'in_flight' }, agentSync)).toBe('retry')
+    expect(classifyResponse(500, null, agentSync)).toBe('retry')
+
+    const recipes = WTEN_ENDPOINT_POLICY['internal/agent-recipes']
+    expect(classifyResponse(409, { error: 'conflict' }, recipes)).toBe('retry')
+    expect(classifyResponse(409, { status: 'in_flight' }, recipes)).toBe('retry')
+    expect(classifyResponse(500, null, recipes)).toBe('retry')
+
+    const feed = WTEN_ENDPOINT_POLICY['feed']
+    expect(classifyResponse(409, { error: 'conflict' }, feed)).toBe('retry')
+    expect(classifyResponse(409, { status: 'in_flight' }, feed)).toBe('retry')
+    expect(classifyResponse(500, null, feed)).toBe('retry')
   })
 })
