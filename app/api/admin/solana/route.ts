@@ -1,25 +1,27 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { adminErrorResponse, requireAdmin } from '@/lib/admin-auth'
 import { sortAlerts } from '@/lib/admin/alerts'
-import { loadDashboard, type DashboardReport } from '@/lib/admin/dashboard'
+import { loadSolanaChainReport, type SolanaChainReport } from '@/lib/admin/solana-chain'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-// Several admin pages poll this at once; a short per-instance memo spares the DB.
-let cached: { at: number; report: DashboardReport } | null = null
-const CACHE_TTL_MS = 5_000
+// The page and the alert digest both poll this; a minute's memo keeps a public
+// RPC from rate-limiting us into "unknown".
+let cached: { at: number; report: SolanaChainReport } | null = null
+const CACHE_TTL_MS = 60_000
 
 /**
- * The shared admin read (users, roster, activity, Jing, MCP, councils, system).
- * Every part is read on its own and reports its own failure — see lib/admin/dashboard.ts.
+ * Solana & chain: every address in deployments/*.json checked against devnet
+ * (and the program against mainnet-beta), section by section, plus the sync and
+ * bridge worker queues and a devnet → mainnet readiness checklist.
  */
 export async function GET(_req: NextRequest) {
   const admin = await requireAdmin()
   if (!admin.ok) return adminErrorResponse(admin)
 
   if (!cached || Date.now() - cached.at >= CACHE_TTL_MS) {
-    const report = await loadDashboard()
+    const report = await loadSolanaChainReport()
     cached = { at: Date.now(), report: { ...report, alerts: sortAlerts(report.alerts) } }
   }
   return NextResponse.json(cached.report, { headers: { 'Cache-Control': 'no-store' } })

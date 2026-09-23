@@ -75,40 +75,8 @@ export type AdminJingAggregates = {
   avgLatencyMs: number | null
 }
 
-export type AdminDashboardData = {
-  users: {
-    total: number
-    newToday: number
-    admins: number
-    recent: AdminUserSummary[]
-  }
-  agents: {
-    historical: number
-    planetary: number
-    created: number
-    totalConversations: number
-  }
-  system: {
-    database: 'healthy' | 'error'
-    aiProviders: {
-      openai: boolean
-      anthropic: boolean
-      google: boolean
-      gateway: boolean
-    }
-    railwayBackend: AdminHealthValue
-    vercelDeployment: {
-      url: string
-      lastDeploy: string | null
-      commitSha?: string | null
-    }
-  }
-  recentActivity: AdminActivityItem[]
-  topAgents: AdminTopAgent[]
-  recentChats: AdminRecentChat[]
-  recentJingDuels: AdminJingDuel[]
-  jingAggregates: AdminJingAggregates
-}
+// /api/admin/dashboard's shape is `DashboardReport` in lib/admin/dashboard.ts:
+// every part is a section that carries its own read failure.
 
 export type AdminSystemStats = {
   overview: {

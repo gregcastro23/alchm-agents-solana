@@ -88,6 +88,39 @@ export function Unknown({ reason }: { reason: string }) {
   )
 }
 
+/** A section of a payload: `{ ok: true, value } | { ok: false, reason }`. */
+export type Section<T> = { ok: true; value: T } | { ok: false; reason: string }
+
+/** Render a section's value, or "—" plus the reason when it could not be read. */
+export function Read<T>({
+  section,
+  children,
+}: {
+  section: Section<T>
+  children: (value: T) => ReactNode
+}) {
+  if (!section.ok) {
+    return (
+      <p className="text-sm text-zinc-300">
+        <Unknown reason={section.reason} />{' '}
+        <span className="text-zinc-400">Could not read: {section.reason}</span>
+      </p>
+    )
+  }
+  return <>{children(section.value)}</>
+}
+
+/** One headline number with its label; `value` is already rendered (use `num`). */
+export function Stat({ label, value, sub }: { label: string; value: ReactNode; sub?: ReactNode }) {
+  return (
+    <div className="min-w-0 rounded-xl border border-white/10 bg-zinc-900/40 px-4 py-3">
+      <p className="text-[11px] text-zinc-400">{label}</p>
+      <p className="mt-1 text-xl font-semibold tabular-nums text-zinc-50">{value}</p>
+      {sub && <p className="mt-0.5 break-words text-[11px] text-zinc-400">{sub}</p>}
+    </div>
+  )
+}
+
 export function num(
   value: number | null | undefined,
   reason: string,

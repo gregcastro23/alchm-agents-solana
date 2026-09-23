@@ -28,8 +28,8 @@ interface McpItem {
 interface McpData {
   total: number
   last24h: number
-  successRate: number
-  avgLatencyMs: number
+  successRate: number | null
+  avgLatencyMs: number | null
   topTools: Array<{ toolName: string; count: number }>
   recent: McpItem[]
 }
@@ -131,7 +131,13 @@ export default function McpInvocationsPanel({ data }: McpPanelProps) {
               <p className="text-[10px] uppercase font-bold tracking-[0.16em] text-zinc-500">
                 Success Ratio
               </p>
-              <p className="mt-2 text-3xl font-black text-white">{data.successRate}%</p>
+              <p className="mt-2 text-3xl font-black text-white">
+                {data.successRate === null ? (
+                  <span title="No calls in the last 24h">—</span>
+                ) : (
+                  `${data.successRate}%`
+                )}
+              </p>
             </div>
             <div className="h-10 w-10 rounded-xl bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center text-emerald-400">
               <ShieldCheck className="h-5 w-5" />
@@ -147,7 +153,13 @@ export default function McpInvocationsPanel({ data }: McpPanelProps) {
               <p className="text-[10px] uppercase font-bold tracking-[0.16em] text-zinc-500">
                 Mean Latency
               </p>
-              <p className="mt-2 text-3xl font-black text-white">{data.avgLatencyMs}ms</p>
+              <p className="mt-2 text-3xl font-black text-white">
+                {data.avgLatencyMs === null ? (
+                  <span title="No successful calls in the last 24h">—</span>
+                ) : (
+                  `${data.avgLatencyMs}ms`
+                )}
+              </p>
             </div>
             <div className="h-10 w-10 rounded-xl bg-amber-500/10 border border-amber-500/20 flex items-center justify-center text-amber-400">
               <Clock className="h-5 w-5" />

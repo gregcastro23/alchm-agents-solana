@@ -35,6 +35,11 @@ const SUBSYSTEMS = [
   { id: 'jobs', path: '/api/admin/jobs', label: 'Jobs & crons' },
   { id: 'wten-link', path: '/api/admin/wten-link', label: 'WTEN link' },
   { id: 'recipes', path: '/api/admin/recipe-latency', label: 'Recipe generation' },
+  { id: 'solana', path: '/api/admin/solana', label: 'Solana & chain' },
+  { id: 'agents', path: '/api/admin/agents', label: 'Agent roster' },
+  { id: 'chats', path: '/api/admin/chats', label: 'Chats & providers' },
+  { id: 'build', path: '/api/admin/build', label: 'Build health' },
+  { id: 'infrastructure', path: '/api/admin/dashboard', label: 'Core reads' },
 ] as const
 
 const SUBSYSTEM_TIMEOUT_MS = 15_000
