@@ -44,6 +44,7 @@ describe('Cloud KMS Solana Signer (Phase 1)', () => {
   })
 
   afterEach(() => {
+    vi.unstubAllEnvs()
     process.env = { ...originalEnv }
     vi.restoreAllMocks()
   })
@@ -246,14 +247,14 @@ describe('Cloud KMS Solana Signer (Phase 1)', () => {
   })
 
   it('throws in production when KMS is not configured', () => {
-    process.env.NODE_ENV = 'production'
+    vi.stubEnv('NODE_ENV', 'production')
     expect(() => getSolanaServiceSigner()).toThrow(
       /Cloud KMS signer \(AWS_KMS_KEY_ID or GCP_KMS_KEY_NAME\) is required in production/
     )
   })
 
   it('falls back to local keypair when KMS is absent in non-production', () => {
-    process.env.NODE_ENV = 'development'
+    vi.stubEnv('NODE_ENV', 'development')
     const keypair = Keypair.generate()
     process.env.SOLANA_AGENT_PAYER_KEY = JSON.stringify(Array.from(keypair.secretKey))
 

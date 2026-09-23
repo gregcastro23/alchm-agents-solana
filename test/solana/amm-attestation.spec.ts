@@ -34,7 +34,7 @@ describe('AMM Attestation Feeder & Authority Hardening (Workstream 3)', () => {
 
   beforeEach(() => {
     process.env = { ...originalEnv }
-    process.env.NODE_ENV = 'development'
+    vi.stubEnv('NODE_ENV', 'development')
     process.env.SOLANA_ATTESTOR_KEYPAIR = JSON.stringify(Array.from(attestorKeypair.secretKey))
     process.env.SOLANA_CLUSTER_DOMAIN = mockClusterDomain
     resetAmmAttestorCache()
@@ -43,6 +43,7 @@ describe('AMM Attestation Feeder & Authority Hardening (Workstream 3)', () => {
   })
 
   afterEach(() => {
+    vi.unstubAllEnvs()
     process.env = { ...originalEnv }
     resetAmmAttestorCache()
     resetAttestationRateLimits()
@@ -276,7 +277,7 @@ describe('AMM Attestation Feeder & Authority Hardening (Workstream 3)', () => {
 
   it('resolves Cloud KMS signer for AMM attestations and enforces fail-closed production rules', async () => {
     // 1. In production, raw keypair fallback must throw
-    process.env.NODE_ENV = 'production'
+    vi.stubEnv('NODE_ENV', 'production')
     delete process.env.AWS_KMS_KEY_ID
     delete process.env.SOLANA_ATTESTOR_KMS_KEY_ID
 
