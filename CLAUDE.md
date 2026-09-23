@@ -376,6 +376,7 @@ The chat endpoint returns `metadata.cache.{read, write}` token counts so prompt-
 | `/api/admin/users[/:id]`     | `UserAdministrationPanel` | Searchable directory with holdings; PATCH `role`/`verified`/`isAgentic` only                            |
 | `/api/admin/jobs`            | page `/admin/jobs`        | Every Vercel cron from `cron_runs` heartbeats: WTEN's late/failing/retrying rules, misses, p95 vs limit |
 | `/api/admin/wten-link`       | page `/admin/wten`        | ASOL → WTEN delivery health per endpoint (`wten_deliveries`) and shared-secret match probes             |
+| `/api/admin/recipe-latency`  | page `/admin/recipes`     | `/api/generate-recipe` p50/p95/error rate from the Python backend's per-process window, vs WTEN's 45 s  |
 
 Load-bearing conventions in this surface:
 

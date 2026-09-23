@@ -13,6 +13,7 @@ from pydantic import ValidationError
 
 import prompts
 import providers
+import recipe_metrics
 import schemas
 
 
@@ -202,6 +203,7 @@ async def generate_cosmic_recipe(
             f"recipe_waterfall hit=cache tier={tier} total_ms={t_total_ms:.1f} recipeId={cached.id}",
             flush=True,
         )
+        recipe_metrics.record(t_total_ms, "cache", tier)
         return cached
 
     t_chain_start = time.perf_counter()
@@ -253,6 +255,7 @@ async def generate_cosmic_recipe(
                 f"recipeId={recipe.id}",
                 flush=True,
             )
+            recipe_metrics.record(t_total_ms, "generated", tier, result.provider)
             return recipe
         except Exception as exc:
             t_val_ms = (time.perf_counter() - t_val_start) * 1000.0
@@ -268,6 +271,7 @@ async def generate_cosmic_recipe(
         f"recipe_waterfall hit=error tier={tier} total_ms={t_total_ms:.1f} error={last_error[:200]}",
         flush=True,
     )
+    recipe_metrics.record(t_total_ms, "error", tier)
     raise HTTPException(
         status_code=502,
         detail={
