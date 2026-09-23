@@ -5,8 +5,8 @@
  *
  * The original panels each re-declared their own metric card, section header
  * and empty state, so the console drifted visually tab to tab. New panels build
- * from here; the tone scale and spacing match the existing glassmorphic shell in
- * `AdminOperatorConsole`.
+ * from here. New route-level pages use `components/admin/pages/primitives.tsx`
+ * instead, which carries the "—" + reason contract for failed reads.
  */
 
 import type { ReactNode } from 'react'
