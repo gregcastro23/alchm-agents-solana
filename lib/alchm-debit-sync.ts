@@ -27,6 +27,7 @@
  */
 
 import { loadAlchmSyncConfig } from './alchmSyncConfig'
+import { deliverToWten } from './wten/delivery'
 
 // ---------------------------------------------------------------------------
 // Types
@@ -131,90 +132,84 @@ export async function syncDebitToAlchm(payload: SyncDebitPayload): Promise<SyncD
   }
   const { baseUrl, secret } = alchmConfig
 
-  const controller = new AbortController()
-  const timeout = setTimeout(() => controller.abort(), 10_000) // 10s timeout
+  // Timeout (10s), retries and the Idempotency-Key header live in the shared
+  // client. The idempotency key doubles as the event ID, so a retried attempt
+  // is the same debit to WTEN.
+  const delivery = await deliverToWten({
+    endpoint: 'economy/sync-debit',
+    url: `${baseUrl}/api/economy/sync-debit`,
+    headers: { 'X-Sync-Secret': secret },
+    body: payload,
+    eventId: payload.idempotencyKey,
+  })
+  const data = delivery.body
 
-  try {
-    const res = await fetch(`${baseUrl}/api/economy/sync-debit`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Sync-Secret': secret,
-      },
-      body: JSON.stringify(payload),
-      signal: controller.signal,
-    })
-
-    clearTimeout(timeout)
-
-    const data = await res.json().catch(() => null)
-
-    // 409 — idempotency hit: profile was already updated, debit already applied
-    if (res.status === 409) {
-      console.info(
-        `[alchm-debit-sync] Idempotency hit for ${payload.userEmail} (key: ${payload.idempotencyKey})`
-      )
-      return { ok: true, reason: 'already_applied', userId: data?.userId }
-    }
-
-    // 200 — success
-    if (res.ok && data?.ok) {
-      console.info(
-        `[alchm-debit-sync] Debit applied for ${payload.userEmail}: ` +
-          `${payload.operationType} (txn: ${data.transactionGroupId}, userId: ${data.userId})`
-      )
-      return {
-        ok: true,
-        userId: data.userId,
-        transactionGroupId: data.transactionGroupId,
-        balances: data.balances,
-      }
-    }
-
-    // 402 — insufficient funds
-    if (res.status === 402) {
-      console.warn(
-        `[alchm-debit-sync] Insufficient funds for ${payload.userEmail}: ` +
-          `needed ${JSON.stringify(payload.amounts)}, has ${JSON.stringify(data?.balances)}`
-      )
-      return {
-        ok: false,
-        reason: 'insufficient_funds',
-        userId: data?.userId,
-        balances: data?.balances,
-      }
-    }
-
-    // 404 — user not found (non-agentic emails only; agentic are auto-provisioned)
-    if (res.status === 404) {
-      console.warn(`[alchm-debit-sync] User not found on alchm.kitchen: ${payload.userEmail}`)
-      return { ok: false, reason: 'user_not_found' }
-    }
-
-    // 401 — bad auth
-    if (res.status === 401) {
-      console.error('[alchm-debit-sync] Unauthorized — check ALCHM_KITCHEN_SYNC_SECRET')
-      return { ok: false, error: 'Unauthorized — check ALCHM_KITCHEN_SYNC_SECRET' }
-    }
-
-    // 400 — invalid request
-    if (res.status === 400) {
-      console.error(`[alchm-debit-sync] Invalid request: ${data?.message || res.statusText}`)
-      return {
-        ok: false,
-        reason: 'invalid_request',
-        message: data?.message,
-      }
-    }
-
-    // Any other error
-    const errorText = data?.message || data?.error || res.statusText
-    console.error(`[alchm-debit-sync] Unexpected response ${res.status}: ${errorText}`)
-    return { ok: false, error: `${res.status}: ${errorText}` }
-  } catch (err: any) {
-    clearTimeout(timeout)
-    const msg = err?.name === 'AbortError' ? 'timeout (10s)' : (err?.message ?? String(err))
-    console.error(`[alchm-debit-sync] Network error: ${msg}`)
-    return { ok: false, error: msg }
+  // 409 — idempotency hit: profile was already updated, debit already applied
+  if (delivery.outcome === 'already_applied') {
+    console.info(
+      `[alchm-debit-sync] Idempotency hit for ${payload.userEmail} (key: ${payload.idempotencyKey})`
+    )
+    return { ok: true, reason: 'already_applied', userId: data?.userId }
   }
+
+  // 200 — success
+  if (delivery.outcome === 'delivered' && data?.ok) {
+    console.info(
+      `[alchm-debit-sync] Debit applied for ${payload.userEmail}: ` +
+        `${payload.operationType} (txn: ${data.transactionGroupId}, userId: ${data.userId})`
+    )
+    return {
+      ok: true,
+      userId: data.userId,
+      transactionGroupId: data.transactionGroupId,
+      balances: data.balances,
+    }
+  }
+
+  // No response at all (network/timeout after retries).
+  if (delivery.status === null) {
+    console.error(`[alchm-debit-sync] Network error: ${delivery.error}`)
+    return { ok: false, error: delivery.error ?? 'network error' }
+  }
+
+  // 402 — insufficient funds
+  if (delivery.status === 402) {
+    console.warn(
+      `[alchm-debit-sync] Insufficient funds for ${payload.userEmail}: ` +
+        `needed ${JSON.stringify(payload.amounts)}, has ${JSON.stringify(data?.balances)}`
+    )
+    return {
+      ok: false,
+      reason: 'insufficient_funds',
+      userId: data?.userId,
+      balances: data?.balances,
+    }
+  }
+
+  // 404 — user not found (non-agentic emails only; agentic are auto-provisioned)
+  if (delivery.status === 404) {
+    console.warn(`[alchm-debit-sync] User not found on alchm.kitchen: ${payload.userEmail}`)
+    return { ok: false, reason: 'user_not_found' }
+  }
+
+  // 401 — bad auth
+  if (delivery.status === 401) {
+    console.error('[alchm-debit-sync] Unauthorized — check ALCHM_KITCHEN_SYNC_SECRET')
+    return { ok: false, error: 'Unauthorized — check ALCHM_KITCHEN_SYNC_SECRET' }
+  }
+
+  // 400 — invalid request
+  if (delivery.status === 400) {
+    console.error(`[alchm-debit-sync] Invalid request: ${data?.message || 'bad request'}`)
+    return {
+      ok: false,
+      reason: 'invalid_request',
+      message: data?.message,
+    }
+  }
+
+  // Any other error
+  const errorText = data?.message || data?.error || delivery.error || 'unexpected response'
+  console.error(`[alchm-debit-sync] Unexpected response ${delivery.status}: ${errorText}`)
+  return { ok: false, error: `${delivery.status}: ${errorText}` }
 }

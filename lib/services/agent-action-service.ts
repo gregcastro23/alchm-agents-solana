@@ -886,7 +886,14 @@ export class AgentActionService {
         }
         console.log(`[AgentActionService] ${agentName} ${specializedAction.logMessage}...`)
         for (const event of specializedAction.questEvents) {
-          await syncEventToAlchm({ userEmail: agentEmail, event, metadata: identityMeta })
+          await syncEventToAlchm({
+            userEmail: agentEmail,
+            event,
+            // Derived from the action's own key, so a re-run of this hour's
+            // action names the same quest event.
+            idempotencyKey: `${idempotencyKey}:event:${event}`,
+            metadata: identityMeta,
+          })
         }
       }
 

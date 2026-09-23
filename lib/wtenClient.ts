@@ -13,6 +13,8 @@
  * endpoint (that's the /api/economy/sync-debit contract).
  */
 
+import { deliverToWten, stableEventId } from './wten/delivery'
+
 const DEFAULT_WTEN_BASE = 'https://whattoeatnext-production.up.railway.app'
 
 export interface SyncAgentToWtenResult {
@@ -69,23 +71,21 @@ export async function syncAgentToWten(
       'ALCHM_KITCHEN_SYNC_SECRET is required. Set it in the environment before calling syncAgentToWten().'
     )
   }
-  const res = await fetch(`${baseUrl}/api/internal/agent-sync`, {
-    method: 'POST',
-    headers: {
-      'Content-Type': 'application/json',
-      'X-Sync-Secret': syncSecret,
-    },
-    body: JSON.stringify({
-      email,
-      displayName: displayName ?? undefined,
-      ...profile,
-    }),
+  const body = { email, displayName: displayName ?? undefined, ...profile }
+  // The endpoint upserts by email, so the event ID is the email plus a hash of
+  // what is being written: re-sending the same profile is the same event.
+  const delivery = await deliverToWten({
+    endpoint: 'internal/agent-sync',
+    url: `${baseUrl}/api/internal/agent-sync`,
+    headers: { 'X-Sync-Secret': syncSecret },
+    body,
+    eventId: stableEventId(`agent-sync:${email}`, body),
   })
-  if (!res.ok) {
-    const body = await res.text().catch(() => '(unreadable)')
-    throw new Error(`agent-sync ${res.status} for ${email}: ${body}`)
+  if (!delivery.ok) {
+    const detail = delivery.body ? JSON.stringify(delivery.body) : delivery.error
+    throw new Error(`agent-sync ${delivery.status ?? 'network error'} for ${email}: ${detail}`)
   }
-  const data = (await res.json()) as { ok?: boolean; wtenUserId?: string; created?: boolean }
+  const data = (delivery.body ?? {}) as { ok?: boolean; wtenUserId?: string; created?: boolean }
   if (!data.ok || !data.wtenUserId) {
     throw new Error(`agent-sync returned malformed payload for ${email}: ${JSON.stringify(data)}`)
   }

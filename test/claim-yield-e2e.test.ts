@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { POST as claimYieldPOST } from '@/app/api/economy/claim-yield/route'
 import { GET as feedGET } from '@/app/api/feed/route'
 import { prisma } from '@/lib/db'
@@ -23,11 +23,14 @@ describe.skipIf(!process.env.DATABASE_URL)('Claim Yield E2E Test', () => {
       },
     })
 
-    // Construct NextJS Request object
+    // Construct NextJS Request object. The route needs a session or a service
+    // bearer; NODE_ENV=test is no longer an implicit bypass.
+    vi.stubEnv('INTERNAL_API_SECRET', 'claim-yield-e2e-secret')
     const req = new Request('http://localhost/api/economy/claim-yield', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
+        Authorization: 'Bearer claim-yield-e2e-secret',
       },
       body: JSON.stringify({
         historicalAgentId,

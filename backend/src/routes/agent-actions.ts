@@ -2,6 +2,7 @@ import { Router as createRouter, type NextFunction, type Request, type Response 
 import { astrologicalActionEngine } from '../services/astrological-action-engine.js'
 import { astrologicalActionScheduler } from '../services/astrological-action-scheduler.js'
 import { asyncHandler, AppError } from '../middleware/error-handler.js'
+import { safeEqual } from '../utils/secure-compare.js'
 
 const router = createRouter()
 
@@ -12,7 +13,7 @@ function requireInternalSecret(req: Request, _res: Response, next: NextFunction)
   }
 
   const token = req.headers.authorization?.replace(/^Bearer\s+/i, '')
-  if (token !== expected) {
+  if (!safeEqual(token, expected)) {
     return next(new AppError('Unauthorized', 401))
   }
 

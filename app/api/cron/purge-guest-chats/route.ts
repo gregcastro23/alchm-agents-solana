@@ -1,18 +1,20 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { hasInternalApiSecret } from '@/lib/security/internal-auth'
+import { safeEqual } from '@/lib/security/secure-compare'
 import { prisma } from '@/lib/db'
 
 export async function POST(request: NextRequest) {
   try {
     const cronSecret = process.env.CRON_SECRET || process.env.PA_CRON_SECRET
     const authHeader = request.headers.get('authorization') || ''
-    const bearerToken = authHeader.replace(/^Bearer\s+/i, '').trim()
-    const syncSecret =
-      request.headers.get('x-sync-secret') || request.headers.get('x-cron-secret') || ''
+    const presented = [
+      authHeader.replace(/^Bearer\s+/i, '').trim(),
+      request.headers.get('x-sync-secret'),
+      request.headers.get('x-cron-secret'),
+    ]
 
     const isAuthorized =
-      hasInternalApiSecret(request) ||
-      (cronSecret && (bearerToken === cronSecret || syncSecret === cronSecret))
+      hasInternalApiSecret(request) || presented.some(value => safeEqual(value, cronSecret))
 
     if (!isAuthorized) {
       return NextResponse.json({ success: false, error: 'Unauthorized' }, { status: 401 })

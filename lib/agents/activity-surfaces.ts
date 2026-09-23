@@ -2,6 +2,7 @@ import 'server-only'
 
 import { DEMO_AGENTS } from '@/lib/demo-agents-data'
 import { prisma } from '@/lib/db'
+import { safeEqual } from '@/lib/security/secure-compare'
 
 type JsonRecord = Record<string, unknown>
 
@@ -97,7 +98,7 @@ export function validateInternalBearer(request: Request): InternalAuthResult {
 
   const header = request.headers.get('authorization') || ''
   const token = header.replace(/^Bearer\s+/i, '').trim()
-  if (token !== expected) {
+  if (!safeEqual(token, expected)) {
     return { ok: false, status: 401, error: 'Unauthorized' }
   }
 

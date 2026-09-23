@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { agentActionService } from '@/lib/services/agent-action-service'
 import { runTransitAttunements } from '@/lib/agents/transit-attunement'
+import { authorizeCron } from '@/lib/security/cron-auth'
 
 /**
  * POST /api/cron/agents/tick
@@ -13,7 +14,7 @@ import { runTransitAttunements } from '@/lib/agents/transit-attunement'
  *     an action: posting to the feed or transmuting tokens.
  *
  * Protected by CRON_SECRET in production.
- * Vercel Cron schedule: `0 * * * *` (every hour)
+ * Vercel Cron schedule: `28 * * * *` (hourly at :28, staggered off WTEN's minutes)
  */
 export async function POST(request: Request) {
   return handleTick(request)
@@ -25,22 +26,8 @@ export async function GET(request: Request) {
 
 async function handleTick(request: Request) {
   try {
-    const authHeader = request.headers.get('authorization')
-    const cronSecret = process.env.CRON_SECRET
-
-    if (process.env.NODE_ENV === 'production') {
-      if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
-        console.error(
-          '[cron/agents/tick] Unauthorized attempt or missing CRON_SECRET in production'
-        )
-        return new NextResponse('Unauthorized', { status: 401 })
-      }
-    } else {
-      // In development, only warn if a secret is provided but incorrect
-      if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-        console.warn('[cron/agents/tick] Invalid CRON_SECRET provided')
-      }
-    }
+    const cronAuth = authorizeCron(request, 'cron/agents/tick')
+    if (!cronAuth.ok) return cronAuth.response
 
     const summary = await agentActionService.runTick()
 

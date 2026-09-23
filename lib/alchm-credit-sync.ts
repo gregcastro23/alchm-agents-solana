@@ -1,4 +1,5 @@
 import { loadAlchmSyncConfig } from './alchmSyncConfig'
+import { deliverToWten } from './wten/delivery'
 import { TransactionSourceType } from './services/economyService'
 
 /**
@@ -53,36 +54,32 @@ export async function syncCreditToAlchm(params: {
   }
   const { baseUrl, secret } = alchmConfig
 
-  try {
-    const response = await fetch(`${baseUrl}/api/economy/sync-credit`, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        'X-Sync-Secret': secret,
-      },
-      body: JSON.stringify(params),
-    })
+  // Timeout (10s), retries and the Idempotency-Key header live in the shared
+  // client; the idempotency key is the event ID, so a retry is the same credit.
+  const delivery = await deliverToWten({
+    endpoint: 'economy/sync-credit',
+    url: `${baseUrl}/api/economy/sync-credit`,
+    headers: { 'X-Sync-Secret': secret },
+    body: params,
+    eventId: params.idempotencyKey,
+  })
 
-    const data = await response.json()
-
-    if (!response.ok) {
-      if (response.status === 409) {
-        // Idempotency hit - treat as success
-        console.log(
-          `[alchm-credit-sync] Idempotency hit for ${params.userEmail} (key: ${params.idempotencyKey})`
-        )
-        return { ok: true }
-      }
-
-      const errorMsg = data.message || data.error || `HTTP ${response.status}`
-      console.error(`[alchm-credit-sync] Failed to sync credit: ${errorMsg}`)
-      return { ok: false, error: errorMsg }
-    }
-
-    console.log(`[alchm-credit-sync] Credit applied for ${params.userEmail}: ${params.source}`)
-    return { ok: true, balances: data.balances }
-  } catch (err: any) {
-    console.error(`[alchm-credit-sync] Network or fetch error: ${err.message}`)
-    return { ok: false, error: err.message }
+  if (delivery.outcome === 'already_applied') {
+    // Idempotency hit - treat as success
+    console.log(
+      `[alchm-credit-sync] Idempotency hit for ${params.userEmail} (key: ${params.idempotencyKey})`
+    )
+    return { ok: true }
   }
+
+  if (delivery.outcome !== 'delivered') {
+    const data = delivery.body
+    const errorMsg =
+      data?.message || data?.error || delivery.error || `HTTP ${delivery.status ?? 'network'}`
+    console.error(`[alchm-credit-sync] Failed to sync credit: ${errorMsg}`)
+    return { ok: false, error: errorMsg }
+  }
+
+  console.log(`[alchm-credit-sync] Credit applied for ${params.userEmail}: ${params.source}`)
+  return { ok: true, balances: delivery.body?.balances }
 }

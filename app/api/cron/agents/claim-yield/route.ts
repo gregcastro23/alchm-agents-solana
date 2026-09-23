@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { agentActionService } from '@/lib/services/agent-action-service'
+import { authorizeCron } from '@/lib/security/cron-auth'
 
 /**
  * POST /api/cron/agents/claim-yield
@@ -9,7 +10,7 @@ import { agentActionService } from '@/lib/services/agent-action-service'
  * user. Protected by CRON_SECRET in production. Idempotent per UTC day
  * (re-firing within a day is a no-op), so an hourly schedule is safe.
  *
- * Vercel Cron schedule: `0 * * * *` (hourly; see vercel.json)
+ * Vercel Cron schedule: `40 * * * *` (hourly at :40, staggered off WTEN's minutes; see vercel.json)
  */
 export async function POST(request: Request) {
   return handleClaimYield(request)
@@ -21,22 +22,8 @@ export async function GET(request: Request) {
 
 async function handleClaimYield(request: Request) {
   try {
-    const authHeader = request.headers.get('authorization')
-    const cronSecret = process.env.CRON_SECRET
-
-    if (process.env.NODE_ENV === 'production') {
-      if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
-        console.error(
-          '[cron/agents/claim-yield] Unauthorized attempt or missing CRON_SECRET in production'
-        )
-        return new NextResponse('Unauthorized', { status: 401 })
-      }
-    } else {
-      // In development, only warn if a secret is provided but incorrect
-      if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-        console.warn('[cron/agents/claim-yield] Invalid CRON_SECRET provided')
-      }
-    }
+    const cronAuth = authorizeCron(request, 'cron/agents/claim-yield')
+    if (!cronAuth.ok) return cronAuth.response
 
     const summary = await agentActionService.runDailyYieldForAgents()
 

@@ -1,3 +1,4 @@
+import { deliverToWten, stableEventId } from '@/lib/wten/delivery'
 import { feedActivationEngine, type FeedActionPayload } from './feed-activation-engine'
 import {
   planetaryDegreeFeedService,
@@ -344,7 +345,8 @@ export class FeedPusherService {
           insightTitle: `Reply to ${parentAgentId}`,
           insightContent: replyText,
           timestamp: new Date().toISOString(),
-          idempotencyKey: `wten:reply:${candidate.agentId}:${eventId}:${Date.now()}`,
+          // One reply per agent per parent: stable, so a retried push is the same reply.
+          idempotencyKey: `wten:reply:${candidate.agentId}:${eventId}`,
           agentName: `${candidate.name} `,
           agentProfile: {
             bio: (candidate as any).background?.legacy || candidate.specialty,
@@ -457,27 +459,28 @@ export class FeedPusherService {
         timestamp,
       },
     }
-    const response = await fetch(WTEN_API_URL, {
-      method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        Authorization: `Bearer ${getInternalApiSecret()}`,
-        ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
-      },
-      body: JSON.stringify(payload),
+    // Every post carries an event ID. Producers that know their source event pass
+    // `idempotencyKey`; anything else gets one derived from the post itself,
+    // computed once here so every retry of this push reuses it.
+    const eventId =
+      idempotencyKey ||
+      stableEventId(`feed:${action.eventType}:${action.agentEmail}`, action.metadataPayload)
+    const delivery = await deliverToWten({
+      endpoint: 'feed',
+      url: WTEN_API_URL,
+      headers: { Authorization: `Bearer ${getInternalApiSecret()}` },
+      body: { ...payload, idempotencyKey: eventId },
+      eventId,
     })
 
-    if (!response.ok) {
-      const errorText = await response.text()
-      throw new Error(`WTEN API returned ${response.status}: ${errorText}`)
+    if (!delivery.ok) {
+      const detail = delivery.body ? JSON.stringify(delivery.body) : delivery.error
+      throw new Error(`WTEN API returned ${delivery.status ?? 'no response'}: ${detail}`)
     }
 
-    try {
-      const resData = await response.json()
-      return resData.event?.id || idempotencyKey || ''
-    } catch {
-      return idempotencyKey || ''
-    }
+    // Threaded replies hang off this value, so a derived ID (which WTEN never
+    // stored as an event) must not stand in for WTEN's own event id.
+    return delivery.body?.event?.id || idempotencyKey || ''
   }
 
   // Also write PA's OWN feed so the agent appears in the council feed (which

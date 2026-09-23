@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { timingSafeEqual } from 'crypto'
+import { isLocalDevelopment } from '@/lib/security/cron-auth'
+import { safeEqual } from '@/lib/security/secure-compare'
 import { normalizeTransitAgents } from '@/lib/agents/degree-agent'
 import {
   createTransitGroupSession,
@@ -18,22 +19,15 @@ export const revalidate = 0
 
 const MAX_AGENTS = 6
 
-function constantTimeEquals(a: string, b: string): boolean {
-  const ab = Buffer.from(a)
-  const bb = Buffer.from(b)
-  if (ab.length !== bb.length) return false
-  return timingSafeEqual(ab, bb)
-}
-
 /**
  * Auth: timing-safe compare against INTERNAL_API_SECRET (also PA_INTERNAL_API_SECRET).
  * alchm.kitchen's admin sync proxy sends `X-Sync-Secret`; we also accept
  * `X-Internal-Secret` and `Authorization: Bearer <secret>`. When no secret is
- * configured we allow non-production (local dev) but reject in production.
+ * configured only a developer's own `next dev` is allowed (see isLocalDevelopment).
  */
 function isAuthorized(request: NextRequest): boolean {
   const expected = process.env.INTERNAL_API_SECRET || process.env.PA_INTERNAL_API_SECRET
-  if (!expected) return process.env.NODE_ENV !== 'production'
+  if (!expected) return isLocalDevelopment()
 
   const authHeader = request.headers.get('authorization') || ''
   const bearer = /^bearer\s+/i.test(authHeader) ? authHeader.replace(/^bearer\s+/i, '').trim() : ''
@@ -45,7 +39,7 @@ function isAuthorized(request: NextRequest): boolean {
     bearer || null,
   ].filter((v): v is string => Boolean(v))
 
-  return candidates.some(value => constantTimeEquals(value, expected))
+  return candidates.some(value => safeEqual(value, expected))
 }
 
 /**

@@ -1,6 +1,8 @@
-from fastapi import FastAPI, HTTPException, Header, Depends
+from fastapi import FastAPI, HTTPException, Header, Depends, Request
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
+import hashlib
+import hmac
 import json
 import os
 import re
@@ -27,6 +29,7 @@ import tilt_skillet_generation
 import alchm_mcp
 import pii_scrubber
 from feed_emitter import emit_feed_event
+from secure_compare import bearer_token, secret_matches
 
 AI_DISCLAIMER_TEXT = (
     "Planetary Agent responses and cosmic recipes are synthesized using Large Language Models (LLMs) "
@@ -476,7 +479,7 @@ async def alchm_mcp_errors(
 
     Internal-only: gated by X-Internal-Secret. Returns 403 otherwise.
     """
-    if x_internal_secret != INTERNAL_API_SECRET:
+    if not secret_matches(x_internal_secret, INTERNAL_API_SECRET):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     window_seconds = max(60, min(windowMinutes, 1440) * 60)
@@ -1467,12 +1470,67 @@ async def multi_agent_chat(request: schemas.MultiAgentChatRequest, db: Session =
 
 
 
+# ---- /api/generate-recipe caller auth (step 1 of 2: log-only) -------------
+#
+# The endpoint runs a paid model, and until now accepted anyone. Step 1 accepts
+# a service bearer (`Authorization: Bearer $INTERNAL_API_SECRET`, compared in
+# constant time) and STILL accepts anonymous calls — WTEN's hourly prewarm does
+# not send the bearer yet — but logs each anonymous call and rate-limits them.
+# Step 2 (RECIPE_AUTH_ENFORCE=true, once WTEN sends the bearer) rejects them.
+
+RECIPE_ANON_PER_CALLER_PER_MIN = int(os.getenv("RECIPE_ANON_PER_CALLER_PER_MIN", "10"))
+RECIPE_ANON_GLOBAL_PER_MIN = int(os.getenv("RECIPE_ANON_GLOBAL_PER_MIN", "60"))
+_recipe_anon_global_limiter = SlidingWindowRateLimiter(limit=RECIPE_ANON_GLOBAL_PER_MIN, window=60.0)
+_recipe_anon_caller_limiters: Dict[str, SlidingWindowRateLimiter] = {}
+_RECIPE_LIMITER_MAX_KEYS = 10_000
+
+
+def _caller_ip_hash(http_request: Request) -> str:
+    """Keyed hash of the caller IP — enough to correlate abuse, not to recover the IP."""
+    forwarded = http_request.headers.get("x-forwarded-for", "")
+    ip = forwarded.split(",")[0].strip() or (http_request.client.host if http_request.client else "unknown")
+    key = (os.getenv("LOG_HASH_SALT") or INTERNAL_API_SECRET or "asol").encode("utf-8")
+    return hmac.new(key, ip.encode("utf-8"), hashlib.sha256).hexdigest()[:16]
+
+
+def _authorize_recipe_caller(http_request: Request, authorization: Optional[str]) -> str:
+    """Return 'service' or 'anonymous'; raise 401 (enforcing) or 429 (anonymous over limit)."""
+    if secret_matches(bearer_token(authorization), INTERNAL_API_SECRET):
+        return "service"
+
+    ip_hash = _caller_ip_hash(http_request)
+    enforce = os.getenv("RECIPE_AUTH_ENFORCE", "false").lower() in ("true", "1", "yes")
+    print(
+        f"recipe_auth_unauthenticated path={http_request.url.path} ip_hash={ip_hash} "
+        f"enforced={str(enforce).lower()}",
+        flush=True,
+    )
+    if enforce:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+
+    limiter = _recipe_anon_caller_limiters.get(ip_hash)
+    if limiter is None:
+        if len(_recipe_anon_caller_limiters) >= _RECIPE_LIMITER_MAX_KEYS:
+            _recipe_anon_caller_limiters.clear()
+        limiter = SlidingWindowRateLimiter(limit=RECIPE_ANON_PER_CALLER_PER_MIN, window=60.0)
+        _recipe_anon_caller_limiters[ip_hash] = limiter
+    if not limiter.is_allowed() or not _recipe_anon_global_limiter.is_allowed():
+        print(f"recipe_auth_rate_limited path={http_request.url.path} ip_hash={ip_hash}", flush=True)
+        raise HTTPException(status_code=429, detail="Too Many Requests", headers={"Retry-After": "60"})
+    return "anonymous"
+
+
 @app.post(
     "/api/generate-recipe",
     response_model=schemas.CosmicRecipeResponse,
     response_model_exclude_none=True,
 )
-async def generate_cosmic_recipe(request: schemas.CosmicRecipeRequest):
+async def generate_cosmic_recipe(
+    request: schemas.CosmicRecipeRequest,
+    http_request: Request,
+    authorization: Optional[str] = Header(None),
+):
+    _authorize_recipe_caller(http_request, authorization)
     # 1. Early cache check (returns <2ms on identical request)
     early_key = recipe_generation.stable_cache_key(request, catalog_context=None)
     cached = recipe_generation.get_cached_recipe(early_key)
@@ -1586,7 +1644,7 @@ async def ingest_knowledge(
     # privileged op (an open endpoint let anyone inject arbitrary documents).
     # Gated by X-Internal-Secret matching INTERNAL_API_SECRET, like the DELETE /
     # rebuild RAG routes. No in-repo caller hits this endpoint today.
-    if x_internal_secret != INTERNAL_API_SECRET:
+    if not secret_matches(x_internal_secret, INTERNAL_API_SECRET):
         raise HTTPException(status_code=403, detail="Forbidden")
     ids = [f"{agent_id}-{i}-{datetime.utcnow().timestamp()}" for i, _ in enumerate(documents)]
     metadatas = [{"agentId": agent_id} for _ in documents]
@@ -1664,7 +1722,7 @@ async def invalidate_rag_for_agent(
     Returns the count of deleted chunks so callers can sanity-check
     that the agent actually had ingested content.
     """
-    if x_internal_secret != INTERNAL_API_SECRET:
+    if not secret_matches(x_internal_secret, INTERNAL_API_SECRET):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     try:
@@ -1697,7 +1755,7 @@ async def rebuild_rag(x_internal_secret: Optional[str] = Header(None)):
     Requires X-Internal-Secret header matching INTERNAL_API_SECRET.
     The rebuild runs in the background; the endpoint returns immediately.
     """
-    if x_internal_secret != INTERNAL_API_SECRET:
+    if not secret_matches(x_internal_secret, INTERNAL_API_SECRET):
         raise HTTPException(status_code=403, detail="Forbidden")
 
     def _run() -> None:
@@ -1943,7 +2001,7 @@ async def agent_sync(
     db: Session = Depends(database.get_db)
 ):
     secret = x_sync_secret or x_internal_secret
-    if secret != INTERNAL_API_SECRET:
+    if not secret_matches(secret, INTERNAL_API_SECRET):
         raise HTTPException(status_code=403, detail="Forbidden: Invalid sync secret")
         
     if not sync_rate_limiter.is_allowed():
@@ -2012,9 +2070,9 @@ async def cron_purge_guest_chats(
     authorization: Optional[str] = Header(None),
 ):
     expected = os.getenv("PA_CRON_SECRET") or os.getenv("CRON_SECRET") or os.getenv("INTERNAL_API_SECRET") or os.getenv("ALCHM_KITCHEN_SYNC_SECRET")
-    bearer_token = (authorization or "").replace("Bearer ", "").strip()
-    provided = x_cron_secret or x_internal_secret or bearer_token
-    if not expected or provided != expected:
+    presented_bearer = (authorization or "").replace("Bearer ", "").strip()
+    provided = x_cron_secret or x_internal_secret or presented_bearer
+    if not secret_matches(provided, expected):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     import purge_guest_chats
@@ -2068,7 +2126,7 @@ async def synthetic_mcp_probe(
     db: Session = Depends(database.get_db)
 ):
     cron_secret = os.getenv("PA_CRON_SECRET") or os.getenv("INTERNAL_API_SECRET")
-    if not cron_secret or x_cron_secret != cron_secret:
+    if not secret_matches(x_cron_secret, cron_secret):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
     import planetary_agents_mcp_server
@@ -2279,9 +2337,8 @@ def _admin_mcp_secret() -> str:
 
 
 def _require_admin_secret(provided: Optional[str]) -> None:
-    import secrets
     expected = _admin_mcp_secret()
-    if not provided or not expected or not secrets.compare_digest(provided, expected):
+    if not secret_matches(provided, expected):
         raise HTTPException(status_code=401, detail="Unauthorized")
 
 

@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto'
 import { logger } from '../utils/logger.js'
 
 export interface AlchmKitchenFeedPayload {
@@ -43,6 +44,9 @@ export class AlchmKitchenWebhookService {
     }
 
     const endpoint = `${this.baseUrl.replace(/\/$/, '')}/api/feed`
+    // Computed from the caller's payload BEFORE enrichment (which may stamp a
+    // fresh timestamp), so the same event always carries the same ID.
+    const eventId = feedEventId(payload)
 
     try {
       const response = await fetch(endpoint, {
@@ -50,8 +54,9 @@ export class AlchmKitchenWebhookService {
         headers: {
           'Content-Type': 'application/json',
           Authorization: `Bearer ${this.internalSecret}`,
+          'Idempotency-Key': eventId,
         },
-        body: JSON.stringify(enrichFeedPayload(payload)),
+        body: JSON.stringify({ ...enrichFeedPayload(payload), idempotencyKey: eventId }),
       })
 
       const responseBody = await response.text()
@@ -80,6 +85,31 @@ export class AlchmKitchenWebhookService {
 }
 
 export const alchmKitchenWebhookService = new AlchmKitchenWebhookService()
+
+/**
+ * Stable ID for a feed post, sent as `Idempotency-Key`: the producer's own
+ * `idempotencyKey` when it has one, else a hash of the post itself.
+ */
+export function feedEventId(payload: AlchmKitchenFeedPayload): string {
+  const explicit = payload.metadataPayload?.idempotencyKey
+  if (typeof explicit === 'string' && explicit.trim()) return explicit.trim()
+  const digest = createHash('sha256')
+    .update(`${payload.agentEmail}|${payload.eventType}|${canonicalJson(payload.metadataPayload)}`)
+    .digest('hex')
+  return `feed:${payload.eventType}:${payload.agentEmail}:${digest.slice(0, 24)}`
+}
+
+function canonicalJson(value: unknown): string {
+  if (value === undefined) return 'undefined'
+  if (value === null || typeof value !== 'object') return JSON.stringify(value)
+  if (Array.isArray(value)) return `[${value.map(canonicalJson).join(',')}]`
+  const obj = value as Record<string, unknown>
+  return `{${Object.keys(obj)
+    .filter(k => obj[k] !== undefined)
+    .sort()
+    .map(k => `${JSON.stringify(k)}:${canonicalJson(obj[k])}`)
+    .join(',')}}`
+}
 
 function resolveAlchmKitchenBaseUrl(): string {
   const configuredBase =

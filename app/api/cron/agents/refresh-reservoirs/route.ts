@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { refreshSpriteReservoirs } from '@/lib/agents/sprite-reservoirs'
+import { authorizeCron } from '@/lib/security/cron-auth'
 
 /**
  * GET/POST /api/cron/agents/refresh-reservoirs
@@ -8,7 +9,7 @@ import { refreshSpriteReservoirs } from '@/lib/agents/sprite-reservoirs'
  * (degree → dignity, moon → phase). Wallet agents are untouched. Protected by
  * CRON_SECRET in production.
  *
- * Vercel Cron schedule: `0 0 * * *` (daily at 00:00 UTC).
+ * Vercel Cron schedule: `20 0 * * *` (daily at 00:20 UTC, staggered off WTEN's minutes).
  */
 export async function POST(request: Request) {
   return handleRefresh(request)
@@ -20,17 +21,8 @@ export async function GET(request: Request) {
 
 async function handleRefresh(request: Request) {
   try {
-    const authHeader = request.headers.get('authorization')
-    const cronSecret = process.env.CRON_SECRET
-
-    if (process.env.NODE_ENV === 'production') {
-      if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
-        console.error(
-          '[cron/agents/refresh-reservoirs] Unauthorized attempt or missing CRON_SECRET in production'
-        )
-        return new NextResponse('Unauthorized', { status: 401 })
-      }
-    }
+    const cronAuth = authorizeCron(request, 'cron/agents/refresh-reservoirs')
+    if (!cronAuth.ok) return cronAuth.response
 
     const summary = await refreshSpriteReservoirs()
 

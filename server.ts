@@ -12,6 +12,7 @@ import { createNatalSigilRune, type SigilStyle } from './lib/runes/natal-sigil-r
 import { ChartGeometryExtractor } from './lib/chart-geometry-extractor'
 import { createSigilSvg, sigilSvgToDataUrl } from './lib/sigil-download'
 import { calculateThermodynamics } from './lib/thermodynamics/kalchm'
+import { safeEqual } from './lib/security/secure-compare'
 import {
   computeElementalMomentum,
   computeElementalVelocity,
@@ -2371,7 +2372,7 @@ async function authenticateToken(req: Request): Promise<string | null> {
   if (!authHeader || !authHeader.startsWith('Bearer ')) return null
   const token = authHeader.split(' ')[1]
 
-  if (token === DEV_DESKTOP_API_KEY) return DEV_DESKTOP_USER_ID
+  if (safeEqual(token, DEV_DESKTOP_API_KEY)) return DEV_DESKTOP_USER_ID
   if (!pool) return null
 
   try {
@@ -2579,7 +2580,7 @@ const server = serve({
       const authHeader = req.headers.get('Authorization')
       const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null
 
-      if (!pool && token && token !== DEV_DESKTOP_API_KEY) {
+      if (!pool && token && !safeEqual(token, DEV_DESKTOP_API_KEY)) {
         try {
           const agentsUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://agents.alchm.kitchen'
           const res = await fetch(`${agentsUrl.replace(/\/$/, '')}/api/desktop/session`, {
@@ -2626,7 +2627,7 @@ const server = serve({
       const authHeader = req.headers.get('Authorization')
       const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.split(' ')[1] : null
 
-      if (!pool && token && token !== DEV_DESKTOP_API_KEY) {
+      if (!pool && token && !safeEqual(token, DEV_DESKTOP_API_KEY)) {
         try {
           const body = await req.json().catch(() => ({}))
           const agentsUrl = process.env.NEXT_PUBLIC_BASE_URL || 'https://agents.alchm.kitchen'
