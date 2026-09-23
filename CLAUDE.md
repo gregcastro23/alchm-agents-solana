@@ -112,7 +112,7 @@ Every call in either direction is tabulated, with file:line, in [`docs/integrati
 - **Secrets are compared with `lib/security/secure-compare.ts`** (`safeEqual` / `bearerMatches`; Python `backend/secure_compare.py`; Bun `backend/src/utils/secure-compare.ts`) — never `===`/`!==`/`==`. `test/security/secret-compare-scan.spec.ts` fails the build otherwise. Cron routes use `authorizeCron` (`lib/security/cron-auth.ts`), whose only bypass is a bare local `next dev` with no `CRON_SECRET`.
 - **Crons are staggered** off each other and off WTEN's minutes; `test/ops/cron-schedule.spec.ts` holds WTEN's minute list with its source.
 
-⚠️ **`api.agents.alchm.kitchen` deploys from `gregcastro23/alchm-agents-app`, not this repo** (Railway `planetary agents`, root `backend`; verified 2026-09-22). Changes to this repo's `backend/` do not reach production until that service is repointed.
+⚠️ **`api.agents.alchm.kitchen` builds from this repo's `main`** (Railway `planetary agents`, root `backend`, `/backend/Dockerfile`) — since 2026-09-23; before that it built from `gregcastro23/alchm-agents-app`. A merge that touches `backend/` therefore deploys the Python API too.
 
 ### Two-Layer Backend
 
