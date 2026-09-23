@@ -1805,4 +1805,44 @@ model admin_audit_log {
   @@map("admin_audit_log")
 }
 
+/// One row per cron invocation — the heartbeat the Jobs page evaluates
+/// (lib/cron/heartbeat.ts). Written after the job's work; the write never
+/// throws and retries once, so a lost heartbeat is rare but possible.
+model cron_runs {
+  id         String   @id @default(cuid())
+  job        String
+  startedAt  DateTime @map("started_at") @db.Timestamptz
+  finishedAt DateTime @map("finished_at") @db.Timestamptz
+  /// success | failure | timeout
+  status     String
+  durationMs Int      @map("duration_ms")
+  error      String?
+  details    Json?
+
+  @@index([job, startedAt(sort: Desc)])
+  @@index([startedAt(sort: Desc)])
+  @@map("cron_runs")
+}
+
+/// One row per ATTEMPT ASOL makes to deliver something to WTEN
+/// (lib/wten/delivery.ts) — the ASOL-side mirror of WTEN's webhook_events.
+model wten_deliveries {
+  id        String   @id @default(cuid())
+  endpoint  String
+  eventId   String   @map("event_id")
+  attempt   Int
+  /// HTTP status; null when no response arrived (timeout or network error)
+  status    Int?
+  /// delivered | already_applied | rejected | failed | retry
+  result    String
+  latencyMs Int      @map("latency_ms")
+  error     String?
+  createdAt DateTime @default(now()) @map("created_at") @db.Timestamptz
+
+  @@index([endpoint, createdAt(sort: Desc)])
+  @@index([createdAt(sort: Desc)])
+  @@index([eventId])
+  @@map("wten_deliveries")
+}
+
 

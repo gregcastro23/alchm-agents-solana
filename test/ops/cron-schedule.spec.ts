@@ -10,6 +10,7 @@
 import fs from 'node:fs'
 import path from 'node:path'
 import { describe, expect, it } from 'vitest'
+import { WTEN_HOURLY_MINUTES as REGISTRY_WTEN_MINUTES } from '@/lib/cron/registry'
 
 /**
  * Minutes past the hour at which WTEN's hourly-or-faster crons fire.
@@ -97,6 +98,10 @@ describe('vercel.json crons', () => {
         .map(m => `${c.path} (${c.schedule}) fires at :${m}`)
     )
     expect(clashes).toEqual([])
+  })
+
+  it("the Jobs page's copy of WTEN's minutes matches this one", () => {
+    expect([...REGISTRY_WTEN_MINUTES]).toEqual(WTEN_HOURLY_MINUTES)
   })
 
   it('the minute parser understands lists, steps and ranges', () => {

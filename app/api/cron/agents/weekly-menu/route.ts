@@ -1,7 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server'
+import { pastBudget } from '@/lib/cron/registry'
 import { HISTORICAL_AGENTS } from '@/lib/agents/historical'
 import { POST as generatePOST } from '@/app/api/menu-planner/generate/route'
 import { authorizeCron } from '@/lib/security/cron-auth'
+import { runCronJob } from '@/lib/cron/heartbeat'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,10 +16,10 @@ export async function GET(request: Request) {
 }
 
 async function handleCron(request: Request) {
-  try {
-    const cronAuth = authorizeCron(request, 'cron/agents/weekly-menu')
-    if (!cronAuth.ok) return cronAuth.response
+  const cronAuth = authorizeCron(request, 'cron/agents/weekly-menu')
+  if (!cronAuth.ok) return cronAuth.response
 
+  return runCronJob('agents/weekly-menu', async ({ deadlineMs }) => {
     console.log(
       `[cron/agents/weekly-menu] Starting weekly menu generation for ${HISTORICAL_AGENTS.length} agents...`
     )
@@ -33,7 +35,13 @@ async function handleCron(request: Request) {
 
     const batches = chunk(HISTORICAL_AGENTS, batchSize)
 
+    let skippedForBudget = 0
     for (let i = 0; i < batches.length; i++) {
+      // Each menu is a model call; stop starting batches before the deadline.
+      if (pastBudget(deadlineMs)) {
+        skippedForBudget = batches.slice(i).reduce((n, b) => n + b.length, 0)
+        break
+      }
       const batch = batches[i]
       console.log(`[cron/agents/weekly-menu] Processing batch ${i + 1}/${batches.length}...`)
 
@@ -91,13 +99,11 @@ async function handleCron(request: Request) {
         total,
         successful,
         failed,
+        skippedForBudget,
         results,
         timestamp: new Date().toISOString(),
       },
       { status: failed === 0 ? 200 : 207 }
     )
-  } catch (error: any) {
-    console.error('[cron/agents/weekly-menu] Fatal error:', error)
-    return NextResponse.json({ success: false, error: 'Internal Server Error' }, { status: 500 })
-  }
+  })
 }

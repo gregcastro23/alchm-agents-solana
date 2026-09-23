@@ -36,7 +36,10 @@ vi.mock('@/lib/agents/weekly-feature-rotation', () => ({
 vi.mock('@/lib/agents/historical', () => ({ HISTORICAL_AGENTS: [] }))
 vi.mock('@/app/api/menu-planner/generate/route', () => ({ POST: vi.fn() }))
 vi.mock('@/lib/db', () => ({
-  prisma: { agentConversation: { deleteMany: vi.fn(async () => ({ count: 0 })) } },
+  prisma: {
+    agentConversation: { deleteMany: vi.fn(async () => ({ count: 0 })) },
+    cron_runs: { create: vi.fn(async () => ({})), deleteMany: vi.fn(async () => ({ count: 0 })) },
+  },
 }))
 vi.mock('@/lib/solana/health', () => ({
   collectSolanaOperationalHealth: vi.fn(async () => ({ status: 'healthy' })),

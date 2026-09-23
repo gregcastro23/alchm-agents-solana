@@ -32,6 +32,8 @@ const SUBSYSTEMS = [
   { id: 'planetary', path: '/api/admin/planetary', label: 'Planetary integration' },
   { id: 'codebase', path: '/api/admin/codebase-health', label: 'Codebase health' },
   { id: 'onboarding', path: '/api/admin/onboarding', label: 'Onboarding funnel' },
+  { id: 'jobs', path: '/api/admin/jobs', label: 'Jobs & crons' },
+  { id: 'wten-link', path: '/api/admin/wten-link', label: 'WTEN link' },
 ] as const
 
 const SUBSYSTEM_TIMEOUT_MS = 15_000

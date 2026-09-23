@@ -25,6 +25,7 @@
  */
 import { sha256 } from '@noble/hashes/sha256'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils'
+import { recordDeliveryAttempt } from './delivery-log'
 
 export type WtenEndpoint =
   | 'economy/sync-credit'
@@ -128,7 +129,8 @@ export interface DeliveryDeps {
   sleep: (ms: number) => Promise<void>
   random: () => number
   now: () => number
-  onAttempt: (attempt: DeliveryAttempt) => void
+  /** Awaited, but never for longer than ATTEMPT_LOG_BUDGET_MS. */
+  onAttempt: (attempt: DeliveryAttempt) => void | Promise<void>
 }
 
 export const RETRY = {
@@ -168,7 +170,27 @@ const defaultDeps: DeliveryDeps = {
     } else {
       console.warn(`[wten-delivery] ${line}`)
     }
+    return recordDeliveryAttempt(attempt)
   },
+}
+
+/** A slow delivery-log write must not stall the delivery it describes. */
+const ATTEMPT_LOG_BUDGET_MS = 2_000
+
+async function reportAttempt(deps: DeliveryDeps, attempt: DeliveryAttempt): Promise<void> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    await Promise.race([
+      Promise.resolve(deps.onAttempt(attempt)),
+      new Promise<void>(resolve => {
+        timer = setTimeout(resolve, ATTEMPT_LOG_BUDGET_MS)
+      }),
+    ])
+  } catch {
+    // Observability must never fail a delivery.
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 /** Stable short ID from arbitrary parts, for events that have no natural key. */
@@ -325,7 +347,7 @@ export async function deliverToWten(
 
     const isLast = attempt === maxAttempts
     const reported: DeliveryOutcome | 'retry' = result === 'retry' && isLast ? 'failed' : result
-    deps.onAttempt({
+    await reportAttempt(deps, {
       endpoint: req.endpoint,
       eventId: req.eventId,
       attempt,

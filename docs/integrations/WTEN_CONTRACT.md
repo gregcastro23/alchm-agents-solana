@@ -65,6 +65,8 @@ to **WTEN's** backend, not ASOL's.
 - Fail-fast: once a delivery exhausts its attempts without any response (timeouts, network errors),
   every delivery in the next 60s makes a single attempt; any response clears it. The agent tick
   delivers per agent in sequence, so an unreachable WTEN costs one timeout per call, not three.
+- Every attempt is recorded in `wten_deliveries` (`lib/wten/delivery-log.ts`, 14-day retention) and
+  shown on `/admin/wten`; the write is capped at 2s and never fails a delivery.
 
 ## 2. Calls from WTEN to ASOL
 

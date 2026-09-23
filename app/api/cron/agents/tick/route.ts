@@ -2,6 +2,8 @@ import { NextResponse } from 'next/server'
 import { agentActionService } from '@/lib/services/agent-action-service'
 import { runTransitAttunements } from '@/lib/agents/transit-attunement'
 import { authorizeCron } from '@/lib/security/cron-auth'
+import { runCronJob } from '@/lib/cron/heartbeat'
+import { pastBudget } from '@/lib/cron/registry'
 
 /**
  * POST /api/cron/agents/tick
@@ -25,20 +27,24 @@ export async function GET(request: Request) {
 }
 
 async function handleTick(request: Request) {
-  try {
-    const cronAuth = authorizeCron(request, 'cron/agents/tick')
-    if (!cronAuth.ok) return cronAuth.response
+  const cronAuth = authorizeCron(request, 'cron/agents/tick')
+  if (!cronAuth.ok) return cronAuth.response
 
-    const summary = await agentActionService.runTick()
+  return runCronJob('agents/tick', async ({ deadlineMs }) => {
+    const summary = await agentActionService.runTick({ deadlineMs })
 
     // Transit auto-attunement: degree sprites bestow ESMS + planetary-12 buffs to
     // historical agents whose natal points the live sky is conjuncting. Best-effort
-    // — never fails the tick.
+    // — never fails the tick, and skipped when the tick used up its time budget.
     let attunements: unknown = null
-    try {
-      attunements = await runTransitAttunements()
-    } catch (err) {
-      console.error('[cron/agents/tick] transit attunement failed:', err)
+    if (pastBudget(deadlineMs)) {
+      attunements = { skipped: 'time budget' }
+    } else {
+      try {
+        attunements = await runTransitAttunements()
+      } catch (err) {
+        console.error('[cron/agents/tick] transit attunement failed:', err)
+      }
     }
 
     // 207 on partial failure so a degraded tick is visible in Vercel cron logs.
@@ -51,8 +57,5 @@ async function handleTick(request: Request) {
       },
       { status: summary.errors.length === 0 ? 200 : 207 }
     )
-  } catch (error) {
-    console.error('[cron/agents/tick] Fatal error:', error)
-    return NextResponse.json({ success: false, error: 'Internal Server Error' }, { status: 500 })
-  }
+  })
 }

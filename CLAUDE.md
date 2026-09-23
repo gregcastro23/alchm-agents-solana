@@ -366,20 +366,23 @@ The chat endpoint returns `metadata.cache.{read, write}` token counts so prompt-
 
 `AdminOperatorConsole.tsx` renders ~20 tabs in six nav groups. Each subsystem tab is backed by one admin-gated route that **owns the judgement about its own numbers**: routes return their payload _and_ an `AdminAlert[]`, and `/api/admin/alerts` fans out over HTTP (forwarding the caller's cookies) and merges those arrays into one ranked digest. Never re-derive "is this bad?" in the UI — add the rule to the route that owns the number.
 
-| Route                        | Panel                     | Covers                                                                                               |
-| ---------------------------- | ------------------------- | ---------------------------------------------------------------------------------------------------- |
-| `/api/admin/alerts`          | `SystemPulsePanel`        | Merged digest, DB liveness, provider chain, fail-closed secrets                                      |
-| `/api/admin/economy`         | `TokenEconomyPanel`       | ESMS supply/flow, faucet vs sink, **claim reconciliation**, subscriptions, Solana rail, sink pricing |
-| `/api/admin/planetary`       | `PlanetaryAgentsPanel`    | Measured ephemeris provenance, sprite roster, transit jobs, activation engine, cron liveness         |
-| `/api/admin/codebase-health` | `CodebaseHealthPanel`     | Repo gates, natal-chart provenance debt, route test coverage, type escapes, unfinished-work markers  |
-| `/api/admin/onboarding`      | `OnboardingFunnelPanel`   | Signup → profile → chart → balance → chat → wallet funnel, per-user completion                       |
-| `/api/admin/users[/:id]`     | `UserAdministrationPanel` | Searchable directory with holdings; PATCH `role`/`verified`/`isAgentic` only                         |
+| Route                        | Panel                     | Covers                                                                                                  |
+| ---------------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------- |
+| `/api/admin/alerts`          | `SystemPulsePanel`        | Merged digest, DB liveness, provider chain, fail-closed secrets                                         |
+| `/api/admin/economy`         | `TokenEconomyPanel`       | ESMS supply/flow, faucet vs sink, **claim reconciliation**, subscriptions, Solana rail, sink pricing    |
+| `/api/admin/planetary`       | `PlanetaryAgentsPanel`    | Measured ephemeris provenance, sprite roster, transit jobs, activation engine, cron liveness            |
+| `/api/admin/codebase-health` | `CodebaseHealthPanel`     | Repo gates, natal-chart provenance debt, route test coverage, type escapes, unfinished-work markers     |
+| `/api/admin/onboarding`      | `OnboardingFunnelPanel`   | Signup → profile → chart → balance → chat → wallet funnel, per-user completion                          |
+| `/api/admin/users[/:id]`     | `UserAdministrationPanel` | Searchable directory with holdings; PATCH `role`/`verified`/`isAgentic` only                            |
+| `/api/admin/jobs`            | page `/admin/jobs`        | Every Vercel cron from `cron_runs` heartbeats: WTEN's late/failing/retrying rules, misses, p95 vs limit |
+| `/api/admin/wten-link`       | page `/admin/wten`        | ASOL → WTEN delivery health per endpoint (`wten_deliveries`) and shared-secret match probes             |
 
 Load-bearing conventions in this surface:
 
 - **A degraded read must never look like a healthy empty one.** Every route reads each section in isolation (`section()` helper); a section that throws yields `null`, lands in `degraded[]`, and raises an alert. Panels render that distinctly from "no rows".
 - **Ephemeris provenance is measured, not assumed.** `/api/admin/planetary` asks the Swiss backend; on failure it reports what the _approximation_ would serve, stamped `vsop87-approximation`, and raises a critical alert. It never labels approximated output as Swiss.
-- **Cron liveness is inferred**, because no run-log table exists — each job is matched to the DB side effect that proves it ran, and the panel says so rather than implying a real heartbeat.
+- **Cron liveness is measured on `/admin/jobs`** from `cron_runs`: every scheduled route runs through `runCronJob` (`lib/cron/heartbeat.ts`), which records success / failure / timeout, gives the job a deadline (300 s project default − 15 s reserve), and answers 504 before Vercel would kill it. The older `/api/admin/planetary` panel still infers liveness from side effects. ⚠️ `cron_runs` and `wten_deliveries` need `bunx prisma db push` per environment; until then both pages say "not provisioned" rather than showing zeros.
+- **Route-level admin pages** (`app/(admin)/admin/*`, `components/admin/pages/`) validate their payload with zod in `lib/admin/page-schemas.ts`, where each schema carries a compile-time drift guard against the server type; a failed read renders "—" plus the reason. `test/admin/admin-route-guard.spec.ts` fails if any `app/api/admin/**` handler stops reaching an admin guard.
 - **Serialisation:** `lib/admin/serialize.ts`. Prisma `Decimal` → `Number` (safe at `Decimal(12,4)`); Solana `BigInt` slots → **string**, never `Number`.
 - **Mutations are narrow and audited.** Only `role`, `verified`, `isAgentic` are writable; balances are ledger-backed and deliberately not editable. Every mutation records to `admin_audit_log` before its side effect and fails closed when the audit write is unavailable. ⚠️ The table needs `bunx prisma db push` per environment; until then mutations are refused rather than applied un-recorded.
 - **Codebase health is a build-time manifest**, `lib/admin/codebase-health-manifest.json`, regenerated with `bun run generate:codebase-health` (add `:full` for a `tsc` census). It is imported statically because Vercel ships a bundle, not the repo — an `fs` scan at request time would report a clean codebase precisely where it matters. The manifest reports its own age; a skipped census is reported as **unknown**, not zero.
