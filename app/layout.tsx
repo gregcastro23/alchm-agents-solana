@@ -14,6 +14,7 @@ import { Providers } from './providers'
 import { Analytics } from '@vercel/analytics/next'
 import { SpeedInsights } from '@vercel/speed-insights/next'
 import { RootChrome } from '@/components/RootChrome'
+import { resolvePublicOrigin } from '@/lib/self-origin'
 
 // Alchm Design System type families. Exposed as CSS variables and consumed by
 // app/globals.css (--ff-ui / --ff-display / --ff-mono) + tailwind.config.ts.
@@ -55,10 +56,9 @@ const jetbrainsMono = JetBrains_Mono({
 })
 
 export const metadata: Metadata = {
-  metadataBase: new URL(
-    process.env.NEXT_PUBLIC_APP_URL ||
-      (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : 'http://localhost:3000')
-  ),
+  // Production must resolve relative canonical/OG URLs against the custom
+  // domain: every *.vercel.app host is behind Standard Protection.
+  metadataBase: new URL(resolvePublicOrigin()),
   title: 'Planetary Agents - Consciousness Evolution Platform',
   description:
     'Revolutionary consciousness evolution through AI-powered planetary agents and real-time cosmic integration',
