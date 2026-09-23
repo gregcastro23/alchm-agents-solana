@@ -1298,8 +1298,17 @@ fn register_pool_rejects_non_canonical_pairs_and_excessive_fees() {
 /// requires both ATAs to already exist, so any owner holding a position has them.
 /// The headroom (~2 x 25k, the observed cost of one `create_idempotent`) covers the
 /// one reachable case -- an owner who closed an emptied ATA between add and withdraw.
+///
+/// `swap_esms` is not one number. Its trader nonce PDA and output ATA are found by
+/// bump search (the ATA twice: once here, once in `create_idempotent`), and each
+/// extra bump attempt costs 1_500 CU, so the cost is fixed per (trader, pool) but
+/// varies across traders: 49_350 is the floor, not the typical case. Over 20_000
+/// random traders (2026-09-23) 0.3-0.5% needed more than 75_000 -- a first swap that
+/// always fails for them, since the failed swap never creates the ATA -- and the
+/// maximum was 95_850. CI hit 76_350 with this harness's random trader. 100_000
+/// clears every sampled trader.
 const ADD_LIQUIDITY_CU_CEILING: u64 = 85_000;
-const SWAP_ESMS_CU_CEILING: u64 = 75_000;
+const SWAP_ESMS_CU_CEILING: u64 = 100_000;
 const WITHDRAW_LIQUIDITY_CU_CEILING: u64 = 95_000;
 const REGISTER_POOL_CU_CEILING: u64 = 20_000;
 const BOOTSTRAP_POOL_CU_CEILING: u64 = 20_000;
