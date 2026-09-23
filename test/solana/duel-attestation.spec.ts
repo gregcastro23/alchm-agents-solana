@@ -13,12 +13,6 @@ vi.mock('@/lib/db', () => ({
     users: { findUnique: vi.fn() },
     verifiedSolanaWallet: { findUnique: vi.fn() },
     tokenTransaction: { count: vi.fn(), create: vi.fn() },
-    duelRewardClaim: {
-      count: vi.fn(),
-      create: vi.fn(),
-      findUnique: vi.fn(),
-      update: vi.fn(),
-    },
   },
 }))
 vi.mock('@/lib/spacetime', () => ({
@@ -102,10 +96,6 @@ beforeEach(() => {
     solanaPubKey: CALLER_PUBKEY,
   })
   ;(prisma.tokenTransaction.count as any).mockResolvedValue(0)
-  ;(prisma.duelRewardClaim.count as any).mockResolvedValue(0)
-  ;(prisma.duelRewardClaim.create as any).mockResolvedValue({ id: 'claim-1', state: 'pending' })
-  ;(prisma.duelRewardClaim.update as any).mockResolvedValue({ id: 'claim-1', state: 'settled' })
-  ;(prisma.duelRewardClaim.findUnique as any).mockResolvedValue(null)
   ;(mintEsmsClaimSolana as any).mockResolvedValue('5MockTxHashPillarDuelWin1111111111111111111')
   ;(getSolanaClaimSettlementProof as any).mockResolvedValue({ settled: false })
 })

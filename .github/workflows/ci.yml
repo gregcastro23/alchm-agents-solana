@@ -56,6 +56,15 @@ jobs:
           # 8192 is the first value that actually raises it, and an
           # ubuntu-latest runner has 16 GB to draw on.
           NODE_OPTIONS: --max-old-space-size=8192
+      # `typecheck` above uses the root tsconfig, which excludes test/ and
+      # scripts/; `test:solana:unit` runs vitest, which does not type-check; and
+      # the solana-program job runs only cargo. So nothing in CI ran
+      # tsconfig.solana.json, and 8 type errors in test/solana/ (PRs #38–#40)
+      # reached main and stopped `bun run test:solana` at its first step.
+      # Last and `!cancelled()`, so it neither skips nor is skipped by the gates above.
+      - name: Type-check the Solana surface and its tests
+        if: '!cancelled()'
+        run: bun run typecheck:solana
 
   # Raw SQL is only proven legal by a real query planner. A mock accepts
   # anything, which is how lib/security/security-audit.ts shipped a statement
