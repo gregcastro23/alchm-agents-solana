@@ -1,4 +1,5 @@
 import { logger } from './logger.js'
+import { getJwtSecret } from '../middleware/auth.js'
 
 interface ValidationResult {
   valid: boolean
@@ -122,6 +123,27 @@ export function validateProductionConfig(): ValidationResult {
     valid: errors.length === 0,
     errors,
     warnings,
+  }
+}
+
+/**
+ * Validates the configuration authMiddleware needs. Runs in every environment, not only
+ * production: without a usable JWT_SECRET the middleware answers 503 on every protected
+ * route, and this is where the operator finds out why. Not fatal — the public routes work.
+ */
+export function validateAuthConfig(): ValidationResult {
+  const errors: string[] = []
+
+  if (!getJwtSecret()) {
+    errors.push(
+      'JWT_SECRET is unset or a public placeholder: /api/kinetics, /api/consciousness and the authenticated /api/alchemy routes answer 503 until it is set'
+    )
+  }
+
+  return {
+    valid: errors.length === 0,
+    errors,
+    warnings: [],
   }
 }
 
