@@ -25,6 +25,7 @@ import rag
 import providers
 import ingest
 import recipe_generation
+import recipe_metrics
 import tilt_skillet_generation
 import alchm_mcp
 import pii_scrubber
@@ -1536,6 +1537,7 @@ async def generate_cosmic_recipe(
     cached = recipe_generation.get_cached_recipe(early_key)
     if cached:
         print(f"cosmic_recipe_early_cache_hit recipeId={cached.id}", flush=True)
+        recipe_metrics.record(0.0, "cache", "early")
         return cached
 
     # 2. Resolve model tier with fast default
@@ -2611,6 +2613,23 @@ async def admin_mcp_summary(
         return _get_cached_summary(db, windowMinutes)
     except Exception as exc:
         raise HTTPException(status_code=500, detail=f"mcp-summary aggregation failed: {exc}")
+
+
+@app.get("/api/admin/recipe-latency", tags=["admin"])
+async def admin_recipe_latency(
+    windowMinutes: int = 1440,
+    x_internal_secret: Optional[str] = Header(None, alias="X-Internal-Secret"),
+):
+    """p50 / p95 / error rate of /api/generate-recipe over a window.
+
+    Counted in this process only (see recipe_metrics): `countingSince` says
+    where the sample starts, so a fresh deploy reads as a short window, not as
+    a quiet day. Auth: X-Internal-Secret, same as mcp-summary.
+    """
+    _require_admin_secret(x_internal_secret)
+    if windowMinutes < 5 or windowMinutes > 10080:
+        raise HTTPException(status_code=422, detail="windowMinutes must be between 5 and 10080")
+    return recipe_metrics.summary(windowMinutes * 60)
 
 
 # ── A2A (Agent2Agent) server — expose agents over A2A, x402-paid (USDC) ──────

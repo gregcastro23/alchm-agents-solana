@@ -11,6 +11,7 @@
 import { z } from 'zod'
 import type { JobsReport } from '@/lib/admin/jobs'
 import type { WtenLinkReport } from '@/lib/admin/wten-link'
+import type { RecipeLatencyReport } from '@/lib/admin/recipe-latency'
 import type { AdminAlert } from '@/lib/admin/alerts'
 
 type ServerSatisfies<S, T> = [S] extends [T] ? true : false
@@ -141,3 +142,35 @@ export const WtenLinkReportSchema = z.object({
 })
 export type WtenLinkPayload = z.infer<typeof WtenLinkReportSchema>
 export type _WtenLinkDrift = AssertTrue<ServerSatisfies<WtenLinkReport, WtenLinkPayload>>
+
+const MsOrNull = z.number().nullable()
+
+export const RecipeLatencyReportSchema = z.object({
+  generatedAt: z.string(),
+  source: SourceStatusSchema,
+  summary: z
+    .object({
+      windowSeconds: z.number(),
+      countingSince: z.string(),
+      processStartedAt: z.string(),
+      requests: z.number(),
+      generated: z.number(),
+      cacheHits: z.number(),
+      errors: z.number(),
+      errorRate: z.number().nullable(),
+      p50Ms: MsOrNull,
+      p95Ms: MsOrNull,
+      maxMs: MsOrNull,
+      byProvider: z.record(
+        z.string(),
+        z.object({ count: z.number(), p50Ms: MsOrNull, p95Ms: MsOrNull })
+      ),
+    })
+    .nullable(),
+  wtenBudgetMs: z.number(),
+  alerts: z.array(AdminAlertSchema),
+})
+export type RecipeLatencyPayload = z.infer<typeof RecipeLatencyReportSchema>
+export type _RecipeLatencyDrift = AssertTrue<
+  ServerSatisfies<RecipeLatencyReport, RecipeLatencyPayload>
+>

@@ -34,6 +34,7 @@ const SUBSYSTEMS = [
   { id: 'onboarding', path: '/api/admin/onboarding', label: 'Onboarding funnel' },
   { id: 'jobs', path: '/api/admin/jobs', label: 'Jobs & crons' },
   { id: 'wten-link', path: '/api/admin/wten-link', label: 'WTEN link' },
+  { id: 'recipes', path: '/api/admin/recipe-latency', label: 'Recipe generation' },
 ] as const
 
 const SUBSYSTEM_TIMEOUT_MS = 15_000

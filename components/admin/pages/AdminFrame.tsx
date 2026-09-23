@@ -16,6 +16,7 @@ export const ADMIN_NAV: Array<{ group: string; items: Array<{ href: string; labe
     items: [
       { href: '/admin/jobs', label: 'Jobs & crons' },
       { href: '/admin/wten', label: 'WTEN link' },
+      { href: '/admin/recipes', label: 'Recipe generation' },
     ],
   },
 ]
