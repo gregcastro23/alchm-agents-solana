@@ -256,3 +256,101 @@ describe('POST /api/stripe/webhook', () => {
     )
   })
 })
+
+describe('POST /api/stripe/webhook — shared Stripe account (ASOL + WTEN)', () => {
+  const req = (event: unknown) => {
+    mockStripeConstructEvent.mockReturnValue(event)
+    return new Request('http://localhost/api/stripe/webhook', {
+      method: 'POST',
+      headers: { 'stripe-signature': 'valid-sig' },
+      body: JSON.stringify(event),
+    }) as any
+  }
+  const wtenSub = {
+    id: 'sub-wten-1',
+    customer: 'cus-shared',
+    status: 'active',
+    cancel_at_period_end: false,
+    metadata: { userId: 'user-both-apps' },
+    items: { data: [{ price: { id: 'price-wten-premium' } }] },
+  }
+
+  it('ignores a WTEN subscription update instead of overwriting the user row with tier free', async () => {
+    mockUserSubscriptionFindFirst.mockResolvedValue(null)
+    const res = await webhookPost(
+      req({ id: 'evt_1', type: 'customer.subscription.updated', data: { object: wtenSub } })
+    )
+    expect(res.status).toBe(200)
+    expect(await res.json()).toEqual({ received: true, ignored: true })
+    expect(mockUserSubscriptionUpsert).not.toHaveBeenCalled()
+  })
+
+  it("ignores a WTEN subscription checkout and a WTEN subscription's failed invoice", async () => {
+    mockUserSubscriptionFindFirst.mockResolvedValue(null)
+    mockStripeRetrieveSubscription.mockResolvedValue(wtenSub)
+    const checkout = await webhookPost(
+      req({
+        id: 'evt_2',
+        type: 'checkout.session.completed',
+        data: { object: { subscription: 'sub-wten-1', metadata: { userId: 'user-both-apps' } } },
+      })
+    )
+    const invoice = await webhookPost(
+      req({
+        id: 'evt_3',
+        type: 'invoice.payment_failed',
+        data: { object: { subscription: 'sub-wten-1' } },
+      })
+    )
+    expect(await checkout.json()).toMatchObject({ ignored: true })
+    expect(await invoice.json()).toMatchObject({ ignored: true })
+    expect(mockUserSubscriptionUpsert).not.toHaveBeenCalled()
+  })
+
+  it("ignores WTEN's token checkout (it marks `purpose`, not `type: 'token_purchase'`)", async () => {
+    const res = await webhookPost(
+      req({
+        id: 'evt_4',
+        type: 'checkout.session.completed',
+        data: {
+          object: {
+            id: 'cs_wten',
+            metadata: { purpose: 'token_package', userId: 'user-both-apps', sku: 'x' },
+          },
+        },
+      })
+    )
+    expect(await res.json()).toMatchObject({ ignored: true })
+    expect(mockCreditTokens).not.toHaveBeenCalled()
+  })
+
+  it('still processes an ASOL subscription it already tracks, even off an alchemist price', async () => {
+    mockUserSubscriptionFindFirst.mockResolvedValue({ userId: 'user-asol' })
+    const res = await webhookPost(
+      req({
+        id: 'evt_5',
+        type: 'customer.subscription.deleted',
+        data: {
+          object: {
+            ...wtenSub,
+            id: 'sub-asol-1',
+            status: 'canceled',
+            metadata: { userId: 'user-asol' },
+            items: { data: [{ price: { id: 'price-retired' } }] },
+          },
+        },
+      })
+    )
+    expect(await res.json()).toEqual({ received: true })
+    expect(mockUserSubscriptionUpsert).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { userId: 'user-asol' } })
+    )
+  })
+
+  it('acknowledges event types it does not handle as ignored', async () => {
+    const res = await webhookPost(
+      req({ id: 'evt_6', type: 'charge.refunded', data: { object: {} } })
+    )
+    expect(await res.json()).toEqual({ received: true, ignored: true })
+  })
+})
