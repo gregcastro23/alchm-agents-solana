@@ -18,8 +18,13 @@ export const RECORD_PERSONA_CU_LIMIT = 50_000
 // `withdrawLiquidity` carries extra headroom for the one case the harness cannot
 // reach -- an owner who closed an emptied ATA between adding and withdrawing, so
 // `init_if_needed` has to create both output ATAs (~25k each).
+// `swap` 49,350 is the floor, not the typical cost: the trader's nonce PDA and output
+// ATA are bump-searched on chain at 1,500 CU per extra attempt, so the cost is fixed
+// per (trader, pool) and varies across traders. At 75,000, 0.3-0.5% of traders (20k
+// sampled, 2026-09-23) could never complete a first swap in a pool; the sampled max
+// was 95,850. See SWAP_ESMS_CU_CEILING in instructions/amm/runtime_tests.rs.
 export const ADD_LIQUIDITY_CU_LIMIT = 85_000
-export const SWAP_ESMS_CU_LIMIT = 75_000
+export const SWAP_ESMS_CU_LIMIT = 100_000
 export const WITHDRAW_LIQUIDITY_CU_LIMIT = 95_000
 export const REGISTER_POOL_CU_LIMIT = 20_000
 export const BOOTSTRAP_POOL_CU_LIMIT = 20_000
