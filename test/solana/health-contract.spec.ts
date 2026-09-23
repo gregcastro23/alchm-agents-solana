@@ -8,6 +8,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 const mocks = vi.hoisted(() => ({ collect: vi.fn() }))
+// The route imports lib/security/internal-auth, which imports `server-only`.
+// test/setup.ts stubs it for the default config; vitest.solana.config.ts has no setup file.
+vi.mock('server-only', () => ({}))
 vi.mock('@/lib/db', () => ({ prisma: {} }))
 vi.mock('@/lib/solana/health', async importOriginal => {
   const real = await importOriginal<typeof import('@/lib/solana/health')>()
