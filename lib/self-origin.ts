@@ -1,50 +1,95 @@
 /**
- * The origin at which this app's server code may call ITS OWN API routes.
+ * This app's own origin, resolved per Vercel environment.
  *
- * Never a Vercel deployment hostname. The project runs Vercel Standard
- * Protection (`all_except_custom_domains`), so `VERCEL_URL`,
- * `VERCEL_BRANCH_URL` and every other `*.vercel.app` host answer a server-side
- * caller with 401. Until 2026-09 the feed pusher fell through to `VERCEL_URL`
- * in production, and every System-B post to the council feed
- * (`agent_action_events`) was rejected that way.
+ * On production it is never a Vercel deployment hostname. The project runs
+ * Vercel Standard Protection (`all_except_custom_domains`), so `VERCEL_URL`,
+ * `VERCEL_BRANCH_URL` and every other `*.vercel.app` host answer anyone without
+ * a Vercel session (a server-side caller, a crawler) with 401. Two things
+ * fell through to `VERCEL_URL` in production until 2026-09: the feed pusher's
+ * self-call, so every System-B post to the council feed (`agent_action_events`)
+ * was rejected, and the root layout's `metadataBase`, so canonical links
+ * pointed crawlers at a login wall.
  *
- * | Runtime                            | Origin                                                                          |
- * | ---------------------------------- | ------------------------------------------------------------------------------- |
- * | any, with an explicit override     | `NEXT_PUBLIC_APP_URL` → `NEXT_PUBLIC_BASE_URL` → `AGENTS_PUBLIC_URL`, as given  |
- * | `VERCEL_ENV=production`            | `https://$VERCEL_PROJECT_PRODUCTION_URL`, or the canonical domain when that is unset or a `*.vercel.app` host |
- * | `VERCEL_ENV=preview`               | `null` — its own hostname is protected, and it must not write into production  |
- * | anything else (local dev, scripts) | the canonical domain (unchanged)                                                |
- *
- * An explicit override is operator intent and is used as-is, including on a
- * preview — that is how a preview opts in to writing somewhere.
+ * Both resolvers take an explicit override first — `NEXT_PUBLIC_APP_URL` →
+ * `NEXT_PUBLIC_BASE_URL` → `AGENTS_PUBLIC_URL`, used as given. That is operator
+ * intent, and on a preview it is how a deployment opts in to a different origin.
  */
 export const CANONICAL_AGENTS_ORIGIN = 'https://agents.alchm.kitchen'
 
-type SelfOriginEnv = Readonly<Record<string, string | undefined>>
+type OriginEnv = Readonly<Record<string, string | undefined>>
 
-export function resolveSelfOrigin(env: SelfOriginEnv = process.env): string | null {
+/**
+ * Where server code may call ITS OWN API routes, or `null` when it should not.
+ *
+ * | Runtime                            | Origin                                                                           |
+ * | ---------------------------------- | -------------------------------------------------------------------------------- |
+ * | `VERCEL_ENV=production`            | `https://$VERCEL_PROJECT_PRODUCTION_URL`, or the canonical domain when that is unset or a `*.vercel.app` host |
+ * | `VERCEL_ENV=preview`               | `null` — its own hostname is protected, and it must not write into production   |
+ * | anything else (local dev, scripts) | the canonical domain (unchanged)                                                 |
+ */
+export function resolveSelfOrigin(env: OriginEnv = process.env): string | null {
+  const explicit = explicitOrigin(env)
+  if (explicit) return explicit
+
+  if (env.VERCEL_ENV === 'preview') return null
+  if (env.VERCEL_ENV === 'production') return productionOrigin(env)
+  return CANONICAL_AGENTS_ORIGIN
+}
+
+/**
+ * The origin a browser or crawler sees, for absolute URLs in rendered output —
+ * the root layout's `metadataBase`, against which relative canonical, Open
+ * Graph and Twitter URLs resolve. Never `null`.
+ *
+ * | Runtime                            | Origin                                                                           |
+ * | ---------------------------------- | -------------------------------------------------------------------------------- |
+ * | `VERCEL_ENV=production`            | as `resolveSelfOrigin` — the custom domain, never a `*.vercel.app` host          |
+ * | `VERCEL_ENV=preview`               | `https://$VERCEL_URL`, the deployment that rendered the page                     |
+ * | anything else (local dev, scripts) | `http://localhost:$PORT` (default 3000)                                          |
+ *
+ * A preview keeps its own deployment URL rather than production's. A crawler
+ * cannot index a preview at all (it gets the same 401), so a preview canonical
+ * has no SEO effect, and pointing it at production would send a reviewer's
+ * relative assets — an Open Graph image under change — to the production build.
+ * `VERCEL_URL` rather than Next's default `VERCEL_BRANCH_URL`: the deployment URL
+ * is immutable, so assets stay on the build that rendered the page, where the
+ * branch URL would follow newer pushes to that branch.
+ */
+export function resolvePublicOrigin(env: OriginEnv = process.env): string {
+  const explicit = explicitOrigin(env)
+  if (explicit) return explicit
+
+  if (env.VERCEL_ENV === 'production') return productionOrigin(env)
+  if (env.VERCEL_ENV === 'preview') {
+    const host = bareHost(env.VERCEL_URL)
+    return host ? `https://${host}` : productionOrigin(env)
+  }
+  return `http://localhost:${env.PORT || 3000}`
+}
+
+function explicitOrigin(env: OriginEnv): string | null {
   const explicit = (
     env.NEXT_PUBLIC_APP_URL ||
     env.NEXT_PUBLIC_BASE_URL ||
     env.AGENTS_PUBLIC_URL ||
     ''
   ).trim()
-  if (explicit) return explicit.replace(/\/+$/, '')
+  return explicit ? explicit.replace(/\/+$/, '') : null
+}
 
-  if (env.VERCEL_ENV === 'preview') return null
+function productionOrigin(env: OriginEnv): string {
+  const host = bareHost(env.VERCEL_PROJECT_PRODUCTION_URL)
+  // Vercel falls back to the project's *.vercel.app domain when no custom
+  // domain is attached — which is protected, so it is no better than VERCEL_URL.
+  return host && !isVercelAppHost(host) ? `https://${host}` : CANONICAL_AGENTS_ORIGIN
+}
 
-  if (env.VERCEL_ENV === 'production') {
-    // Documented without a scheme ("my-site.com"); tolerate one anyway.
-    const host = (env.VERCEL_PROJECT_PRODUCTION_URL || '')
-      .trim()
-      .replace(/^https?:\/\//, '')
-      .replace(/\/+$/, '')
-    // Vercel falls back to the project's *.vercel.app domain when no custom
-    // domain is attached — which is protected, so it is no better than VERCEL_URL.
-    if (host && !isVercelAppHost(host)) return `https://${host}`
-  }
-
-  return CANONICAL_AGENTS_ORIGIN
+/** Vercel's host variables are documented without a scheme ("my-site.com"); tolerate one anyway. */
+function bareHost(value: string | undefined): string {
+  return (value || '')
+    .trim()
+    .replace(/^https?:\/\//, '')
+    .replace(/\/+$/, '')
 }
 
 function isVercelAppHost(host: string): boolean {

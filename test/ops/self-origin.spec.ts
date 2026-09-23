@@ -1,14 +1,18 @@
 // @vitest-environment node
 /**
- * Server-to-self calls resolve to an origin that will actually answer them.
+ * This app's own origin resolves to one that will actually answer.
  *
  * Every *.vercel.app host sits behind Vercel Standard Protection and returns 401
- * to a server-side caller. The feed pusher used to fall through to VERCEL_URL in
- * production, so every System-B post to the council feed was rejected; a preview
- * must not write into production unless it was told to.
+ * to anyone without a Vercel session. Two things used to fall through to
+ * VERCEL_URL in production: the feed pusher's self-call, so every System-B post
+ * to the council feed was rejected, and the root layout's metadataBase, so
+ * canonical links sent crawlers to a login wall. A preview must not write into
+ * production unless it was told to.
  */
+import fs from 'node:fs'
+import path from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { CANONICAL_AGENTS_ORIGIN, resolveSelfOrigin } from '@/lib/self-origin'
+import { CANONICAL_AGENTS_ORIGIN, resolvePublicOrigin, resolveSelfOrigin } from '@/lib/self-origin'
 
 vi.mock('@/lib/agents/feed-activation-engine', () => ({
   feedActivationEngine: { evaluateActivations: vi.fn(async () => []) },
@@ -104,6 +108,98 @@ describe('resolveSelfOrigin', () => {
         expect(origin ?? '').not.toMatch(/vercel\.app/)
       }
     }
+  })
+})
+
+describe('resolvePublicOrigin (metadataBase)', () => {
+  it.each<[string, Record<string, string>, string]>([
+    // Production
+    [
+      'production as configured today: the custom domain, not VERCEL_URL',
+      PRODUCTION,
+      'https://agents.alchm.kitchen',
+    ],
+    [
+      'production whose production URL is the protected *.vercel.app fallback',
+      { ...PRODUCTION, VERCEL_PROJECT_PRODUCTION_URL: 'alchm-agents-eth.vercel.app' },
+      CANONICAL_AGENTS_ORIGIN,
+    ],
+    [
+      'production with no VERCEL_PROJECT_PRODUCTION_URL',
+      { ...PRODUCTION, VERCEL_PROJECT_PRODUCTION_URL: '' },
+      CANONICAL_AGENTS_ORIGIN,
+    ],
+    [
+      'production with an explicit override',
+      { ...PRODUCTION, NEXT_PUBLIC_APP_URL: 'https://ops.alchm.kitchen/' },
+      'https://ops.alchm.kitchen',
+    ],
+    // Preview
+    [
+      'preview: its own immutable deployment URL, not the branch URL or production',
+      PREVIEW,
+      `https://${DEPLOYMENT.VERCEL_URL}`,
+    ],
+    [
+      'preview without VERCEL_URL falls back to the production domain',
+      { ...PREVIEW, VERCEL_URL: '' },
+      'https://agents.alchm.kitchen',
+    ],
+    [
+      'preview with an explicit override',
+      { ...PREVIEW, NEXT_PUBLIC_APP_URL: 'https://staging.alchm.kitchen' },
+      'https://staging.alchm.kitchen',
+    ],
+    // Off Vercel
+    ['local dev (no VERCEL_ENV): localhost:3000, unchanged', {}, 'http://localhost:3000'],
+    ['local dev on another PORT', { PORT: '4100' }, 'http://localhost:4100'],
+    ['vercel dev (VERCEL_ENV=development)', { VERCEL_ENV: 'development' }, 'http://localhost:3000'],
+  ])('%s', (_, env, expected) => {
+    expect(resolvePublicOrigin(env)).toBe(expected)
+    expect(() => new URL(resolvePublicOrigin(env))).not.toThrow()
+  })
+
+  it('production never resolves to a *.vercel.app host', () => {
+    for (const VERCEL_PROJECT_PRODUCTION_URL of [
+      'agents.alchm.kitchen',
+      'alchm-agents-eth.vercel.app',
+      undefined,
+    ]) {
+      expect(resolvePublicOrigin({ ...PRODUCTION, VERCEL_PROJECT_PRODUCTION_URL })).not.toMatch(
+        /vercel\.app/
+      )
+    }
+  })
+})
+
+describe('source scan: origins come from lib/self-origin.ts', () => {
+  const ROOT = path.resolve(__dirname, '../..')
+  const ROOTS = ['app', 'lib', 'components', 'hooks', 'server.ts', 'middleware.ts']
+  const SKIP_DIRS = new Set(['node_modules', '.next', 'dist'])
+  const EXTS = ['.ts', '.tsx', '.js', '.mjs']
+  const DEPLOYMENT_HOST = /\bVERCEL_(?:URL|BRANCH_URL)\b/
+  // Files allowed to read a deployment hostname, and why.
+  const ALLOWED: Record<string, string> = {
+    'lib/self-origin.ts': 'owns the resolution, and uses VERCEL_URL only on previews',
+    'lib/admin/dashboard.ts': 'reports which deployment served the admin read; never fetched',
+  }
+
+  function walk(rel: string): string[] {
+    const abs = path.join(ROOT, rel)
+    if (!fs.existsSync(abs)) return []
+    if (fs.statSync(abs).isFile()) return EXTS.some(e => rel.endsWith(e)) ? [rel] : []
+    return fs
+      .readdirSync(abs, { withFileTypes: true })
+      .filter(entry => !SKIP_DIRS.has(entry.name))
+      .flatMap(entry => walk(path.join(rel, entry.name)))
+  }
+
+  it('no other module builds a URL from VERCEL_URL or VERCEL_BRANCH_URL', () => {
+    const offenders = ROOTS.flatMap(walk)
+      .map(rel => rel.split(path.sep).join('/'))
+      .filter(rel => !(rel in ALLOWED))
+      .filter(rel => DEPLOYMENT_HOST.test(fs.readFileSync(path.join(ROOT, rel), 'utf8')))
+    expect(offenders).toEqual([])
   })
 })
 
