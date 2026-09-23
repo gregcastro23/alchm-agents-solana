@@ -1,4 +1,5 @@
 import { pastBudget } from '@/lib/cron/registry'
+import { resolveSelfOrigin } from '@/lib/self-origin'
 import { deliverToWten, stableEventId } from '@/lib/wten/delivery'
 import { feedActivationEngine, type FeedActionPayload } from './feed-activation-engine'
 import {
@@ -33,18 +34,15 @@ const WTEN_API_URL = getWtenApiUrl()
 // PA's OWN feed ingestion endpoint. System B (historical/planetary agents)
 // previously pushed only to WTEN's feed, so its agents never appeared in PA's
 // own council feed (which reads the local agent_action_events table). We now
-// fan out to this too.
-function getLocalApiUrl(): string {
-  const base =
-    process.env.NEXT_PUBLIC_APP_URL ||
-    process.env.NEXT_PUBLIC_BASE_URL ||
-    process.env.AGENTS_PUBLIC_URL ||
-    (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : '') ||
-    'https://agents.alchm.kitchen'
-  return `${base.replace(/\/$/, '')}/api/feed`
+// fan out to this too. `null` on a preview deployment, which has no origin it
+// should write to — see resolveSelfOrigin for the full matrix.
+function getLocalApiUrl(): string | null {
+  const origin = resolveSelfOrigin()
+  return origin ? `${origin}/api/feed` : null
 }
 
 const LOCAL_API_URL = getLocalApiUrl()
+let loggedLocalPushDisabled = false
 
 function getInternalApiSecret(): string {
   const secret = process.env.INTERNAL_API_SECRET || process.env.WHATTOEATNEXT_API_KEY
@@ -501,6 +499,15 @@ export class FeedPusherService {
   // local /api/feed upserts on idempotencyKey, and failures here never block the
   // primary WTEN push.
   private async pushToLocal(action: FeedActionPayload): Promise<void> {
+    if (!LOCAL_API_URL) {
+      if (!loggedLocalPushDisabled) {
+        loggedLocalPushDisabled = true
+        console.info(
+          '[feed-pusher] local /api/feed push disabled: preview deployment with no NEXT_PUBLIC_APP_URL'
+        )
+      }
+      return
+    }
     try {
       const metadataPayload = withNarrationMetadata(action.eventType, action.metadataPayload)
       const idempotencyKey = action.idempotencyKey || metadataPayload.idempotencyKey
@@ -530,7 +537,7 @@ export class FeedPusherService {
         body: JSON.stringify(payload),
       })
       if (!response.ok) {
-        console.warn(`[feed-pusher] local /api/feed returned ${response.status}`)
+        console.warn(`[feed-pusher] local /api/feed returned ${response.status} (${LOCAL_API_URL})`)
       }
     } catch (err) {
       console.warn('[feed-pusher] local feed push failed (non-fatal):', err)
