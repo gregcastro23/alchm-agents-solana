@@ -278,8 +278,32 @@ function stripTrailingSemicolon(sql: string): string {
 /** `Prisma.raw()`/`Prisma.sql`/`Prisma.join()` splice SQL TEXT, not a parameter. */
 const PRISMA_SQL_SPLICE = /\bPrisma\s*\.\s*(raw|sql|join|empty)\b/
 
+/**
+ * Module-level `const NAME = '…'` / `` const NAME = `…` `` with no substitutions:
+ * SQL named once and passed by identifier is still fixed in source, so the
+ * gate resolves it instead of reporting it as NOT COVERED. Only same-file,
+ * top-level `const` bindings qualify — anything reassignable or imported stays
+ * dynamic, because this extractor has no type checker to follow it.
+ */
+function constStringBindings(source: ts.SourceFile): Map<string, string> {
+  const bindings = new Map<string, string>()
+  for (const stmt of source.statements) {
+    if (!ts.isVariableStatement(stmt)) continue
+    if (!(stmt.declarationList.flags & ts.NodeFlags.Const)) continue
+    for (const decl of stmt.declarationList.declarations) {
+      const init = decl.initializer
+      if (!ts.isIdentifier(decl.name) || !init) continue
+      if (ts.isStringLiteral(init) || ts.isNoSubstitutionTemplateLiteral(init)) {
+        bindings.set(decl.name.text, init.text)
+      }
+    }
+  }
+  return bindings
+}
+
 function extractFromSourceFile(source: ts.SourceFile, file: string): Site[] {
   const sites: Site[] = []
+  const constSql = constStringBindings(source)
   const lineOf = (node: ts.Node) =>
     source.getLineAndCharacterOfPosition(node.getStart(source)).line + 1
 
@@ -334,6 +358,8 @@ function extractFromSourceFile(source: ts.SourceFile, file: string): Site[] {
         sites.push({ file, line, api, coverage: { kind: 'dynamic', reason: 'no SQL argument' } })
       } else if (ts.isStringLiteral(first) || ts.isNoSubstitutionTemplateLiteral(first)) {
         sites.push({ file, line, api, coverage: classify(first.text) })
+      } else if (ts.isIdentifier(first) && constSql.has(first.text)) {
+        sites.push({ file, line, api, coverage: classify(constSql.get(first.text)!) })
       } else if (ts.isTemplateExpression(first)) {
         const varying = first.templateSpans
           .map(span => span.expression.getText(source))
@@ -391,7 +417,11 @@ function classify(sql: string): Coverage {
  */
 const CONTROL_FIXTURE = `
   declare const prisma: any, tx: any, Prisma: any, field: string, days: number, table: string
+  const NAMED_SQL = \`SELECT id FROM t WHERE a = $1\`
+  let reassignable = 'SELECT 1'
   async function f() {
+    await prisma.$queryRawUnsafe(NAMED_SQL, 1)
+    await prisma.$queryRawUnsafe(reassignable)
     await prisma.$queryRaw\`SELECT COUNT(*) FROM "users" WHERE \${field} IS NOT NULL\`
     await prisma.$queryRaw\`SELECT 1 FROM t WHERE d > NOW() - make_interval(days => \${days}::int)\`
     await prisma.$queryRawUnsafe('SELECT bytes FROM wal WHERE agent_id = $1', 'a')
@@ -409,14 +439,24 @@ function runExtractionControl(): void {
     ts.ScriptTarget.ES2022,
     true
   )
-  const sites = extractFromSourceFile(fixture, 'control.fixture.ts')
+  const all = extractFromSourceFile(fixture, 'control.fixture.ts')
   const fail = (why: string): never => {
     console.error(`✗ CONTROL FAILED (extractor): ${why}`)
     console.error('  The gate cannot report on statements it can no longer find.')
     process.exit(1)
   }
 
-  if (sites.length !== 7) fail(`expected 7 raw-SQL sites in the fixture, found ${sites.length}`)
+  if (all.length !== 9) fail(`expected 9 raw-SQL sites in the fixture, found ${all.length}`)
+
+  // 0. SQL named once by a module-level const is fixed in source and must be
+  //    prepared; a reassignable binding is not, and must stay dynamic.
+  const [named, reassignable, ...sites] = all
+  if (named.coverage.kind !== 'static' || !named.coverage.sql.includes('a = $1')) {
+    fail('SQL passed by a module-level const identifier was not resolved')
+  }
+  if (reassignable.coverage.kind !== 'dynamic') {
+    fail('SQL passed by a `let` binding was treated as fixed')
+  }
 
   // 1. The historical defect: an identifier interpolated into a tagged template
   //    becomes a bind parameter. Reconstruction must show `$1`, because that is
@@ -460,7 +500,7 @@ function runExtractionControl(): void {
   if (commandCount(oneCommand) !== 1) {
     fail('the command counter miscounted a quoted `$2a$` pattern or a trailing semicolon')
   }
-  console.log('✓ CONTROL (extractor): 7/7 fixture shapes classified as expected')
+  console.log('✓ CONTROL (extractor): 9/9 fixture shapes classified as expected')
 }
 
 // ---------------------------------------------------------------------------

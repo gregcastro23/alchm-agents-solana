@@ -26,7 +26,7 @@ import {
   latestPerWorkflow,
   runState,
 } from '@/lib/admin/build-health'
-import { chatAlerts, toModelStats } from '@/lib/admin/chats'
+import { FAILED_SENTINEL, MODEL_STATS_SQL, chatAlerts, toModelStats } from '@/lib/admin/chats'
 import { loadDashboard, startOfUtcDay } from '@/lib/admin/dashboard'
 import { readSection } from '@/lib/admin/section'
 
@@ -244,6 +244,10 @@ describe('chats', () => {
         lastAt: '2026-09-23T00:00:00.000Z',
       },
     ])
+  })
+
+  it('counts the same sentinel in SQL as in code', () => {
+    expect(MODEL_STATS_SQL).toContain(`strpos("agentResponse", '${FAILED_SENTINEL}')`)
   })
 
   it('warns at a 10% failure rate over at least 10 chats, not on a handful', () => {

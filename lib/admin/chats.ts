@@ -50,12 +50,16 @@ export interface ChatsReport {
   alerts: AdminAlert[]
 }
 
-/** $1 = window start. `percentile_disc` skips NULL response times. */
+/**
+ * $1 = window start. `percentile_disc` skips NULL response times.
+ * The sentinel is written out (not interpolated) so the text is fixed in source
+ * and scripts/checkRawSqlPrepares.ts can PREPARE it; a test pins it to FAILED_SENTINEL.
+ */
 export const MODEL_STATS_SQL = `
 SELECT COALESCE("modelUsed", '(not recorded)')                                  AS model,
        COUNT(*)::int                                                           AS calls,
        COUNT(*) FILTER (WHERE "agentResponse" = ''
-                           OR strpos("agentResponse", '${FAILED_SENTINEL}') > 0)::int AS failures,
+                           OR strpos("agentResponse", '[All providers unavailable]') > 0)::int AS failures,
        COUNT("responseTime")::int                                              AS timed,
        percentile_disc(0.5) WITHIN GROUP (ORDER BY "responseTime")::int        AS p50_ms,
        percentile_disc(0.95) WITHIN GROUP (ORDER BY "responseTime")::int       AS p95_ms,
