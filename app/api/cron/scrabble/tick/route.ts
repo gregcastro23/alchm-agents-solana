@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { runLeagueTick } from '@/lib/agents/scrabble-league'
+import { authorizeCron } from '@/lib/security/cron-auth'
 
 /**
  * POST/GET /api/cron/scrabble/tick (Vercel Cron, hourly)
@@ -26,19 +27,8 @@ export async function GET(request: Request) {
 
 async function handleTick(request: Request) {
   try {
-    const authHeader = request.headers.get('authorization')
-    const cronSecret = process.env.CRON_SECRET
-
-    if (process.env.NODE_ENV === 'production') {
-      if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
-        console.error(
-          '[cron/scrabble/tick] Unauthorized attempt or missing CRON_SECRET in production'
-        )
-        return new NextResponse('Unauthorized', { status: 401 })
-      }
-    } else if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-      console.warn('[cron/scrabble/tick] Invalid CRON_SECRET provided')
-    }
+    const cronAuth = authorizeCron(request, 'cron/scrabble/tick')
+    if (!cronAuth.ok) return cronAuth.response
 
     // Off by default until reviewed (see cost model). Flip SCRABBLE_LEAGUE_ENABLED=true to run.
     if (process.env.SCRABBLE_LEAGUE_ENABLED !== 'true') {

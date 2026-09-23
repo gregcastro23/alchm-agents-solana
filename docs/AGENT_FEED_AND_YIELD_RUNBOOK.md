@@ -27,12 +27,17 @@ profile/feed/yield/authorship feature.
 **Nothing autonomous runs without these.** All three agent crons are defined in
 `vercel.json` and guard on `CRON_SECRET`:
 
-| Cron                                  | Schedule       | Calls                                                           |
-| ------------------------------------- | -------------- | --------------------------------------------------------------- |
-| `/api/cron/push-feed`                 | `*/30 * * * *` | `feedPusherService.evaluateAndPush()` → engine → feed           |
-| `/api/cron/agents/tick`               | `0 * * * *`    | agent action tick **+ `runTransitAttunements()`** (sky-economy) |
-| `/api/cron/agents/claim-yield`        | `0 * * * *`    | `runDailyYieldForAgents()` (wallets only — sprites excluded)    |
-| `/api/cron/agents/refresh-reservoirs` | `0 0 * * *`    | `refreshSpriteReservoirs()` — re-mint sprite reservoirs (daily) |
+| Cron                                  | Schedule        | Calls                                                           |
+| ------------------------------------- | --------------- | --------------------------------------------------------------- |
+| `/api/cron/push-feed`                 | `14,44 * * * *` | `feedPusherService.evaluateAndPush()` → engine → feed           |
+| `/api/cron/agents/tick`               | `28 * * * *`    | agent action tick **+ `runTransitAttunements()`** (sky-economy) |
+| `/api/cron/agents/claim-yield`        | `40 * * * *`    | `runDailyYieldForAgents()` (wallets only — sprites excluded)    |
+| `/api/cron/agents/refresh-reservoirs` | `20 0 * * *`    | `refreshSpriteReservoirs()` — re-mint sprite reservoirs (daily) |
+
+Minutes are staggered so no two hourly-or-faster ASOL crons share a minute and none
+lands on a minute WTEN's own crons use (WTEN measured its DB timeouts clustering
+on :00–:02). `test/ops/cron-schedule.spec.ts` enforces this; its WTEN minute list
+cites its source.
 
 All four guard on `CRON_SECRET` (the sky-economy crons `tick` + `refresh-reservoirs`
 were added in PRs #18/#19, deployed May 31).

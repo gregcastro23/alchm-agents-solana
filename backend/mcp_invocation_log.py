@@ -6,6 +6,7 @@ from typing import Any, Dict, Optional, Tuple
 from sqlalchemy import select, delete
 from database import SessionLocal
 from models import DesktopApiKey, MCPInvocation, User, UserSubscription
+from secure_compare import secret_matches
 
 # Constants
 PA_USER_API_KEY = os.getenv("PA_USER_API_KEY")
@@ -34,13 +35,13 @@ def resolve_api_key_sync(db, api_key: str) -> Tuple[Optional[str], Optional[str]
         return None, None, "anonymous"
 
     # 1. Master env key check
-    if PA_USER_API_KEY and api_key == PA_USER_API_KEY:
+    if secret_matches(api_key, PA_USER_API_KEY):
         return "env-master-key", None, "alchemist"
 
     # 2. Database key lookup
     try:
         stmt = select(DesktopApiKey).where(
-            DesktopApiKey.token == api_key,
+            DesktopApiKey.token == api_key,  # secret-compare-ok: SQL WHERE clause, evaluated by Postgres
             DesktopApiKey.isActive.is_(True)
         )
         result = db.execute(stmt)

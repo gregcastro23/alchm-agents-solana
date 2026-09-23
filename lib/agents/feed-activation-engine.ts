@@ -9,6 +9,7 @@ import { generateVoicedText } from './persona/voiced-generation'
 import { PlanetaryHourCalculator } from '../planetary-hour'
 import { convertSignDegreesToLongitude, angularSeparation } from '../aspects-dynamics'
 import { prisma } from '../db'
+import { deliverToWten } from '../wten/delivery'
 import type { RenderBirthInfo, RenderImageMode } from './render-post-image'
 
 export type WTENEventType =
@@ -144,6 +145,15 @@ export interface FeedActionPayload {
   }
 }
 
+/**
+ * Event ID for an activation post: one per agent, event type and half-hour
+ * slot (push-feed runs twice an hour, one run per slot). A retried or re-run
+ * push inside the same slot names the same event.
+ */
+function feedSlotKey(eventType: WTENEventType, agentId: string, at: Date): string {
+  return `feed:${eventType}:${agentId}:${Math.floor(at.getTime() / 1_800_000)}`
+}
+
 export class FeedActivationEngine {
   private hourCalc = new PlanetaryHourCalculator()
 
@@ -261,6 +271,7 @@ export class FeedActivationEngine {
       actions.push({
         agentEmail: `${agent.agentId}@agentic.alchm.kitchen`,
         eventType,
+        idempotencyKey: feedSlotKey(eventType, agent.agentId, timestamp),
         metadataPayload,
       })
     }
@@ -290,6 +301,7 @@ export class FeedActivationEngine {
         actions.push({
           agentEmail: `${agent.agentId}@agentic.alchm.kitchen`,
           eventType,
+          idempotencyKey: feedSlotKey(eventType, agent.agentId, timestamp),
           metadataPayload,
         })
       }
@@ -535,10 +547,13 @@ export class FeedActivationEngine {
         process.env.ALCHM_KITCHEN_SYNC_URL ||
         process.env.ALCHM_KITCHEN_BASE_URL ||
         'https://alchm.kitchen'
-      const res = await fetch(`${baseUrl.replace(/\/$/, '')}/api/internal/agent-recipes`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${secret}` },
-        body: JSON.stringify({
+      // One authored riff per agent, base dish and hour: the event ID a retry reuses.
+      const hourSlot = Math.floor(Date.now() / 3_600_000)
+      const delivery = await deliverToWten({
+        endpoint: 'internal/agent-recipes',
+        url: `${baseUrl.replace(/\/$/, '')}/api/internal/agent-recipes`,
+        headers: { Authorization: `Bearer ${secret}` },
+        body: {
           userId: wtenUserId,
           name,
           cuisine: (agent as any).culture || undefined,
@@ -546,16 +561,16 @@ export class FeedActivationEngine {
           sourceRecipeId: base.id,
           payload,
           notes: `Authored autonomously under ${planet}.`,
-        }),
-        signal: AbortSignal.timeout(8000),
+        },
+        eventId: `agent-recipe:${agent.agentId}:${base.id}:${hourSlot}`,
       })
-      if (!res.ok) {
+      if (!delivery.ok) {
         console.warn(
-          `[FeedActivationEngine] authorRecipe non-OK ${res.status} for ${agent.agentId}`
+          `[FeedActivationEngine] authorRecipe non-OK ${delivery.status ?? delivery.error} for ${agent.agentId}`
         )
         return null
       }
-      const data: any = await res.json().catch(() => null)
+      const data: any = delivery.body
       const id = data?.id ? String(data.id) : ''
       if (!id) return null
       return { id, name, payload }

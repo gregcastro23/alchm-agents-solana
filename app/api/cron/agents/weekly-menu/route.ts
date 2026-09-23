@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { HISTORICAL_AGENTS } from '@/lib/agents/historical'
 import { POST as generatePOST } from '@/app/api/menu-planner/generate/route'
+import { authorizeCron } from '@/lib/security/cron-auth'
 
 export const dynamic = 'force-dynamic'
 
@@ -14,21 +15,8 @@ export async function GET(request: Request) {
 
 async function handleCron(request: Request) {
   try {
-    const authHeader = request.headers.get('authorization')
-    const cronSecret = process.env.CRON_SECRET
-
-    if (process.env.NODE_ENV === 'production') {
-      if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
-        console.error(
-          '[cron/agents/weekly-menu] Unauthorized attempt or missing CRON_SECRET in production'
-        )
-        return new NextResponse('Unauthorized', { status: 401 })
-      }
-    } else {
-      if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-        console.warn('[cron/agents/weekly-menu] Invalid CRON_SECRET provided')
-      }
-    }
+    const cronAuth = authorizeCron(request, 'cron/agents/weekly-menu')
+    if (!cronAuth.ok) return cronAuth.response
 
     console.log(
       `[cron/agents/weekly-menu] Starting weekly menu generation for ${HISTORICAL_AGENTS.length} agents...`

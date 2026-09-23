@@ -1,6 +1,6 @@
 import 'server-only'
 
-import { timingSafeEqual } from 'node:crypto'
+import { bearerToken, safeEqual } from './secure-compare'
 
 /**
  * Shared server-to-server authorization for internal API routes.
@@ -16,15 +16,21 @@ import { timingSafeEqual } from 'node:crypto'
  */
 function matchesSecret(request: Request, secret: string | undefined): boolean {
   if (!secret) return false
-  const authToken = (request.headers.get('authorization') || '').replace(/^Bearer\s+/i, '').trim()
-  const syncToken = request.headers.get('x-sync-secret') || ''
-  const internalToken = request.headers.get('x-internal-secret') || ''
-
-  return [authToken, syncToken, internalToken].some(candidate => {
-    const actual = Buffer.from(candidate)
-    const expected = Buffer.from(secret)
-    return actual.length === expected.length && timingSafeEqual(actual, expected)
-  })
+  // The scheme is optional here (unchanged from the pre-constant-time version):
+  // `Authorization: Bearer <secret>` and a bare `Authorization: <secret>` both count.
+  const authorization = request.headers.get('authorization')
+  const candidates = [
+    authorization ? (bearerToken(authorization) ?? authorization.trim()) : null,
+    request.headers.get('x-sync-secret'),
+    request.headers.get('x-internal-secret'),
+  ]
+  // Compare every candidate (constant time, length hidden) so timing does not
+  // reveal which header carried the match.
+  let matched = false
+  for (const candidate of candidates) {
+    if (safeEqual(candidate, secret)) matched = true
+  }
+  return matched
 }
 
 /** The shared kitchen sync credential is intentionally separate from admin-adjacent service auth. */

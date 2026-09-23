@@ -1,6 +1,7 @@
 import 'server-only'
 
 import { prisma } from '@/lib/db'
+import { safeEqual } from '@/lib/security/secure-compare'
 
 export const DEV_DESKTOP_API_KEY = process.env.DESKTOP_DEV_API_KEY || 'dev-desktop-token'
 
@@ -44,7 +45,7 @@ export async function authenticateDesktopApiKey(
     return { status: 'none' }
   }
 
-  if (trimmed === DEV_DESKTOP_API_KEY || trimmed === 'dev-desktop-token') {
+  if (safeEqual(trimmed, DEV_DESKTOP_API_KEY) || trimmed === 'dev-desktop-token') {
     return { status: 'unlinked-dev', token: trimmed }
   }
 

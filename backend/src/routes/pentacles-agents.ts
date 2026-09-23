@@ -1,5 +1,6 @@
 import { Router as createRouter, type NextFunction, type Request, type Response } from 'express'
 import { AppError, asyncHandler } from '../middleware/error-handler.js'
+import { safeEqual } from '../utils/secure-compare.js'
 import { pentaclesAgentService } from '../services/pentacles-agent-service.js'
 import { pentaclesAgentScheduler } from '../services/pentacles-agent-scheduler.js'
 
@@ -9,7 +10,7 @@ function requireInternalSecret(req: Request, _res: Response, next: NextFunction)
   const expected = process.env.INTERNAL_API_SECRET
   if (!expected) return next(new AppError('INTERNAL_API_SECRET is not configured', 500))
   const supplied = req.headers.authorization?.replace(/^Bearer\s+/i, '')
-  if (supplied !== expected) return next(new AppError('Unauthorized', 401))
+  if (!safeEqual(supplied, expected)) return next(new AppError('Unauthorized', 401))
   next()
 }
 

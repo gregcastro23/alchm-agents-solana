@@ -39,6 +39,8 @@ Required env:
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 import logging
 import os
 from datetime import datetime, timezone
@@ -199,6 +201,21 @@ def build_feed_payload(
     return payload
 
 
+def feed_event_id(agent_email: str, event_type: str, metadata_payload: Dict[str, Any]) -> str:
+    """Stable ID for a feed post, sent as ``Idempotency-Key``.
+
+    The producer's own ``idempotencyKey`` wins; otherwise the ID is derived from
+    the post itself, so the same post always carries the same ID. WTEN's /api/feed
+    does not dedupe yet — this is the key it will dedupe on.
+    """
+    explicit = metadata_payload.get("idempotencyKey")
+    if isinstance(explicit, str) and explicit.strip():
+        return explicit.strip()
+    canonical = json.dumps(metadata_payload, sort_keys=True, default=str, separators=(",", ":"))
+    digest = hashlib.sha256(f"{agent_email}|{event_type}|{canonical}".encode("utf-8")).hexdigest()
+    return f"feed:{event_type}:{agent_email}:{digest[:24]}"
+
+
 async def _post_feed_event(
     agent_email: str,
     event_type: str,
@@ -213,10 +230,13 @@ async def _post_feed_event(
         return
 
     url = f"{ALCHM_KITCHEN_URL}/api/feed"
+    event_id = feed_event_id(agent_email, event_type, metadata_payload)
     payload = build_feed_payload(agent_email, event_type, metadata_payload)
+    payload["idempotencyKey"] = event_id
     headers = {
         "Authorization": f"Bearer {INTERNAL_API_SECRET}",
         "Content-Type": "application/json",
+        "Idempotency-Key": event_id,
     }
 
     try:

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { transferFromAgent, type TransferToken } from '@/lib/agentkit/actions'
 import { isCdpConfigured } from '@/lib/agentkit'
+import { safeEqual } from '@/lib/security/secure-compare'
 
 /**
  * POST /api/agents/{slug}/wallet/transfer   { to, amount, token? }
@@ -16,7 +17,7 @@ function authorized(req: NextRequest): boolean {
   if (!secret) return false // disabled unless explicitly configured
   const header = req.headers.get('internal_api_secret') || req.headers.get('x-internal-secret')
   const bearer = req.headers.get('authorization')?.replace(/^Bearer\s+/i, '')
-  return header === secret || bearer === secret
+  return safeEqual(header, secret) || safeEqual(bearer, secret)
 }
 
 export async function POST(req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {

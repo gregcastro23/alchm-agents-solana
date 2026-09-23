@@ -15,31 +15,31 @@
   "crons": [
     {
       "path": "/api/cron/agents/claim-yield",
-      "schedule": "0 * * * *"
+      "schedule": "40 * * * *"
     },
     {
       "path": "/api/cron/agents/tick",
-      "schedule": "0 * * * *"
+      "schedule": "28 * * * *"
     },
     {
       "path": "/api/cron/scrabble/tick",
-      "schedule": "0 * * * *"
+      "schedule": "52 * * * *"
     },
     {
       "path": "/api/cron/push-feed",
-      "schedule": "*/30 * * * *"
+      "schedule": "14,44 * * * *"
     },
     {
       "path": "/api/cron/agents/refresh-reservoirs",
-      "schedule": "0 0 * * *"
+      "schedule": "20 0 * * *"
     },
     {
       "path": "/api/cron/agents/announce-weekly-feature",
-      "schedule": "0 0 * * 1"
+      "schedule": "22 0 * * 1"
     },
     {
       "path": "/api/cron/agents/weekly-menu",
-      "schedule": "0 5 * * 0"
+      "schedule": "9 5 * * 0"
     }
   ],
   "headers": [

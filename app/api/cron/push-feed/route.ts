@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { feedPusherService } from '@/lib/agents/feed-pusher'
+import { authorizeCron } from '@/lib/security/cron-auth'
 
 /**
  * POST /api/cron/push-feed
@@ -18,20 +19,8 @@ export async function GET(request: Request) {
 
 async function handlePushFeed(request: Request) {
   try {
-    const authHeader = request.headers.get('authorization')
-    const cronSecret = process.env.CRON_SECRET
-
-    if (process.env.NODE_ENV === 'production') {
-      if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
-        console.error('[cron/push-feed] Unauthorized attempt or missing CRON_SECRET in production')
-        return new NextResponse('Unauthorized', { status: 401 })
-      }
-    } else {
-      // In development, only warn if a secret is provided but incorrect
-      if (cronSecret && authHeader !== `Bearer ${cronSecret}`) {
-        console.warn('[cron/push-feed] Invalid CRON_SECRET provided')
-      }
-    }
+    const cronAuth = authorizeCron(request, 'cron/push-feed')
+    if (!cronAuth.ok) return cronAuth.response
 
     const result = await feedPusherService.evaluateAndPush()
 

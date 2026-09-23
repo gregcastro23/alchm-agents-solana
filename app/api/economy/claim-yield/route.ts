@@ -1,6 +1,8 @@
 import { NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { EconomyService } from '@/lib/services/economyService'
+import { isLocalDevelopment } from '@/lib/security/cron-auth'
+import { bearerToken, safeEqualAny } from '@/lib/security/secure-compare'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -21,12 +23,11 @@ export const revalidate = 0
  * same fail-closed pattern as app/api/cron/agents/claim-yield.
  */
 async function isAuthorized(req: Request): Promise<boolean> {
-  const authHeader = req.headers.get('authorization')
-  const serviceSecrets = [process.env.CRON_SECRET, process.env.INTERNAL_API_SECRET].filter(Boolean)
-  if (serviceSecrets.some(secret => authHeader === `Bearer ${secret}`)) return true
+  const token = bearerToken(req.headers.get('authorization'))
+  if (safeEqualAny(token, [process.env.CRON_SECRET, process.env.INTERNAL_API_SECRET])) return true
 
-  // Mirror the cron routes: only production fails closed.
-  if (process.env.NODE_ENV !== 'production') return true
+  // Mirror the cron routes: only a developer's own `next dev` skips the check.
+  if (isLocalDevelopment()) return true
 
   try {
     const session = await auth()

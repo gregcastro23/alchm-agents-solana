@@ -9,6 +9,8 @@
 
 import { planetaryPositionSyncService } from '@/lib/services/planetary-position-sync'
 import { adminErrorResponse, requireAdmin } from '@/lib/admin-auth'
+import { isLocalDevelopment } from '@/lib/security/cron-auth'
+import { safeEqual } from '@/lib/security/secure-compare'
 import { NextRequest, NextResponse } from 'next/server'
 
 function getErrorMessage(error: unknown): string {
@@ -23,7 +25,7 @@ function hasValidSyncSecret(request: NextRequest): boolean {
   const expected = getSyncSecret()
 
   if (!expected) {
-    return process.env.NODE_ENV !== 'production'
+    return isLocalDevelopment()
   }
 
   const authHeader = request.headers.get('authorization')
@@ -34,7 +36,7 @@ function hasValidSyncSecret(request: NextRequest): boolean {
     request.headers.get('x-webhook-secret') ||
     request.headers.get('internal_api_secret')
 
-  return provided === expected
+  return safeEqual(provided, expected)
 }
 
 async function requireSyncAccess(request: NextRequest) {

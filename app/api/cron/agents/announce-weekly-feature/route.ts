@@ -1,6 +1,7 @@
 import { NextResponse } from 'next/server'
 import { resolveWeeklyFeature } from '@/lib/agents/weekly-feature-rotation'
 import { feedPusherService } from '@/lib/agents/feed-pusher'
+import { authorizeCron } from '@/lib/security/cron-auth'
 
 /**
  * GET/POST /api/cron/agents/announce-weekly-feature
@@ -9,7 +10,7 @@ import { feedPusherService } from '@/lib/agents/feed-pusher'
  * feed (posted as the week's lead guide). Idempotent per week. Protected by
  * CRON_SECRET in production.
  *
- * Vercel Cron schedule: `0 0 * * 1` (Mondays 00:00 UTC).
+ * Vercel Cron schedule: `22 0 * * 1` (Mondays 00:22 UTC, staggered off WTEN's minutes).
  */
 export async function POST(request: Request) {
   return handleAnnounce(request)
@@ -24,16 +25,8 @@ const cap = (s: string): string => (s ? s.charAt(0).toUpperCase() + s.slice(1).t
 
 async function handleAnnounce(request: Request) {
   try {
-    const authHeader = request.headers.get('authorization')
-    const cronSecret = process.env.CRON_SECRET
-    if (process.env.NODE_ENV === 'production') {
-      if (!cronSecret || authHeader !== `Bearer ${cronSecret}`) {
-        console.error(
-          '[cron/agents/announce-weekly-feature] Unauthorized attempt or missing CRON_SECRET in production'
-        )
-        return new NextResponse('Unauthorized', { status: 401 })
-      }
-    }
+    const cronAuth = authorizeCron(request, 'cron/agents/announce-weekly-feature')
+    if (!cronAuth.ok) return cronAuth.response
 
     const feature = await resolveWeeklyFeature()
 
