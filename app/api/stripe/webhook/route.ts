@@ -11,8 +11,16 @@ export const dynamic = 'force-dynamic'
 
 /**
  * Stripe webhook. The ONLY thing that flips a user free⇄alchemist. Idempotent:
- * all writes are upserts keyed by userId/subscription, so re-delivered events
- * converge to the same state (no separate processed-events table needed).
+ * all writes are upserts keyed by userId/subscription, and the token-purchase
+ * credit is keyed by the checkout session id, so re-delivered events converge
+ * to the same state.
+ *
+ * ASOL and WTEN (alchm.kitchen) share one Stripe account, so this endpoint can
+ * receive WTEN's events too. It acts ONLY on ASOL's own objects — see
+ * `isOwnSubscription` and the token-purchase marker — and acknowledges anything
+ * else as ignored. Before this, a WTEN subscription event for a user both apps
+ * know would upsert that user's single ASOL row (keyed by userId) with tier
+ * 'free' — WTEN's price is not an alchemist price — downgrading an alchemist.
  */
 export async function POST(request: NextRequest) {
   const sig = request.headers.get('stripe-signature')
@@ -30,6 +38,7 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Invalid signature' }, { status: 400 })
   }
 
+  let handled = true
   try {
     switch (event.type) {
       case 'checkout.session.completed': {
@@ -37,8 +46,10 @@ export async function POST(request: NextRequest) {
         const subId = typeof s.subscription === 'string' ? s.subscription : s.subscription?.id
         const userIdHint = s.metadata?.userId || s.client_reference_id || null
         if (subId) {
-          await syncFromSubscriptionId(subId, userIdHint)
+          handled = await syncFromSubscriptionId(subId, userIdHint)
         } else if (s.metadata?.type === 'token_purchase' && userIdHint) {
+          // `type: 'token_purchase'` is ASOL's marker (app/api/stripe/checkout-tokens);
+          // WTEN's token checkouts carry `purpose` instead, so they never match.
           const spirit = Number(s.metadata.spirit || 0)
           const essence = Number(s.metadata.essence || 0)
           const matter = Number(s.metadata.matter || 0)
@@ -50,13 +61,17 @@ export async function POST(request: NextRequest) {
             'ESMS Token Purchase (Stripe)',
             s.id
           )
+        } else {
+          handled = false
         }
         break
       }
       case 'customer.subscription.created':
       case 'customer.subscription.updated':
       case 'customer.subscription.deleted': {
-        await upsertSubscription(event.data.object as Stripe.Subscription)
+        const sub = event.data.object as Stripe.Subscription
+        handled = await isOwnSubscription(sub)
+        if (handled) await upsertSubscription(sub)
         break
       }
       case 'invoice.payment_failed': {
@@ -65,10 +80,11 @@ export async function POST(request: NextRequest) {
           typeof (inv as any).subscription === 'string'
             ? (inv as any).subscription
             : (inv as any).subscription?.id
-        if (subId) await syncFromSubscriptionId(subId, null)
+        handled = subId ? await syncFromSubscriptionId(subId, null) : false
         break
       }
       default:
+        handled = false
         break
     }
   } catch (err) {
@@ -76,12 +92,34 @@ export async function POST(request: NextRequest) {
     return NextResponse.json({ error: 'Handler error' }, { status: 500 })
   }
 
+  if (!handled) {
+    console.info(`[stripe/webhook] ignored ${event.type} ${event.id}: not an ASOL object`)
+    return NextResponse.json({ received: true, ignored: true })
+  }
   return NextResponse.json({ received: true })
 }
 
-async function syncFromSubscriptionId(subId: string, userIdHint: string | null): Promise<void> {
+/**
+ * Is this subscription ASOL's? Either it is on an ASOL (alchemist) price, or
+ * ASOL already tracks it — so a plan change or cancellation of an ASOL
+ * subscription is still processed after its price stops matching.
+ */
+async function isOwnSubscription(sub: Stripe.Subscription): Promise<boolean> {
+  const onOurPrice = (sub.items?.data ?? []).some(item => planForPrice(item?.price?.id) !== null)
+  if (onOurPrice) return true
+  const tracked = await prisma.userSubscription.findFirst({
+    where: { stripeSubscriptionId: sub.id },
+    select: { userId: true },
+  })
+  return Boolean(tracked)
+}
+
+/** Sync an ASOL subscription by id. Returns false (and writes nothing) for anyone else's. */
+async function syncFromSubscriptionId(subId: string, userIdHint: string | null): Promise<boolean> {
   const sub = await getStripe().subscriptions.retrieve(subId)
+  if (!(await isOwnSubscription(sub))) return false
   await upsertSubscription(sub, userIdHint)
+  return true
 }
 
 async function userIdFromCustomer(customerId: string | null): Promise<string | null> {
