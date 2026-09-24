@@ -43,8 +43,8 @@ export async function syncEventToAlchm(params: {
   const { baseUrl, secret } = alchmConfig
 
   // The idempotency key travels in the body AND as the Idempotency-Key header.
-  // WTEN does not dedupe sync-event yet (QuestService counts every delivery), so
-  // the shared client only retries failures that never reached the handler.
+  // WTEN dedupes, but it re-runs a failed event and QuestService.reportEvent isn't
+  // atomic, so the shared client only retries failures that never reached the handler.
   const delivery = await deliverToWten({
     endpoint: 'economy/sync-event',
     url: `${baseUrl}/api/economy/sync-event`,
