@@ -108,7 +108,7 @@ Env vars for this layer are in `.env` (placeholders) — the full table is in `I
 
 Every call in either direction is tabulated, with file:line, in [`docs/integrations/WTEN_CONTRACT.md`](docs/integrations/WTEN_CONTRACT.md). Three rules hold it together:
 
-- **Outbound calls to WTEN go through `lib/wten/delivery.ts` (`deliverToWten`)** — it owns timeouts, the shared retry policy and the `Idempotency-Key` header. Every call needs a **stable event ID derived from the source event**, never a per-attempt random one. Endpoints WTEN does not dedupe yet (`sync-event`, `feed`, `agent-recipes`) only retry failures that never reached the handler.
+- **Outbound calls to WTEN go through `lib/wten/delivery.ts` (`deliverToWten`)** — it owns timeouts, the shared retry policy and the `Idempotency-Key` header. Every call needs a **stable event ID derived from the source event**, never a per-attempt random one. WTEN dedupes on `Idempotency-Key` across routes; `feed` and `internal/agent-recipes` retry all transient errors, while `sync-event` only retries failures that never reached the handler because WTEN's `reportEvent` is not atomic.
 - **Secrets are compared with `lib/security/secure-compare.ts`** (`safeEqual` / `bearerMatches`; Python `backend/secure_compare.py`; Bun `backend/src/utils/secure-compare.ts`) — never `===`/`!==`/`==`. `test/security/secret-compare-scan.spec.ts` fails the build otherwise. Cron routes use `authorizeCron` (`lib/security/cron-auth.ts`), whose only bypass is a bare local `next dev` with no `CRON_SECRET`.
 - **Crons are staggered** off each other and off WTEN's minutes; `test/ops/cron-schedule.spec.ts` holds WTEN's minute list with its source.
 

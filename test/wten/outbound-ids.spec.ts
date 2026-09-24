@@ -65,10 +65,26 @@ describe('sync-event', () => {
     expect(call.headers.get('x-sync-secret')).toBe('sync-secret')
   })
 
-  it('treats a future dedupe 409 as already reported, without retrying', async () => {
-    fetchMock.mockResolvedValueOnce(
-      new Response(JSON.stringify({ reason: 'already_applied' }), { status: 409 })
-    )
+  it('retries when WTEN answers 409 (in-flight) and succeeds on next attempt', async () => {
+    fetchMock
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            ok: false,
+            error: 'conflict',
+            message: 'Event is currently being processed',
+          }),
+          { status: 409, headers: { 'retry-after': '0' } }
+        )
+      )
+      .mockResolvedValueOnce(ok({ deduplicated: true, completed: [] }))
+    const res = await syncEventToAlchm({ userEmail: 'a@x', event: 'e', idempotencyKey: 'k' })
+    expect(res.ok).toBe(true)
+    expect(fetchMock).toHaveBeenCalledTimes(2)
+  })
+
+  it('treats a finished duplicate (200 deduplicated: true) as success', async () => {
+    fetchMock.mockResolvedValueOnce(ok({ deduplicated: true, completed: [] }))
     const res = await syncEventToAlchm({ userEmail: 'a@x', event: 'e', idempotencyKey: 'k' })
     expect(res.ok).toBe(true)
     expect(fetchMock).toHaveBeenCalledOnce()

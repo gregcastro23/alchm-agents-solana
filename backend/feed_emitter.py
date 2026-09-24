@@ -39,7 +39,9 @@ Required env:
 from __future__ import annotations
 
 import asyncio
+import base64
 import hashlib
+import hmac
 import json
 import logging
 import os
@@ -70,6 +72,51 @@ if _legacy and "railway.app" not in _legacy and ALCHM_KITCHEN_URL == "https://al
 INTERNAL_API_SECRET = os.getenv("INTERNAL_API_SECRET", "")
 AGENTIC_EMAIL_DOMAIN = "@agentic.alchm.kitchen"
 FEED_EMIT_TIMEOUT_SECONDS = 4.0
+HOOK_SECRET_ASOL = os.getenv("HOOK_SECRET_ASOL", "")
+_warned_missing_hook_secret = False
+
+
+def _warn_missing_hook_secret_once() -> None:
+    global _warned_missing_hook_secret
+    if _warned_missing_hook_secret:
+        return
+    _warned_missing_hook_secret = True
+    logger.warning(
+        "feed_emit unsigned: HOOK_SECRET_ASOL is not set. Standard Webhooks signing disabled."
+    )
+
+
+def __reset_warned_missing_hook_secret() -> None:
+    """Test-only: reset warned state for missing hook secret."""
+    global _warned_missing_hook_secret
+    _warned_missing_hook_secret = False
+
+
+def get_hook_secret() -> str:
+    """Get the current Standard Webhooks signing secret from environment."""
+    return os.getenv("HOOK_SECRET_ASOL", HOOK_SECRET_ASOL)
+
+
+def parse_webhook_secret(raw: str) -> bytes:
+    """Parse a Standard Webhooks secret string (stripping 'whsec_' prefix and base64-decoding)."""
+    s = raw.strip()
+    if not s:
+        raise ValueError("Webhook secret cannot be empty")
+    if s.startswith("whsec_"):
+        s = s[6:]
+    if not s:
+        raise ValueError("Webhook secret cannot be empty after stripping whsec_ prefix")
+    decoded = base64.b64decode(s)
+    if not decoded:
+        raise ValueError("Webhook secret decoded to 0 bytes")
+    return decoded
+
+
+def compute_v1_signature(msg_id: str, timestamp: int, body_bytes: bytes, secret: bytes) -> str:
+    """Compute Standard Webhooks v1 signature (v1,<base64-hmac-sha256>)."""
+    to_sign = f"{msg_id}.{timestamp}.".encode("utf-8") + body_bytes
+    sig = base64.b64encode(hmac.new(secret, to_sign, hashlib.sha256).digest()).decode("utf-8")
+    return f"v1,{sig}"
 
 
 def agent_id_to_email(agent_id: str) -> str:
@@ -233,11 +280,26 @@ async def _post_feed_event(
     event_id = feed_event_id(agent_email, event_type, metadata_payload)
     payload = build_feed_payload(agent_email, event_type, metadata_payload)
     payload["idempotencyKey"] = event_id
+    body_bytes = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     headers = {
         "Authorization": f"Bearer {INTERNAL_API_SECRET}",
         "Content-Type": "application/json",
         "Idempotency-Key": event_id,
     }
+
+    hook_secret = get_hook_secret()
+    if hook_secret and hook_secret.strip():
+        try:
+            secret_bytes = parse_webhook_secret(hook_secret)
+            ts = int(datetime.now(timezone.utc).timestamp())
+            sig = compute_v1_signature(event_id, ts, body_bytes, secret_bytes)
+            headers["webhook-id"] = event_id
+            headers["webhook-timestamp"] = str(ts)
+            headers["webhook-signature"] = sig
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("feed_emit signing failed: %r", exc)
+    else:
+        _warn_missing_hook_secret_once()
 
     try:
         async with httpx.AsyncClient(timeout=FEED_EMIT_TIMEOUT_SECONDS) as client:

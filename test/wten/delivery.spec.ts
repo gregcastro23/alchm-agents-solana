@@ -5,6 +5,7 @@
  */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import {
+  __resetWarnedMissingSecret,
   __resetWtenReachability,
   backoffDelayMs,
   classifyResponse,
@@ -17,6 +18,7 @@ import {
   type DeliveryDeps,
   type WtenEndpoint,
 } from '@/lib/wten/delivery'
+import { computeV1Signature, parseWebhookSecret } from '@/lib/wten/sign'
 
 type Reply = { status: number; body?: unknown; headers?: Record<string, string> } | Error
 
@@ -66,7 +68,10 @@ const send = (
 
 const header = (init: RequestInit, name: string) => new Headers(init.headers).get(name)
 
-beforeEach(() => __resetWtenReachability())
+beforeEach(() => {
+  __resetWtenReachability()
+  __resetWarnedMissingSecret()
+})
 
 describe('retries reuse the same event ID and the same bytes', () => {
   it('sends an identical Idempotency-Key and body on every attempt', async () => {
@@ -118,9 +123,69 @@ describe('final answers are not retried', () => {
 
   it('a 409 on an endpoint where it does not mean "applied" is a rejection', async () => {
     const h = harness([{ status: 409, body: { error: 'conflict' } }])
-    const res = await send('feed', h.deps)
+    const res = await send('internal/agent-sync', h.deps)
     expect(res).toMatchObject({ outcome: 'rejected', attempts: 1 })
   })
+})
+
+describe('in-flight 409 handling on sync-event, feed, and agent-recipes', () => {
+  const legacyBodies: Record<'economy/sync-event' | 'feed' | 'internal/agent-recipes', any> = {
+    'economy/sync-event': {
+      ok: false,
+      error: 'conflict',
+      message: 'Event is currently being processed',
+    },
+    feed: { success: false, error: 'conflict', message: 'Event is currently being processed' },
+    'internal/agent-recipes': {
+      success: false,
+      error: 'conflict',
+      message: 'Event is currently being processed',
+    },
+  }
+
+  it.each(['economy/sync-event', 'feed', 'internal/agent-recipes'] as const)(
+    '%s: retries WTEN legacy 409 body without in_flight marker',
+    async endpoint => {
+      const h = harness([
+        { status: 409, body: legacyBodies[endpoint], headers: { 'retry-after': '1' } },
+        { status: 200, body: { ok: true, success: true } },
+      ])
+      const res = await send(endpoint, h.deps)
+      expect(res).toMatchObject({ outcome: 'delivered', attempts: 2 })
+      expect(h.sleeps).toEqual([1000])
+    }
+  )
+
+  it.each(['economy/sync-event', 'feed', 'internal/agent-recipes'] as const)(
+    '%s: retries marker body { status: "in_flight" }',
+    async endpoint => {
+      const h = harness([
+        { status: 409, body: { status: 'in_flight', message: 'processing' } },
+        { status: 200, body: { ok: true, success: true } },
+      ])
+      const res = await send(endpoint, h.deps)
+      expect(res).toMatchObject({ outcome: 'delivered', attempts: 2 })
+    }
+  )
+
+  it.each(['economy/sync-event', 'feed', 'internal/agent-recipes'] as const)(
+    '%s: exhausting attempts while in-flight ends as failed',
+    async endpoint => {
+      const h = harness([
+        { status: 409, body: legacyBodies[endpoint] },
+        { status: 409, body: legacyBodies[endpoint] },
+        { status: 409, body: legacyBodies[endpoint] },
+      ])
+      const res = await send(endpoint, h.deps, { maxAttempts: 3 })
+      expect(res).toMatchObject({
+        outcome: 'failed',
+        ok: false,
+        attempts: 3,
+        status: 409,
+      })
+      expect(h.attempts.at(-1)!.result).toBe('failed')
+    }
+  )
 })
 
 describe('transient answers are retried', () => {
@@ -166,18 +231,21 @@ describe('transient answers are retried', () => {
 })
 
 describe('endpoints WTEN does not dedupe yet', () => {
-  it.each(['economy/sync-event', 'feed', 'internal/agent-recipes'] as const)(
-    '%s: a 500 or a mid-flight network error may have been applied, so it is not retried',
-    async endpoint => {
-      expect(WTEN_ENDPOINT_POLICY[endpoint].receiverDedupes).toBe(false)
-      const h500 = harness([{ status: 500 }, { status: 200, body: {} }])
-      expect(await send(endpoint, h500.deps)).toMatchObject({ outcome: 'failed', attempts: 1 })
+  it('economy/sync-event: a 500 or a mid-flight network error may have been applied, so it is not retried', async () => {
+    expect(WTEN_ENDPOINT_POLICY['economy/sync-event'].receiverDedupes).toBe(false)
+    const h500 = harness([{ status: 500 }, { status: 200, body: {} }])
+    expect(await send('economy/sync-event', h500.deps)).toMatchObject({
+      outcome: 'failed',
+      attempts: 1,
+    })
 
-      const reset = Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } })
-      const hNet = harness([reset, { status: 200, body: {} }])
-      expect(await send(endpoint, hNet.deps)).toMatchObject({ outcome: 'failed', attempts: 1 })
-    }
-  )
+    const reset = Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } })
+    const hNet = harness([reset, { status: 200, body: {} }])
+    expect(await send('economy/sync-event', hNet.deps)).toMatchObject({
+      outcome: 'failed',
+      attempts: 1,
+    })
+  })
 
   it('still retries answers that never reached the handler: 429, 503, connect errors', async () => {
     const refused = Object.assign(new TypeError('fetch failed'), {
@@ -187,6 +255,19 @@ describe('endpoints WTEN does not dedupe yet', () => {
     const res = await send('economy/sync-event', h.deps, { maxAttempts: 4 })
     expect(res).toMatchObject({ outcome: 'delivered', attempts: 4 })
   })
+
+  it.each(['feed', 'internal/agent-recipes'] as const)(
+    '%s: receiverDedupes is true, so 500 and network errors are retried',
+    async endpoint => {
+      expect(WTEN_ENDPOINT_POLICY[endpoint].receiverDedupes).toBe(true)
+      const h500 = harness([{ status: 500 }, { status: 200, body: { ok: true, success: true } }])
+      expect(await send(endpoint, h500.deps)).toMatchObject({ outcome: 'delivered', attempts: 2 })
+
+      const reset = Object.assign(new TypeError('fetch failed'), { cause: { code: 'ECONNRESET' } })
+      const hNet = harness([reset, { status: 200, body: { ok: true, success: true } }])
+      expect(await send(endpoint, hNet.deps)).toMatchObject({ outcome: 'delivered', attempts: 2 })
+    }
+  )
 })
 
 describe('bounded backoff', () => {
@@ -286,5 +367,191 @@ describe('helpers', () => {
     expect(classifyResponse(402, null, debit)).toBe('rejected')
     expect(classifyResponse(429, null, debit)).toBe('retry')
     expect(classifyResponse(500, null, debit)).toBe('retry')
+
+    const credit = WTEN_ENDPOINT_POLICY['economy/sync-credit']
+    expect(classifyResponse(409, { reason: 'already_applied' }, credit)).toBe('already_applied')
+    expect(classifyResponse(409, { status: 'in_flight' }, credit)).toBe('retry')
+    expect(classifyResponse(500, null, credit)).toBe('retry')
+
+    const syncEvent = WTEN_ENDPOINT_POLICY['economy/sync-event']
+    expect(classifyResponse(409, { error: 'conflict' }, syncEvent)).toBe('retry')
+    expect(classifyResponse(409, { status: 'in_flight' }, syncEvent)).toBe('retry')
+    expect(classifyResponse(500, null, syncEvent)).toBe('failed')
+    expect(classifyResponse(503, null, syncEvent)).toBe('retry')
+
+    const agentSync = WTEN_ENDPOINT_POLICY['internal/agent-sync']
+    expect(classifyResponse(409, { error: 'conflict' }, agentSync)).toBe('rejected')
+    expect(classifyResponse(409, { status: 'in_flight' }, agentSync)).toBe('retry')
+    expect(classifyResponse(500, null, agentSync)).toBe('retry')
+
+    const recipes = WTEN_ENDPOINT_POLICY['internal/agent-recipes']
+    expect(classifyResponse(409, { error: 'conflict' }, recipes)).toBe('retry')
+    expect(classifyResponse(409, { status: 'in_flight' }, recipes)).toBe('retry')
+    expect(classifyResponse(500, null, recipes)).toBe('retry')
+
+    const feed = WTEN_ENDPOINT_POLICY['feed']
+    expect(classifyResponse(409, { error: 'conflict' }, feed)).toBe('retry')
+    expect(classifyResponse(409, { status: 'in_flight' }, feed)).toBe('retry')
+    expect(classifyResponse(500, null, feed)).toBe('retry')
+  })
+})
+
+describe('Standard Webhooks signing in deliverToWten', () => {
+  const TEST_SECRET = 'whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw='
+  const TEST_KEY = parseWebhookSecret(TEST_SECRET)
+
+  it('attaches webhook-id, webhook-timestamp, and webhook-signature when secret is configured', async () => {
+    const { calls, deps } = harness([{ status: 200, body: { ok: true } }], 1_614_265_330_000)
+    deps.webhookSecret = TEST_SECRET
+
+    const body = '{"test": 2432232314}'
+    const eventId = 'msg_p5jXN8AQM9LWM0D4loKWxJek'
+
+    const result = await deliverToWten(
+      {
+        endpoint: 'feed',
+        url: 'https://alchm.test/api/feed',
+        headers: {},
+        body,
+        eventId,
+      },
+      deps
+    )
+
+    expect(result.ok).toBe(true)
+    expect(calls).toHaveLength(1)
+
+    const init = calls[0]!.init
+    expect(header(init, 'webhook-id')).toBe(eventId)
+    expect(header(init, 'webhook-timestamp')).toBe('1614265330')
+    expect(header(init, 'webhook-signature')).toBe(
+      'v1,g0hM9SsE+OTPJTGt/tmIKtSyZlE3uFJELVlNIOLJ1OE='
+    )
+    expect(header(init, 'Idempotency-Key')).toBe(eventId)
+  })
+
+  it('retries maintain identical webhook-id and body, with fresh webhook-timestamp and signature per attempt', async () => {
+    // 2 500s then 200
+    const { calls, deps } = harness(
+      [
+        { status: 500, body: { error: 'down' } },
+        { status: 500, body: { error: 'down' } },
+        { status: 200, body: { ok: true } },
+      ],
+      1_700_000_000_000
+    )
+    deps.webhookSecret = TEST_SECRET
+
+    let clock = 1_700_000_000_000
+    deps.now = () => clock
+    deps.sleep = async ms => {
+      clock += ms + 1_000 // simulate time passing during backoff
+    }
+
+    const body = { action: 'chat', text: 'hello' }
+    const eventId = 'feed:agent_chat:monica-001:abcd'
+
+    const result = await deliverToWten(
+      {
+        endpoint: 'feed',
+        url: 'https://alchm.test/api/feed',
+        headers: {},
+        body,
+        eventId,
+      },
+      deps
+    )
+
+    expect(result.ok).toBe(true)
+    expect(result.attempts).toBe(3)
+    expect(calls).toHaveLength(3)
+
+    // Body bytes must be identical on all attempts
+    const sentBody0 = calls[0]!.init.body
+    const sentBody1 = calls[1]!.init.body
+    const sentBody2 = calls[2]!.init.body
+    expect(sentBody0).toBe(sentBody1)
+    expect(sentBody1).toBe(sentBody2)
+
+    // webhook-id must be identical
+    expect(header(calls[0]!.init, 'webhook-id')).toBe(eventId)
+    expect(header(calls[1]!.init, 'webhook-id')).toBe(eventId)
+    expect(header(calls[2]!.init, 'webhook-id')).toBe(eventId)
+
+    // Timestamps must reflect the time of each attempt
+    const ts0 = header(calls[0]!.init, 'webhook-timestamp')!
+    const ts1 = header(calls[1]!.init, 'webhook-timestamp')!
+    const ts2 = header(calls[2]!.init, 'webhook-timestamp')!
+    expect(ts0).not.toBe(ts1)
+    expect(ts1).not.toBe(ts2)
+
+    // Signatures must verify for each attempt's timestamp
+    const expectedSig0 = computeV1Signature({
+      id: eventId,
+      timestamp: Number(ts0),
+      bodyBytes: String(sentBody0),
+      secret: TEST_KEY,
+    })
+    const expectedSig1 = computeV1Signature({
+      id: eventId,
+      timestamp: Number(ts1),
+      bodyBytes: String(sentBody1),
+      secret: TEST_KEY,
+    })
+    const expectedSig2 = computeV1Signature({
+      id: eventId,
+      timestamp: Number(ts2),
+      bodyBytes: String(sentBody2),
+      secret: TEST_KEY,
+    })
+
+    expect(header(calls[0]!.init, 'webhook-signature')).toBe(expectedSig0)
+    expect(header(calls[1]!.init, 'webhook-signature')).toBe(expectedSig1)
+    expect(header(calls[2]!.init, 'webhook-signature')).toBe(expectedSig2)
+  })
+
+  it('omits webhook-* headers and warns once when HOOK_SECRET_ASOL is unset', async () => {
+    const prevSecret = process.env.HOOK_SECRET_ASOL
+    delete process.env.HOOK_SECRET_ASOL
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => {})
+
+    try {
+      const { calls: calls1, deps: deps1 } = harness([{ status: 200, body: { ok: true } }])
+      const res1 = await send('feed', deps1)
+      expect(res1.ok).toBe(true)
+      expect(header(calls1[0]!.init, 'webhook-id')).toBeNull()
+      expect(header(calls1[0]!.init, 'webhook-timestamp')).toBeNull()
+      expect(header(calls1[0]!.init, 'webhook-signature')).toBeNull()
+
+      const { calls: calls2, deps: deps2 } = harness([{ status: 200, body: { ok: true } }])
+      const res2 = await send('feed', deps2)
+      expect(res2.ok).toBe(true)
+      expect(header(calls2[0]!.init, 'webhook-signature')).toBeNull()
+
+      // Warned exactly once across both calls
+      const missingSecretWarns = warnSpy.mock.calls.filter(args =>
+        String(args[0]).includes('HOOK_SECRET_ASOL is unset')
+      )
+      expect(missingSecretWarns).toHaveLength(1)
+    } finally {
+      if (prevSecret !== undefined) process.env.HOOK_SECRET_ASOL = prevSecret
+      warnSpy.mockRestore()
+    }
+  })
+
+  it('delivery attempts and results never leak secret or signature', async () => {
+    const { attempts, deps } = harness([{ status: 200, body: { ok: true } }])
+    deps.webhookSecret = TEST_SECRET
+
+    const result = await send('feed', deps)
+    expect(result.ok).toBe(true)
+
+    const attemptStr = JSON.stringify(attempts)
+    expect(attemptStr).not.toContain(TEST_SECRET)
+    expect(attemptStr).not.toContain('v1,')
+
+    const resultStr = JSON.stringify(result)
+    expect(resultStr).not.toContain(TEST_SECRET)
+    expect(resultStr).not.toContain('v1,')
   })
 })
