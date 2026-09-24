@@ -27,6 +27,7 @@
 import { sha256 } from '@noble/hashes/sha256'
 import { bytesToHex, utf8ToBytes } from '@noble/hashes/utils'
 import { recordDeliveryAttempt } from './delivery-log'
+import { computeV1Signature, parseWebhookSecret } from './sign'
 
 export type WtenEndpoint =
   | 'economy/sync-credit'
@@ -134,6 +135,8 @@ export interface DeliveryDeps {
   now: () => number
   /** Awaited, but never for longer than ATTEMPT_LOG_BUDGET_MS. */
   onAttempt: (attempt: DeliveryAttempt) => void | Promise<void>
+  /** Optional webhook signing secret override (defaults to process.env.HOOK_SECRET_ASOL). */
+  webhookSecret?: string
 }
 
 export const RETRY = {
@@ -159,6 +162,19 @@ let unreachableUntil = 0
 /** Test-only: forget a previous unreachable verdict. */
 export function __resetWtenReachability(): void {
   unreachableUntil = 0
+}
+
+let warnedMissingSecret = false
+
+/** Test-only: reset warned state for missing webhook signing secret. */
+export function __resetWarnedMissingSecret(): void {
+  warnedMissingSecret = false
+}
+
+function warnMissingSecretOnce(): void {
+  if (warnedMissingSecret) return
+  warnedMissingSecret = true
+  console.warn('[wten-delivery] HOOK_SECRET_ASOL is unset; sending unsigned webhook to WTEN')
 }
 
 const defaultDeps: DeliveryDeps = {
@@ -285,14 +301,35 @@ export async function deliverToWten(
   // WTEN recently stopped answering at all: one attempt each until it answers again.
   const failFast = deps.now() < unreachableUntil
   const maxAttempts = failFast ? 1 : Math.max(1, req.maxAttempts ?? RETRY.maxAttempts)
-  let sawResponse = false
-  const payload = req.body === undefined ? undefined : JSON.stringify(req.body)
+  const rawSecret = deps.webhookSecret ?? process.env.HOOK_SECRET_ASOL
+  let parsedSecret: Uint8Array | null = null
+  if (rawSecret && rawSecret.trim().length > 0) {
+    try {
+      parsedSecret = parseWebhookSecret(rawSecret)
+    } catch (err) {
+      console.warn(
+        '[wten-delivery] invalid HOOK_SECRET_ASOL:',
+        err instanceof Error ? err.message : String(err)
+      )
+    }
+  } else {
+    warnMissingSecretOnce()
+  }
+
+  const payload =
+    req.body === undefined
+      ? undefined
+      : typeof req.body === 'string'
+        ? req.body
+        : JSON.stringify(req.body)
+  const bodyBytes = payload === undefined ? new Uint8Array(0) : utf8ToBytes(payload)
   const headers: Record<string, string> = {
     ...(payload !== undefined ? { 'Content-Type': 'application/json' } : {}),
     ...req.headers,
     'Idempotency-Key': req.eventId,
   }
 
+  let sawResponse = false
   let last: DeliveryResult = {
     outcome: 'failed',
     ok: false,
@@ -319,10 +356,24 @@ export async function deliverToWten(
     let error: string | undefined
     let retryAfterMs: number | null = null
 
+    const attemptHeaders: Record<string, string> = { ...headers }
+    if (parsedSecret) {
+      const nowSec = Math.floor(deps.now() / 1000)
+      const sig = computeV1Signature({
+        id: req.eventId,
+        timestamp: nowSec,
+        bodyBytes,
+        secret: parsedSecret,
+      })
+      attemptHeaders['webhook-id'] = req.eventId
+      attemptHeaders['webhook-timestamp'] = String(nowSec)
+      attemptHeaders['webhook-signature'] = sig
+    }
+
     try {
       const res = await deps.fetch(req.url, {
         method: req.method ?? 'POST',
-        headers,
+        headers: attemptHeaders,
         body: payload,
         signal: controller.signal,
       })

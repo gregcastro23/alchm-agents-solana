@@ -82,6 +82,19 @@ to **WTEN's** backend, not ASOL's.
 - Every attempt is recorded in `wten_deliveries` (`lib/wten/delivery-log.ts`, 14-day retention) and
   shown on `/admin/wten`; the write is capped at 2s and never fails a delivery.
 
+### Standard Webhooks signing (`lib/wten/sign.ts`, `backend/feed_emitter.py`)
+
+- **Standard Webhooks Spec:** Outbound deliveries from TypeScript (`deliverToWten`) and Python (`feed_emitter.py`) implement the Standard Webhooks v1 HMAC-SHA256 specification.
+- **Headers Sent:**
+  - `webhook-id`: Stable event ID (matching `Idempotency-Key`).
+  - `webhook-timestamp`: UNIX timestamp in seconds (integer string) at the time of each attempt.
+  - `webhook-signature`: `v1,<base64-hmac-sha256>`.
+- **Preimage to Sign:** `${webhook-id}.${webhook-timestamp}.${body_bytes}`.
+- **Shared Secret:** `HOOK_SECRET_ASOL` (base64 string, optionally prefixed with `whsec_`).
+- **Retries:** On retry, `webhook-id` and body bytes remain identical, while `webhook-timestamp` and `webhook-signature` are freshly evaluated for that attempt.
+- **Unset Secret Behavior:** If `HOOK_SECRET_ASOL` is unset or empty, the delivery client logs a warning once per process (`HOOK_SECRET_ASOL is unset; sending unsigned webhook to WTEN`) and sends the request unsigned without `webhook-*` headers.
+- **Security:** Secret and signature values are never logged in attempt logs, delivery database records, or error strings.
+
 ## 2. Calls from WTEN to ASOL
 
 | WTEN caller (file:line)                                                    | ASOL endpoint                                                                                                                           | Auth WTEN sends                             | Timeout                                                              | ASOL receiver (file:line) and what it accepts                                                                                                                                                                                                                                                                                                                                                                                                                                  |
