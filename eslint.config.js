@@ -13,6 +13,7 @@ import prettierPlugin from 'eslint-plugin-prettier'
 
 const IGNORED_PATTERNS = [
   '**/node_modules/**',
+  '.claude/worktrees/**',
   '**/.next/**',
   '**/.turbo/**',
   '**/.vercel/**',

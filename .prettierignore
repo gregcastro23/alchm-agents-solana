@@ -2,6 +2,10 @@ src-tauri/gen/schemas/**
 desktop-shell/dist/**
 .venv/**
 backend/.venv/**
+.claude/worktrees/**
+# Astronomy spec JSON retains its canonical serialization.
+alchm-astro-core/spec/fixtures/cast-power.v1.json
+alchm-astro-core/spec/pillars.v1.json
 .next/**
 node_modules/**
 contracts/**

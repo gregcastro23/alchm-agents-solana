@@ -20,6 +20,7 @@ import type {
   VesselStreamKey,
 } from '@/lib/vessel/contract'
 import { useAlchmVessel, type VesselSyncState } from '@/lib/vessel/useAlchmVessel'
+import { ALCHM_KITCHEN_URL } from '@/lib/kitchen-signin'
 
 const TOKENS = [
   {
@@ -286,6 +287,14 @@ export function AlchmVesselWidget({ variant = 'full' }: { variant?: 'full' | 'co
                 ? ` ≈ $${vessel.balances.totalUsdEquivalent.toLocaleString(undefined, { minimumFractionDigits: 2 })}`
                 : ' · no USD rail published'}
             </span>
+            <a
+              href={`${ALCHM_KITCHEN_URL}/feed?tab=transmute`}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="rounded-full border border-white/10 px-3 py-1 text-indigo-300 hover:text-indigo-200"
+            >
+              Trade in the Transmutation Circle ↗
+            </a>
             {vessel.walletAddress && (
               <span
                 className="rounded-full border border-white/10 px-3 py-1 font-mono"
