@@ -31,6 +31,7 @@ import { recordDeliveryAttempt } from './delivery-log'
 export type WtenEndpoint =
   | 'economy/sync-credit'
   | 'economy/sync-debit'
+  | 'economy/sync-transmute'
   | 'economy/sync-event'
   | 'internal/agent-sync'
   | 'internal/agent-recipes'
@@ -49,6 +50,12 @@ export interface EndpointPolicy {
 }
 
 export const WTEN_ENDPOINT_POLICY: Record<WtenEndpoint, EndpointPolicy> = {
+  'economy/sync-transmute': {
+    timeoutMs: 10_000,
+    timeoutSource: 'matches the economy routes',
+    receiverDedupes: false, // accepts aren't keyed; retry only what never reached the handler
+    conflict: 'rejected', // closed offer, unfunded maker, or full book never means applied
+  },
   'economy/sync-debit': {
     timeoutMs: 10_000,
     timeoutSource: 'unchanged: lib/alchm-debit-sync.ts has used 10s since it shipped',

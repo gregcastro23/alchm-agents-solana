@@ -21,7 +21,15 @@ const ROOT = path.resolve(__dirname, '../..')
 const TS_ROOTS = ['app', 'lib', 'src', 'backend/src', 'server.ts', 'middleware.ts']
 const PY_ROOT = 'backend'
 const RUST_ROOT = 'pa-rust-backend/src'
-const SKIP_DIRS = new Set(['node_modules', '.next', 'dist', '__pycache__', 'target'])
+const SKIP_DIRS = new Set([
+  'node_modules',
+  '.next',
+  'dist',
+  '__pycache__',
+  'target',
+  '.venv',
+  'venv',
+])
 const OPT_OUT = /secret-compare-ok:/
 
 /** Names that carry a secret wherever they appear (identifiers or properties). */
