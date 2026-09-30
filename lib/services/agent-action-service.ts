@@ -32,6 +32,7 @@ import {
 } from '@/lib/economy-config'
 import { EconomyService, type TokenBalances } from '@/lib/services/economyService'
 import { loadCanonicalPriceIndex } from '@/lib/economy/canonical-price-index'
+import { circleStep } from '@/lib/services/agent-circle-trading'
 import { pastBudget } from '@/lib/cron/registry'
 import { syncDebitToAlchm } from '@/lib/alchm-debit-sync'
 import { syncCreditToAlchm } from '@/lib/alchm-credit-sync'
@@ -952,7 +953,7 @@ export class AgentActionService {
   }
 
   /**
-   * Full tick: evaluate all agents, execute actions for activated ones.
+   * Full tick: evaluate agents, execute activated actions, then optionally trade.
    */
   async runTick(options: { deadlineMs?: number } = {}): Promise<TickSummary> {
     // One validated WTEN quote per tick, shared by both gates and every agent.
@@ -998,6 +999,15 @@ export class AgentActionService {
           userId: activation.userId,
           error: result.error ?? 'Action execution failed',
         })
+      }
+    }
+
+    if (process.env.AGENT_CIRCLE_TRADING === '1') {
+      // Every evaluated agent can trade, including one too lopsided to act.
+      // Share the action loop's cron budget; do not start new work after it.
+      for (const agent of activations) {
+        if (pastBudget(options.deadlineMs)) break
+        await circleStep(agent)
       }
     }
 
