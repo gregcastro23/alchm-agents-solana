@@ -18,6 +18,7 @@ import {
 } from './aspect-dialogue-engine'
 import { getPlanetaryDignity, getSignElement } from '@/lib/astrological-data'
 import { type BasketAgentKey, type SpeechAct } from './council-schema'
+import { normalizeSkyPositions, type SkySource } from './sky-snapshot'
 export type { BasketAgentKey, SpeechAct }
 export type ElementType = 'fire' | 'water' | 'air' | 'earth'
 
@@ -52,6 +53,8 @@ export interface CouncilContextPlacement {
   speed?: number // Longitudinal velocity in degrees per day (signed)
   element: ElementType
   modality: ModalityType
+  source?: SkySource
+  asOf?: string
 }
 
 export interface CouncilContextAspect {
@@ -104,6 +107,7 @@ export interface CouncilContext {
   attachedNatalChart?: StructuredNatalData
   recentTurns: CouncilTurnContext[]
   timestamp: string
+  source?: SkySource
 }
 
 const CANONICAL_KEYS: readonly BasketAgentKey[] = [
@@ -142,24 +146,18 @@ export function buildServerCouncilContext(params: {
   date?: Date
 }): CouncilContext {
   const date = params.date || new Date()
-  const ephemeris = params.positions || getCurrentPlanetaryPositions(date)
+  const ephemeris = normalizeSkyPositions(params.positions || getCurrentPlanetaryPositions(date))
 
   const sky = {} as Record<BasketAgentKey, CouncilContextPlacement>
 
   for (const key of CANONICAL_KEYS) {
     const planetName = KEY_TO_PLANET_NAME[key]
-    const live = ephemeris[planetName] || {
-      sign: 'Aries',
-      degree: 0,
-      retrograde: false,
-      longitude: 0,
-      speed: undefined,
-    }
+    const live = ephemeris[planetName as keyof typeof ephemeris]
 
     const override = params.overrides?.[key]
     const sign = override?.sign || live.sign
     const degree = override?.degree !== undefined ? override.degree : live.degree
-    const absoluteDegree = signToLongitude(sign, degree)
+    const absoluteDegree = override ? signToLongitude(sign, degree) : live.longitude
     const dignity = getPlanetaryDignity(planetName, sign)
     const signElement = (getSignElement(sign) || 'air').toLowerCase() as ElementType
     const modality = SIGN_MODALITIES[sign] || 'cardinal'
@@ -176,6 +174,8 @@ export function buildServerCouncilContext(params: {
       speed: live.speed,
       element: signElement,
       modality,
+      source: live.source,
+      asOf: live.asOf,
     }
   }
 
@@ -243,5 +243,8 @@ export function buildServerCouncilContext(params: {
     attachedNatalChart: params.attachedNatalChart,
     recentTurns: params.recentTurns || [],
     timestamp: date.toISOString(),
+    source: Object.values(ephemeris).every(position => position.source === ephemeris.Sun.source)
+      ? ephemeris.Sun.source
+      : 'unverified',
   }
 }

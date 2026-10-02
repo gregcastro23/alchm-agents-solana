@@ -28,7 +28,9 @@ import {
 } from './council-schema'
 import { generateStructuredVoice } from '@/lib/agents/persona/voiced-generation'
 import { parseNatalContext } from '@/lib/context-card/natal-parser'
-import { buildAgentContext } from '@/lib/agents/persona/build-agent-context'
+import { composeCouncilPersona } from './council-persona'
+import { containsForbiddenTelemetry } from './council-schema'
+import { findSnapshotContradiction } from './daily-episode'
 
 export interface CouncilRequest {
   turnIndex?: number
@@ -45,6 +47,9 @@ export interface CouncilRequest {
   recentTurns?: CouncilTurnContext[]
   selectedAgentFilter?: string
   skyOverride?: Record<string, CurrentPlanetPosition>
+  observationTime?: string
+  /** Absolute Unix timestamp in milliseconds; generation respects the caller's deadline. */
+  deadlineMs?: number
 }
 
 export function auditEvidence(
@@ -84,6 +89,7 @@ export async function dispatchTurn(request: CouncilRequest): Promise<CouncilTurn
     seekerInquiry: request.seekerInquiry,
     attachedNatalChart: structuredNatal || undefined,
     recentTurns: request.recentTurns || [],
+    date: request.observationTime ? new Date(request.observationTime) : undefined,
   })
 
   // 3. Determine turn directive via Conversation Director
@@ -96,9 +102,9 @@ export async function dispatchTurn(request: CouncilRequest): Promise<CouncilTurn
     directive = directIngressTurn(ctx, movingKey, newSign, newDegree, turnIndex)
   } else if (request.seekerInquiry) {
     const preferred = request.targetDelegate?.toLowerCase() as BasketAgentKey | undefined
-    const [t1, t2] = directSeekerExchange(ctx, request.seekerInquiry, preferred)
+    const turns = directSeekerExchange(ctx, request.seekerInquiry, preferred)
     const turnIndex = request.turnIndex ?? 0
-    directive = turnIndex === 0 ? t1 : t2
+    directive = turns[Math.min(turnIndex, 2)]
   } else {
     // Autonomous turn
     const lastSpeakerKey = ctx.recentTurns[ctx.recentTurns.length - 1]?.speakerKey
@@ -109,35 +115,70 @@ export async function dispatchTurn(request: CouncilRequest): Promise<CouncilTurn
   const brief: TurnBrief = compileTurnBrief(directive, request.seekerInquiry)
 
   // 5. Determine system prompt using Canonical CraftedAgent Persona Block
-  const agentCtx = buildAgentContext(directive.speakerKey)
-  const systemPrompt =
-    agentCtx?.personaBlock ||
-    (directive.speakerKey === 'gregory'
-      ? 'You are Host Gregory Castro, holding the center of the Current Sky Council.'
-      : `You are the ${directive.speakerName} delegate on the Current Sky Council.`)
+  const systemPrompt = composeCouncilPersona(directive.speakerKey, {
+    placement: directive.speakerKey === 'gregory' ? undefined : ctx.sky[directive.speakerKey],
+    theme: `${request.seekerInquiry || ''} ${directive.targetClaim || ''}`,
+  })
 
   const isSeekerTurn = !!request.seekerInquiry
   const isHost = directive.speakerKey === 'gregory'
   const tier = isSeekerTurn || isHost ? 'substantive' : 'ambient'
 
   // 6. Schema-constrained generation
-  const generationResult = await generateStructuredVoice<CouncilTurnGeneration>(
-    CouncilTurnGenerationSchema,
-    {
-      systemPrompt,
-      prompt: brief.formattedPrompt,
-      tier,
-      maxTokens: 450,
-    }
+  const remaining = Math.max(
+    0,
+    Math.min((request.deadlineMs ?? Date.now() + 15_000) - Date.now(), 30_000)
   )
+  const abort = new AbortController()
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  const elapsed = new Promise<null>(resolve => {
+    if (remaining > 0)
+      timeout = setTimeout(() => {
+        abort.abort()
+        resolve(null)
+      }, remaining)
+    else resolve(null)
+  })
+  const generationResult =
+    remaining > 0
+      ? await Promise.race([
+          generateStructuredVoice<CouncilTurnGeneration>(CouncilTurnGenerationSchema, {
+            systemPrompt,
+            prompt: `Sky observation instant: ${ctx.timestamp}.\n\n${brief.formattedPrompt}`,
+            tier,
+            maxTokens: 600,
+            abortSignal: abort.signal,
+          }),
+          elapsed,
+        ]).finally(() => {
+          if (timeout) clearTimeout(timeout)
+        })
+      : null
 
   // 7. Validate evidence usage and assemble response (Strict: any fabricated ID falls back)
-  if (generationResult.object && generationResult.source === 'model') {
+  if (generationResult?.object && generationResult.source === 'model') {
     const allowedIds = new Set(brief.evidence.map(e => e.id))
     const rawIds = generationResult.object.usedEvidenceIds || []
     const audit = auditEvidence(rawIds, allowedIds)
 
-    if (audit.valid) {
+    const schemaValid = CouncilTurnGenerationSchema.safeParse(generationResult.object).success
+    const facts = Object.fromEntries(
+      Object.values(ctx.sky)
+        .filter(body => body.key !== 'gregory')
+        .map(body => [body.planet, body])
+    )
+    const contradiction = findSnapshotContradiction(
+      `${generationResult.object.text} ${generationResult.object.newClaim}`,
+      facts,
+      ctx.aspects as Parameters<typeof findSnapshotContradiction>[2],
+      directive.speakerKey
+    )
+    if (
+      audit.valid &&
+      schemaValid &&
+      !contradiction &&
+      !containsForbiddenTelemetry(generationResult.object.text)
+    ) {
       return {
         success: true,
         speakerKey: directive.speakerKey,
@@ -170,8 +211,8 @@ export async function dispatchTurn(request: CouncilRequest): Promise<CouncilTurn
     targetTurnId: directive.targetTurnId,
     provenance: {
       source: 'grounded_briefing',
-      modelFamily: generationResult.modelFamily,
-      latencyMs: generationResult.latencyMs,
+      modelFamily: generationResult?.modelFamily,
+      latencyMs: generationResult?.latencyMs,
     },
   }
 }

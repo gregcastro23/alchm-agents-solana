@@ -6,7 +6,7 @@
  * recite a laundry list of placements.
  */
 
-import { type TurnDirective } from './conversation-director'
+import { type TurnDirective, type SelectedEvidenceItem } from './conversation-director'
 
 export interface TurnBrief {
   speakerKey: string
@@ -18,7 +18,7 @@ export interface TurnBrief {
   }
   targetClaim?: string
   speechAct: string
-  evidence: Array<{ id: string; label: string; aspectName?: string; orb?: number }>
+  evidence: SelectedEvidenceItem[]
   wordTarget: { min: number; max: number }
   userPrompt?: string
   formattedPrompt: string
@@ -76,6 +76,8 @@ export function compileTurnBrief(directive: TurnDirective, inquiry?: string): Tu
       label: e.label,
       aspectName: e.aspectName,
       orb: e.orb,
+      placement: e.placement,
+      relationship: e.relationship,
     })),
     wordTarget,
     userPrompt: inquiry,

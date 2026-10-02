@@ -26,6 +26,7 @@ export interface StructuredVoiceOptions {
   prompt: string
   tier?: 'substantive' | 'ambient'
   maxTokens?: number
+  abortSignal?: AbortSignal
 }
 
 export interface StructuredVoiceResult<T> {
@@ -121,6 +122,7 @@ export async function generateStructuredVoice<T>(
       system: options.systemPrompt,
       prompt: options.prompt,
       maxOutputTokens: options.maxTokens ?? 400,
+      abortSignal: options.abortSignal,
     })
 
     return {
