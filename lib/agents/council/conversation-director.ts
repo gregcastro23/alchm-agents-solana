@@ -24,6 +24,7 @@ export interface SelectedEvidenceItem {
   orb?: number
   placement?: { planet: string; sign: string; dignity: string; retrograde: boolean }
   relationship?: { bodyA: string; bodyB: string; phase: string }
+  snapshotFact?: 'basis' | 'lunar' | 'event' | 'warning'
 }
 
 export interface TurnDirective {
@@ -33,9 +34,8 @@ export interface TurnDirective {
   targetSpeakerName?: string
   targetClaim?: string
   speechAct: SpeechAct
-  evidence:
-    | [SelectedEvidenceItem, SelectedEvidenceItem]
-    | [SelectedEvidenceItem, SelectedEvidenceItem, SelectedEvidenceItem]
+  evidence: SelectedEvidenceItem[]
+  requiredEvidenceIds?: string[]
   directive: string
   wordTarget: { min: number; max: number }
 }
@@ -82,6 +82,16 @@ export function directSeekerExchange(
   let primaryKey: BasketAgentKey = 'sun'
   if (preferredSpeaker && ctx.sky[preferredSpeaker]) {
     primaryKey = preferredSpeaker
+  } else if (/\b(lunar|phase|waxing|waning)\b/i.test(inquiry)) {
+    primaryKey = 'moon'
+  } else if (
+    Object.keys(ctx.sky).some(
+      key => key !== 'gregory' && new RegExp(`\\b${key}\\b`, 'i').test(inquiry)
+    )
+  ) {
+    primaryKey = Object.keys(ctx.sky)
+      .filter(key => key !== 'gregory' && new RegExp(`\\b${key}\\b`, 'i').test(inquiry))
+      .sort((a, b) => lowerInquiry.indexOf(a) - lowerInquiry.indexOf(b))[0] as BasketAgentKey
   } else {
     const scores: Record<BasketAgentKey, number> = {
       sun: 1,
@@ -142,7 +152,7 @@ export function directSeekerExchange(
     speakerKey: primaryKey,
     speechAct: 'reframe',
     isSeekerTurn: true,
-    directive: `Address the seeker's inquiry directly. Provide articulate, grounded orientation from your celestial seat. Do not recite your degree or dignity label aloud; embody your condition as posture.`,
+    directive: `Address the seeker's inquiry directly. Answer factual lunar/event questions from the supplied edition records before interpreting them. UTC event times are useful when requested; only supplied times may be used. Keep opening-snapshot facts distinct from events that have passed by the answer time, and state the edition's time horizon. Do not recite your degree or dignity label aloud; embody your condition as posture.`,
   })
 
   // Inspect ctx.recentTurns to see if primaryKey has already spoken in this exchange
@@ -175,7 +185,7 @@ export function directSeekerExchange(
     targetTurn: last
       ? { turnId: last.turnId, speakerName: last.speakerName, claim: last.claim || last.text }
       : undefined,
-    directive: `Integrate the actual readings of the seeker's question. Explain how their current placements connect, preserve any unresolved tension, and offer a concrete reflective choice. Do not invent a personal transit, house, prediction, or biography.`,
+    directive: `Integrate the actual readings of the seeker's question. Answer any unresolved factual question using the supplied lunar phase, verified events and timing horizon; distinguish opening placements from later events. Explain how the supplied placements connect, preserve any unresolved tension, and offer a concrete reflective choice. Do not invent a personal transit, house, prediction, biography, event or time.`,
   })
   return [turn1, turn2, turn3]
 }
@@ -453,6 +463,64 @@ export function directIngressSequence(
   return directives
 }
 
+/** Facts retain the edition's confidence and finite horizon, even after an event's time has passed. */
+function dailyQuestionEvidence(
+  ctx: CouncilContext,
+  speakerKey: BasketAgentKey
+): SelectedEvidenceItem[] {
+  const sky = ctx.dailySkyBrief
+  if (!sky) return []
+  const inquiry = ctx.seekerInquiry || ''
+  const answerTime = ctx.answerTime || sky.asOf
+  const evidence: SelectedEvidenceItem[] = [
+    {
+      id: 'edition-basis',
+      snapshotFact: 'basis',
+      label: `Edition observation: ${sky.asOf} UTC (${sky.quality === 'verified' ? 'verified Swiss Ephemeris' : 'approximate positions'}). Its event window runs from ${sky.startAt} to ${sky.endAt} UTC. Time checked: ${answerTime} UTC. Later events do not update the opening placements or lunar phase in this record.`,
+    },
+  ]
+  if (
+    speakerKey === 'gregory' ||
+    speakerKey === 'moon' ||
+    /\b(moon|lunar|phase|waxing|waning)\b/i.test(inquiry)
+  ) {
+    evidence.push({
+      id: 'lunar-state',
+      snapshotFact: 'lunar',
+      label: `At the edition observation, the Moon phase was ${sky.lunar.phase} and its sign was ${sky.lunar.sign}.`,
+    })
+  }
+  const wantsEvents =
+    /\b(when|time|next|change|changes|enter|enters|ingress|station|today|phase|lunar)\b/i.test(
+      inquiry
+    )
+  if (speakerKey === 'gregory' || wantsEvents) {
+    const namedBodies = Object.keys(ctx.sky).filter(
+      key => key !== 'gregory' && new RegExp(`\\b${key}\\b`, 'i').test(inquiry)
+    )
+    const events = sky.events.filter(
+      event => !namedBodies.length || event.bodies.some(body => namedBodies.includes(body))
+    )
+    for (const event of events) {
+      const elapsed = Date.parse(event.at) <= Date.parse(answerTime)
+      evidence.push({
+        id: event.evidenceId,
+        snapshotFact: 'event',
+        label: `Verified event: ${event.description} at ${event.at} UTC; ${elapsed ? 'its scheduled time has passed' : 'upcoming'} as of ${answerTime} UTC.`,
+      })
+    }
+    evidence.push({
+      id: 'event-horizon',
+      snapshotFact: 'event',
+      label: `${events.some(event => Date.parse(event.at) > Date.parse(answerTime)) ? 'The listed upcoming events are verified within this edition window.' : 'No upcoming timed change is verified for the requested bodies in this edition window.'} Events beyond ${sky.endAt} UTC are outside the supplied evidence.`,
+    })
+    for (const [index, warning] of sky.warnings.entries()) {
+      evidence.push({ id: `edition-warning-${index}`, snapshotFact: 'warning', label: warning })
+    }
+  }
+  return evidence
+}
+
 function buildTurnDirective(params: {
   ctx: CouncilContext
   speakerKey: BasketAgentKey
@@ -466,6 +534,19 @@ function buildTurnDirective(params: {
   const speakerName = speakerKey === 'gregory' ? 'Gregory Castro' : speaker?.planet || 'Delegate'
 
   // Extract 2 or 3 salient evidence items
+  const factualEvidence = isSeekerTurn ? dailyQuestionEvidence(ctx, speakerKey) : []
+  const inquiry = ctx.seekerInquiry || ''
+  const answersQuestion = speechAct === 'reframe' || speakerKey === 'gregory'
+  const requiredEvidenceIds = factualEvidence
+    .filter(
+      item =>
+        item.snapshotFact === 'basis' ||
+        (answersQuestion &&
+          ((item.snapshotFact === 'lunar' && /\b(phase|waxing|waning|lunar)\b/i.test(inquiry)) ||
+            ((item.snapshotFact === 'event' || item.snapshotFact === 'warning') &&
+              /\b(when|time|next|enter|enters|ingress|station|change|changes)\b/i.test(inquiry))))
+    )
+    .map(item => item.id)
   const evidenceItems: SelectedEvidenceItem[] = []
 
   if (speakerKey === 'gregory') {
@@ -505,7 +586,8 @@ function buildTurnDirective(params: {
       targetSpeakerName: targetTurn?.speakerName,
       targetClaim: targetTurn?.claim,
       speechAct,
-      evidence: evidenceItems as TurnDirective['evidence'],
+      evidence: [...factualEvidence, ...evidenceItems],
+      requiredEvidenceIds,
       directive,
       wordTarget: { min: 70, max: 120 },
     }
@@ -592,7 +674,8 @@ function buildTurnDirective(params: {
     targetSpeakerName: targetTurn?.speakerName,
     targetClaim: targetTurn?.claim,
     speechAct,
-    evidence: evidenceTuple,
+    evidence: [...factualEvidence, ...evidenceTuple],
+    requiredEvidenceIds,
     directive,
     wordTarget: isSeekerTurn ? { min: 60, max: 110 } : { min: 45, max: 80 },
   }

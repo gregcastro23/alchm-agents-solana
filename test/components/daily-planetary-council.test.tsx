@@ -25,6 +25,7 @@ const coverage = [
   'motion-state',
   'sky-overview',
   'outer-context',
+  'ingress-1',
   ...COUNCIL_PLANETS.map(planet => `placement-${planet.toLowerCase()}`),
 ]
 const timestamp = '2026-10-02T00:00:00.000Z'
@@ -84,15 +85,20 @@ function edition(): DailyCouncilEdition {
         {
           bodyA: 'mars',
           bodyB: 'saturn',
-          aspectName: 'Square',
-          angle: 90,
-          orb: 1.2,
+          aspectName: 'Conjunction',
+          angle: 0,
+          orb: 2,
           phase: 'applying',
-          quality: 'dynamic',
+          quality: 'neutral',
           major: true,
         },
       ],
-      lunar: { phase: 'Waning Gibbous', sign: 'Aries', illumination: 0.68, elongation: 245 },
+      lunar: {
+        phase: 'New Moon',
+        sign: 'Aries',
+        illumination: (1 - Math.cos(Math.PI / 180)) / 2,
+        elongation: 1,
+      },
       events: [
         {
           id: 'ingress-1',
@@ -100,10 +106,17 @@ function edition(): DailyCouncilEdition {
           at: '2026-10-02T18:00:00.000Z',
           bodies: ['moon'],
           description: 'The Moon enters Taurus.',
-          evidenceId: 'overview',
+          evidenceId: 'event-ingress-1',
         },
       ],
       evidence: [
+        {
+          id: 'event-ingress-1',
+          kind: 'event',
+          label: 'The Moon enters Taurus.',
+          bodyKeys: ['moon'],
+          coverageIds: ['ingress-1'],
+        },
         {
           id: 'overview',
           kind: 'overview',
@@ -155,14 +168,27 @@ describe('daily planetary council views', () => {
     const transcript = screen.getByRole('list', { name: "Today's planetary conversation" })
     expect(within(transcript).getAllByRole('listitem')).toHaveLength(8)
     expect(screen.getByText('Sky briefing')).toBeInTheDocument()
-    expect(screen.getByText(/all 10 placements · 14\/14 topics covered/)).toBeInTheDocument()
+    expect(screen.getByText(/all 10 placements · 15\/15 topics covered/)).toBeInTheDocument()
     fireEvent.click(screen.getByText(/Explore today's sky/))
     for (const planet of COUNCIL_PLANETS)
       expect(screen.getAllByText(planet, { exact: false }).length).toBeGreaterThan(0)
-    expect(screen.getByText(/68% illuminated/)).toBeInTheDocument()
-    expect(screen.getByText(/The Moon enters Taurus/)).toBeInTheDocument()
-    expect(screen.getByText(/1.2° orb · applying/)).toBeInTheDocument()
+    expect(screen.getByText(/0% illuminated/)).toBeInTheDocument()
+    expect(screen.getAllByText(/The Moon enters Taurus/)).toHaveLength(2)
+    expect(screen.getByText(/2.0° orb · applying/)).toBeInTheDocument()
     expect(global.fetch).not.toHaveBeenCalled()
+  })
+
+  it('labels elapsed calculated events separately from the immutable opening conversation', () => {
+    const state = ready()
+    state.updates = { asOf: '2026-10-02T19:00:00.000Z', events: state.edition!.brief.events }
+    mockHook.mockReturnValue({ ...state, refresh })
+    render(<DailyPlanetaryCouncil />)
+    const updates = screen.getByRole('list', { name: 'Updates since the opening' })
+    expect(within(updates).getByText(/The Moon enters Taurus/)).toBeInTheDocument()
+    expect(within(updates).getByText('Oct 2, 6:00 PM UTC')).toBeInTheDocument()
+    expect(screen.getByText(/through Oct 2, 7:00 PM UTC/)).toBeInTheDocument()
+    const opening = screen.getByRole('list', { name: "Today's planetary conversation" })
+    expect(within(opening).getAllByRole('listitem')).toHaveLength(8)
   })
 
   it('keeps compact preview on the same edition and refreshes only the shared read', () => {
@@ -321,6 +347,7 @@ describe('shared read-only council store', () => {
     expect(fetcher).toHaveBeenCalledWith('/api/agents/council-daily', {
       method: 'GET',
       cache: 'no-store',
+      signal: expect.any(AbortSignal),
     })
   })
 

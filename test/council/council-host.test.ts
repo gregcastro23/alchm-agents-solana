@@ -15,7 +15,7 @@ function context() {
     positions: Object.fromEntries(
       COUNCIL_PLANETS.map((planet, index) => [
         planet,
-        { sign: 'Aries', degree: 10, longitude: 15 + index * 33, speed: 1, retrograde: false },
+        { longitude: 15 + index * 33, speed: 1, retrograde: false },
       ])
     ),
   })
@@ -43,6 +43,22 @@ describe('placement voices and Gregory host', () => {
     expect(knowledge.element).toBe('Water')
     expect(knowledge.dignityMeaning).toContain('extra care')
     expect(knowledge.ruler).toBe('Moon')
+  })
+  it('preserves canonical placement knowledge and produces different practices for distinct functions in one sign', () => {
+    const moon = buildPlacementKnowledge({ planet: 'Moon', sign: 'Leo', degree: 25 })
+    const mercury = buildPlacementKnowledge({ planet: 'Mercury', sign: 'Leo', degree: 25 })
+    const mars = buildPlacementKnowledge({ planet: 'Mars', sign: 'Leo', degree: 25 })
+    expect(moon.signThemes).toContain('mastery')
+    expect(moon.perspective.beliefs.join(' ')).toContain('Somatic feeling')
+    expect(moon.practice).toContain('emotional need')
+    expect(mercury.practice).toContain('unclear message')
+    expect(mars.practice).toContain('concrete first action')
+    expect(new Set([moon.practice, mercury.practice, mars.practice]).size).toBe(3)
+    expect(mercury.motionMeaning).toContain('unmeasured')
+    expect(
+      buildPlacementKnowledge({ planet: 'Mercury', sign: 'Leo', speed: 1, retrograde: false })
+        .motionMeaning
+    ).toContain('Direct motion')
   })
   it('honors an explicit Greg question and always ends the three-turn exchange with his synthesis', () => {
     const directed = directSeekerExchange(context(), 'What connects all of this?', 'gregory')

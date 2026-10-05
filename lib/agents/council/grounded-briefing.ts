@@ -15,6 +15,13 @@ export function generateInterpretiveBriefing(
 ): GroundedBriefingResult {
   const usedEvidenceIds: string[] = []
   const sentences: string[] = []
+  const factualItems = brief.evidence.filter(
+    item => item.snapshotFact && brief.requiredEvidenceIds?.includes(item.id)
+  )
+  for (const item of factualItems) {
+    sentences.push(item.label)
+    usedEvidenceIds.push(item.id)
+  }
   const planet = planetFromCouncilKey(brief.speakerKey)
   const placementItem = brief.evidence.find(item => item.placement)
   const placement = placementItem?.placement
@@ -69,7 +76,10 @@ export function generateInterpretiveBriefing(
     }
   }
 
-  if (brief.userPrompt)
+  if (
+    brief.userPrompt &&
+    !factualItems.some(item => item.snapshotFact === 'lunar' || item.snapshotFact === 'event')
+  )
     sentences.push(
       'For your question, consider one small, reversible step that tests the reading against your actual needs; the sky alone cannot decide which choice is right for you.'
     )
@@ -80,14 +90,17 @@ export function generateInterpretiveBriefing(
   return {
     text: sentences.join(' '),
     newClaim:
-      placement && planet
+      factualItems
+        .find(item => item.snapshotFact === 'lunar' || item.snapshotFact === 'event')
+        ?.label.slice(0, 300) ||
+      (placement && planet
         ? `${planet} in ${placement.sign} links ${buildPlacementKnowledge({ planet, sign: placement.sign }).planetMeaning} with ${buildPlacementKnowledge({ planet, sign: placement.sign }).signMeaning}`.slice(
             0,
             300
           )
         : brief.targetClaim
           ? 'The prior reading is a perspective to examine through present circumstances and personal agency.'
-          : 'Distinct planetary functions provide several perspectives; no single placement determines a personal outcome.',
+          : 'Distinct planetary functions provide several perspectives; no single placement determines a personal outcome.'),
     usedEvidenceIds: [...new Set(usedEvidenceIds)],
   }
 }

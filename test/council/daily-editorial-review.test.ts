@@ -1,6 +1,9 @@
 /** @vitest-environment node */
-import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { reviewDailyDialogue } from '@/lib/agents/council/daily-edition-review'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import {
+  inspectDailyDialogue,
+  reviewDailyDialogue,
+} from '@/lib/agents/council/daily-edition-review'
 import { rankDailyAspects } from '@/lib/agents/council/aspect-salience'
 import { generateStructuredVoice } from '@/lib/agents/persona/voiced-generation'
 import type {
@@ -14,6 +17,7 @@ const generate = vi.mocked(generateStructuredVoice)
 beforeEach(() => {
   generate.mockReset()
 })
+afterEach(() => vi.useRealTimers())
 
 describe('daily editorial review', () => {
   it('requires an affirmative semantic review before accepting model dialogue', async () => {
@@ -48,6 +52,22 @@ describe('daily editorial review', () => {
     generate.mockClear()
     expect(await reviewDailyDialogue({} as DailySkyBrief, [], Date.now() - 1)).toBe(false)
     expect(generate).not.toHaveBeenCalled()
+  })
+  it('rejects an editor referring to an unknown turn or rejecting without an actionable issue', async () => {
+    for (const issues of [[], [{ turnId: 'invented', reason: 'Unsupported statement.' }]]) {
+      generate.mockResolvedValue({ source: 'model', object: { acceptable: false, issues } })
+      expect((await inspectDailyDialogue({} as DailySkyBrief, [], Date.now() + 1000)).status).toBe(
+        'invalid'
+      )
+    }
+  })
+  it('aborts an unresponsive editor when its allotted time expires', async () => {
+    vi.useFakeTimers()
+    generate.mockImplementation(() => new Promise(() => {}))
+    const pending = inspectDailyDialogue({} as DailySkyBrief, [], Date.now() + 200)
+    await vi.advanceTimersByTimeAsync(200)
+    expect(await pending).toEqual({ status: 'unavailable', acceptable: false, issues: [] })
+    expect(generate.mock.calls[0][1].abortSignal?.aborted).toBe(true)
   })
   it('ranks daily motion and verified perfections ahead of an orb-only slow backdrop', () => {
     const background: DailySkyAspect = {

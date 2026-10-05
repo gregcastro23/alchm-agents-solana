@@ -1,10 +1,20 @@
 import { z } from 'zod'
 import { COUNCIL_PLANETS, type DailyCouncilEdition } from './daily-council-types'
+import { detectAspect } from './aspect-dialogue-engine'
+import { buildLunarState } from './lunar-state'
 
 const iso = z.string().datetime()
 const day = z.string().regex(/^\d{4}-\d{2}-\d{2}$/)
 const keys = COUNCIL_PLANETS.map(planet => planet.toLowerCase())
 const planetKey = z.string().refine(value => keys.includes(value))
+const skyEvent = z.object({
+  id: z.string().min(1),
+  type: z.enum(['sign_ingress', 'station', 'lunar_phase', 'aspect_exact']),
+  at: iso,
+  bodies: z.array(planetKey).min(1),
+  description: z.string().min(1),
+  evidenceId: z.string().min(1),
+})
 const signs = [
   'Aries',
   'Taurus',
@@ -88,16 +98,7 @@ export const DailyCouncilEditionSchema = z
         illumination: z.number().finite().min(0).max(1),
         sign: z.string(),
       }),
-      events: z.array(
-        z.object({
-          id: z.string(),
-          type: z.enum(['sign_ingress', 'station', 'lunar_phase', 'aspect_exact']),
-          at: iso,
-          bodies: z.array(planetKey),
-          description: z.string(),
-          evidenceId: z.string(),
-        })
-      ),
+      events: z.array(skyEvent),
       evidence: z
         .array(
           z.object({
@@ -151,6 +152,44 @@ export const DailyCouncilEditionSchema = z
       if (body.asOf && body.asOf !== edition.brief.asOf)
         fail('Body observation time differs from edition time')
     }
+    const { Sun, Moon } = edition.brief.positions
+    if (Sun && Moon) {
+      const lunar = buildLunarState(Sun.longitude, Moon.longitude, Moon.sign)
+      if (
+        edition.brief.lunar.phase !== lunar.phase ||
+        edition.brief.lunar.sign !== lunar.sign ||
+        Math.abs(edition.brief.lunar.elongation - lunar.elongation) > 0.000001 ||
+        Math.abs(edition.brief.lunar.illumination - lunar.illumination) > 0.000001
+      )
+        fail('Lunar state disagrees with the opening snapshot')
+    }
+    const aspectPairs = new Set<string>()
+    for (const aspect of edition.brief.aspects) {
+      const pair = [aspect.bodyA, aspect.bodyB].sort().join('-')
+      if (aspect.bodyA === aspect.bodyB || aspectPairs.has(pair))
+        fail('Aspect body pairs must be distinct and unique')
+      aspectPairs.add(pair)
+      const bodyFor = (key: string) =>
+        edition.brief.positions[key.charAt(0).toUpperCase() + key.slice(1)]
+      const a = bodyFor(aspect.bodyA),
+        b = bodyFor(aspect.bodyB)
+      if (!a || !b) continue
+      const measured = detectAspect(a.longitude, b.longitude, a.speed, b.speed)
+      const phase =
+        edition.brief.quality === 'approximate' && measured?.phase === 'exact'
+          ? 'unknown'
+          : measured?.phase
+      if (
+        !measured ||
+        aspect.aspectName !== measured.name ||
+        aspect.angle !== measured.definition.angle ||
+        Math.abs(aspect.orb - measured.orb) > 0.000001 ||
+        aspect.phase !== phase ||
+        aspect.quality !== measured.quality ||
+        aspect.major !== measured.definition.major
+      )
+        fail('Aspect disagrees with the opening snapshot')
+    }
     if (edition.brief.quality === 'approximate' && edition.brief.events.length)
       fail('Approximate skies cannot claim verified events')
     if (
@@ -161,6 +200,13 @@ export const DailyCouncilEditionSchema = z
       fail('Event is outside the edition day')
     const evidence = new Map(edition.brief.evidence.map(item => [item.id, item]))
     if (evidence.size !== edition.brief.evidence.length) fail('Evidence IDs must be unique')
+    if (new Set(edition.brief.events.map(event => event.id)).size !== edition.brief.events.length)
+      fail('Event IDs must be unique')
+    for (const event of edition.brief.events) {
+      const support = evidence.get(event.evidenceId)
+      if (!support || support.kind !== 'event' || !support.coverageIds.includes(event.id))
+        fail('Event requires matching evidence')
+    }
     if (edition.brief.changes) {
       if (
         Date.parse(`${edition.date}T00:00:00.000Z`) -
@@ -211,7 +257,30 @@ export const DailyCouncilResponseSchema = z
   .object({
     edition: DailyCouncilEditionSchema.nullable(),
     previousEdition: DailyCouncilEditionSchema.optional(),
+    updates: z.object({ asOf: iso, events: z.array(skyEvent) }).optional(),
     status: z.enum(['published', 'briefing', 'stale', 'unavailable']),
     message: z.string().optional(),
   })
   .refine(value => (value.status === 'unavailable') === (value.edition === null))
+  .superRefine((value, ctx) => {
+    if (!value.updates) return
+    const brief = value.edition?.brief
+    const events = value.updates.events
+    if (
+      !brief ||
+      brief.quality !== 'verified' ||
+      brief.source !== 'swiss-ephemeris' ||
+      value.updates.asOf < brief.asOf ||
+      new Set(events.map(event => event.id)).size !== events.length ||
+      events.some(
+        event =>
+          event.at <= brief.asOf ||
+          event.at > value.updates!.asOf ||
+          !brief.events.some(known => JSON.stringify(known) === JSON.stringify(event))
+      )
+    )
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        message: 'Updates must reference elapsed verified events from this edition',
+      })
+  })

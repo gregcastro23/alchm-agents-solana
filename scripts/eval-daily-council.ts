@@ -3,7 +3,10 @@ import { mkdir, writeFile } from 'node:fs/promises'
 import path from 'node:path'
 import { getCurrentPlanetaryPositions } from '@/lib/calculate-transits'
 import { buildDailySkyBrief, utcCouncilDay } from '@/lib/agents/council/daily-sky'
-import { generateDailyEdition } from '@/lib/agents/council/daily-episode'
+import {
+  generateDailyEdition,
+  type DailyGenerationDiagnostic,
+} from '@/lib/agents/council/daily-episode'
 import { DailyCouncilEditionSchema } from '@/lib/agents/council/daily-edition-schema'
 
 const args = process.argv.slice(2)
@@ -16,9 +19,11 @@ const brief = buildDailySkyBrief({
   positions: getCurrentPlanetaryPositions(day.start, { requireComplete: true }),
   source: 'vsop87-approximation',
 })
+const diagnostics: DailyGenerationDiagnostic[] = []
 const edition = await generateDailyEdition(brief, {
   generate: live,
   deadlineMs: Date.now() + 150_000,
+  onDiagnostic: event => diagnostics.push(event),
 })
 const parsed = DailyCouncilEditionSchema.safeParse(edition)
 if (!parsed.success)
@@ -33,6 +38,7 @@ const report = [
   `Mode: ${live ? 'opt-in model generation' : 'offline deterministic briefing'}. Sky: explicitly approximate local Keplerian positions at ${brief.asOf}; no verified event timing. This sample is not a verified ephemeris reading.`,
   '',
   `Contract: passed. Turns: ${edition.turns.length}. Model turns: ${modelTurns}. Factual fallback turns: ${edition.turns.length - modelTurns}. Words: ${words}. Required topics covered: ${brief.requiredCoverage.length}/${brief.requiredCoverage.length}.`,
+  `Generation diagnostics: ${JSON.stringify(Object.fromEntries([...new Set(diagnostics.map(event => `${event.phase}:${event.outcome}:${event.reason}`))].map(key => [key, diagnostics.filter(event => `${event.phase}:${event.outcome}:${event.reason}` === key).length])))}`,
   '',
   'Human review rubric: factual fidelity to the supplied snapshot; distinct planetary voices; understandable sign/aspect explanations; meaningful responses to earlier claims; Greg’s curiosity and synthesis; specific everyday applications; repetition and reading length. Passing the contract does not establish these subjective qualities.',
   '',
@@ -57,5 +63,6 @@ console.log(
     turns: edition.turns.length,
     words,
     valid: true,
+    diagnostics,
   })
 )

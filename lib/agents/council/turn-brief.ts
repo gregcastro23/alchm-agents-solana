@@ -19,6 +19,7 @@ export interface TurnBrief {
   targetClaim?: string
   speechAct: string
   evidence: SelectedEvidenceItem[]
+  requiredEvidenceIds?: string[]
   wordTarget: { min: number; max: number }
   userPrompt?: string
   formattedPrompt: string
@@ -35,6 +36,7 @@ export function compileTurnBrief(directive: TurnDirective, inquiry?: string): Tu
     evidence,
     directive: instruction,
     wordTarget,
+    requiredEvidenceIds,
   } = directive
 
   const evidenceBlock = evidence.map(e => `[${e.id}]: ${e.label}`).join('\n')
@@ -47,8 +49,14 @@ export function compileTurnBrief(directive: TurnDirective, inquiry?: string): Tu
     `DISCOURSE MOVE: ${speechAct.toUpperCase()}`,
     targetBlock,
     '',
-    'PRIVATE GROUNDING EVIDENCE (incorporate the implication of 1 or 2 items; do NOT recite raw numbers):',
+    'GROUNDING EVIDENCE (answer requested facts directly; interpret selected placements. Exact coordinates and private metrics stay out of speech. Supplied UTC event times may be stated):',
     evidenceBlock,
+    requiredEvidenceIds?.length
+      ? `FACTS REQUIRED TO ANSWER THIS QUESTION (cite and explain these IDs): ${requiredEvidenceIds.join(', ')}`
+      : '',
+    requiredEvidenceIds?.includes('edition-basis')
+      ? 'State the opening snapshot date (YYYY-MM-DD) in the spoken text; label approximated positions explicitly. When event-horizon is required, state the UTC end date of the supplied window. Keep the answer itself complete; newClaim is private conversation bookkeeping.'
+      : '',
     '',
     `TURN INSTRUCTION: ${instruction}`,
     '',
@@ -78,9 +86,11 @@ export function compileTurnBrief(directive: TurnDirective, inquiry?: string): Tu
       orb: e.orb,
       placement: e.placement,
       relationship: e.relationship,
+      snapshotFact: e.snapshotFact,
     })),
     wordTarget,
     userPrompt: inquiry,
+    requiredEvidenceIds,
     formattedPrompt: promptSections.join('\n'),
   }
 }

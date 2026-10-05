@@ -3,6 +3,7 @@ import { createHash } from 'node:crypto'
 import { getPlanetaryDignity, getSignElement } from '@/lib/astrological-data'
 import { swissEphemerisService } from '@/lib/swiss-ephemeris-service'
 import { rankDailyAspects } from './aspect-salience'
+import { buildLunarState } from './lunar-state'
 import { ASPECT_DEFINITIONS, SIGN_ORDER, detectAspect, signedDelta } from './aspect-dialogue-engine'
 import {
   normalizeSkyPositions,
@@ -22,16 +23,6 @@ const DAY_MS = 86_400_000
 const keyFor = (planet: SkyPlanet) => planet.toLowerCase() as CouncilPlanetKey
 const normalize = (value: number) => ((value % 360) + 360) % 360
 const MODALITIES = ['cardinal', 'fixed', 'mutable'] as const
-const PHASES = [
-  'New Moon',
-  'Waxing Crescent',
-  'First Quarter',
-  'Waxing Gibbous',
-  'Full Moon',
-  'Waning Gibbous',
-  'Last Quarter',
-  'Waning Crescent',
-]
 
 export function utcCouncilDay(date: Date): { date: string; start: Date; end: Date } {
   if (!Number.isFinite(date.getTime())) throw new Error('Invalid council date')
@@ -130,19 +121,13 @@ export function buildDailySkyBrief(params: {
     if (index < 3 && aspect.major) requiredCoverage.push(id)
   })
 
-  const elongation = normalize(snapshot.Moon.longitude - snapshot.Sun.longitude)
-  const lunar = {
-    phase: PHASES[Math.round(elongation / 45) % 8],
-    elongation,
-    illumination: (1 - Math.cos((elongation * Math.PI) / 180)) / 2,
-    sign: snapshot.Moon.sign,
-  }
+  const lunar = buildLunarState(snapshot.Sun.longitude, snapshot.Moon.longitude, snapshot.Moon.sign)
   evidence.push({
     id: 'lunar-state',
     kind: 'lunar',
     bodyKeys: ['sun', 'moon'],
     coverageIds: ['lunar-state'],
-    label: `${lunar.phase}; Moon in ${lunar.sign}; ${elongation < 180 ? 'waxing' : 'waning'} lunar light`,
+    label: `${lunar.phase}; Moon in ${lunar.sign}; ${lunar.elongation < 180 ? 'waxing' : 'waning'} lunar light`,
   })
   const retrogrades = SKY_PLANETS.filter(
     planet => snapshot[planet].speed !== undefined && snapshot[planet].retrograde
@@ -153,7 +138,7 @@ export function buildDailySkyBrief(params: {
     kind: 'motion',
     bodyKeys: SKY_PLANETS.map(keyFor),
     coverageIds: ['motion-state'],
-    label: `Measured retrogrades: ${retrogrades.join(', ') || 'none'}; ${unknownMotion.length ? `unmeasured motion: ${unknownMotion.join(', ')}` : 'all ten daily velocities available'}`,
+    label: `${params.source === 'swiss-ephemeris' ? 'Measured' : 'Estimated'} retrogrades: ${retrogrades.join(', ') || 'none'}; ${unknownMotion.length ? `unmeasured motion: ${unknownMotion.join(', ')}` : `all ten ${params.source === 'swiss-ephemeris' ? 'measured' : 'estimated'} daily velocities available`}`,
   })
   const elementCounts: Record<string, number> = {}
   for (const body of Object.values(positions))
@@ -246,7 +231,12 @@ type Candidate = {
   description: (positions: SkyPositions) => string
 }
 
-function crossedTargets(start: number, end: number, targets: number[]): number[] {
+function crossedTargets(
+  start: number,
+  end: number,
+  targets: number[],
+  excludeEnd: boolean
+): number[] {
   const low = Math.min(start, end),
     high = Math.max(start, end)
   const hits: number[] = []
@@ -257,6 +247,9 @@ function crossedTargets(start: number, end: number, targets: number[]): number[]
       cycle++
     ) {
       const value = target + cycle * 360
+      // The final sample closes the search bracket but belongs to tomorrow.
+      // Decide membership from measured geometry before rounding its clock label.
+      if (excludeEnd && Math.abs(value - end) < 1e-10) continue
       if (value >= low && value <= high && start !== end) hits.push(value)
     }
   }
@@ -292,6 +285,7 @@ export async function searchDailySkyEvents(params: {
   for (let i = 0; i < samples.length - 1; i++) {
     const a = samples[i],
       b = samples[i + 1]
+    const endsAtNextDay = b.at.getTime() === day.end.getTime()
     if (b.at.getTime() - a.at.getTime() > 3_600_000)
       throw new Error('Event samples must be no more than one hour apart')
     for (const planet of SKY_PLANETS) {
@@ -300,7 +294,8 @@ export async function searchDailySkyEvents(params: {
       for (const target of crossedTargets(
         start,
         end,
-        Array.from({ length: 12 }, (_, index) => index * 30)
+        Array.from({ length: 12 }, (_, index) => index * 30),
+        endsAtNextDay
       )) {
         const direction = Math.sign(end - start)
         const sign = SIGN_ORDER[Math.floor(normalize(target + direction * 0.00001) / 30)]
@@ -339,7 +334,7 @@ export async function searchDailySkyEvents(params: {
     const phase = (sky: SkyPositions) => normalize(sky.Moon.longitude - sky.Sun.longitude)
     const phaseA = phase(a.positions),
       phaseB = phaseA + signedDelta(phaseA, phase(b.positions))
-    for (const target of crossedTargets(phaseA, phaseB, [0, 90, 180, 270])) {
+    for (const target of crossedTargets(phaseA, phaseB, [0, 90, 180, 270], endsAtNextDay)) {
       candidates.push({
         type: 'lunar_phase',
         bodies: ['Sun', 'Moon'],
@@ -366,7 +361,7 @@ export async function searchDailySkyEvents(params: {
             aspect.angle === 0 || aspect.angle === 180
               ? [aspect.angle]
               : [aspect.angle, 360 - aspect.angle]
-          for (const target of crossedTargets(relativeA, relativeB, targets)) {
+          for (const target of crossedTargets(relativeA, relativeB, targets, endsAtNextDay)) {
             candidates.push({
               type: 'aspect_exact',
               bodies: [planetA, planetB],
@@ -407,8 +402,12 @@ export async function searchDailySkyEvents(params: {
       if (Math.sign(residual) === Math.sign(initialResidual)) low = mid
       else high = mid
     }
-    const at = Math.floor((low + high) / 120_000) * 60_000
-    if (at < day.start.getTime() || at >= day.end.getTime()) continue
+    // Nearest-minute rounding plus the sub-minute bracket keeps the error below
+    // a minute. Preserve a crossing just before midnight in its measured day.
+    const at = Math.max(
+      day.start.getTime(),
+      Math.min(day.end.getTime() - 60_000, Math.round((low + high) / 120_000) * 60_000)
+    )
     const bodies = candidate.bodies.map(keyFor)
     const description = `${candidate.description(sky || samples[0].positions)} (time resolved within one minute)`
     const iso = new Date(at).toISOString()
@@ -430,26 +429,56 @@ export async function searchDailySkyEvents(params: {
 
 const briefCache = new Map<string, Promise<DailySkyBrief>>()
 
+async function waitForBrief(
+  pending: Promise<DailySkyBrief>,
+  deadline: number
+): Promise<DailySkyBrief> {
+  const remaining = deadline - Date.now()
+  if (remaining <= 0) throw new Error('Daily ephemeris time budget exhausted')
+  let timeout: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      pending,
+      new Promise<never>((_, reject) => {
+        timeout = setTimeout(
+          () => reject(new Error('Daily ephemeris time budget exhausted')),
+          remaining
+        )
+      }),
+    ])
+  } finally {
+    if (timeout) clearTimeout(timeout)
+  }
+}
+
 /** Bounded server loader. Cheap reads omit timing scans; scheduled generation opts in. */
 export async function loadDailySkyBrief(
   date: Date = new Date(),
   options: { includeEvents?: boolean; deadlineMs?: number } = {}
 ): Promise<DailySkyBrief> {
   const day = utcCouncilDay(date)
+  const computationDeadline = Math.min(
+    Date.now() + (options.includeEvents ? 80_000 : 2_500),
+    // Event scans belong to the cron's lease and must stop within its budget.
+    options.includeEvents
+      ? (options.deadlineMs ?? Number.POSITIVE_INFINITY)
+      : Number.POSITIVE_INFINITY
+  )
+  const deadline = Math.min(options.deadlineMs ?? Number.POSITIVE_INFINITY, computationDeadline)
+  if (deadline <= Date.now()) throw new Error('Daily ephemeris time budget exhausted')
   const cacheKey = `${day.date}:${Boolean(options.includeEvents)}`
   const cached = briefCache.get(cacheKey)
-  if (cached) return cached
+  // Each reader keeps its own budget while sharing the underlying computation.
+  if (cached) return waitForBrief(cached, deadline)
   const pending = (async () => {
-    const deadline = Math.min(
-      options.deadlineMs ?? Number.POSITIVE_INFINITY,
-      Date.now() + (options.includeEvents ? 80_000 : 2_500)
-    )
     const samplesCache = new Map<string, SkyPositions>()
     const verifiedPositions = async (at: Date): Promise<SkyPositions> => {
       const key = at.toISOString()
       const cachedSample = samplesCache.get(key)
       if (cachedSample) return cachedSample
-      const remaining = deadline - Date.now()
+      // Public opening reads share a fixed bounded lifetime. Event scans also
+      // retain the initiating cron's budget so they cannot outlive its lease.
+      const remaining = computationDeadline - Date.now()
       if (remaining <= 0) throw new Error('Daily ephemeris time budget exhausted')
       const controller = new AbortController()
       let timeout: ReturnType<typeof setTimeout> | undefined
@@ -528,5 +557,5 @@ export async function loadDailySkyBrief(
     })
     .catch(() => briefCache.delete(cacheKey))
   if (briefCache.size > 8) briefCache.delete(briefCache.keys().next().value!)
-  return pending
+  return waitForBrief(pending, deadline)
 }

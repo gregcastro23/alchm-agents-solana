@@ -98,6 +98,25 @@ describe('daily council service', () => {
     expect(generate).not.toHaveBeenCalled()
   })
 
+  it('still serves a no-cost sky briefing when database reads never settle', async () => {
+    vi.useFakeTimers()
+    try {
+      const { service, store, loadBrief, generate } = setup()
+      vi.mocked(store.read).mockImplementation(() => new Promise(() => {}))
+      vi.mocked(store.latest).mockImplementation(() => new Promise(() => {}))
+      const pending = service.read()
+      await vi.advanceTimersByTimeAsync(2_000)
+      const result = await pending
+      expect(result.status).toBe('briefing')
+      expect(loadBrief).toHaveBeenCalledOnce()
+      expect(generate).not.toHaveBeenCalled()
+      expect(store.latest).not.toHaveBeenCalled()
+      expect(store.claim).not.toHaveBeenCalled()
+    } finally {
+      vi.useRealTimers()
+    }
+  })
+
   it('rejects incomplete generated coverage and releases its lease for a bounded retry', async () => {
     const { service, store, generate } = setup()
     generate.mockImplementation(async sky => ({
@@ -148,5 +167,35 @@ describe('daily council service', () => {
     expect((await service.publish()).status).toBe('briefing_only')
     expect(store.publish).not.toHaveBeenCalled()
     expect(store.release).toHaveBeenCalledWith('2026-10-02', 'lease')
+  })
+
+  it('adds elapsed event updates to a published read without generating or modifying the edition', async () => {
+    const { service, store, generate } = setup()
+    const events = [11, 13].map(hour => ({
+      id: `event-${hour}`,
+      evidenceId: `evidence-${hour}`,
+      type: 'sign_ingress' as const,
+      bodies: ['moon' as const],
+      at: `2026-10-02T${hour}:00:00.000Z`,
+      description: 'A fixture ingress',
+    }))
+    const edition = createBriefingEdition(
+      buildDailySkyBrief({
+        date: now,
+        positions: Object.fromEntries(
+          COUNCIL_PLANETS.map((body, index) => [body, { longitude: index * 33, speed: 1 }])
+        ),
+        source: 'swiss-ephemeris',
+        events,
+        eventScanComplete: true,
+      })
+    )
+    vi.mocked(store.read).mockResolvedValue(edition)
+    const original = structuredClone(edition)
+    const response = await service.read()
+    expect(response.updates).toEqual({ asOf: now.toISOString(), events: [events[0]] })
+    expect(response.edition).toEqual(original)
+    expect(generate).not.toHaveBeenCalled()
+    expect(store.publish).not.toHaveBeenCalled()
   })
 })

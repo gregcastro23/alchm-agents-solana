@@ -51,7 +51,34 @@ function parsePosition(raw: unknown, options: { source?: SkySource; asOf?: strin
       : undefined
   if (longitude === undefined)
     throw new InvalidSkySnapshotError('No measured longitude or sign/degree')
+  const derivedSign = SIGN_ORDER[Math.floor(longitude / 30)]
+  const derivedDegree = longitude % 30
+  if (finite(body.longitude) && finite(body.exactLongitude)) {
+    const difference = Math.abs(
+      normalizeLongitude(body.longitude) - normalizeLongitude(body.exactLongitude)
+    )
+    if (Math.min(difference, 360 - difference) > 0.000001)
+      throw new InvalidSkySnapshotError('Longitude fields disagree')
+  }
+  if (sign && sign !== derivedSign) throw new InvalidSkySnapshotError('Sign and longitude disagree')
+  if (finite(rawLongitude) && finite(body.degree)) {
+    // The Python API's legacy degree is the integer component; exactLongitude
+    // holds its fractional precision. Canonical longitude payloads use decimals.
+    const degreeMatches =
+      body.longitude === undefined &&
+      body.exactLongitude !== undefined &&
+      Number.isInteger(body.degree)
+        ? Math.floor(derivedDegree) === body.degree
+        : Math.abs(body.degree - derivedDegree) <= 0.000001
+    if (!degreeMatches) throw new InvalidSkySnapshotError('Degree and longitude disagree')
+  }
   const speed = body.speed ?? body.longitudeSpeed
+  if (
+    finite(body.speed) &&
+    finite(body.longitudeSpeed) &&
+    Math.abs(body.speed - body.longitudeSpeed) > 0.000001
+  )
+    throw new InvalidSkySnapshotError('Velocity fields disagree')
   if (options.source && body.source !== undefined && options.source !== body.source) {
     throw new InvalidSkySnapshotError('Ephemeris source cannot be relabelled')
   }
@@ -61,6 +88,15 @@ function parsePosition(raw: unknown, options: { source?: SkySource; asOf?: strin
   if (body.isRetrograde !== undefined && typeof body.isRetrograde !== 'boolean') {
     throw new InvalidSkySnapshotError('Invalid retrograde flag')
   }
+  if (
+    body.retrograde !== undefined &&
+    body.isRetrograde !== undefined &&
+    body.retrograde !== body.isRetrograde
+  )
+    throw new InvalidSkySnapshotError('Retrograde flags disagree')
+  const retrograde = body.retrograde ?? body.isRetrograde
+  if (finite(speed) && retrograde !== undefined && retrograde !== speed < 0)
+    throw new InvalidSkySnapshotError('Motion and velocity disagree')
   const rawSource = options.source ?? body.source ?? 'unverified'
   if (!['swiss-ephemeris', 'vsop87-approximation', 'unverified'].includes(String(rawSource))) {
     throw new InvalidSkySnapshotError('Invalid ephemeris source')
@@ -80,8 +116,8 @@ function parsePosition(raw: unknown, options: { source?: SkySource; asOf?: strin
     throw new InvalidSkySnapshotError('Invalid ephemeris instant')
   }
   return {
-    sign: SIGN_ORDER[Math.floor(longitude / 30)],
-    degree: longitude % 30,
+    sign: derivedSign,
+    degree: derivedDegree,
     longitude,
     speed: finite(speed) ? speed : undefined,
     retrograde: finite(speed) ? speed < 0 : Boolean(body.retrograde ?? body.isRetrograde),

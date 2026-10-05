@@ -10,6 +10,7 @@ import {
   type DailyCouncilTurn,
 } from '@/lib/agents/council/daily-council-types'
 import { DailyCouncilTurnSchema } from '@/lib/agents/council/daily-edition-schema'
+import { ASPECT_DEFINITIONS } from '@/lib/agents/council/aspect-dialogue-engine'
 
 const SPEAKER_STYLE: Record<CouncilSpeakerKey, { glyph: string; color: string }> = {
   gregory: { glyph: '✦', color: '#b8fc4b' },
@@ -108,6 +109,11 @@ function SkyFacts({ edition }: { edition: DailyCouncilEdition }) {
         covered
       </summary>
       <div className="space-y-6 border-t border-[#424936]/60 p-4 sm:p-5">
+        <p className="text-xs leading-relaxed text-[#8c947c]">
+          Tropical zodiac, viewed from Earth. Placements and aspects describe the opening UTC
+          snapshot; timed changes below describe later events. Lunar phase names describe a stage of
+          the cycle; exact phase crossings are listed separately when verified.
+        </p>
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {COUNCIL_PLANETS.map(planet => {
             const position = brief.positions[planet]
@@ -161,7 +167,12 @@ function SkyFacts({ edition }: { edition: DailyCouncilEdition }) {
             </h3>
             <p className="mb-3 text-xs leading-relaxed text-[#8c947c]">
               Applying aspects are drawing closer; separating aspects are easing away. The orb
-              measures distance from an exact alignment.
+              measures distance from an exact alignment. This council uses{' '}
+              {ASPECT_DEFINITIONS.filter(aspect => aspect.major)
+                .map(aspect => `${aspect.name.toLowerCase()} ${aspect.orb}°`)
+                .join(', ')}{' '}
+              as maximum major-aspect orbs. “Exact” in the opening snapshot means within a quarter
+              degree; a timed exact crossing is calculated separately.
             </p>
             {brief.aspects.length ? (
               <ul className="space-y-2 text-sm leading-relaxed text-[#c2cab0]">
@@ -359,7 +370,7 @@ export function DailyPlanetaryCouncil({
   compact = false,
   onOpenCouncil,
 }: DailyPlanetaryCouncilProps) {
-  const { edition, previousEdition, status, loading, error, message, refresh } =
+  const { edition, previousEdition, updates, status, loading, error, message, refresh } =
     useDailyPlanetaryCouncil()
   const [expanded, setExpanded] = useState(false)
   const label =
@@ -454,6 +465,28 @@ export function DailyPlanetaryCouncil({
                     <CouncilTurn key={turn.id} turn={turn} />
                   ))}
                 </ol>
+                {!!updates?.events.length && (
+                  <div className="rounded-xl border border-[#7bd1fa]/30 bg-[#7bd1fa]/[0.03] p-4 sm:p-5">
+                    <h3 className="font-headline-sm text-base text-[#7bd1fa]">
+                      Updates since the opening
+                    </h3>
+                    <p className="mt-2 text-xs leading-relaxed text-[#8c947c]">
+                      Calculated events that have now occurred, through {formatUtc(updates.asOf)}{' '}
+                      UTC. These use this edition&apos;s verified ephemeris calculations. The
+                      opening conversation remains dated to its original snapshot.
+                    </p>
+                    <ol aria-label="Updates since the opening" className="mt-4 space-y-3">
+                      {updates.events.map(event => (
+                        <li key={event.id} className="text-sm leading-relaxed text-[#c2cab0]">
+                          <time dateTime={event.at} className="text-[#7bd1fa]">
+                            {formatUtc(event.at)} UTC
+                          </time>{' '}
+                          · {event.description}
+                        </li>
+                      ))}
+                    </ol>
+                  </div>
+                )}
                 <SkyFacts edition={edition} />
                 {previousEdition && (
                   <details className="rounded-xl border border-[#424936]/70 p-4">

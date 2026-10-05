@@ -88,6 +88,7 @@ export async function POST(request: NextRequest) {
   const turns: DailyCouncilTurn[] = []
   const questionId = randomUUID()
   const deadlineMs = Date.now() + 48_000
+  const answerTime = new Date().toISOString()
   try {
     for (let turnIndex = 0; turnIndex < 3; turnIndex++) {
       const result = await dispatchTurn({
@@ -96,6 +97,8 @@ export async function POST(request: NextRequest) {
         targetDelegate,
         skyOverride: edition.brief.positions,
         observationTime: edition.brief.asOf,
+        dailySkyBrief: edition.brief,
+        answerTime,
         recentTurns: context.slice(-10),
         deadlineMs,
       })

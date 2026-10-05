@@ -20,23 +20,51 @@ export interface DailyEditionStore {
   release(day: string, token: string): Promise<void>
 }
 
+interface StoredEdition {
+  id: string
+  day: string
+  promptVersion: string
+  status: string
+  editionId: string | null
+  payload: unknown
+}
+
+function parseStoredEdition(row: StoredEdition | null): DailyCouncilEdition | null {
+  if (!row || row.status !== 'published') return null
+  const edition = parseDailyCouncilEdition(row.payload)
+  if (
+    !edition ||
+    row.id !== dailyEditionKey(row.day) ||
+    row.promptVersion !== DAILY_COUNCIL_VERSION ||
+    edition.promptVersion !== row.promptVersion ||
+    edition.date !== row.day ||
+    edition.id !== row.editionId ||
+    edition.id !== `${DAILY_COUNCIL_VERSION}:${row.day}:${edition.brief.id}`
+  )
+    return null
+  return edition
+}
+
 export const dailyEditionStore: DailyEditionStore = {
   async read(day) {
     const row = await prisma.council_daily_editions.findUnique({
       where: { id: dailyEditionKey(day) },
     })
-    return row?.status === 'published' ? parseDailyCouncilEdition(row.payload) : null
+    const edition = parseStoredEdition(row)
+    return edition?.date === day ? edition : null
   },
   async latest(day) {
     const row = await prisma.council_daily_editions.findFirst({
       where: { status: 'published', day: { lte: day }, promptVersion: DAILY_COUNCIL_VERSION },
       orderBy: { day: 'desc' },
     })
-    return parseDailyCouncilEdition(row?.payload)
+    const edition = parseStoredEdition(row)
+    return edition && edition.date <= day ? edition : null
   },
   async find(editionId) {
     const row = await prisma.council_daily_editions.findUnique({ where: { editionId } })
-    return row?.status === 'published' ? parseDailyCouncilEdition(row.payload) : null
+    const edition = parseStoredEdition(row)
+    return edition?.id === editionId ? edition : null
   },
   async claim(day, now) {
     const id = dailyEditionKey(day)
@@ -63,7 +91,7 @@ export const dailyEditionStore: DailyEditionStore = {
         id,
         status: { not: 'published' },
         attempts: { lt: MAX_ATTEMPTS },
-        OR: [{ leaseUntil: null }, { leaseUntil: { lt: now } }],
+        OR: [{ leaseUntil: null }, { leaseUntil: { lte: now } }],
       },
       data: { status: 'generating', leaseToken: token, leaseUntil, attempts: { increment: 1 } },
     })
@@ -71,7 +99,12 @@ export const dailyEditionStore: DailyEditionStore = {
   },
   async publish(day, token, edition, now) {
     const validated = parseDailyCouncilEdition(edition)
-    if (!validated || validated.date !== day)
+    if (
+      !validated ||
+      validated.date !== day ||
+      validated.promptVersion !== DAILY_COUNCIL_VERSION ||
+      validated.id !== `${DAILY_COUNCIL_VERSION}:${day}:${validated.brief.id}`
+    )
       throw new Error('Cannot publish an invalid daily council')
     const result = await prisma.council_daily_editions.updateMany({
       where: {

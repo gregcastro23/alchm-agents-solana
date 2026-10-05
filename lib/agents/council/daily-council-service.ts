@@ -4,6 +4,7 @@ import { loadDailySkyBrief, utcCouncilDay } from './daily-sky'
 import { withPreviousSkyChanges } from './daily-sky-changes'
 import { createBriefingEdition, generateDailyEdition } from './daily-episode'
 import { parseDailyCouncilEdition } from './daily-edition-schema'
+import { dailyCouncilUpdates } from './daily-updates'
 import type {
   DailyCouncilEdition,
   DailyCouncilResponse,
@@ -19,6 +20,25 @@ interface CouncilServiceDependencies {
   brief: (sky: DailySkyBrief) => DailyCouncilEdition
   generate: (sky: DailySkyBrief, options: { deadlineMs?: number }) => Promise<DailyCouncilEdition>
   now: () => Date
+}
+
+const STORE_READ_BUDGET_MS = 2_000
+
+/** A stalled database must not prevent the independent public sky briefing. */
+async function readStoreBefore<T>(operation: () => Promise<T>, deadline: number): Promise<T> {
+  const remaining = deadline - Date.now()
+  if (remaining <= 0) throw new Error('Daily council store read deadline reached')
+  let timer: ReturnType<typeof setTimeout> | undefined
+  try {
+    return await Promise.race([
+      operation(),
+      new Promise<never>((_, reject) => {
+        timer = setTimeout(() => reject(new Error('Daily council store read timed out')), remaining)
+      }),
+    ])
+  } finally {
+    if (timer) clearTimeout(timer)
+  }
 }
 
 /** Public reading has no path to model generation or persistence writes. */
@@ -59,26 +79,35 @@ export function createDailyCouncilService(deps: CouncilServiceDependencies) {
 
   async function read(date = deps.now()): Promise<DailyCouncilResponse> {
     const day = utcCouncilDay(date).date
+    const storeDeadline = Date.now() + STORE_READ_BUDGET_MS
     try {
-      const published = await deps.store.read(day)
-      if (published) return { edition: published, status: 'published' }
+      const published = await readStoreBefore(() => deps.store.read(day), storeDeadline)
+      if (published)
+        return {
+          edition: published,
+          status: 'published',
+          updates: dailyCouncilUpdates(published.brief, deps.now()),
+        }
     } catch {
       /* A missing store must not take the public sky briefing offline. */
     }
     let previous: DailyCouncilEdition | null = null
     try {
-      previous = await deps.store.latest(previousDay(day))
+      previous = await readStoreBefore(() => deps.store.latest(previousDay(day)), storeDeadline)
     } catch {
       /* Optional context. */
     }
     try {
+      const edition = await briefing(date, previous)
       return {
-        edition: await briefing(date, previous),
+        edition,
+        updates: dailyCouncilUpdates(edition.brief, deps.now()),
         ...(previous && previous.generation !== 'grounded_briefing'
           ? { previousEdition: previous }
           : {}),
         status: 'briefing',
-        message: 'A factual sky briefing is available while the hosted edition is being prepared.',
+        message:
+          'Today’s hosted conversation is not available yet. Read the factual sky briefing below.',
       }
     } catch {
       if (previous)
@@ -97,7 +126,10 @@ export function createDailyCouncilService(deps: CouncilServiceDependencies) {
 
   async function find(editionId: string): Promise<DailyCouncilEdition | null> {
     try {
-      const published = await deps.store.find(editionId)
+      const published = await readStoreBefore(
+        () => deps.store.find(editionId),
+        Date.now() + STORE_READ_BUDGET_MS
+      )
       if (published) return published
     } catch {
       /* A current deterministic briefing can still support a question. */

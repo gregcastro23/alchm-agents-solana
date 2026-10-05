@@ -123,6 +123,7 @@ export async function generateStructuredVoice<T>(
       prompt: options.prompt,
       maxOutputTokens: options.maxTokens ?? 400,
       abortSignal: options.abortSignal,
+      maxRetries: 0, // Council callers own the bounded retry/repair budget.
     })
 
     return {
@@ -132,13 +133,18 @@ export async function generateStructuredVoice<T>(
       latencyMs: Date.now() - startTime,
     }
   } catch (err: any) {
-    console.warn('[voiced-generation] Structured generation error:', err?.message || err)
+    const error = options.abortSignal?.aborted
+      ? 'generation_aborted'
+      : err?.name === 'AI_NoObjectGeneratedError'
+        ? 'invalid_structured_output'
+        : 'provider_failure'
+    console.warn('[voiced-generation] Structured generation failed:', error)
     return {
       object: null,
       source: 'grounded_briefing',
       modelFamily,
       latencyMs: Date.now() - startTime,
-      error: err?.message || 'generation_failed',
+      error,
     }
   }
 }

@@ -4,6 +4,7 @@ import { normalizeSkyPositions, SKY_PLANETS } from '@/lib/agents/council/sky-sna
 import { CouncilApiRequestSchema } from '@/lib/agents/council/council-schema'
 import { buildServerCouncilContext } from '@/lib/agents/council/council-context'
 import { usePlanetaryPositions } from '@/hooks/usePlanetaryPositions'
+import { swissEphemerisService } from '@/lib/swiss-ephemeris-service'
 import {
   getPlanetaryPositionsAction,
   getAlchemicalQuantitiesAction,
@@ -23,7 +24,7 @@ const snapshot = () =>
         sign: 'Libra',
         degree: index + 0.123456,
         speed: index === 2 ? -0.432109 : index + 0.01,
-        retrograde: false,
+        retrograde: index === 2,
         source: 'swiss-ephemeris',
         asOf: instant,
       },
@@ -57,12 +58,34 @@ describe('council sky contract', () => {
     }
   )
 
-  it('uses full longitude precision rather than a truncated backend degree', () => {
+  it('preserves full longitude precision with optional derived coordinates and a legacy integer degree', () => {
     const positions = snapshot()
-    positions.Sun = { ...positions.Sun, degree: 0, longitude: 188.7654321 } as typeof positions.Sun
+    positions.Sun = { ...positions.Sun, degree: undefined, longitude: 188.7654321 } as any
     const parsed = normalizeSkyPositions(positions)
     expect(parsed.Sun.degree).toBeCloseTo(8.7654321, 7)
     expect(parsed.Sun.longitude).toBeCloseTo(188.7654321, 7)
+    positions.Sun = {
+      ...positions.Sun,
+      degree: 8,
+      longitude: undefined,
+      exactLongitude: 188.7654321,
+    } as any
+    expect(normalizeSkyPositions(positions).Sun.degree).toBeCloseTo(8.7654321, 7)
+  })
+
+  it('rejects contradictory coordinates and motion instead of silently replacing provider fields', () => {
+    const sun = snapshot().Sun
+    for (const contradictory of [
+      { ...sun, longitude: 188.7654321 },
+      { ...sun, sign: 'Aries', longitude: 180.123456 },
+      { ...sun, longitude: 180.123456, exactLongitude: 181.123456 },
+      { ...sun, exactLongitude: 188.7654321 },
+      { ...sun, speed: -1, retrograde: false },
+      { ...sun, speed: 1, longitudeSpeed: -1 },
+      { ...sun, retrograde: false, isRetrograde: true },
+    ]) {
+      expect(() => normalizeSkyPositions({ ...snapshot(), Sun: contradictory })).toThrow(/disagree/)
+    }
   })
 
   it('rejects partial, nonfinite, invalid sign, duplicate, or relabelled snapshots', () => {
@@ -97,6 +120,31 @@ describe('council sky contract', () => {
     ).toBe(true)
   })
 
+  it('retains Swiss precision just below a cusp without manufacturing a coordinate conflict', async () => {
+    const fetch = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      json: async () => ({
+        success: true,
+        data: Object.fromEntries(
+          SKY_PLANETS.map(planet => [
+            planet.toLowerCase(),
+            { longitude: 29.9999995, latitude: 0, distance: 1, speed: 1 },
+          ])
+        ),
+      }),
+    } as Response)
+    try {
+      const result = await swissEphemerisService.getAllPlanetaryPositions(new Date(instant))
+      const parsed = normalizeSkyPositions(result, { asOf: instant })
+      expect(parsed.Sun.degree).toBeCloseTo(29.9999995, 7)
+      expect(parsed.Sun.longitude).toBeCloseTo(29.9999995, 7)
+      expect(parsed.Sun.sign).toBe('Aries')
+      expect(parsed.Sun.source).toBe('swiss-ephemeris')
+    } finally {
+      fetch.mockRestore()
+    }
+  })
+
   it('preserves backend longitude/speed in the live hook without claiming Swiss provenance', async () => {
     const raw = Object.fromEntries(
       SKY_PLANETS.map((planet, index) => [
@@ -106,7 +154,7 @@ describe('council sky contract', () => {
           degree: index,
           exactLongitude: 180 + index + 0.76543,
           longitudeSpeed: index === 2 ? -0.54321 : 1,
-          isRetrograde: false,
+          isRetrograde: index === 2,
         },
       ])
     )

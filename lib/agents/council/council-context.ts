@@ -19,6 +19,7 @@ import {
 import { getPlanetaryDignity, getSignElement } from '@/lib/astrological-data'
 import { type BasketAgentKey, type SpeechAct } from './council-schema'
 import { normalizeSkyPositions, type SkySource } from './sky-snapshot'
+import type { DailySkyBrief } from './daily-council-types'
 export type { BasketAgentKey, SpeechAct }
 export type ElementType = 'fire' | 'water' | 'air' | 'earth'
 
@@ -108,6 +109,9 @@ export interface CouncilContext {
   recentTurns: CouncilTurnContext[]
   timestamp: string
   source?: SkySource
+  /** Immutable public evidence selected by the server, never accepted from a question payload. */
+  dailySkyBrief?: DailySkyBrief
+  answerTime?: string
 }
 
 const CANONICAL_KEYS: readonly BasketAgentKey[] = [
@@ -144,9 +148,15 @@ export function buildServerCouncilContext(params: {
   attachedNatalChart?: StructuredNatalData
   recentTurns?: CouncilTurnContext[]
   date?: Date
+  dailySkyBrief?: DailySkyBrief
+  answerTime?: string
 }): CouncilContext {
-  const date = params.date || new Date()
-  const ephemeris = normalizeSkyPositions(params.positions || getCurrentPlanetaryPositions(date))
+  const date = params.dailySkyBrief
+    ? new Date(params.dailySkyBrief.asOf)
+    : params.date || new Date()
+  const ephemeris = normalizeSkyPositions(
+    params.dailySkyBrief?.positions || params.positions || getCurrentPlanetaryPositions(date)
+  )
 
   const sky = {} as Record<BasketAgentKey, CouncilContextPlacement>
 
@@ -201,34 +211,55 @@ export function buildServerCouncilContext(params: {
     speakerAspects[key] = []
   }
 
-  for (let i = 0; i < CANONICAL_KEYS.length; i++) {
-    const keyA = CANONICAL_KEYS[i]
-    const bodyA = sky[keyA]
-
-    for (let j = i + 1; j < CANONICAL_KEYS.length; j++) {
-      const keyB = CANONICAL_KEYS[j]
-      const bodyB = sky[keyB]
-
-      const hit = detectAspect(bodyA.absoluteDegree, bodyB.absoluteDegree, bodyA.speed, bodyB.speed)
-
-      if (!hit) continue
-
+  if (params.dailySkyBrief && !params.overrides) {
+    for (const supplied of params.dailySkyBrief.aspects) {
       const aspectRecord: CouncilContextAspect = {
-        bodyA: keyA,
-        bodyB: keyB,
-        aspectName: hit.name,
-        angle: hit.definition.angle,
-        orb: hit.orb,
-        phase: hit.phase,
-        quality: hit.quality,
-        major: hit.definition.major,
+        ...supplied,
+        aspectName: supplied.aspectName as AspectName,
+        quality: supplied.quality as AspectQuality,
       }
-
       aspects.push(aspectRecord)
-      speakerAspects[keyA].push(aspectRecord)
-      speakerAspects[keyB].push(aspectRecord)
+      speakerAspects[aspectRecord.bodyA].push(aspectRecord)
+      speakerAspects[aspectRecord.bodyB].push(aspectRecord)
     }
-  }
+  } else
+    for (let i = 0; i < CANONICAL_KEYS.length; i++) {
+      const keyA = CANONICAL_KEYS[i]
+      const bodyA = sky[keyA]
+
+      for (let j = i + 1; j < CANONICAL_KEYS.length; j++) {
+        const keyB = CANONICAL_KEYS[j]
+        const bodyB = sky[keyB]
+
+        const hit = detectAspect(
+          bodyA.absoluteDegree,
+          bodyB.absoluteDegree,
+          bodyA.speed,
+          bodyB.speed
+        )
+
+        if (!hit) continue
+
+        const aspectRecord: CouncilContextAspect = {
+          bodyA: keyA,
+          bodyB: keyB,
+          aspectName: hit.name,
+          angle: hit.definition.angle,
+          orb: hit.orb,
+          phase:
+            hit.phase === 'exact' &&
+            (bodyA.source !== 'swiss-ephemeris' || bodyB.source !== 'swiss-ephemeris')
+              ? 'unknown'
+              : hit.phase,
+          quality: hit.quality,
+          major: hit.definition.major,
+        }
+
+        aspects.push(aspectRecord)
+        speakerAspects[keyA].push(aspectRecord)
+        speakerAspects[keyB].push(aspectRecord)
+      }
+    }
 
   // Sort speaker aspects tightest orb first
   for (const key of CANONICAL_KEYS) {
@@ -243,6 +274,8 @@ export function buildServerCouncilContext(params: {
     attachedNatalChart: params.attachedNatalChart,
     recentTurns: params.recentTurns || [],
     timestamp: date.toISOString(),
+    dailySkyBrief: params.dailySkyBrief,
+    answerTime: params.answerTime,
     source: Object.values(ephemeris).every(position => position.source === ephemeris.Sun.source)
       ? ephemeris.Sun.source
       : 'unverified',

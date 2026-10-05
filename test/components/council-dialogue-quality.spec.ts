@@ -421,7 +421,12 @@ describe('composeCouncilFallback', () => {
 
 describe('server dialogue engine and briefing generators', () => {
   const ctx = buildServerCouncilContext({
-    positions: FROZEN_SCREENSHOT_SKY as any,
+    positions: Object.fromEntries(
+      Object.entries(FROZEN_SCREENSHOT_SKY).map(([planet, position]) => [
+        planet,
+        { ...position, degree: position.longitude % 30 },
+      ])
+    ),
   })
 
   it('generateInterpretiveBriefing produces distinct, high-quality turns without reciting telemetry', () => {

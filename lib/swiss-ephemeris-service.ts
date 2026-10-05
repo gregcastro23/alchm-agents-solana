@@ -147,7 +147,7 @@ export class EphemerisUnavailableError extends Error {
 export interface SwissEphemPlanetPosition {
   planet: string
   sign: string
-  degree: number // 0-29.9999 within sign
+  degree: number // [0, 30) within sign, retaining the backend's precision
   longitude: number // 0-360 absolute longitude
   latitude: number
   distance: number
@@ -182,12 +182,12 @@ function longitudeToSignDegree(longitude: number): { sign: string; degree: numbe
   // Calculate sign index (0-11)
   const signIndex = Math.floor(normalizedLongitude / 30)
 
-  // Calculate degree within sign (0-29.9999)
+  // Calculate degree within sign without rounding or clamping cusp precision.
   const degree = normalizedLongitude % 30
 
   return {
     sign: ZODIAC_SIGNS[signIndex],
-    degree: Math.max(0, Math.min(29.9999, degree)),
+    degree,
   }
 }
 

@@ -68,6 +68,7 @@ describe('daily council routes', () => {
         editionId: 'today',
         question: 'How do I apply this?',
         skyOverride: { Sun: { sign: 'Aries' } },
+        dailySkyBrief: { source: 'fabricated', events: [{ at: 'made-up-time' }] },
       })
     )
     expect(response.status).toBe(200)
@@ -75,6 +76,8 @@ describe('daily council routes', () => {
     for (const [call] of mocks.dispatch.mock.calls) {
       expect(call.skyOverride).toEqual(positions)
       expect(call.observationTime).toBe('2026-10-02T00:00:00.000Z')
+      expect(call.dailySkyBrief).toEqual({ positions, asOf: '2026-10-02T00:00:00.000Z' })
+      expect(call.answerTime).toMatch(/^\d{4}-\d{2}-\d{2}T/)
     }
     expect((await response.json()).turns.at(-1).speakerKey).toBe('gregory')
   })

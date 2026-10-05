@@ -1,10 +1,10 @@
 /** @vitest-environment node */
 import { beforeEach, describe, expect, it, vi } from 'vitest'
-import { dailyEditionStore } from '@/lib/agents/council/daily-edition-store'
+import { dailyEditionStore, dailyEditionKey } from '@/lib/agents/council/daily-edition-store'
 import { buildDailySkyBrief } from '@/lib/agents/council/daily-sky'
 import { createBriefingEdition } from '@/lib/agents/council/daily-episode'
 import { DailyCouncilEditionSchema } from '@/lib/agents/council/daily-edition-schema'
-import { COUNCIL_PLANETS } from '@/lib/agents/council/daily-council-types'
+import { COUNCIL_PLANETS, DAILY_COUNCIL_VERSION } from '@/lib/agents/council/daily-council-types'
 
 const table = vi.hoisted(() => ({
   create: vi.fn(),
@@ -25,6 +25,16 @@ function edition() {
     })
   )
 }
+function row(payload = edition()) {
+  return {
+    id: dailyEditionKey(payload.date),
+    day: payload.date,
+    promptVersion: DAILY_COUNCIL_VERSION,
+    status: 'published',
+    editionId: payload.id,
+    payload,
+  }
+}
 beforeEach(() => {
   vi.resetAllMocks()
 })
@@ -36,7 +46,7 @@ describe('durable daily edition boundary', () => {
     expect(table.updateMany.mock.calls[0][0].where).toMatchObject({
       status: { not: 'published' },
       attempts: { lt: 3 },
-      OR: [{ leaseUntil: null }, { leaseUntil: { lt: now } }],
+      OR: [{ leaseUntil: null }, { leaseUntil: { lte: now } }],
     })
     table.create.mockRejectedValue(new Error('database offline'))
     await expect(dailyEditionStore.claim('2026-10-02', now)).rejects.toThrow('database offline')
@@ -57,7 +67,7 @@ describe('durable daily edition boundary', () => {
   it('never returns malformed persisted content or contradictory provenance', async () => {
     const valid = edition()
     expect(DailyCouncilEditionSchema.safeParse(valid).success).toBe(true)
-    table.findUnique.mockResolvedValue({ status: 'published', payload: { ...valid, turns: [] } })
+    table.findUnique.mockResolvedValue(row({ ...valid, turns: [] }))
     expect(await dailyEditionStore.read('2026-10-02')).toBeNull()
     const mismatched = structuredClone(valid)
     mismatched.brief.positions.Sun.source = 'swiss-ephemeris'
@@ -68,5 +78,39 @@ describe('durable daily edition boundary', () => {
     const forged = structuredClone(valid)
     forged.turns[0].usedEvidenceIds = ['invented']
     expect(DailyCouncilEditionSchema.safeParse(forged).success).toBe(false)
+  })
+  it('requires published row identity, UTC date and version to agree with its payload', async () => {
+    const valid = row()
+    table.findUnique.mockResolvedValue(valid)
+    table.findFirst.mockResolvedValue(valid)
+    expect(await dailyEditionStore.read(valid.day)).toEqual(valid.payload)
+    expect(await dailyEditionStore.find(valid.editionId)).toEqual(valid.payload)
+    expect(await dailyEditionStore.latest(valid.day)).toEqual(valid.payload)
+    for (const conflicting of [
+      { ...valid, id: 'another-row' },
+      { ...valid, day: '2026-10-01' },
+      { ...valid, promptVersion: 'obsolete-version' },
+      { ...valid, editionId: 'another-snapshot' },
+      { ...valid, payload: { ...valid.payload, id: 'another-snapshot' } },
+    ]) {
+      table.findUnique.mockResolvedValue(conflicting)
+      table.findFirst.mockResolvedValue(conflicting)
+      expect(await dailyEditionStore.read(valid.day)).toBeNull()
+      expect(await dailyEditionStore.find(valid.editionId)).toBeNull()
+      expect(await dailyEditionStore.latest(valid.day)).toBeNull()
+    }
+    table.findUnique.mockResolvedValue(valid)
+    table.findFirst.mockResolvedValue(valid)
+    expect(await dailyEditionStore.read('2026-10-01')).toBeNull()
+    expect(await dailyEditionStore.find('another-snapshot')).toBeNull()
+    expect(await dailyEditionStore.latest('2026-10-01')).toBeNull()
+    await expect(
+      dailyEditionStore.publish(
+        valid.day,
+        'owner-token',
+        { ...valid.payload, id: 'another-snapshot' },
+        now
+      )
+    ).rejects.toThrow(/invalid daily council/)
   })
 })

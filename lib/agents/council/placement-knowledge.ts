@@ -1,5 +1,7 @@
 import { getRulingPlanet, getSignElement, getSignModality } from '@/lib/astrological-data'
 import { PLANETARY_TRAITS, type Planet } from '@/lib/agents/planetary-traits'
+import { DEGREE_PLANETARY_AGENT_MAPPING } from '@/lib/degree-planetary-agent-mapping'
+import { getPlanetaryAgent } from './planetary-agents'
 
 /** Interpretive vocabulary, deliberately separate from measured sky evidence. */
 import { PLACEMENT_KNOWLEDGE_VERSION } from './council-version'
@@ -108,6 +110,22 @@ export interface PlacementKnowledgeInput {
   sign: string
   dignity?: string
   retrograde?: boolean
+  speed?: number
+  degree?: number
+}
+
+// Different planetary functions produce different tasks, even in the same sign.
+const PLANET_PRACTICES: Record<Planet, string> = {
+  Sun: 'choose the purpose you want your next decision to serve',
+  Moon: 'name an emotional need before deciding what would actually nourish it',
+  Mercury: 'rewrite one unclear message so another person can answer it',
+  Venus: 'identify what each person values in an exchange before negotiating its terms',
+  Mars: 'choose a concrete first action and a boundary that keeps it constructive',
+  Jupiter: 'test a hopeful plan against an experience outside your usual perspective',
+  Saturn: 'give one commitment a realistic limit, deadline or supporting routine',
+  Uranus: 'question an inherited rule and try a small, reversible alternative',
+  Neptune: 'give an imaginative idea a form you can share and check for misunderstanding',
+  Pluto: 'notice who holds power in an arrangement and name a change that returns agency',
 }
 
 export function buildPlacementKnowledge(input: PlacementKnowledgeInput) {
@@ -123,6 +141,10 @@ export function buildPlacementKnowledge(input: PlacementKnowledgeInput) {
   }[modality]
   const dignityMeaning =
     DIGNITY_MEANINGS[input.dignity || 'peregrine'] || DIGNITY_MEANINGS.peregrine
+  const signs = Object.keys(SIGN_KNOWLEDGE)
+  const withinSign = Math.min(29, Math.max(0, Math.floor(input.degree ?? 15)))
+  const signSource = DEGREE_PLANETARY_AGENT_MAPPING[signs.indexOf(input.sign) * 30 + withinSign]
+  const canonical = getPlanetaryAgent(input.planet.toLowerCase())
   return {
     id: `knowledge-${input.planet.toLowerCase()}-${input.sign.toLowerCase()}`,
     version: PLACEMENT_KNOWLEDGE_VERSION,
@@ -132,12 +154,27 @@ export function buildPlacementKnowledge(input: PlacementKnowledgeInput) {
     element,
     modality,
     ruler: getRulingPlanet(input.sign),
+    signThemes: signSource.themes,
+    signQualities: signSource.qualities,
+    sourceIds: [
+      'canonical-planetary-traits',
+      'canonical-crafted-planetary-agent',
+      'degree-planetary-agent-mapping',
+    ],
+    perspective: {
+      beliefs: canonical?.coreBeliefs?.slice(0, 2) || [],
+      gift: canonical?.personality?.gifts?.[0]?.expression,
+      shadow: canonical?.personality?.shadows?.[0]?.transformationPath,
+    },
     dignityMeaning,
     interpretation: `${input.planet} in ${input.sign} connects ${PLANET_FUNCTIONS[input.planet]} with ${sign.meaning}. Its ${element.toLowerCase()} symbolism works through a style that ${modalityMeaning}.`,
-    practice: sign.practice,
-    motionMeaning: input.retrograde
-      ? 'Retrograde means apparent backward movement as seen from Earth. Within this interpretive framework it can invite review; it does not imply that events must go wrong.'
-      : 'Direct motion describes apparent forward movement as seen from Earth; it does not guarantee progress in a person’s life.',
+    practice: `${PLANET_PRACTICES[input.planet]}; then ${sign.practice}`,
+    motionMeaning:
+      input.speed === undefined
+        ? 'Motion is unmeasured in this supplied snapshot; do not infer a direct or retrograde state from a default Boolean.'
+        : input.retrograde
+          ? 'Retrograde means apparent backward movement as seen from Earth. Within this interpretive framework it can invite review; it does not imply that events must go wrong.'
+          : 'Direct motion describes apparent forward movement as seen from Earth; it does not guarantee progress in a person’s life.',
     domains: PLANETARY_TRAITS[input.planet].wisdomDomains,
   }
 }

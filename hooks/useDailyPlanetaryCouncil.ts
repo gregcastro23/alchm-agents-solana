@@ -18,6 +18,7 @@ const INITIAL_STATE: DailyCouncilState = {
 
 const READ_INTERVAL_MS = 5 * 60 * 1000
 const CACHE_WINDOW_MS = 60 * 1000
+const READ_TIMEOUT_MS = 20 * 1000
 
 /** One read-only store serves both homepage views, including concurrent mounts. */
 export function createDailyCouncilStore(fetcher: typeof fetch = (...args) => fetch(...args)) {
@@ -40,21 +41,36 @@ export function createDailyCouncilStore(fetcher: typeof fetch = (...args) => fet
 
     update({ ...state, loading: true, error: null })
     inFlight = Promise.resolve().then(async () => {
+      const controller = new AbortController()
+      let timeout: ReturnType<typeof setTimeout> | undefined
       try {
-        const response = await fetcher('/api/agents/council-daily', {
-          method: 'GET',
-          cache: 'no-store',
+        const expired = new Promise<never>((_resolve, reject) => {
+          timeout = setTimeout(() => {
+            reject(new Error('The daily council took too long to respond. Please try again.'))
+            controller.abort()
+          }, READ_TIMEOUT_MS)
         })
-        const payload = await response.json()
-        if (!response.ok) {
-          throw new Error(
-            payload.message || payload.error || 'The daily council could not be loaded.'
-          )
-        }
-        const parsed = DailyCouncilResponseSchema.safeParse(payload)
-        if (!parsed.success) {
-          throw new Error('The daily council returned an unreadable edition. Please refresh.')
-        }
+        const parsed = await Promise.race([
+          (async () => {
+            const response = await fetcher('/api/agents/council-daily', {
+              method: 'GET',
+              cache: 'no-store',
+              signal: controller.signal,
+            })
+            const payload = await response.json()
+            if (!response.ok) {
+              throw new Error(
+                payload.message || payload.error || 'The daily council could not be loaded.'
+              )
+            }
+            const result = DailyCouncilResponseSchema.safeParse(payload)
+            if (!result.success) {
+              throw new Error('The daily council returned an unreadable edition. Please refresh.')
+            }
+            return result
+          })(),
+          expired,
+        ])
         loadedAt = Date.now()
         update({ ...(parsed.data as DailyCouncilResponse), loading: false, error: null })
       } catch (error) {
@@ -64,6 +80,7 @@ export function createDailyCouncilStore(fetcher: typeof fetch = (...args) => fet
           error: error instanceof Error ? error.message : 'The daily council could not be loaded.',
         })
       } finally {
+        if (timeout) clearTimeout(timeout)
         inFlight = null
       }
     })

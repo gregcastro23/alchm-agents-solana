@@ -113,6 +113,8 @@ export interface DailyCouncilEdition {
 export interface DailyCouncilResponse {
   edition: DailyCouncilEdition | null
   previousEdition?: DailyCouncilEdition
+  /** Elapsed verified events calculated for this edition, as of the latest read. */
+  updates?: { asOf: string; events: DailySkyEvent[] }
   status: 'published' | 'briefing' | 'stale' | 'unavailable'
   message?: string
 }

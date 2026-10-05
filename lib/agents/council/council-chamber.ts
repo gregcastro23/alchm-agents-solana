@@ -30,7 +30,61 @@ import { generateStructuredVoice } from '@/lib/agents/persona/voiced-generation'
 import { parseNatalContext } from '@/lib/context-card/natal-parser'
 import { composeCouncilPersona } from './council-persona'
 import { containsForbiddenTelemetry } from './council-schema'
-import { findSnapshotContradiction } from './daily-episode'
+import { findEditionFactContradiction, findSnapshotContradiction } from './daily-episode'
+import type { DailySkyBrief } from './daily-council-types'
+
+function agreesWithQuestionFacts(
+  visibleText: string,
+  sky: DailySkyBrief,
+  brief: TurnBrief,
+  answerTime?: string,
+  claim = ''
+): boolean {
+  const text = `${visibleText} ${claim}`
+  if (
+    brief.requiredEvidenceIds?.includes('edition-basis') &&
+    (!visibleText.includes(sky.asOf.slice(0, 10)) ||
+      (sky.quality === 'approximate' && !/\bapproximat(?:e|ed|ion)\b/i.test(visibleText)))
+  )
+    return false
+  if (
+    brief.requiredEvidenceIds?.includes('lunar-state') &&
+    !visibleText.toLowerCase().includes(sky.lunar.phase.toLowerCase())
+  )
+    return false
+  if (
+    brief.requiredEvidenceIds?.includes('event-horizon') &&
+    (!visibleText.includes(sky.endAt.slice(0, 10)) || !/\bUTC\b/i.test(visibleText))
+  )
+    return false
+  const allowedInstants = [
+    sky.asOf,
+    sky.startAt,
+    sky.endAt,
+    ...sky.events.map(event => event.at),
+    ...(answerTime ? [answerTime] : []),
+  ]
+  const allowedTimes = new Set(allowedInstants.map(value => value.slice(11, 16)))
+  for (const match of text.matchAll(/\b([01]?\d|2[0-3]):([0-5]\d)(?::[0-5]\d)?\s*UTC\b/gi)) {
+    if (!allowedTimes.has(`${match[1].padStart(2, '0')}:${match[2]}`)) return false
+  }
+  for (const match of text.matchAll(/\d{4}-\d{2}-\d{2}T\d{2}:\d{2}(?::\d{2}(?:\.\d{1,3})?)?Z/gi)) {
+    const precision = /T\d{2}:\d{2}:/.test(match[0]) ? 1000 : 60_000
+    if (
+      !allowedInstants.some(
+        value =>
+          Math.floor(Date.parse(value) / precision) === Math.floor(Date.parse(match[0]) / precision)
+      )
+    )
+      return false
+  }
+  for (const event of sky.events.filter(event =>
+    brief.requiredEvidenceIds?.includes(event.evidenceId)
+  )) {
+    if (!visibleText.includes(event.at.slice(11, 16))) return false
+  }
+  return true
+}
 
 export interface CouncilRequest {
   turnIndex?: number
@@ -48,6 +102,9 @@ export interface CouncilRequest {
   selectedAgentFilter?: string
   skyOverride?: Record<string, CurrentPlanetPosition>
   observationTime?: string
+  /** Server-owned edition evidence; callers cannot replace it through the public question API. */
+  dailySkyBrief?: DailySkyBrief
+  answerTime?: string
   /** Absolute Unix timestamp in milliseconds; generation respects the caller's deadline. */
   deadlineMs?: number
 }
@@ -90,6 +147,8 @@ export async function dispatchTurn(request: CouncilRequest): Promise<CouncilTurn
     attachedNatalChart: structuredNatal || undefined,
     recentTurns: request.recentTurns || [],
     date: request.observationTime ? new Date(request.observationTime) : undefined,
+    dailySkyBrief: request.dailySkyBrief,
+    answerTime: request.answerTime,
   })
 
   // 3. Determine turn directive via Conversation Director
@@ -142,17 +201,21 @@ export async function dispatchTurn(request: CouncilRequest): Promise<CouncilTurn
   const generationResult =
     remaining > 0
       ? await Promise.race([
-          generateStructuredVoice<CouncilTurnGeneration>(CouncilTurnGenerationSchema, {
-            systemPrompt,
-            prompt: `Sky observation instant: ${ctx.timestamp}.\n\n${brief.formattedPrompt}`,
-            tier,
-            maxTokens: 600,
-            abortSignal: abort.signal,
-          }),
+          Promise.resolve().then(() =>
+            generateStructuredVoice<CouncilTurnGeneration>(CouncilTurnGenerationSchema, {
+              systemPrompt,
+              prompt: `Sky observation instant: ${ctx.timestamp}.\n\n${brief.formattedPrompt}`,
+              tier,
+              maxTokens: 600,
+              abortSignal: abort.signal,
+            })
+          ),
           elapsed,
-        ]).finally(() => {
-          if (timeout) clearTimeout(timeout)
-        })
+        ])
+          .catch(() => null)
+          .finally(() => {
+            if (timeout) clearTimeout(timeout)
+          })
       : null
 
   // 7. Validate evidence usage and assemble response (Strict: any fabricated ID falls back)
@@ -173,9 +236,29 @@ export async function dispatchTurn(request: CouncilRequest): Promise<CouncilTurn
       ctx.aspects as Parameters<typeof findSnapshotContradiction>[2],
       directive.speakerKey
     )
+    const requiredFactsUsed = brief.requiredEvidenceIds?.every(id => rawIds.includes(id)) ?? true
+    const editionContradiction =
+      ctx.dailySkyBrief &&
+      findEditionFactContradiction(
+        ctx.dailySkyBrief,
+        `${generationResult.object.text} ${generationResult.object.newClaim}`,
+        rawIds
+      )
+    const questionFactsAgree =
+      !ctx.dailySkyBrief ||
+      agreesWithQuestionFacts(
+        generationResult.object.text,
+        ctx.dailySkyBrief,
+        brief,
+        ctx.answerTime,
+        generationResult.object.newClaim
+      )
     if (
       audit.valid &&
       schemaValid &&
+      requiredFactsUsed &&
+      questionFactsAgree &&
+      !editionContradiction &&
       !contradiction &&
       !containsForbiddenTelemetry(generationResult.object.text)
     ) {
