@@ -17,3 +17,4 @@ pytest-asyncio
 ruff
 web3
 pyswisseph
+psycopg[binary]

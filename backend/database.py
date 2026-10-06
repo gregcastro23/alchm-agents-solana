@@ -49,7 +49,9 @@ def _normalize_postgres_scheme(url: str) -> str:
     `postgresql://` so URLs from Heroku/Prisma/Render land on the psycopg2
     driver instead of raising NoSuchModuleError at engine creation."""
     if url.startswith("postgres://"):
-        return "postgresql://" + url[len("postgres://") :]
+        return "postgresql+psycopg2://" + url[len("postgres://") :]
+    if url.startswith("postgresql://") and not url.startswith("postgresql+"):
+        return "postgresql+psycopg2://" + url[len("postgresql://") :]
     return url
 
 
