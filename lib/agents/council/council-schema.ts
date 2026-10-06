@@ -6,6 +6,7 @@
  */
 
 import { z } from 'zod'
+import { normalizeSkyPositions } from './sky-snapshot'
 
 export const SPEECH_ACTS = [
   'support',
@@ -67,11 +68,13 @@ export type CanonicalSign = (typeof CANONICAL_SIGNS)[number]
  * internal system metrics, and numeric percentages.
  */
 export const FORBIDDEN_TELEMETRY_PATTERNS = [
-  /\b\d{1,2}(?:\.\d+)?°\b/i,
-  /\b\d{1,2}\s*degrees?\b/i,
-  /\b(in\s+)?(domicile|exaltation|detriment|fall|peregrine)\b/i,
+  /\b\d{1,3}(?:\.\d+)?\s*°/i,
+  /\b\d{1,3}(?:\.\d+)?\s*degrees?\b/i,
+  /\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|half|quarter)\s+(?:degrees?|percent)\b/i,
+  /\b(domicile|exaltation|detriment|peregrine)\b/i,
+  /\b(?:in\s+(?:my|your|its|our|their|a|the)\s+fall|fall\s+(?:dignity|posture))\b/i,
   /\b(monica\s+constant|alchm\s+yield|consciousness\s+velocity|vector\s+field|turnbrief|turndirective)\b/i,
-  /\b\d{1,3}%\b/,
+  /\b\d{1,3}(?:\.\d+)?\s*%/,
 ]
 
 export function containsForbiddenTelemetry(str: string): boolean {
@@ -114,29 +117,24 @@ export type CouncilTurnGeneration = z.infer<typeof CouncilTurnGenerationSchema>
 
 export const SkyBodyOverrideSchema = z.object({
   sign: z.enum(CANONICAL_SIGNS),
-  degree: z.number().min(0).lt(30),
-  speed: z.number().optional(),
+  degree: z.number().finite().min(0).lt(30),
+  longitude: z.number().finite().optional(),
+  speed: z.number().finite().optional(),
   retrograde: z.boolean().optional(),
+  source: z.enum(['swiss-ephemeris', 'vsop87-approximation', 'unverified']).optional(),
+  asOf: z.string().datetime().optional(),
 })
 
-export const SkyOverrideMapSchema = z.record(z.string(), SkyBodyOverrideSchema).refine(
-  map => {
-    const requiredKeys: BasketAgentKey[] = [
-      'sun',
-      'moon',
-      'mercury',
-      'venus',
-      'mars',
-      'jupiter',
-      'saturn',
-      'uranus',
-      'neptune',
-      'pluto',
-    ]
-    return requiredKeys.every(k => k in map)
-  },
-  { message: 'skyOverride must provide all 10 core planetary bodies' }
-)
+export const SkyOverrideMapSchema = z
+  .record(z.string(), SkyBodyOverrideSchema)
+  .transform((map, ctx) => {
+    try {
+      return normalizeSkyPositions(map)
+    } catch (error) {
+      ctx.addIssue({ code: z.ZodIssueCode.custom, message: (error as Error).message })
+      return z.NEVER
+    }
+  })
 
 export const CouncilApiRequestSchema = z.object({
   turnIndex: z.number().int().min(0).max(4).optional(),

@@ -34,10 +34,7 @@ import './landing.css'
 import ResonantStarVaultsWidget from '@/components/staking/ResonantStarVaultsWidget'
 import { usePlanetaryPositions } from '@/hooks/usePlanetaryPositions'
 import { LivePlanetaryCouncilThread } from '@/components/landing/live-planetary-council-thread'
-import {
-  CurrentPromotionalThread,
-  CurrentSkyChat,
-} from '@/components/landing/current-promotional-thread'
+import { DailyPlanetaryCouncil } from '@/components/landing/daily-planetary-council'
 import FreeAgentsOfTheWeek from '@/components/landing/free-agents-of-the-week'
 import { useFreeAgents } from '@/hooks/use-free-agents'
 import {
@@ -814,15 +811,9 @@ export default function LandingPage() {
           </div>
         </section>
 
-        {/* ==================== CURRENT SKY CHAT (LIVE PLANETARY DEGREE COUNCIL) ==================== */}
+        {/* ==================== SHARED DAILY PLANETARY COUNCIL ==================== */}
         <section id="current-promotion" className="space-y-6">
-          <CurrentSkyChat
-            positions={planetaryData.planetaryPositions}
-            alchmQuantities={planetaryData.alchmQuantities}
-            monicaConstant={displayMonica}
-            currentMoonAgent={currentMoonAgent}
-            onOpenCouncil={() => router.push('/planetary-council')}
-          />
+          <DailyPlanetaryCouncil />
         </section>
 
         {/* ======================= PLANETARY AGENTS & SKY COUNCIL ======================= */}

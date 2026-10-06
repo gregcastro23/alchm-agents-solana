@@ -76,6 +76,16 @@ export const GROQ = {
 
 export type GroqModelId = (typeof GROQ)[keyof typeof GROQ]
 
+/**
+ * Gateway catalog IDs differ from native provider IDs. Keep these separate so
+ * direct Groq and Anthropic callers retain the names their APIs accept.
+ */
+export const GATEWAY_MODELS = {
+  LLAMA_70B: 'meta/llama-3.3-70b',
+  CLAUDE_HAIKU_4_5: 'anthropic/claude-haiku-4.5',
+  CLAUDE_SONNET_4_6: 'anthropic/claude-sonnet-4.6',
+} as const
+
 // ============================================================================
 // QWEN MODELS
 // ============================================================================

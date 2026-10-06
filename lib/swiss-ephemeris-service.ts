@@ -89,13 +89,18 @@ function asSwissPosition(value: unknown): RawSwissPosition | null {
 }
 
 /** POST to the Swiss Ephemeris backend, returning its validated `data` payload. */
-async function postEphemeris(path: string, body: unknown): Promise<Record<string, unknown>> {
+async function postEphemeris(
+  path: string,
+  body: unknown,
+  options?: { signal?: AbortSignal }
+): Promise<Record<string, unknown>> {
   let response: Response
   try {
     response = await fetch(`${EPHEMERIS_BACKEND_URL}/api/planets${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: options?.signal,
     })
   } catch (error) {
     throw new EphemerisUnavailableError(
@@ -142,7 +147,7 @@ export class EphemerisUnavailableError extends Error {
 export interface SwissEphemPlanetPosition {
   planet: string
   sign: string
-  degree: number // 0-29.9999 within sign
+  degree: number // [0, 30) within sign, retaining the backend's precision
   longitude: number // 0-360 absolute longitude
   latitude: number
   distance: number
@@ -177,12 +182,12 @@ function longitudeToSignDegree(longitude: number): { sign: string; degree: numbe
   // Calculate sign index (0-11)
   const signIndex = Math.floor(normalizedLongitude / 30)
 
-  // Calculate degree within sign (0-29.9999)
+  // Calculate degree within sign without rounding or clamping cusp precision.
   const degree = normalizedLongitude % 30
 
   return {
     sign: ZODIAC_SIGNS[signIndex],
-    degree: Math.max(0, Math.min(29.9999, degree)),
+    degree,
   }
 }
 
@@ -200,14 +205,19 @@ function longitudeToSignDegree(longitude: number): { sign: string; degree: numbe
 export async function getAllPlanetaryPositions(
   date: Date,
   latitude: number = 0,
-  longitude: number = 0
+  longitude: number = 0,
+  options?: { signal?: AbortSignal }
 ): Promise<Record<string, SwissEphemPlanetPosition>> {
   const hasCoordinates = latitude !== 0 || longitude !== 0
 
-  const backendPositions = await postEphemeris('/positions', {
-    date: date.toISOString(),
-    ...(hasCoordinates ? { latitude, longitude } : {}),
-  })
+  const backendPositions = await postEphemeris(
+    '/positions',
+    {
+      date: date.toISOString(),
+      ...(hasCoordinates ? { latitude, longitude } : {}),
+    },
+    options
+  )
 
   const positions: Record<string, SwissEphemPlanetPosition> = {}
 

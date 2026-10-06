@@ -20,10 +20,11 @@ const unknowns = () => screen.queryAllByLabelText(/^unknown:/)
 
 describe('Jobs page', () => {
   it('unreadable heartbeats: every job is Unknown with a reason, nothing reads 0', () => {
-    render(<JobsView data={jobsUnavailableFixture()} />)
+    const data = jobsUnavailableFixture()
+    render(<JobsView data={data} />)
     expect(screen.getByText(/Source not provisioned/)).toBeInTheDocument()
-    expect(screen.getAllByText('Unknown').length).toBe(7)
-    expect(unknowns().length).toBeGreaterThanOrEqual(7 * 3)
+    expect(screen.getAllByText('Unknown').length).toBe(data.jobs.length)
+    expect(unknowns().length).toBeGreaterThanOrEqual(data.jobs.length * 3)
     for (const el of unknowns())
       expect(el.getAttribute('aria-label')).toMatch(/cron_runs does not exist/)
     const card = screen.getByRole('heading', { name: 'agents/tick' }).closest('article')!

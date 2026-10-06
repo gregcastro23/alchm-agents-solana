@@ -45,6 +45,7 @@ export interface CronJob {
 }
 
 const TRAITS: Record<string, { callsWten: boolean; callsModel: boolean }> = {
+  'agents/council-daily': { callsWten: false, callsModel: true },
   'agents/tick': { callsWten: true, callsModel: true },
   'agents/claim-yield': { callsWten: true, callsModel: false },
   'scrabble/tick': { callsWten: true, callsModel: false },
