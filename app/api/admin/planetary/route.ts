@@ -137,7 +137,10 @@ export async function GET(_req: NextRequest) {
     ephemeris = {
       source: SWISS_EPHEMERIS_SOURCE,
       reachable: true,
-      backendUrl: process.env.NEXT_PUBLIC_EPHEMERIS_BACKEND_URL || 'http://localhost:3001',
+      backendUrl:
+        process.env.NEXT_PUBLIC_EPHEMERIS_BACKEND_URL ||
+        process.env.NEXT_PUBLIC_BACKEND_URL ||
+        'http://localhost:3001',
       latencyMs: Date.now() - ephemerisStart,
       bodies: Object.values(positions).map(pos => ({
         planet: pos.planet,
@@ -182,7 +185,10 @@ export async function GET(_req: NextRequest) {
     ephemeris = {
       source: APPROXIMATION_SOURCE,
       reachable: false,
-      backendUrl: process.env.NEXT_PUBLIC_EPHEMERIS_BACKEND_URL || 'http://localhost:3001',
+      backendUrl:
+        process.env.NEXT_PUBLIC_EPHEMERIS_BACKEND_URL ||
+        process.env.NEXT_PUBLIC_BACKEND_URL ||
+        'http://localhost:3001',
       latencyMs: Date.now() - ephemerisStart,
       bodies,
       withheld,
@@ -233,7 +239,10 @@ export async function GET(_req: NextRequest) {
       },
       {
         name: 'Swiss ephemeris backend (Bun)',
-        url: process.env.NEXT_PUBLIC_EPHEMERIS_BACKEND_URL || 'http://localhost:3001',
+        url:
+          process.env.NEXT_PUBLIC_EPHEMERIS_BACKEND_URL ||
+          process.env.NEXT_PUBLIC_BACKEND_URL ||
+          'http://localhost:3001',
         path: '/health',
         env: 'NEXT_PUBLIC_EPHEMERIS_BACKEND_URL',
       },

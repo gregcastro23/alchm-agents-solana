@@ -109,6 +109,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+try:
+    import ephemeris_service
+    app.include_router(ephemeris_service.router, prefix="/api/planets", tags=["Swiss Ephemeris"])
+except Exception as _e:
+    print(f"[ephemeris] Swiss Ephemeris router failed to load: {_e}", flush=True)
+
 
 # Configuration
 ALCHM_KITCHEN_URL = os.getenv("ALCHM_KITCHEN_URL", "https://whattoeatnext-production.up.railway.app")

@@ -16,3 +16,4 @@ pytest
 pytest-asyncio
 ruff
 web3
+pyswisseph

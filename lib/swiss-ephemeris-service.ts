@@ -58,7 +58,9 @@ import type { EphemerisSource } from '@/lib/enhanced-astronomical-calculator'
  * result to a circular-orbit approximation while keeping the Swiss label.
  */
 const EPHEMERIS_BACKEND_URL =
-  process.env.NEXT_PUBLIC_EPHEMERIS_BACKEND_URL || 'http://localhost:3001'
+  process.env.NEXT_PUBLIC_EPHEMERIS_BACKEND_URL ||
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  'http://localhost:3001'
 
 /** The subset of `backend/src/services/swiss-ephemeris.ts:PlanetaryPosition` we consume. */
 interface RawSwissPosition {
