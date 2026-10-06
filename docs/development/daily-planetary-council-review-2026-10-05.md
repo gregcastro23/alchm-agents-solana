@@ -1,47 +1,43 @@
-# Daily planetary council review · October 5, 2026
+# Daily planetary council review · October 5–6, 2026
 
-Review scope: `codex/daily-planetary-council` against main at `1a2b2cddeadffbd7039144eb69301fb44dbde4b4`, including the subsequent review fixes. The originating requirements are in the [quality audit and daily council design](planetary-group-chat-quality-audit-2026-10-01.md). The [implementation record](daily-planetary-council-implementation-2026-10-02.md) explains operation and schema provisioning.
+Review scope: `codex/daily-planetary-council` against main at `1a2b2cddeadffbd7039144eb69301fb44dbde4b4`, including review and live-evaluation fixes. The originating requirements are in the [quality audit and daily council design](planetary-group-chat-quality-audit-2026-10-01.md). The [implementation record](daily-planetary-council-implementation-2026-10-02.md) explains operation and schema provisioning.
 
 ## Standards
 
-Independent review identified deadline propagation, incomplete per-body provenance and publication-version partitioning gaps. The final implementation gives each shared-sky reader its own wait deadline, bounds database and client reads, validates all ten positions at the storage boundary and partitions publication by editorial, knowledge and routing versions.
+Independent review found deadline propagation, incomplete per-body provenance and publication-version partitioning gaps. These are fixed: every shared-sky reader has its own wait deadline, database/client reads are bounded, all ten positions are validated at the storage boundary, and publication identity includes editorial, knowledge and routing versions.
 
-Additional integrity review corrected contradictory sign/degree/longitude and motion inputs, stored-row identity mismatches, events at the next UTC midnight, and lunar/aspect metadata inconsistent with opening coordinates. Shared daily/private factual guards now reject recognizable contradictions in phase, event destination and event timing. Regression tests cover each boundary. A generated backend Ruff cache is excluded from formatting checks; no application sources are excluded by that change.
+Integrity review also corrected inconsistent sign/degree/longitude and motion inputs, saved-row identity mismatches, events at the next UTC midnight, and lunar/aspect metadata inconsistent with opening coordinates. Private answers retain the exact displayed brief and associate an event's clock with that event. Schema validation, lease ownership and fail-closed editorial behavior have regression coverage.
 
-No unresolved concrete standards defect was reported by the final independent pass. Deterministic checks and model editorial review provide bounded safeguards; they do not prove that arbitrary prose entails its cited evidence.
+The final provider review found no concrete blocker. Gateway creator/model IDs are separated from native provider IDs. Gregory and the editor use the expert tier; delegates use a schema-capable ambient model. Strict per-beat choices constrain evidence, coverage and exact factual assertion pairs. Invalid, unavailable or expired output becomes a labelled factual reading. Whole-edition review and bounded repairs run within the shared deadline.
 
 ## Spec
 
-Independent review identified accepted contradictory aspect phases, truncated host history, missing prior-day comparisons, absent previous-hosted-edition fallback and novelty checks limited to exact strings. These were corrected. Gregory receives accumulated claims, placement agents receive authored planet/sign knowledge and canonical persona material, and the edition has a finite coverage plan with explicit opening, integration and closing duties.
+The daily plan covers all ten placements, lunar rhythm, motion, major relationships, the slower collective background and verified timed changes when the source supports them. Agents receive their canonical personas and authored planet/sign knowledge. Gregory receives relevant poem material for voice, accumulated prior claims and distinct opening, integration and closing assignments. Both homepage surfaces use the same edition, and public page reads make no model calls.
 
-Further review corrected private replies that omitted the edition's lunar/event context or could attach a valid clock time to the wrong event. Private replies retain the exact opening brief and disclose the answer/observation window. Published editions remain immutable; separately labelled elapsed updates reveal already calculated verified events. Bounded editorial repair handles specific flagged turns before a second whole-edition review, and an unavailable reviewer yields a complete factual briefing.
+Review corrected truncated host history, absent prior-day comparisons, missing previous-hosted-edition fallback and novelty checks limited to exact strings. The editor now distinguishes factual, coverage and conversation defects, and applies host duties to explicit turn roles. Labelled backup readings remain subject to factual and coverage checks without being rejected for their disclosed template style.
 
-The implementation supplies all ten placements, lunar rhythm, major aspects, motion, collective background and verified turning points when a verified ephemeris is available. Approximate positions and unavailable timing are disclosed. Actual model-written voice quality and a visual browser pass remain unverified; these are validation limits, not passed acceptance gates.
+Live review produced further concrete corrections: public placements cannot be attributed to the reader's natal chart; unsupported ingresses and guaranteed outcomes are rejected; unavailable timing is explicit in the closing; all four element counts include zeros; and an applying conjunction already exists before exact alignment. Raw coordinates written as words receive the same filtering as numeric coordinates. Dignity information should become a plain-language interpretation of symbolic ease or friction.
+
+## Live dialogue assessment
+
+The [reviewed live sample](samples/daily-council-live-2026-10-05.md) uses the October 5 midnight UTC fixture and was generated on October 6 with a valid supplied Gateway credential. It contains eleven turns: nine model-written contributions and two labelled factual fallbacks, with 1,604 words and 17/17 required coverage topics. One unavailable structured response and one missing planetary-function explanation were replaced. The whole-edition editor accepted the result without issues.
+
+Greg opens with a concrete distinction between momentum and reactive urgency, returns to the actual Moon/Mars exchange, introduces a communication question for the personal planets, and closes by connecting Moon's release theme with Uranus's challenge to inherited assumptions. The closing offers two distinct practices and the explicit timing caveat. The voices now explain placements through a shared situation and qualify each other's claims instead of emitting disconnected horoscopes.
+
+This is a successful representative sample, not a statistical guarantee about every generated day. The conversation still favors the difficult-message example and fire imagery, and it is a substantial daily read. Broader scenario variety and tighter prose remain polish opportunities. Speech does not enumerate every retrograde body in this sample; the accompanying factual sky overview supplies the complete motion roster. The sky is explicitly a local Keplerian approximation; this evaluation does not certify astronomical precision or verified event timing. Model editorial approval and deterministic checks are complementary safeguards, not proof that arbitrary prose entails its evidence.
 
 ## Verification
 
-- The final default suite passed 2,071 tests across 176 files, with 22 tests/four files skipped. The focused daily/private factual-guard suites also passed all thirty tests, including swapped event clocks and answer-time attribution regressions.
-- `bun run check` passed lint, repository formatting and TypeScript.
-- The persona smoke script and voice differentiation tests passed.
-- `bun run build` completed compilation, lint/type validation, page generation and route output. Existing optional-integration and dynamic-dependency warnings remained.
-- Prisma client generation passed. No database schema was applied and no deployment was performed.
-- The local production GET returned HTTP 200 with a schema-valid October 5 edition: eleven turns, seventeen covered topics and explicitly approximate positions. The private-question POST rejected an anonymous caller with HTTP 401 after configuring a temporary local auth secret. A missing production auth secret initially produced HTTP 500, consistent with the repository's existing fail-closed auth configuration.
-- Offline evaluation produced a schema-valid 878-word, eleven-turn briefing covering 17/17 required topics. It made no model calls or database writes.
+- Default suite: 2,108 tests passed across 182 files; 22 tests/four files skipped. It includes the new routing, output-contract, prediction, event-caveat, element-count and aspect-exactness regressions.
+- `bun run check` passed lint, repository formatting and TypeScript. Persona smoke and all fourteen voice-differentiation tests passed.
+- Production builds completed compilation, type validation, page generation and route output. Existing optional-integration/dynamic-dependency warnings remain.
+- Local production HTTP checks returned status 200 with an eleven-turn, seventeen-topic October 6 briefing and labelled approximate positions. An anonymous private question returned status 401 with a temporary local auth secret configured.
+- Browser review verified the complete conversation, expandable sky facts, coverage details, compact opening preview and navigation between views. Anonymous follow-up submission is disabled with a sign-in explanation.
+- At a 390px mobile viewport, the final council had a 332px content width and no horizontal overflow; response text uses 260px below the speaker identity. Anchor navigation leaves 128px for the sticky header. At a 1440px desktop viewport, the council had no internal overflow and response lines were capped at approximately 683px. The mobile screenshot was visually inspected; desktop geometry was measured because the in-app screenshot surface clips to its physical pane. Temporary viewport overrides were reset.
+- Prisma client generation passed earlier in this work. No application database schema was applied, no credentials were saved to the repository, and no production deployment was initiated.
 
-Initial verification was interrupted by iCloud placeholders in source files, generated caches and dependencies. Locked dependencies were restored without changing lockfiles; unchanged tracked source files were materialized from matching local Git index copies while preserving pending edits. The clean subsequent suite run passed.
+Earlier authentication, placeholder-file and browser-session failures were resolved before these checks. Locked dependencies were restored without lockfile changes, preserving pending source edits. These earlier failed attempts are not counted as successful validation.
 
-## Remaining acceptance checks
+## Release operation
 
-The available Vercel OIDC credential is expired and no direct provider credential is configured. An opt-in live evaluation reached the gateway but received authentication failures, so all turns fell back to factual text. A successful offline contract check does not establish captivating hosting, distinct live voices or semantic accuracy of generated prose.
-
-To finish live quality assessment, configure a fresh `AI_GATEWAY_API_KEY` locally and run:
-
-```sh
-bun run scripts/eval-daily-council.ts --date=2026-10-05 --live
-```
-
-Review the resulting conversation against the rubric printed in its report: factual fidelity, specificity, voice distinction, beginner learning, meaningful responses, Gregory's curiosity/synthesis and repetition. Automatic approval review rejected fetching the linked Vercel project's full development environment because that would retrieve unrelated development secrets. No such environment file was fetched.
-
-Browser automation timed out during local visual inspection. Component rendering tests passed, but responsive layout and interaction should receive a successful visual pass before release. Saved publication additionally requires normal Prisma schema provisioning and valid provider/ephemeris/cron configuration in the target environment.
-
-The PR is kept in draft while live conversation quality and visual review remain outstanding. The implementation and automated review fixes are ready for code review; these remaining acceptance checks must not be represented as complete.
+Before enabling saved publication, provision `council_daily_editions` through the repository's normal Prisma workflow and configure valid model-provider, Swiss Ephemeris and cron credentials in the target environment. Public reading remains available through the labelled factual fallback while a hosted edition is unavailable. Deployment and schema provisioning are separate from this implementation PR.

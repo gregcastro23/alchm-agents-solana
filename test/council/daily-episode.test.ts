@@ -127,7 +127,15 @@ describe('complete daily episode', () => {
 
   it('allows ordinary fall while preventing coordinates, percentages and private telemetry', () => {
     expect(containsForbiddenTelemetry('Let certainty fall away.')).toBe(false)
-    for (const text of ['17° Virgo', '50% today', '17 degrees', 'Monica Constant'])
+    for (const text of [
+      '17° Virgo',
+      '50% today',
+      '17 degrees',
+      'Monica Constant',
+      'still three degrees of arc away',
+      'twenty-three degrees closing',
+      'fifty percent illuminated',
+    ])
       expect(containsForbiddenTelemetry(text)).toBe(true)
   })
 
@@ -234,6 +242,38 @@ describe('complete daily episode', () => {
     expect(generator.mock.calls.every(([, options]) => options.abortSignal?.aborted)).toBe(true)
   })
 
+  it('gives a slower host and delegate time without spending the editorial review budget', async () => {
+    vi.useFakeTimers()
+    const sky = brief(),
+      beats = planDailyEpisode(sky),
+      fallback = createBriefingEdition(sky)
+    let call = 0
+    generator.mockImplementation(async (_schema, options) => {
+      if (options.systemPrompt.startsWith('You are the internal editor'))
+        return { source: 'model', object: { acceptable: true, issues: [] } }
+      const index = call++
+      if (index === 0) await new Promise(resolve => setTimeout(resolve, 13_000))
+      if (index === 1) await new Promise(resolve => setTimeout(resolve, 6_500))
+      return {
+        source: 'model',
+        object: {
+          ...fallback.turns[index],
+          newClaim: fallback.turns[index].newClaim.slice(0, 300),
+          factualAssertions: getBeatFactualAssertions(sky, beats[index]),
+        },
+      }
+    })
+    const started = Date.now()
+    const pending = generateDailyEdition(sky, { deadlineMs: started + 150_000 })
+    await vi.advanceTimersByTimeAsync(19_500)
+    const edition = await pending
+    expect(edition.turns[0].provenance.source).toBe('model')
+    expect(edition.generation).toBe('model')
+    expect(generator.mock.calls.at(-1)?.[1].systemPrompt).toContain('internal editor')
+    expect(Date.now() - started).toBe(19_500)
+    expect(DailyCouncilEditionSchema.safeParse(edition).success).toBe(true)
+  })
+
   it('requires exact server-authored factual assertions when supplied, not invented interpretations as facts', () => {
     const sky = brief(),
       beat = planDailyEpisode(sky)[1],
@@ -275,7 +315,8 @@ describe('complete daily episode', () => {
                   acceptable: false,
                   issues: [
                     {
-                      turnId: fallback.turns[5].id,
+                      kind: 'conversation',
+                      turnId: 'turn-6',
                       reason: 'Add a concrete communication example.',
                     },
                   ],
@@ -292,6 +333,7 @@ describe('complete daily episode', () => {
         source: 'model',
         object: {
           ...fallback.turns[index],
+          newClaim: fallback.turns[index].newClaim.slice(0, 300),
           factualAssertions: getBeatFactualAssertions(sky, beats[index]),
           ...(turnCall >= beats.length && index === 5
             ? { newClaim: 'A revised message makes the competing priorities answerable.' }
@@ -324,7 +366,8 @@ describe('complete daily episode', () => {
               acceptable: false,
               issues: [
                 {
-                  turnId: fallback.turns[5].id,
+                  kind: 'conversation',
+                  turnId: 'turn-6',
                   reason: 'Repeats the earlier point without an application.',
                 },
               ],

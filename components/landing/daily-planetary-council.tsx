@@ -60,17 +60,17 @@ function CouncilTurn({ turn }: { turn: DailyCouncilTurn }) {
   const host = turn.speakerKey === 'gregory'
   return (
     <li
-      className={`flex gap-3 sm:gap-4 ${host ? 'rounded-xl bg-[#b8fc4b]/[0.04] p-4' : 'px-4 py-3'}`}
+      className={`grid grid-cols-[2.5rem_minmax(0,1fr)] gap-x-3 gap-y-2 sm:gap-x-4 ${host ? 'rounded-xl bg-[#b8fc4b]/[0.04] p-4' : 'px-4 py-3'}`}
     >
       <span
         aria-hidden="true"
-        className="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border bg-[#050506] text-xl"
+        className="flex h-10 w-10 items-center justify-center rounded-xl border bg-[#050506] text-xl sm:row-span-2"
         style={{ color: style.color, borderColor: `${style.color}50` }}
       >
         {style.glyph}
       </span>
-      <div className="min-w-0 flex-1">
-        <div className="mb-2 flex flex-wrap items-center gap-x-3 gap-y-1">
+      <div className="contents">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1">
           <span className="font-headline-sm text-sm" style={{ color: style.color }}>
             {host ? 'Gregory Castro' : turn.speakerName}
           </span>
@@ -83,7 +83,7 @@ function CouncilTurn({ turn }: { turn: DailyCouncilTurn }) {
             {turn.provenance.source === 'grounded_briefing' ? 'Sky briefing' : 'Council voice'}
           </span>
         </div>
-        <p className="whitespace-pre-wrap font-body-md text-sm leading-7 text-[#e0e4d2]">
+        <p className="col-span-2 max-w-[80ch] whitespace-pre-wrap font-body-md text-sm leading-7 text-[#e0e4d2] sm:col-span-1 sm:col-start-2">
           {turn.text}
         </p>
       </div>
@@ -383,7 +383,7 @@ export function DailyPlanetaryCouncil({
   return (
     <section
       id={compact ? undefined : 'daily-planetary-council'}
-      className="glass-panel overflow-hidden rounded-2xl border border-[#424936]/80 bg-[#090b0e]/95"
+      className="glass-panel scroll-mt-32 overflow-hidden rounded-2xl border border-[#424936]/80 bg-[#090b0e]/95"
       aria-label={compact ? 'Daily council preview' : 'Daily planetary council'}
     >
       <div className={compact ? 'p-5' : 'p-5 sm:p-8'}>

@@ -2,6 +2,7 @@ import { z } from 'zod'
 import { generateStructuredVoice } from '@/lib/agents/persona/voiced-generation'
 import { containsForbiddenTelemetry } from './council-schema'
 import { inspectDailyDialogue } from './daily-edition-review'
+import { countSkyElements, SKY_ELEMENTS } from './daily-sky'
 import { composeCouncilPersona } from './council-persona'
 import { ASPECT_MEANINGS, buildPlacementKnowledge, PLANET_FUNCTIONS } from './placement-knowledge'
 import {
@@ -41,6 +42,9 @@ const planetFor = (key: string) => COUNCIL_PLANETS.find(planet => planet.toLower
 const unique = <T>(values: T[]) => [...new Set(values)]
 const speakerName = (key: CouncilSpeakerKey) =>
   key === 'gregory' ? 'Gregory Castro' : planetFor(key) || key
+const eventTimingUnavailable = (brief: DailySkyBrief) =>
+  brief.quality === 'approximate' ||
+  brief.warnings.some(warning => warning.startsWith('Daily event timing'))
 
 // Keep a lightweight prose-coverage check without forcing every voice to
 // repeat the same glossary. The semantic editor still assesses the explanation.
@@ -105,19 +109,19 @@ export function planDailyEpisode(brief: DailySkyBrief): DailyEpisodeBeat[] {
   add(
     'gregory',
     'opening',
-    'Open with the central relationship or theme in this supplied sky. Explain its human stakes and invite a useful question; distinguish the current snapshot from timed events.',
-    [...evidenceFor('overview'), ...aspectEvidence(main ? [main] : []), ...placements('sun')]
+    'Open only with the assigned principal relationship, the current Sun placement and the source quality. Explain their human stakes and invite one useful question. Save lunar rhythm, motion, other placements, elemental rankings and event timing for the later readings; this is an opening, not the whole-day recap.',
+    [...aspectEvidence(main ? [main] : []), ...placements('sun')]
   )
   add(
     'moon',
     'lunar',
-    'Explain the actual lunar phase and current sign, connecting emotional rhythm to one grounded example. Phase depends on the Sun–Moon relationship, not the Moon’s zodiac longitude alone.',
+    'Teach two distinct ideas: lunar phase is the Sun–Moon relationship, while the Moon’s sign describes the symbolic style of emotional needs. Name the actual phase and sign, then use a small everyday example involving rest, care or belonging. Leave the principal aspect and its action lesson to the next exchange; do not repeat the opening.',
     [...evidenceFor('lunar'), ...placements('moon')]
   )
   add(
     main?.bodyA || 'sun',
     'aspect',
-    'Explain the main aspect through your current placement. Briefly define its geometry’s symbolic meaning and make a precise proposition the partner can answer.',
+    'Teach the principal aspect as a relationship between two different planetary functions. An applying aspect is already present within the supplied orb; applying means approaching exact alignment, not that the aspect has yet to exist. Define its symbolic meaning in plain language, name both placements, and work through one specific situation not already used. Do not repeat the lunar phase lesson. End with a precise proposition your partner can qualify.',
     [
       ...aspectEvidence(main ? [main] : []),
       ...placements(main?.bodyA || 'sun', main?.bodyB || 'saturn'),
@@ -126,7 +130,7 @@ export function planDailyEpisode(brief: DailySkyBrief): DailyEpisodeBeat[] {
   add(
     main?.bodyB || 'saturn',
     'aspect',
-    'Answer the actual preceding claim. Add your sign-specific perspective and one useful qualification or application; explain the other planet’s concern fairly.',
+    'Answer the actual preceding proposition by adding a useful limit or counterexample from your own placement. Name both planets and signs, but do not restate the previous lesson. Explain when your partner’s advice needs adjustment in the concrete situation. Do not prescribe impulsive confrontation or treat action as inevitable.',
     [
       ...aspectEvidence(main ? [main] : []),
       ...placements(main?.bodyA || 'sun', main?.bodyB || 'saturn'),
@@ -136,7 +140,7 @@ export function planDailyEpisode(brief: DailySkyBrief): DailyEpisodeBeat[] {
   add(
     'gregory',
     'bridge',
-    `Integrate the readings so far, explain which bodies are actually retrograde, and ask how the same pattern can be worked with instead of treating it as destiny. ${brief.changes ? 'Explain the supplied differences from the previous UTC opening snapshot. Distinguish snapshot changes from precisely timed events, and do not claim an aspect began today merely because it ranks higher.' : ''} Introduce the personal-planet perspective.`,
+    `Connect the actual disagreement so far without simply endorsing the last speaker. Define retrograde as apparent backward movement seen from Earth, name the supplied retrograde bodies, and explain how reflection remains a choice rather than a predicted setback. Correct any leap from symbolism to inevitable action. If you discuss the elemental overview, use the supplied counts accurately or omit rankings. ${brief.changes ? 'Explain the supplied differences from the previous UTC opening snapshot. Distinguish snapshot changes from precisely timed events, and do not claim an aspect began today merely because it ranks higher.' : ''} Introduce a concrete communication or relationship question for the personal planets.`,
     [
       ...evidenceFor('motion'),
       ...evidenceFor('overview'),
@@ -196,14 +200,8 @@ export function planDailyEpisode(brief: DailySkyBrief): DailyEpisodeBeat[] {
   add(
     'gregory',
     'closing',
-    'Close with a specific synthesis of actual claims: lunar rhythm, principal interactions, personal choices, slower backdrop and verified changes. State when event timing is unavailable. Give two grounded reflective practices.',
-    [
-      ...evidenceFor('lunar'),
-      ...evidenceFor('motion'),
-      ...evidenceFor('overview'),
-      ...evidenceFor('event'),
-      ...aspectEvidence(ranked),
-    ],
+    `Close in 100–150 words by connecting two distinct actual claims from earlier speakers into one new insight. Name the lunar phase as the immediate rhythm, but do not repeat the inventory of placements, retrogrades or aspects. Give two distinct concrete practices, each tied to one earlier claim. ${eventTimingUnavailable(brief) ? 'The source makes event timing unavailable. Include this sentence exactly: "Exact event timing is unavailable in this snapshot."' : 'Mention only supplied verified changes; an empty event list is not proof that no celestial change occurs.'} Do not introduce new placements or rank elements.`,
+    [...evidenceFor('lunar'), ...evidenceFor('overview'), ...evidenceFor('event')],
     'synthesize'
   )
   return plan
@@ -267,13 +265,8 @@ function motionReading(brief: DailySkyBrief) {
 }
 
 function overviewReading(brief: DailySkyBrief) {
-  const elements = ['fire', 'earth', 'air', 'water']
-  const counts = elements.map(element => ({
-    element,
-    count: Object.values(brief.positions).filter(
-      position => position.element.toLowerCase() === element
-    ).length,
-  }))
+  const elementCounts = countSkyElements(brief.positions)
+  const counts = SKY_ELEMENTS.map(element => ({ element, count: elementCounts[element] }))
   const greatest = Math.max(...counts.map(item => item.count))
   const leaders = counts.filter(item => item.count === greatest).map(item => item.element)
   const qualities: Record<string, string> = {
@@ -282,7 +275,65 @@ function overviewReading(brief: DailySkyBrief) {
     air: 'ideas and exchange',
     water: 'feeling and connection',
   }
-  return `The elemental overview emphasizes ${leaders.map(element => `${element}, associated with ${qualities[element]}`).join('; ')}. This is an interpretive emphasis, not a measure of anyone's mood.`
+  const absent = counts.filter(item => item.count === 0).map(item => item.element)
+  return `The elemental overview emphasizes ${leaders.map(element => `${element}, associated with ${qualities[element]}`).join('; ')}.${absent.length ? ` No supplied planet occupies a sign associated with ${absent.join(' or ')}.` : ''} This is an interpretive emphasis, not a measure of anyone's mood or a deficit in their abilities.`
+}
+
+/** Recognizable count rankings must include zero-count elements and allow ties. */
+function elementBalanceContradiction(brief: DailySkyBrief, narrative: string): boolean {
+  const counts = countSkyElements(brief.positions)
+  const greatest = Math.max(...Object.values(counts))
+  const least = Math.min(...Object.values(counts))
+  // "Not represented" asserts absence; retain it while ordinary denials of
+  // dominance or absence remain outside the affirmative fact checks.
+  const text = affirmativeSentences(
+    narrative.replace(/\b(?:is|are|remains?)\s+not\s+(?:represented|present)\b/gi, 'is absent')
+  )
+  const element = `(${SKY_ELEMENTS.join('|')})`
+  const subject = `${element}(?:\\s+(?:signs?|element))?`
+  const linking = '\\s+(?:(?:is|are|has|have|remains?|carries?)\\s+)?(?:the\\s+)?'
+  const highest =
+    '(?:dominant|dominates|most\\s+(?:represented|prevalent|prominent|abundant|emphasized)|greatest(?:\\s+(?:presence|emphasis|count))?|highest(?:\\s+(?:count|representation))?)'
+  const lowest =
+    '(?:least(?:\\s+(?:represented|prevalent|prominent|abundant|emphasized))?|fewest(?:\\s+(?:planets|placements|signs))?|lowest(?:\\s+(?:count|representation))?|smallest(?:\\s+(?:presence|emphasis|count))?)'
+  const checks = [
+    { pattern: new RegExp(`\\b${subject}${linking}${highest}\\b`, 'gi'), count: greatest },
+    {
+      pattern: new RegExp(`\\b${highest}\\s+(?:element\\s+(?:is|of)\\s+)?${element}\\b`, 'gi'),
+      count: greatest,
+    },
+    { pattern: new RegExp(`\\b${subject}${linking}${lowest}\\b`, 'gi'), count: least },
+    {
+      pattern: new RegExp(`\\b${lowest}\\s+(?:element\\s+(?:is|of)\\s+)?${element}\\b`, 'gi'),
+      count: least,
+    },
+    {
+      pattern: new RegExp(
+        `\\b${subject}\\s+(?:is|are|remains?)\\s+(?:absent|missing|unrepresented)\\b`,
+        'gi'
+      ),
+      count: 0,
+    },
+    {
+      pattern: new RegExp(
+        `\\b(?:no|without|lack(?:s|ing)?(?:\\s+of)?)\\s+${element}\\s+(?:signs?|element|placements)\\b`,
+        'gi'
+      ),
+      count: 0,
+    },
+    {
+      pattern: new RegExp(
+        `\\b(?:no|without)\\s+${element}\\s+in\\s+(?:(?:this|the|our)\\s+)?(?:sky|snapshot|chart)\\b`,
+        'gi'
+      ),
+      count: 0,
+    },
+  ]
+  return checks.some(({ pattern, count }) =>
+    [...text.matchAll(pattern)].some(
+      match => counts[match[1].toLowerCase() as keyof typeof counts] !== count
+    )
+  )
 }
 
 /** Honest explanatory fallback, not a fabricated performance of spontaneous dialogue. */
@@ -309,13 +360,13 @@ function briefingTurn(
   let text: string
   switch (beat.topic) {
     case 'opening':
-      text = `The useful starting question is how today's different needs can share one course of action. ${overviewReading(brief)} ${concisePlacement(brief, 'Sun')} ${aspects[0] ? `The central relationship is ${planetFor(aspects[0].bodyA)} in ${brief.positions[planetFor(aspects[0].bodyA)!].sign} ${aspects[0].aspectName.toLowerCase()} ${planetFor(aspects[0].bodyB)} in ${brief.positions[planetFor(aspects[0].bodyB)!].sign}; the delegates will explain what its different functions contribute.` : ''} These are readings of a ${brief.quality === 'approximate' ? 'dated approximate' : 'timestamped measured'} sky, not promises about anyone's life.`
+      text = `The useful starting question is how today's different needs can share one course of action. ${concisePlacement(brief, 'Sun')} ${aspects[0] ? `The central relationship is ${planetFor(aspects[0].bodyA)} in ${brief.positions[planetFor(aspects[0].bodyA)!].sign} ${aspects[0].aspectName.toLowerCase()} ${planetFor(aspects[0].bodyB)} in ${brief.positions[planetFor(aspects[0].bodyB)!].sign}; the delegates will explain what its different functions contribute.` : ''} These are readings of a ${brief.quality === 'approximate' ? 'dated approximate' : 'timestamped measured'} sky, not promises about anyone's life.`
       break
     case 'lunar':
       text = `${lunarReading(brief)} ${placementText} A practical reflection is to ${buildPlacementKnowledge({ planet: 'Moon', ...brief.positions.Moon }).practice}.`
       break
     case 'bridge':
-      text = `${motionReading(brief)} ${brief.changes ? `Compared with the UTC opening snapshot on ${brief.changes.previousDate}: ${brief.changes.items.join(' ')} ` : ''}The earlier readings put initiative, feeling and relationship into the same conversation. Next, consider how these themes enter the words you choose and the commitments you make.`
+      text = `${overviewReading(brief)} ${motionReading(brief)} ${brief.changes ? `Compared with the UTC opening snapshot on ${brief.changes.previousDate}: ${brief.changes.items.join(' ')} ` : ''}The earlier readings put initiative, feeling and relationship into the same conversation. Next, consider how these themes enter the words you choose and the commitments you make.`
       break
     case 'aspect':
       if (previous?.speakerKey === aspects[0]?.bodyA && beat.speakerKey === aspects[0]?.bodyB) {
@@ -330,7 +381,7 @@ function briefingTurn(
       text = `${eventText} These are measured changes within this edition’s day window. Their symbolic meaning can guide reflection, but their timing does not establish what a person will experience.`
       break
     case 'closing':
-      text = `The ${brief.lunar.phase.toLowerCase()} Moon in ${brief.lunar.sign} gives the day's immediate rhythm. ${aspects[0] ? `${planetFor(aspects[0].bodyA)} ${aspects[0].aspectName.toLowerCase()} ${planetFor(aspects[0].bodyB)} connects ${PLANET_FUNCTIONS[planetFor(aspects[0].bodyA)!]} with ${PLANET_FUNCTIONS[planetFor(aspects[0].bodyB)!]}.` : 'The placement readings provide the context when no major relationship is selected.'} Review the ${brief.quality === 'approximate' ? 'estimated' : 'measured'} motion described above alongside the personal-planet choices. The slower bodies supply a collective backdrop rather than a fresh personal prediction each day. ${brief.events.length ? `Verified changes: ${eventText}` : 'No timed change is verified in this edition; the next dated snapshot can show what changed.'} Choose one small action consistent with your priorities, and review one existing commitment before adding another.`
+      text = `The ${brief.lunar.phase.toLowerCase()} Moon in ${brief.lunar.sign} gives the day's immediate rhythm. The earlier placement readings connect personal choices with the principal planetary relationships. Review the ${brief.quality === 'approximate' ? 'estimated' : 'measured'} motion described above alongside those choices. The slower bodies supply a collective backdrop rather than a fresh personal prediction each day. ${brief.events.length ? `Verified changes: ${eventText}` : eventTimingUnavailable(brief) ? 'Exact event timing is unavailable in this snapshot. The next dated snapshot can show what changed.' : 'No verified timed change is listed for this day.'} Choose one small action consistent with your priorities, and review one existing commitment before adding another.`
       break
     default: {
       const practicingPlanet = planetFor(beat.speakerKey) || placementNames[0]
@@ -343,9 +394,9 @@ function briefingTurn(
     speakerName: speakerName(beat.speakerKey),
     text,
     newClaim:
-      `${beat.topic} (${beat.speakerKey}): ${beat.topic === 'aspect' && aspects[0] ? `${planetFor(aspects[0].bodyA)} ${aspects[0].aspectName} ${planetFor(aspects[0].bodyB)} brings ${PLANET_FUNCTIONS[planetFor(aspects[0].bodyA)!]} into relationship with ${PLANET_FUNCTIONS[planetFor(aspects[0].bodyB)!]}` : placementNames.length ? `${placementNames.join(' and ')} connect their current signs to ${PLANET_FUNCTIONS[placementNames[0]]}` : beat.instruction.split('.')[0]}`.slice(
+      `${beat.topic} (${beat.speakerKey}): ${beat.topic === 'aspect' && aspects[0] ? `${planetFor(aspects[0].bodyA)} ${aspects[0].aspectName} ${planetFor(aspects[0].bodyB)} brings ${PLANET_FUNCTIONS[planetFor(aspects[0].bodyA)!]} into relationship with ${PLANET_FUNCTIONS[planetFor(aspects[0].bodyB)!]}` : placementNames.length ? placementNames.map(planet => `${planet} in ${brief.positions[planet].sign} expresses ${PLANET_FUNCTIONS[planet]}`).join('; ') : beat.instruction.split('.')[0]}`.slice(
         0,
-        300
+        1500
       ),
     speechAct: beat.speechAct,
     usedEvidenceIds: beat.evidence.map(item => item.id),
@@ -391,12 +442,41 @@ const DailyNarrativeTurnSchema = z.object({
   factualAssertions: z.array(FactualAssertionSchema).min(1).max(32).optional(),
 })
 
-const DailyTurnGenerationSchema = DailyNarrativeTurnSchema.extend({
-  factualAssertions: z.array(FactualAssertionSchema).min(1).max(32),
-}).refine(
-  value => !containsForbiddenTelemetry(value.text) && !containsForbiddenTelemetry(value.newClaim),
-  'Private coordinates or metrics in dialogue'
-)
+/** Constrain factual metadata to this beat's finite server-authored choices. */
+function dailyTurnGenerationSchema(brief: DailySkyBrief, beat: DailyEpisodeBeat) {
+  const assertions = getBeatFactualAssertions(brief, beat)
+  if (!assertions.length || !beat.coverageIds.length)
+    throw new Error('Daily turns require assigned evidence and coverage')
+  const assertionOptions = assertions.map(assertion =>
+    z.object({
+      evidenceId: z.enum([assertion.evidenceId]),
+      statement: z.enum([assertion.statement]),
+    })
+  )
+  const assertionChoice =
+    assertionOptions.length === 1
+      ? assertionOptions[0]
+      : z.union(
+          assertionOptions as [
+            (typeof assertionOptions)[number],
+            (typeof assertionOptions)[number],
+            ...(typeof assertionOptions)[number][],
+          ]
+        )
+  return DailyNarrativeTurnSchema.extend({
+    usedEvidenceIds: z
+      .array(z.enum(beat.evidence.map(item => item.id) as [string, ...string[]]))
+      .min(1)
+      .max(beat.evidence.length),
+    coverageIds: z
+      .array(z.enum(beat.coverageIds as [string, ...string[]]))
+      .length(beat.coverageIds.length),
+    factualAssertions: z.array(assertionChoice).min(1).max(Math.min(32, assertions.length)),
+  }).refine(
+    value => !containsForbiddenTelemetry(value.text) && !containsForbiddenTelemetry(value.newClaim),
+    'Private coordinates or metrics in dialogue'
+  )
+}
 
 /** Server-authored assertions distinguish factual content from interpretive language. */
 export function getBeatFactualAssertions(brief: DailySkyBrief, beat: DailyEpisodeBeat) {
@@ -425,6 +505,12 @@ function affirmativeSentences(text: string): string {
     .split(/(?<=[.!?;])\s+|\s+(?:but|however|yet)\s+/)
     .map(sentence =>
       sentence
+        // An explicit statement that event timing is unavailable is not an
+        // assertion that a station or ingress occurs. Keep adjacent claims.
+        .replace(
+          /\b(?:(?:exact|precise|verified)\s+)?(?:event\s+)?(?:time|times|timing)\s+(?:(?:of|for)\s+(?:(?:any|a|the|celestial|verified|specific|planetary)\s+)*(?:stations?|ingress(?:es)?|events?)(?:\s+(?:or|and)\s+(?:(?:any|a|the|celestial|verified|specific|planetary)\s+)*(?:stations?|ingress(?:es)?|events?))*\s+)?(?:is|are|remains?)\s+(?:unavailable|unknown|unverified|uncalculated|not available|not verified|not calculated)\b/gi,
+          ''
+        )
         // Remove only a denied clause, retaining affirmative claims before it
         // and in the following clause. "Without" or "unknown" elsewhere in a
         // sentence must never disable factual validation of that sentence.
@@ -451,10 +537,28 @@ export function findSnapshotContradiction(
   aspects: Array<Pick<DailySkyAspect, 'bodyA' | 'bodyB' | 'aspectName' | 'phase'>>,
   speakerKey?: string
 ): string | undefined {
-  text = affirmativeSentences(text)
   const planets = COUNCIL_PLANETS.join('|')
   const signs =
     'Aries|Taurus|Gemini|Cancer|Leo|Virgo|Libra|Scorpio|Sagittarius|Capricorn|Aquarius|Pisces'
+  // A supplied conjunction already exists within its orb. Check denials of
+  // that aspect before ordinary denial handling; not yet exact is different.
+  for (const aspect of aspects.filter(item => item.aspectName.toLowerCase() === 'conjunction')) {
+    const reference = (key: string) => `(?:the\\s+)?${planetFor(key)!}(?:\\s+in\\s+(?:${signs}))?`
+    const a = reference(aspect.bodyA),
+      b = reference(aspect.bodyB)
+    const linking = '(?:\\s+(?:is|are|remains?|currently|still|now))*\\s+'
+    const deniedConjunction = 'not\\s+yet\\s+(?:conjunct|in\\s+(?:a\\s+)?conjunction)\\b'
+    const pairBefore = new RegExp(
+      `\\b(?:${a}\\s+(?:and|with)\\s+${b}|${b}\\s+(?:and|with)\\s+${a})${linking}${deniedConjunction}`,
+      'i'
+    )
+    const pairAcross = new RegExp(
+      `\\b(?:${a}${linking}${deniedConjunction}\\s+(?:(?:with|to)\\s+)?${b}|${b}${linking}${deniedConjunction}\\s+(?:(?:with|to)\\s+)?${a})\\b`,
+      'i'
+    )
+    if (pairBefore.test(text) || pairAcross.test(text)) return 'Contradictory aspect exactness'
+  }
+  text = affirmativeSentences(text)
   const body = (name: string) => positions[planetFor(name.toLowerCase()) || name]
   const placement = new RegExp(
     `\\b(${planets})(?:(?:['’]s)?\\s+(?:position|placement))?(?:\\s+(?:is|sits|moves|travels|remains|currently|now))*\\s+in\\s+(${signs})\\b`,
@@ -562,7 +666,14 @@ export function findEditionFactContradiction(
   text: string,
   usedEvidenceIds: string[]
 ): string | undefined {
-  text = affirmativeSentences(text)
+  // Moving into a sign asserts an ingress; moving through one is just a placement.
+  text = affirmativeSentences(text).replace(
+    new RegExp(
+      `\\b(${COUNCIL_PLANETS.join('|')})\\s+(?:has\\s+moved|will\\s+move|is\\s+moving|moves?|moved)\\s+into\\s+(Aries|Taurus|Gemini|Cancer|Leo|Virgo|Libra|Scorpio|Sagittarius|Capricorn|Aquarius|Pisces)\\b`,
+      'gi'
+    ),
+    '$1 enters $2'
+  )
   const usedIds = new Set(usedEvidenceIds)
   if (
     /\b(?:stations?|ingress|stops? and turns?|turns? (?:backward|retrograde|direct)|enters? (?:Aries|Taurus|Gemini|Cancer|Leo|Virgo|Libra|Scorpio|Sagittarius|Capricorn|Aquarius|Pisces))\b/i.test(
@@ -651,6 +762,8 @@ export function validateDailyTurn(
   const value = parsed.data
   if (containsForbiddenTelemetry(value.text) || containsForbiddenTelemetry(value.newClaim))
     return { valid: false, reason: 'Private telemetry in dialogue' }
+  if (elementBalanceContradiction(brief, `${value.text} ${value.newClaim}`))
+    return { valid: false, reason: 'Contradictory element balance' }
   const used = beat.evidence.filter(item => value.usedEvidenceIds.includes(item.id))
   if (value.usedEvidenceIds.some(id => !beat.evidence.some(item => item.id === id)))
     return { valid: false, reason: 'Unknown evidence' }
@@ -671,15 +784,53 @@ export function validateDailyTurn(
     )
       return { valid: false, reason: 'Unsupported factual assertion' }
   }
+  if (
+    beat.topic === 'closing' &&
+    eventTimingUnavailable(brief) &&
+    !/\bexact event timing is unavailable in this snapshot\b/i.test(value.text)
+  )
+    return { valid: false, reason: 'Missing event timing limitation' }
   const supportedCoverage = new Set(used.flatMap(item => item.coverageIds))
   if (
     value.coverageIds.some(id => !beat.coverageIds.includes(id) || !supportedCoverage.has(id)) ||
     beat.coverageIds.some(id => !value.coverageIds.includes(id))
   )
     return { valid: false, reason: 'Incomplete or unsupported coverage' }
+  const readerPlanets = COUNCIL_PLANETS.join('|')
+  const readerSigns =
+    'Aries|Taurus|Gemini|Cancer|Leo|Virgo|Libra|Scorpio|Sagittarius|Capricorn|Aquarius|Pisces'
+  const signAdjectives =
+    'Arian|Taurean|Geminian|Cancerian|Leonine|Virgoan|Libran|Scorpionic|Sagittarian|Capricornian|Aquarian|Piscean'
+  const readerAttributionPatterns = [
+    new RegExp(
+      `\\byour\\s+(?:natal\\s+)?(?:${readerPlanets})(?:(?:['’]s)?\\s+(?:position|placement))?(?:\\s+(?:is|sits|moves|travels|remains|currently|now))*\\s+in\\s+(?:${readerSigns})\\b`,
+      'gi'
+    ),
+    new RegExp(
+      `\\byour\\s+(?:natal\\s+)?(?:${readerSigns}|${signAdjectives})\\s+(?:${readerPlanets})\\b`,
+      'gi'
+    ),
+  ]
+  // Negating a forecast or constraint does not negate the personal placement
+  // itself. Check raw fields before broader sentence-level denial handling.
+  const directlyDeniedAttribution =
+    /\b(?:not|(?:cannot|can't|do not|does not|don't|would need to)\s+(?:infer|establish|claim|verify|determine|know|assume|predict)(?:\s+that)?)\s*$/i
+  if (
+    [value.text, value.newClaim].some(narrative =>
+      readerAttributionPatterns.some(pattern =>
+        [...narrative.matchAll(pattern)].some(
+          match =>
+            !directlyDeniedAttribution.test(
+              narrative.slice(Math.max(0, (match.index ?? 0) - 100), match.index)
+            )
+        )
+      )
+    )
+  )
+    return { valid: false, reason: 'Unsupported reader natal attribution' }
   const text = affirmativeSentences(`${value.text} ${value.newClaim}`)
   const contradiction = findSnapshotContradiction(
-    text,
+    `${value.text} ${value.newClaim}`,
     brief.positions,
     brief.aspects,
     beat.speakerKey
@@ -689,7 +840,29 @@ export function validateDailyTurn(
     return { valid: false, reason: 'Unsupported personal or eclipse claim' }
   const editionContradiction = findEditionFactContradiction(brief, text, value.usedEvidenceIds)
   if (editionContradiction) return { valid: false, reason: editionContradiction }
-  if (/\b(?:everyone|you|all readers)\b[^.!?]{0,65}\b(?:will|guaranteed|certainly)\b/i.test(text))
+  const predictionText = text
+    .replace(
+      /\b(?:no planets?|do not|does not|don't|doesn't|cannot|can't|can’t|will not|won't|won’t|never)\s+(?:ensures?|guarantees?)\b[^,;.!?:]*?(?=[,;.!?:]|\s+(?:and|while|although)\s+|$)/gi,
+      ''
+    )
+    .replace(
+      /\b(?:not|never|don't|doesn't|cannot|can't|can’t|won't|won’t|doesn’t|don’t)(?:\s+(?:necessarily|automatically))?\s+inevitab(?:le|ly)\b/gi,
+      ''
+    )
+    .replace(
+      /\b(?:do not|does not|cannot|can't|can’t|will not|won't|won’t|never)\s+(?:make|render)\s+(?:(?:the|an?|any|all|your|our)\s+)?(?:(?:personal|human|individual)\s+)?(?:actions?|outcomes?|results?|choices?|decisions?|events?)\s+inevitable\b/gi,
+      ''
+    )
+  if (
+    /\b(?:everyone|you|all readers)\b[^.!?;:]{0,65}\b(?:will|guaranteed|certainly)\b/i.test(
+      predictionText
+    ) ||
+    /\binevitab(?:le|ly)\b/i.test(predictionText) ||
+    new RegExp(
+      `\\b(?:${readerPlanets})\\b[^.!?;:]{0,200}\\b(?:ensures?|guarantees?)\\b[^.!?;:]{0,120}\\b(?:you|your|we|our|us|everyone|all readers)\\b`,
+      'i'
+    ).test(predictionText)
+  )
     return { valid: false, reason: 'Guaranteed personal prediction' }
   // Placement coverage must actually name the function and the current sign.
   for (const item of used.filter(item => item.kind === 'placement')) {
@@ -717,13 +890,42 @@ function promptForBeat(
   beat: DailyEpisodeBeat,
   turns: DailyCouncilTurn[]
 ): string {
+  const openingBodies = unique([
+    'Sun' as CouncilPlanet,
+    ...relevantAspects(brief, beat).flatMap(aspect => [
+      planetFor(aspect.bodyA)!,
+      planetFor(aspect.bodyB)!,
+    ]),
+  ])
+  const elementCounts = countSkyElements(brief.positions)
   const overview =
     beat.speakerKey === 'gregory'
-      ? `Whole-day context: ${JSON.stringify({ positions: brief.positions, lunar: brief.lunar, aspects: brief.aspects.filter(aspect => aspect.major), events: brief.events, warnings: brief.warnings })}`
-      : `Your current placement: ${JSON.stringify(brief.positions[planetFor(beat.speakerKey)!])}`
+      ? beat.topic === 'opening'
+        ? `Assigned opening context: ${JSON.stringify({ positions: Object.fromEntries(openingBodies.map(planet => [planet, brief.positions[planet]])), aspects: relevantAspects(brief, beat), source: brief.source, quality: brief.quality })}`
+        : beat.topic === 'closing'
+          ? `Closing context: ${JSON.stringify({ lunar: brief.lunar, events: brief.events, warnings: brief.warnings, quality: brief.quality })}`
+          : `Whole-day context: ${JSON.stringify({ positions: brief.positions, lunar: brief.lunar, aspects: brief.aspects.filter(aspect => aspect.major), events: brief.events, warnings: brief.warnings, elementCounts })}`
+      : `This planetary speaker’s current public-sky placement: ${JSON.stringify(brief.positions[planetFor(beat.speakerKey)!])}`
   return [
-    `Edition day: ${brief.date} UTC. Source: ${brief.source}; quality: ${brief.quality}.`,
+    'OUTPUT CONTRACT: Return exactly one JSON object with all five required fields: text, newClaim, usedEvidenceIds, coverageIds and factualAssertions. Put your spoken paragraph in text (100–1800 characters) and a specific new proposition in newClaim (15–300 characters). usedEvidenceIds and coverageIds are arrays of exact supplied IDs. factualAssertions must be an array of objects, each with evidenceId and statement strings; never use bare strings. Copy each statement exactly from ALLOWED FACTUAL ASSERTIONS and match its evidenceId to a usedEvidenceIds entry. These IDs and assertion pairs are finite server-supplied choices enforced by the schema. Include every REQUIRED COVERAGE ID exactly once. No Markdown fences, surrounding commentary, omitted fields or invented IDs.',
+    `OUTPUT SHAPE EXAMPLE (replace every placeholder with your reading and supplied evidence): ${JSON.stringify(
+      {
+        text: '<your spoken paragraph>',
+        newClaim: '<one new substantive proposition>',
+        usedEvidenceIds: ['<exact supplied evidence ID>'],
+        coverageIds: ['<exact required coverage ID>'],
+        factualAssertions: [
+          {
+            evidenceId: '<matching supplied evidence ID>',
+            statement: '<exact allowed factual statement>',
+          },
+        ],
+      }
+    )}`,
+    `Edition day: ${brief.date} UTC. Source quality: ${brief.quality}. In spoken text describe this as ${brief.quality === 'approximate' ? 'an approximate sky snapshot' : 'a verified astronomical snapshot'}; do not recite internal source names. Do not invent yesterday’s conditions or a new change today without a supplied comparison or event.`,
+    'PUBLIC SKY SCOPE: Every supplied placement belongs to the collective public snapshot. It is not the reader’s birth chart or the host’s natal chart. Say "the Sun in Libra" or "today’s Moon in Leo", never "your Sun in Libra", "your Libran Sun" or "your Leo Moon". Practical suggestions about your choices, attention or relationships are welcome; attributing a personal planetary placement is not. Express dignity as a human tension or learning challenge, without technical labels such as "in fall". Elemental descriptions must match the actual signs; use the supplied counts correctly or omit rankings.',
     `MOVE: ${beat.speechAct}. ${beat.instruction}`,
+    'ELEMENT COUNT BOUNDARY: Compare all four elements, including categories with zero placements. Least or fewest means the minimum across all four; absent means zero. Counts describe this supplied snapshot only, not a missing human ability, personality deficit or guaranteed outcome. Omit a ranking if you cannot state it accurately.',
     overview,
     `ALLOWED SKY EVIDENCE (only use these IDs): ${JSON.stringify(beat.evidence)}`,
     `ALLOWED FACTUAL ASSERTIONS: ${JSON.stringify(getBeatFactualAssertions(brief, beat))}. Copy the assertions for every used evidence ID exactly into factualAssertions. They are private verification data; weave their meaning into natural prose without reciting IDs or measurements.`,
@@ -751,6 +953,20 @@ export interface DailyGenerationDiagnostic {
   beatId?: string
   outcome: 'accepted' | 'rejected' | 'unavailable' | 'timeout'
   reason: string
+  issues?: Array<{ turnId: string; reason: string }>
+}
+
+/** Opt-in evaluation trace; contains generated dialogue, never provider request data. */
+export interface DailyCouncilDraft {
+  beatId: string
+  speakerKey: CouncilSpeakerKey
+  phase: 'turn' | 'repair'
+  candidate: {
+    text: string
+    newClaim: string
+    usedEvidenceIds: string[]
+    coverageIds: string[]
+  }
 }
 
 /** Finite turns, one targeted repair pass and a final review; preserve a reviewed coherent prefix. */
@@ -760,11 +976,12 @@ export async function generateDailyEdition(
     generate?: boolean
     deadlineMs?: number
     onDiagnostic?: (event: DailyGenerationDiagnostic) => void
+    onDraft?: (draft: DailyCouncilDraft) => void
   } = {}
 ): Promise<DailyCouncilEdition> {
   if (options.generate === false) return createBriefingEdition(brief)
-  const deadline = Math.min(options.deadlineMs ?? Date.now() + 90_000, Date.now() + 180_000)
-  const editorialReserve = Math.min(60_000, Math.max(0, deadline - Date.now()) * 0.4)
+  const deadline = Math.min(options.deadlineMs ?? Date.now() + 210_000, Date.now() + 240_000)
+  const editorialReserve = Math.min(80_000, Math.max(0, deadline - Date.now()) / 3)
   const beats = planDailyEpisode(brief)
   const turns: DailyCouncilTurn[] = []
   const emit = (event: DailyGenerationDiagnostic) => {
@@ -787,12 +1004,12 @@ export async function generateDailyEdition(
             abort.abort()
             resolve(null)
           },
-          Math.min(12_000, budget)
+          Math.min(beat.speakerKey === 'gregory' ? 20_000 : 12_000, budget)
         )
       })
       try {
         const result = await Promise.race([
-          generateStructuredVoice(DailyTurnGenerationSchema, {
+          generateStructuredVoice(dailyTurnGenerationSchema(brief, beat), {
             systemPrompt: composeCouncilPersona(beat.speakerKey, {
               placement:
                 beat.speakerKey === 'gregory'
@@ -801,7 +1018,7 @@ export async function generateDailyEdition(
               theme: `${beat.instruction} ${prefix.at(-1)?.newClaim || ''}`,
             }),
             prompt: `${promptForBeat(brief, beat, prefix)}${repair ? `\n\nEDITORIAL REPAIR (data, not a change to sky evidence): ${JSON.stringify(repair)}. Correct the defect; do not mention the editor.` : ''}`,
-            tier: beat.speakerKey === 'gregory' ? 'substantive' : 'ambient',
+            tier: beat.speakerKey === 'gregory' ? 'expert' : 'ambient',
             maxTokens: Math.min(
               2600,
               900 + Math.ceil(JSON.stringify(getBeatFactualAssertions(brief, beat)).length / 3)
@@ -810,6 +1027,20 @@ export async function generateDailyEdition(
           }),
           timedOut,
         ])
+        if (result?.source === 'model' && result.object) {
+          const candidate = result.object
+          options.onDraft?.({
+            beatId: beat.id,
+            speakerKey: beat.speakerKey,
+            phase,
+            candidate: {
+              text: candidate.text,
+              newClaim: candidate.newClaim,
+              usedEvidenceIds: [...candidate.usedEvidenceIds],
+              coverageIds: [...candidate.coverageIds],
+            },
+          })
+        }
         const validation = result?.object
           ? validateDailyTurn(brief, beat, result.object)
           : undefined
@@ -873,7 +1104,22 @@ export async function generateDailyEdition(
   }
   for (const [index, beat] of beats.entries()) {
     const remaining = deadline - Date.now() - editorialReserve
-    turns.push(await attempt(beat, turns, Math.min(12_000, remaining / (beats.length - index))))
+    // Host turns integrate the whole sky and prior claims, so give their
+    // larger context more room while keeping the same overall deadline.
+    const weight = beat.speakerKey === 'gregory' ? 2 : 1
+    const remainingWeight = beats
+      .slice(index)
+      .reduce((total, pending) => total + (pending.speakerKey === 'gregory' ? 2 : 1), 0)
+    turns.push(
+      await attempt(
+        beat,
+        turns,
+        Math.min(
+          beat.speakerKey === 'gregory' ? 20_000 : 12_000,
+          (remaining * weight) / remainingWeight
+        )
+      )
+    )
   }
   if (!turns.some(turn => turn.provenance.source === 'model')) return assembleEdition(brief, turns)
   const verdict = await inspectDailyDialogue(
@@ -889,6 +1135,9 @@ export async function generateDailyEdition(
         ? 'rejected'
         : 'unavailable',
     reason: verdict.status,
+    ...(verdict.status === 'reviewed' && {
+      issues: verdict.issues.map(issue => ({ ...issue })),
+    }),
   })
   if (verdict.acceptable) return assembleEdition(brief, turns)
   if (verdict.status !== 'reviewed') return createBriefingEdition(brief)
@@ -900,19 +1149,23 @@ export async function generateDailyEdition(
   const repairIndices = unique([...issueIndices.slice(0, 2), beats.length - 1]).sort(
     (a, b) => a - b
   )
-  const finalReviewReserve = Math.min(15_000, Math.max(0, deadline - Date.now()) / 3)
+  const finalReviewReserve = Math.min(25_000, Math.max(0, deadline - Date.now()) / 3)
   for (const [repairIndex, index] of repairIndices.entries()) {
     const reason =
       verdict.issues
         .filter(issue => issue.turnId === turns[index].id)
         .map(issue => issue.reason)
         .join(' ') || 'Integrate the corrected prior claims into the closing synthesis.'
+    const weight = beats[index].speakerKey === 'gregory' ? 2 : 1
+    const remainingWeight = repairIndices
+      .slice(repairIndex)
+      .reduce((total, pending) => total + (beats[pending].speakerKey === 'gregory' ? 2 : 1), 0)
     turns[index] = await attempt(
       beats[index],
       turns.slice(0, index),
       Math.min(
-        10_000,
-        (deadline - Date.now() - finalReviewReserve) / (repairIndices.length - repairIndex)
+        beats[index].speakerKey === 'gregory' ? 20_000 : 12_000,
+        ((deadline - Date.now() - finalReviewReserve) * weight) / remainingWeight
       ),
       reason
     )
@@ -926,6 +1179,9 @@ export async function generateDailyEdition(
         ? 'rejected'
         : 'unavailable',
     reason: finalVerdict.status,
+    ...(finalVerdict.status === 'reviewed' && {
+      issues: finalVerdict.issues.map(issue => ({ ...issue })),
+    }),
   })
   if (!finalVerdict.acceptable) {
     // A coherent prefix had no defect in the first review. Recompute the rest

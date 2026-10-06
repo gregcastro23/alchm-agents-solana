@@ -5,6 +5,7 @@ import { getCurrentPlanetaryPositions } from '@/lib/calculate-transits'
 import { buildDailySkyBrief, utcCouncilDay } from '@/lib/agents/council/daily-sky'
 import {
   generateDailyEdition,
+  type DailyCouncilDraft,
   type DailyGenerationDiagnostic,
 } from '@/lib/agents/council/daily-episode'
 import { DailyCouncilEditionSchema } from '@/lib/agents/council/daily-edition-schema'
@@ -14,16 +15,19 @@ const dateArg = args.find(arg => arg.startsWith('--date='))?.slice(7)
 const outputArg = args.find(arg => arg.startsWith('--output='))?.slice(9)
 const day = utcCouncilDay(dateArg ? new Date(`${dateArg}T00:00:00.000Z`) : new Date())
 const live = args.includes('--live')
+const trace = args.includes('--trace')
 const brief = buildDailySkyBrief({
   date: day.start,
   positions: getCurrentPlanetaryPositions(day.start, { requireComplete: true }),
   source: 'vsop87-approximation',
 })
 const diagnostics: DailyGenerationDiagnostic[] = []
+const drafts: DailyCouncilDraft[] = []
 const edition = await generateDailyEdition(brief, {
   generate: live,
-  deadlineMs: Date.now() + 150_000,
+  deadlineMs: Date.now() + 240_000,
   onDiagnostic: event => diagnostics.push(event),
+  onDraft: trace ? draft => drafts.push(draft) : undefined,
 })
 const parsed = DailyCouncilEditionSchema.safeParse(edition)
 if (!parsed.success)
@@ -55,6 +59,11 @@ const output = path.resolve(
 await mkdir(path.dirname(output), { recursive: true })
 await writeFile(output, report)
 await writeFile(output.replace(/\.md$/, '') + '.json', JSON.stringify(edition, null, 2))
+if (trace)
+  await writeFile(
+    output.replace(/\.md$/, '') + '.drafts.json',
+    JSON.stringify({ drafts, diagnostics }, null, 2)
+  )
 console.log(
   JSON.stringify({
     output,

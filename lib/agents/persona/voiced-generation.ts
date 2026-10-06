@@ -6,7 +6,7 @@ import {
   gatewayGoogle,
   isGatewayEnabled,
 } from '@/lib/models/gateway'
-import { GROQ, CLAUDE, GEMINI } from '@/lib/models/registry'
+import { GROQ, CLAUDE, GEMINI, GATEWAY_MODELS } from '@/lib/models/registry'
 import { buildAgentContext } from './build-agent-context'
 
 export interface VoicedGenerationOptions {
@@ -24,7 +24,7 @@ export interface VoicedGenerationOptions {
 export interface StructuredVoiceOptions {
   systemPrompt: string
   prompt: string
-  tier?: 'substantive' | 'ambient'
+  tier?: 'substantive' | 'ambient' | 'expert'
   maxTokens?: number
   abortSignal?: AbortSignal
 }
@@ -38,7 +38,7 @@ export interface StructuredVoiceResult<T> {
 }
 
 /**
- * Generate a short piece of persona-voiced text using the FREE tier (Groq Llama 3.3).
+ * Generate a short piece of persona-voiced text using Llama 3.3.
  * Backward-compatible helper for feed posts, lab entries, and reviews.
  */
 export async function generateVoicedText(
@@ -54,7 +54,7 @@ export async function generateVoicedText(
   }
 
   try {
-    const model = isGatewayEnabled ? `groq/${GROQ.LLAMA_70B}` : GROQ.LLAMA_70B
+    const model = isGatewayEnabled ? GATEWAY_MODELS.LLAMA_70B : GROQ.LLAMA_70B
     const { text } = await generateText({
       model: gatewayGroq(model) as any,
       system: systemPrompt,
@@ -83,12 +83,14 @@ export async function generateStructuredVoice<T>(
   let modelInstance: any = null
   let modelFamily: 'fast' | 'substantive' = 'fast'
 
-  if (tier === 'substantive') {
+  if (tier === 'substantive' || tier === 'expert') {
     if (isGatewayEnabled) {
-      modelInstance = gatewayAnthropic(`anthropic/${CLAUDE.HAIKU}`)
+      modelInstance = gatewayAnthropic(
+        tier === 'expert' ? GATEWAY_MODELS.CLAUDE_SONNET_4_6 : GATEWAY_MODELS.CLAUDE_HAIKU_4_5
+      )
       modelFamily = 'substantive'
     } else if (process.env.ANTHROPIC_API_KEY) {
-      modelInstance = gatewayAnthropic(CLAUDE.HAIKU)
+      modelInstance = gatewayAnthropic(tier === 'expert' ? CLAUDE.SONNET : CLAUDE.HAIKU)
       modelFamily = 'substantive'
     } else if (process.env.GOOGLE_GENERATIVE_AI_API_KEY) {
       modelInstance = gatewayGoogle(GEMINI.FLASH_20)
@@ -96,10 +98,11 @@ export async function generateStructuredVoice<T>(
     }
   }
 
-  // Fall back to Groq if substantive model not available or if ambient tier
+  // Gateway council delegates need reliable constrained instruction following.
+  // Direct-provider callers keep the existing Groq fallback.
   if (!modelInstance) {
     if (isGatewayEnabled) {
-      modelInstance = gatewayGroq(`groq/${GROQ.LLAMA_70B}`)
+      modelInstance = gatewayAnthropic(GATEWAY_MODELS.CLAUDE_HAIKU_4_5)
     } else if (process.env.GROQ_API_KEY) {
       modelInstance = gatewayGroq(GROQ.LLAMA_70B)
     }
@@ -124,6 +127,9 @@ export async function generateStructuredVoice<T>(
       maxOutputTokens: options.maxTokens ?? 400,
       abortSignal: options.abortSignal,
       maxRetries: 0, // Council callers own the bounded retry/repair budget.
+      ...(isGatewayEnabled && {
+        providerOptions: { openai: { strictJsonSchema: true } },
+      }),
     })
 
     return {

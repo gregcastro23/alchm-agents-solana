@@ -70,6 +70,7 @@ export type CanonicalSign = (typeof CANONICAL_SIGNS)[number]
 export const FORBIDDEN_TELEMETRY_PATTERNS = [
   /\b\d{1,3}(?:\.\d+)?\s*°/i,
   /\b\d{1,3}(?:\.\d+)?\s*degrees?\b/i,
+  /\b(?:zero|one|two|three|four|five|six|seven|eight|nine|ten|eleven|twelve|thirteen|fourteen|fifteen|sixteen|seventeen|eighteen|nineteen|twenty|thirty|forty|fifty|sixty|seventy|eighty|ninety|hundred|half|quarter)\s+(?:degrees?|percent)\b/i,
   /\b(domicile|exaltation|detriment|peregrine)\b/i,
   /\b(?:in\s+(?:my|your|its|our|their|a|the)\s+fall|fall\s+(?:dignity|posture))\b/i,
   /\b(monica\s+constant|alchm\s+yield|consciousness\s+velocity|vector\s+field|turnbrief|turndirective)\b/i,

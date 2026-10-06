@@ -23,6 +23,19 @@ const DAY_MS = 86_400_000
 const keyFor = (planet: SkyPlanet) => planet.toLowerCase() as CouncilPlanetKey
 const normalize = (value: number) => ((value % 360) + 360) % 360
 const MODALITIES = ['cardinal', 'fixed', 'mutable'] as const
+export const SKY_ELEMENTS = ['fire', 'earth', 'air', 'water'] as const
+type SkyElement = (typeof SKY_ELEMENTS)[number]
+
+/** Count every element, including categories with no supplied planetary placements. */
+export function countSkyElements(positions: Record<string, { element: string }>) {
+  const counts: Record<SkyElement, number> = { fire: 0, earth: 0, air: 0, water: 0 }
+  for (const position of Object.values(positions)) {
+    const element = position.element.toLowerCase() as SkyElement
+    if (!SKY_ELEMENTS.includes(element)) throw new Error('Unknown sky element')
+    counts[element]++
+  }
+  return counts
+}
 
 export function utcCouncilDay(date: Date): { date: string; start: Date; end: Date } {
   if (!Number.isFinite(date.getTime())) throw new Error('Invalid council date')
@@ -140,9 +153,7 @@ export function buildDailySkyBrief(params: {
     coverageIds: ['motion-state'],
     label: `${params.source === 'swiss-ephemeris' ? 'Measured' : 'Estimated'} retrogrades: ${retrogrades.join(', ') || 'none'}; ${unknownMotion.length ? `unmeasured motion: ${unknownMotion.join(', ')}` : `all ten ${params.source === 'swiss-ephemeris' ? 'measured' : 'estimated'} daily velocities available`}`,
   })
-  const elementCounts: Record<string, number> = {}
-  for (const body of Object.values(positions))
-    elementCounts[body.element] = (elementCounts[body.element] || 0) + 1
+  const elementCounts = countSkyElements(positions)
   evidence.push({
     id: 'sky-overview',
     kind: 'overview',
