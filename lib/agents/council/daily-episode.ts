@@ -109,7 +109,7 @@ export function planDailyEpisode(brief: DailySkyBrief): DailyEpisodeBeat[] {
   add(
     'gregory',
     'opening',
-    'Open only with the assigned principal relationship, the current Sun placement and the source quality. Explain their human stakes and invite one useful question. Save lunar rhythm, motion, other placements, elemental rankings and event timing for the later readings; this is an opening, not the whole-day recap.',
+    `Open only with the assigned principal relationship, the current Sun placement and the source quality (explicitly describe this as ${brief.quality === 'approximate' ? 'an approximate sky snapshot' : 'a verified astronomical snapshot'}). Explain their human stakes and invite one useful question. Save lunar rhythm, motion, other placements, elemental rankings and event timing for the later readings; this is an opening, not the whole-day recap.`,
     [...aspectEvidence(main ? [main] : []), ...placements('sun')]
   )
   add(
@@ -981,7 +981,7 @@ export async function generateDailyEdition(
 ): Promise<DailyCouncilEdition> {
   if (options.generate === false) return createBriefingEdition(brief)
   const deadline = Math.min(options.deadlineMs ?? Date.now() + 210_000, Date.now() + 240_000)
-  const editorialReserve = Math.min(80_000, Math.max(0, deadline - Date.now()) / 3)
+  const editorialReserve = Math.min(35_000, Math.max(0, deadline - Date.now()) / 4)
   const beats = planDailyEpisode(brief)
   const turns: DailyCouncilTurn[] = []
   const emit = (event: DailyGenerationDiagnostic) => {
@@ -1149,7 +1149,7 @@ export async function generateDailyEdition(
   const repairIndices = unique([...issueIndices.slice(0, 2), beats.length - 1]).sort(
     (a, b) => a - b
   )
-  const finalReviewReserve = Math.min(25_000, Math.max(0, deadline - Date.now()) / 3)
+  const finalReviewReserve = Math.min(15_000, Math.max(0, deadline - Date.now()) / 4)
   for (const [repairIndex, index] of repairIndices.entries()) {
     const reason =
       verdict.issues
@@ -1187,10 +1187,9 @@ export async function generateDailyEdition(
     // A coherent prefix had no defect in the first review. Recompute the rest
     // deterministically so no unreviewed repair or dangling reply is published.
     const unresolved =
-      finalVerdict.status === 'reviewed'
+      finalVerdict.status === 'reviewed' && finalVerdict.issues.length
         ? Math.min(
-            ...finalVerdict.issues.map(issue => turns.findIndex(turn => turn.id === issue.turnId)),
-            firstDefect
+            ...finalVerdict.issues.map(issue => turns.findIndex(turn => turn.id === issue.turnId))
           )
         : firstDefect
     for (let index = unresolved; index < beats.length; index++)
