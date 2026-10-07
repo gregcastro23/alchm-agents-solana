@@ -109,7 +109,7 @@ export function planDailyEpisode(brief: DailySkyBrief): DailyEpisodeBeat[] {
   add(
     'gregory',
     'opening',
-    `Open only with the assigned principal relationship, the current Sun placement and the source quality (explicitly describe this as ${brief.quality === 'approximate' ? 'an approximate sky snapshot' : 'a verified astronomical snapshot'}). Explain their human stakes and invite one useful question. Save lunar rhythm, motion, other placements, elemental rankings and event timing for the later readings; this is an opening, not the whole-day recap.`,
+    `Open only with the assigned principal relationship, the current Sun placement (specifically connecting Sun to purpose, identity or creative vitality) and the source quality (explicitly describe this as ${brief.quality === 'approximate' ? 'an approximate sky snapshot' : 'a verified astronomical snapshot'}). Explain their human stakes and invite one useful question. Save lunar rhythm, motion, other placements, elemental rankings and event timing for the later readings; this is an opening, not the whole-day recap.`,
     [...aspectEvidence(main ? [main] : []), ...placements('sun')]
   )
   add(
@@ -360,7 +360,7 @@ function briefingTurn(
   let text: string
   switch (beat.topic) {
     case 'opening':
-      text = `The useful starting question is how today's different needs can share one course of action. ${concisePlacement(brief, 'Sun')} ${aspects[0] ? `The central relationship is ${planetFor(aspects[0].bodyA)} in ${brief.positions[planetFor(aspects[0].bodyA)!].sign} ${aspects[0].aspectName.toLowerCase()} ${planetFor(aspects[0].bodyB)} in ${brief.positions[planetFor(aspects[0].bodyB)!].sign}; the delegates will explain what its different functions contribute.` : ''} These are readings of a ${brief.quality === 'approximate' ? 'dated approximate' : 'timestamped measured'} sky, not promises about anyone's life.`
+      text = `The useful starting question is how today's different needs can share one course of action. ${concisePlacement(brief, 'Sun')} ${aspects[0] ? `The central relationship is ${planetFor(aspects[0].bodyA)} in ${brief.positions[planetFor(aspects[0].bodyA)!].sign} ${aspects[0].aspectName.toLowerCase()} ${planetFor(aspects[0].bodyB)} in ${brief.positions[planetFor(aspects[0].bodyB)!].sign}; the delegates will explain what its different functions contribute.` : ''} These are readings of ${brief.quality === 'approximate' ? 'an approximate sky snapshot' : 'a verified astronomical snapshot'}, not promises about anyone's life.`
       break
     case 'lunar':
       text = `${lunarReading(brief)} ${placementText} A practical reflection is to ${buildPlacementKnowledge({ planet: 'Moon', ...brief.positions.Moon }).practice}.`
@@ -980,8 +980,8 @@ export async function generateDailyEdition(
   } = {}
 ): Promise<DailyCouncilEdition> {
   if (options.generate === false) return createBriefingEdition(brief)
-  const deadline = Math.min(options.deadlineMs ?? Date.now() + 210_000, Date.now() + 240_000)
-  const editorialReserve = Math.min(35_000, Math.max(0, deadline - Date.now()) / 4)
+  const deadline = Math.min(options.deadlineMs ?? Date.now() + 240_000, Date.now() + 270_000)
+  const editorialReserve = Math.min(25_000, Math.max(0, deadline - Date.now()) / 4)
   const beats = planDailyEpisode(brief)
   const turns: DailyCouncilTurn[] = []
   const emit = (event: DailyGenerationDiagnostic) => {
@@ -1149,7 +1149,8 @@ export async function generateDailyEdition(
   const repairIndices = unique([...issueIndices.slice(0, 2), beats.length - 1]).sort(
     (a, b) => a - b
   )
-  const finalReviewReserve = Math.min(15_000, Math.max(0, deadline - Date.now()) / 4)
+  const finalReviewReserve = Math.min(10_000, Math.max(0, deadline - Date.now()) / 4)
+  const repairedIndices = new Set<number>()
   for (const [repairIndex, index] of repairIndices.entries()) {
     const reason =
       verdict.issues
@@ -1169,6 +1170,9 @@ export async function generateDailyEdition(
       ),
       reason
     )
+    if (turns[index].provenance.source === 'model') {
+      repairedIndices.add(index)
+    }
   }
   const finalVerdict = await inspectDailyDialogue(brief, turns, deadline)
   emit({
@@ -1186,12 +1190,14 @@ export async function generateDailyEdition(
   if (!finalVerdict.acceptable) {
     // A coherent prefix had no defect in the first review. Recompute the rest
     // deterministically so no unreviewed repair or dangling reply is published.
+    const remainingFirstDefect =
+      issueIndices.find(idx => !repairedIndices.has(idx)) ?? beats.length - 1
     const unresolved =
       finalVerdict.status === 'reviewed' && finalVerdict.issues.length
         ? Math.min(
             ...finalVerdict.issues.map(issue => turns.findIndex(turn => turn.id === issue.turnId))
           )
-        : firstDefect
+        : remainingFirstDefect
     for (let index = unresolved; index < beats.length; index++)
       turns[index] = briefingTurn(brief, beats[index], turns[index - 1])
   }
