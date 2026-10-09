@@ -88,7 +88,7 @@ const ALCHM_KITCHEN_BASE_URL =
   process.env.ALCHM_KITCHEN_BASE_URL ||
   'https://alchm.kitchen'
 
-const ARTIFACT_EVENT_TYPES = ['recipe_generation', 'lab_entry', 'insight'] as const
+const ARTIFACT_EVENT_TYPES = ['recipe_generation', 'made_it', 'lab_entry', 'insight'] as const
 
 export function validateInternalBearer(request: Request): InternalAuthResult {
   const expected = process.env.INTERNAL_API_SECRET
@@ -258,7 +258,7 @@ function conversationMetadata(row: {
 }
 
 function actionKind(eventType: string): 'recipe' | 'lab_entry' | 'insight' | null {
-  if (eventType === 'recipe_generation') return 'recipe'
+  if (eventType === 'recipe_generation' || eventType === 'made_it') return 'recipe'
   if (eventType === 'lab_entry') return 'lab_entry'
   if (eventType === 'insight') return 'insight'
   return null
@@ -596,7 +596,7 @@ export async function getAgentArtifacts(
   const kind = searchParams.get('kind') as AgentArtifact['kind'] | null
   const eventTypes =
     kind === 'recipe'
-      ? ['recipe_generation']
+      ? ['recipe_generation', 'made_it']
       : kind === 'lab_entry'
         ? ['lab_entry']
         : kind === 'insight'
