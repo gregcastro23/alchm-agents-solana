@@ -238,19 +238,13 @@ export class FeedActivationEngine {
         if (recipeCount >= FeedActivationEngine.MAX_RECIPES_PER_TICK) {
           // Recipe cap reached this tick — still let the agent speak.
           eventType = 'insight'
-        } else {
-          // A recipe_generation event needs a resolvable artifact. Fetch a real
-          // catalog dish as the base, then try to AUTHOR an original recipe
-          // attributed to the agent's WTEN user (persisted in user_custom_recipes).
-          // If the agent isn't WTEN-linked yet (alchmKitchenUserId null) or
-          // authoring fails, fall back to FEATURING the catalog base — both are
-          // resolvable; only the label + render path differ. If even the catalog
-          // is unreachable, downgrade to insight rather than emit a broken card.
+          // Ground upon an authentic catalog dish from WTEN's recipe database.
+          // The agent reviews, rates, and alchemically comments on the real dish,
+          // interacting with existing recipes as human users do, avoiding nonsense clone clutter.
           const base = await this.fetchCatalogRecipe(agent.dominantElement)
           if (base) {
             recipeCount++
-            authoredRecipe = (await this.tryAuthorRecipe(agent, base, currentMoment)) ?? undefined
-            recipeCtx = authoredRecipe ? { id: authoredRecipe.id, name: authoredRecipe.name } : base
+            recipeCtx = base
           } else {
             eventType = 'insight'
           }
@@ -864,11 +858,11 @@ export class FeedActivationEngine {
         // evaluateActivations (it downgrades to 'insight' when no catalog recipe
         // resolves), but guard regardless.
         const recipeName = recipeCtx?.name || `${agent.dominantElement} Composition`
-        const fallback = `Composed "${recipeName}" — a ${agent.dominantElement} dish attuned to ${moment.planetary.dominantPlanet}.`
+        const fallback = `Reflected upon "${recipeName}" — an evocative ${agent.dominantElement} preparation harmonizing with ${moment.planetary.dominantPlanet}'s celestial transit.`
         const review = await generateVoicedText(
           agent.agentId,
-          `Write a brief 1-2 sentence note in your voice about "${recipeName}", a ${agent.dominantElement} ` +
-            `dish you've composed under ${moment.planetary.dominantPlanet}'s influence. Speak naturally, no greeting.`,
+          `Write a brief 1-2 sentence culinary comment and reflection in your voice about "${recipeName}", an existing ${agent.dominantElement} ` +
+            `dish in the kitchen, under ${moment.planetary.dominantPlanet}'s influence. Comment on its flavours, elemental balance, or culinary technique as a human food lover would. Speak naturally, no greeting.`,
           { fallback, maxTokens: 140 }
         )
         return this.withRenderImageMetadata(
@@ -880,6 +874,7 @@ export class FeedActivationEngine {
             review,
             madeIt: true,
             rating: 5,
+            source: 'catalog_review',
           },
           recipeName,
           review
