@@ -157,4 +157,5 @@ def test_resolve_dsn_uses_postgres_when_not_frozen(monkeypatch):
     monkeypatch.setattr(database, "IS_FROZEN_SIDECAR", False)
     monkeypatch.setattr(database, "DIRECT_URL", "postgresql://user:pw@host/db")
     monkeypatch.setattr(database, "DATABASE_URL", None)
-    assert database._resolve_dsn() == "postgresql://user:pw@host/db"
+    assert database._resolve_dsn() == "postgresql+psycopg2://user:pw@host/db"
+
