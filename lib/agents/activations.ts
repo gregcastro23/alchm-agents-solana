@@ -1,5 +1,12 @@
-import { DEMO_AGENTS } from '@/lib/demo-agents-data'
-import { HistoricalAgentsService, type EnhancedHistoricalAgent } from '@/lib/historical-agents-db'
+import { calculateAllPlanets, type EnhancedBirthInfo } from '@/lib/enhanced-astronomical-calculator'
+import {
+  getPlanetaryDignity,
+  getSignElement,
+  getSignModality,
+  getPlanetaryElement,
+} from '@/lib/astrological-data'
+import { getLunarDegreePersonality } from '@/lib/moon-phase-calculator'
+import { parseDegreeAgentId } from '@/lib/agents/degree-agent'
 
 export interface AgentActivationContract {
   agent: {
@@ -11,158 +18,196 @@ export interface AgentActivationContract {
   dignity: string
   element: string
   planetaryRuler: string
-}
-
-const SIGN_WINDOWS = [
-  { sign: 'Capricorn', start: [1, 1], end: [1, 19] },
-  { sign: 'Aquarius', start: [1, 20], end: [2, 18] },
-  { sign: 'Pisces', start: [2, 19], end: [3, 20] },
-  { sign: 'Aries', start: [3, 21], end: [4, 19] },
-  { sign: 'Taurus', start: [4, 20], end: [5, 20] },
-  { sign: 'Gemini', start: [5, 21], end: [6, 20] },
-  { sign: 'Cancer', start: [6, 21], end: [7, 22] },
-  { sign: 'Leo', start: [7, 23], end: [8, 22] },
-  { sign: 'Virgo', start: [8, 23], end: [9, 22] },
-  { sign: 'Libra', start: [9, 23], end: [10, 22] },
-  { sign: 'Scorpio', start: [10, 23], end: [11, 21] },
-  { sign: 'Sagittarius', start: [11, 22], end: [12, 21] },
-  { sign: 'Capricorn', start: [12, 22], end: [12, 31] },
-] as const
-
-const SIGN_ELEMENT: Record<string, string> = {
-  Aries: 'Fire',
-  Leo: 'Fire',
-  Sagittarius: 'Fire',
-  Cancer: 'Water',
-  Scorpio: 'Water',
-  Pisces: 'Water',
-  Gemini: 'Air',
-  Libra: 'Air',
-  Aquarius: 'Air',
-  Taurus: 'Earth',
-  Virgo: 'Earth',
-  Capricorn: 'Earth',
-}
-
-const SIGN_RULER: Record<string, string> = {
-  Aries: 'Mars',
-  Taurus: 'Venus',
-  Gemini: 'Mercury',
-  Cancer: 'Moon',
-  Leo: 'Sun',
-  Virgo: 'Mercury',
-  Libra: 'Venus',
-  Scorpio: 'Mars',
-  Sagittarius: 'Jupiter',
-  Capricorn: 'Saturn',
-  Aquarius: 'Saturn',
-  Pisces: 'Jupiter',
-}
-
-const EXALTATION: Record<string, string> = {
-  Aries: 'Sun',
-  Taurus: 'Moon',
-  Cancer: 'Jupiter',
-  Virgo: 'Mercury',
-  Libra: 'Saturn',
-  Capricorn: 'Mars',
-  Pisces: 'Venus',
-}
-
-function signForDate(date: Date): string {
-  const month = date.getUTCMonth() + 1
-  const day = date.getUTCDate()
-  return (
-    SIGN_WINDOWS.find(({ start, end }) => {
-      const afterStart = month > start[0] || (month === start[0] && day >= start[1])
-      const beforeEnd = month < end[0] || (month === end[0] && day <= end[1])
-      return afterStart && beforeEnd
-    })?.sign || 'Aries'
-  )
-}
-
-function dignityFor(sign: string, agentElement: string): string {
-  if (SIGN_ELEMENT[sign] === agentElement) return 'domicile'
-  if (EXALTATION[sign]) return 'exaltation'
-  return 'peregrine'
-}
-
-function normalizeElement(value: unknown): string {
-  const element = String(value || 'Earth')
-  const canonical = ['Fire', 'Water', 'Air', 'Earth'].find(
-    e => e.toLowerCase() === element.toLowerCase()
-  )
-  return canonical || 'Earth'
-}
-
-function stableFraction(seed: string): number {
-  let hash = 0
-  for (let i = 0; i < seed.length; i++) hash = (hash * 33 + seed.charCodeAt(i)) >>> 0
-  return (hash % 1000) / 1000
-}
-
-function descriptionFor(agent: any): string {
-  return String(
-    agent.description ||
-      agent.title ||
-      agent.specialty ||
-      agent.abilities?.specialty ||
-      agent.background?.legacy ||
-      'Planetary consciousness agent'
-  )
-}
-
-function mapAgent(agent: any, date: Date): AgentActivationContract {
-  const sign = signForDate(date)
-  const momentElement = SIGN_ELEMENT[sign]
-  const element = normalizeElement(agent.dominantElement || agent.consciousness?.dominantElement)
-  const resonance = Number(agent.resonanceScore ?? agent.stats?.resonanceScore ?? 0.5)
-  const rawMonica = agent.monicaConstant ?? agent.consciousness?.monicaConstant ?? null
-  const monicaContribution =
-    typeof rawMonica === 'number' && Number.isFinite(rawMonica) ? rawMonica * 0.04 : 0
-  const affinity = element === momentElement ? 0.35 : 0.08
-  const jitter =
-    stableFraction(`${agent.agentId || agent.id}:${date.toISOString().slice(0, 10)}`) * 0.12
-  const strength = Math.max(
-    0,
-    Math.min(1, 0.28 + affinity + resonance * 0.18 + monicaContribution + jitter)
-  )
-
-  return {
-    agent: {
-      id: String(agent.agentId || agent.id),
-      name: String(agent.name),
-      description: descriptionFor(agent),
-    },
-    strength: Number(strength.toFixed(4)),
-    dignity: dignityFor(sign, element),
-    element,
-    planetaryRuler: SIGN_RULER[sign] || 'Sun',
+  modality?: string
+  exactDegree?: number
+  absoluteDegree?: number
+  sign?: string
+  consciousness?: {
+    level: string
+    powerLevel: number
   }
 }
 
+const TRACKED_PLANETS = [
+  'Sun',
+  'Moon',
+  'Mercury',
+  'Venus',
+  'Mars',
+  'Jupiter',
+  'Saturn',
+  'Uranus',
+  'Neptune',
+  'Pluto',
+] as const
+
+const BASE_DIGNITY_STRENGTH: Record<string, number> = {
+  domicile: 0.95,
+  exaltation: 0.9,
+  triplicity: 0.78,
+  term: 0.74,
+  face: 0.72,
+  peregrine: 0.68,
+  detriment: 0.52,
+  fall: 0.44,
+}
+
+function isCriticalDegree(sign: string, degree: number): boolean {
+  const modality = getSignModality(sign)
+  if (modality === 'Cardinal') return degree === 0 || degree === 13 || degree === 26
+  if (modality === 'Fixed') return degree === 8 || degree === 21
+  if (modality === 'Mutable') return degree === 4 || degree === 17
+  return false
+}
+
+function calculateDegreeStrength(
+  planet: string,
+  sign: string,
+  degree: number,
+  dignity: string
+): number {
+  let strength = BASE_DIGNITY_STRENGTH[dignity] ?? 0.65
+
+  // 0° Inception point bonus
+  if (degree === 0) strength += 0.05
+  // 29° Anaretic (degree of fate) urgency bonus
+  else if (degree === 29) strength += 0.06
+  // Critical degree amplification
+  else if (isCriticalDegree(sign, degree)) strength += 0.03
+
+  return Number(Math.max(0.1, Math.min(1.0, strength)).toFixed(4))
+}
+
+function deriveConsciousnessLevel(strength: number): string {
+  if (strength >= 0.9) return 'Illuminated'
+  if (strength >= 0.8) return 'Transcendent'
+  if (strength >= 0.7) return 'Active'
+  if (strength >= 0.5) return 'Awakening'
+  return 'Dormant'
+}
+
+function dateToBirthInfo(date: Date): EnhancedBirthInfo {
+  return {
+    year: date.getUTCFullYear(),
+    month: date.getUTCMonth() + 1,
+    day: date.getUTCDate(),
+    hour: date.getUTCHours(),
+    minute: date.getUTCMinutes(),
+    second: date.getUTCSeconds(),
+    latitude: 0,
+    longitude: 0,
+    timezone: 'UTC',
+  }
+}
+
+/**
+ * Compute the active degree agents for a specific moment in time.
+ * Only degree agents whose exact planet is currently located at that exact degree are active.
+ */
+export function computeActiveDegreeAgents(date: Date): AgentActivationContract[] {
+  const birthInfo = dateToBirthInfo(date)
+  const chart = calculateAllPlanets(birthInfo)
+  const activations: AgentActivationContract[] = []
+
+  for (const planet of TRACKED_PLANETS) {
+    const pos = chart.planets[planet]
+    if (!pos) continue
+
+    const sign = pos.sign || 'Aries'
+    const degree = Math.max(0, Math.min(29, Math.floor(pos.signDegree)))
+    const absoluteDegree = Math.max(0, Math.min(359, Math.floor(pos.longitude)))
+    const dignity = getPlanetaryDignity(planet, sign)
+    const element =
+      getSignElement(sign) === 'Unknown'
+        ? getPlanetaryElement(planet) || 'Fire'
+        : getSignElement(sign)
+    const modality = getSignModality(sign)
+    const strength = calculateDegreeStrength(planet, sign, degree, dignity)
+    const level = deriveConsciousnessLevel(strength)
+
+    const canonicalId = `planetary-${planet.toLowerCase()}-${sign.toLowerCase()}-${degree}`
+    const displayName = `${planet} in ${sign} ${degree}°`
+
+    let description = `${planet} transiting ${sign} at exact ${degree}° (${dignity}) — Active degree intelligence.`
+    if (planet === 'Moon') {
+      try {
+        const lunarPersonality = getLunarDegreePersonality(absoluteDegree)
+        description = `${lunarPersonality.phase} Moon in ${sign} at ${degree}° (${dignity}) — ${lunarPersonality.personality}`
+      } catch {
+        // fallback to standard description
+      }
+    }
+
+    activations.push({
+      agent: {
+        id: canonicalId,
+        name: displayName,
+        description,
+      },
+      strength,
+      dignity,
+      element,
+      planetaryRuler: planet,
+      modality,
+      exactDegree: degree,
+      absoluteDegree,
+      sign,
+      consciousness: {
+        level,
+        powerLevel: Math.round(strength * 100),
+      },
+    })
+  }
+
+  // Sort by activation strength descending
+  return activations.sort((a, b) => b.strength - a.strength)
+}
+
+/**
+ * Returns currently active degree agents for the given date, capped by limit.
+ * ONLY degree agents currently transited by their matching planet are returned.
+ */
 export async function getAgentActivations(
   date: Date,
   limit = 12
 ): Promise<AgentActivationContract[]> {
-  let agents: Array<EnhancedHistoricalAgent | any>
-
-  try {
-    agents = await HistoricalAgentsService.getHistoricalAgents({ limit: Math.max(limit * 3, 24) })
-  } catch (error) {
-    console.warn('[agent-activations] DB unavailable, using demo fallback:', error)
-    agents = DEMO_AGENTS
-  }
-
-  return agents
-    .filter(agent => agent?.agentId || agent?.id)
-    .map(agent => mapAgent(agent, date))
-    .sort((a, b) => b.strength - a.strength || a.agent.name.localeCompare(b.agent.name))
-    .slice(0, limit)
+  const activations = computeActiveDegreeAgents(date)
+  return activations.slice(0, limit)
 }
 
+/**
+ * Synchronous/fallback activations returning the exact transiting degree agents.
+ */
 export function getFallbackAgentActivations(date: Date, limit = 12): AgentActivationContract[] {
-  return DEMO_AGENTS.map(agent => mapAgent(agent, date))
-    .sort((a, b) => b.strength - a.strength || a.agent.name.localeCompare(b.agent.name))
-    .slice(0, limit)
+  const activations = computeActiveDegreeAgents(date)
+  return activations.slice(0, limit)
+}
+
+/**
+ * Check if a specific degree agent is active at a given date.
+ * A degree agent is ONLY active when that exact planet is transiting that exact degree.
+ */
+export function isDegreeAgentActive(agentId: string, date: Date = new Date()): boolean {
+  const parsed = parseDegreeAgentId(agentId)
+  if (!parsed) return false
+
+  const activeAgents = computeActiveDegreeAgents(date)
+  return activeAgents.some(a => a.agent.id.toLowerCase() === agentId.toLowerCase())
+}
+
+/**
+ * Returns a map of absolute degrees (0-359) to active degree agents.
+ * Degrees with no transiting planet are undefined (dormant).
+ */
+export function getActiveDegreeMap(
+  date: Date = new Date()
+): Record<number, AgentActivationContract> {
+  const activeAgents = computeActiveDegreeAgents(date)
+  const map: Record<number, AgentActivationContract> = {}
+  for (const agent of activeAgents) {
+    if (agent.absoluteDegree !== undefined) {
+      map[agent.absoluteDegree] = agent
+    }
+  }
+  return map
 }

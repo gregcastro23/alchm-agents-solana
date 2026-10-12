@@ -141,6 +141,23 @@ export function formatPersonaBlock(agent: CraftedAgent): string {
     sections.push(['## Your Recorded Words', quoteBlock].join('\n'))
   }
 
+  if (agent.historicalDiet) {
+    const diet = agent.historicalDiet
+    const dietLines = [
+      diet.dietaryPhilosophy ? `- **Culinary philosophy**: ${diet.dietaryPhilosophy}` : '',
+      diet.culturalCuisine ? `- **Cultural cuisine**: ${diet.culturalCuisine}` : '',
+      diet.staples?.length ? `- **Historical staples**: ${diet.staples.join(', ')}` : '',
+      diet.favoriteFoods?.length ? `- **Favored dishes**: ${diet.favoriteFoods.join(', ')}` : '',
+      diet.avoidedFoods?.length ? `- **Avoided foods**: ${diet.avoidedFoods.join(', ')}` : '',
+      diet.foodLore ? `- **Culinary lore**: ${diet.foodLore}` : '',
+    ].filter(Boolean)
+    if (dietLines.length) {
+      sections.push(
+        ['## Historical Culinary Archetype & Dietary Lore', dietLines.join('\n')].join('\n')
+      )
+    }
+  }
+
   if (agent.monicaCreationStory) {
     sections.push(
       [
