@@ -8,6 +8,7 @@
  * ordinary local checks must never silently connect to a shared database.
  */
 import { Client } from 'pg'
+import { ForgeSuccessSchema } from '../lib/agents/forge-client'
 
 const connectionString = process.env.FORGE_PREFLIGHT_DATABASE_URL
 const schema = process.env.FORGE_PREFLIGHT_DATABASE_SCHEMA || 'public'
@@ -169,6 +170,7 @@ try {
           incomplete: number
           malformed_hashes: number
           duplicate_key_groups: number
+          invalid_responses: number
         }>(`SELECT count(*)::int AS rows,
             count(*) FILTER (
               WHERE response IS NULL OR jsonb_typeof(response) IS DISTINCT FROM 'object'
@@ -177,6 +179,7 @@ try {
             count(*) FILTER (
               WHERE "requestHash" IS NULL OR "requestHash" !~ '^[a-f0-9]{64}$'
             )::int AS malformed_hashes,
+            0::int AS invalid_responses,
             (SELECT count(*)::int FROM (
               SELECT "creatorId", "clientRequestId" FROM ${requestTable}
               GROUP BY "creatorId", "clientRequestId" HAVING count(*) > 1
@@ -185,7 +188,30 @@ try {
       ).rows[0]
     : null
   if (requests) {
-    for (const metric of ['incomplete', 'malformed_hashes', 'duplicate_key_groups'] as const) {
+    // Use the same runtime reader as replay. The cursor bounds memory while
+    // keeping response bodies and IDs entirely inside this read-only process.
+    // Only the aggregate invalid count is emitted below.
+    await client.query(`DECLARE forge_response_audit NO SCROLL CURSOR FOR
+      SELECT response, "agentId" AS agent_id FROM ${requestTable}`)
+    while (true) {
+      const page = await client.query<{ response: unknown; agent_id: string | null }>(
+        'FETCH FORWARD 250 FROM forge_response_audit'
+      )
+      if (page.rows.length === 0) break
+      for (const row of page.rows) {
+        const parsed = ForgeSuccessSchema.safeParse(row.response)
+        if (!parsed.success || parsed.data.agent.id !== row.agent_id) {
+          requests.invalid_responses++
+        }
+      }
+    }
+    await client.query('CLOSE forge_response_audit')
+    for (const metric of [
+      'incomplete',
+      'malformed_hashes',
+      'duplicate_key_groups',
+      'invalid_responses',
+    ] as const) {
       if (requests[metric] > 0)
         problems.push(`Request row audit found ${requests[metric]} ${metric}.`)
     }

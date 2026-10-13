@@ -33,9 +33,11 @@ not against a shared environment. No production schema or data was changed.
 - Authenticated callers may supply a UUID `clientRequestId`. The server derives
   its creator from canonical authentication, ignoring any body-supplied identity.
   Both active pages use that same resolver, including kitchen-bridge identities.
-- `(creatorId, clientRequestId)` is unique in `agent_creation_requests`. Parsed,
-  consumed input is hashed with SHA-256; schema ordering normalizes object key
-  order, and unknown/unused fields and the request ID are excluded.
+- `(creatorId, clientRequestId)` is unique in `agent_creation_requests`. All
+  validated request fields are hashed with SHA-256; schema ordering normalizes
+  object key order, and unrecognized fields and the request ID are excluded.
+  Changing a recognized field (including legacy specialty/notes) returns 409,
+  even when that field does not currently affect generation.
 - Same creator/key/input returns the complete original serialized success and
   agent ID with `deduplicated: true`. Changed valid input returns **409**. Invalid
   JSON or invalid consumed fields return **400 before any replay lookup**.
@@ -107,6 +109,13 @@ The hand-written migration was also executed in a separate empty PostgreSQL
 database: its unique index was valid, duplicate creator/request insertion failed
 with SQLSTATE `23505`, and a different creator could reuse the request ID.
 
+The rollout readiness gate passed 23 PostgreSQL counterexamples/controls: it
+rejects absent or malformed columns, misleading/nonunique/partial/expression/
+widened/invalid indexes, incomplete rows, malformed saved response objects,
+agent-ID mismatches, missing consciousness data, and nonfinite parsed numbers.
+It uses the same success schema as replay, so an object-shaped payload alone
+cannot pass readiness.
+
 Real route tests use the production request validator and prove malformed input
 cannot reach replay lookup, canonical creator scoping, early replay, 409/402/503
 mapping, and winner-only postcommit synchronization. UI tests exercise bridge
@@ -119,7 +128,7 @@ databases. Without it, Vitest explicitly skips them.
 
 ## Checks and gate deltas
 
-- Final full ASOL suite: **189 files passed, 2,201 tests passed; 4 files / 22 tests
+- Final full ASOL suite: **190 files passed, 2,202 tests passed; 4 files / 22 tests
   skipped**. The eight database scenarios ran and passed in this run.
 - Typecheck: **0 errors**, matching the starting tree.
 - Standard ESLint error gate: passed. New contract/client/request/test files also
@@ -143,3 +152,8 @@ errors**. These readings include preexisting local profile edits and a deleted
 degree route; they are not a final merged-tree ratchet. The Phase 43 ceilings
 were not reused, no debt campaign was repeated, and no baseline file was changed.
 ASOL has no corresponding committed WTEN debt baselines to ratchet.
+
+Standards and specification reviews found no remaining blocking issues after
+fixing the readiness gate's initial weaker response check and correcting the
+fingerprint-policy wording. Deployed data inspection and rollout remain the
+explicit operational prerequisites above.

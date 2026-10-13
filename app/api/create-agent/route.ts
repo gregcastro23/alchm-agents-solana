@@ -531,7 +531,7 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
         { status: 503 }
       )
     }
-    console.error('Agent creation failed; all local writes rolled back:', error)
+    console.error('Agent creation failed or its completion could not be confirmed:', error)
     return NextResponse.json(
       {
         success: false,

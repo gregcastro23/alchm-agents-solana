@@ -25,7 +25,7 @@ const birthInfo = z
   }, 'Invalid birth date')
 
 // Parse before looking up a key: malformed payloads must never retrieve an agent.
-// Unknown/unused fields are omitted from the fingerprint, and object field order
+// Unrecognized fields are omitted from the fingerprint, and object field order
 // is normalized by these schemas. A changed consumed field yields a 409 replay.
 export const ForgeRequestSchema = z
   .object({

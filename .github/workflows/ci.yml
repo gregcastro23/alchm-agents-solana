@@ -113,7 +113,7 @@ jobs:
       - name: Generate Prisma client for the established schema
         run: bun run prisma:generate
       - name: Forge creation is atomic and creator-scoped under concurrency
-        run: bunx vitest run test/forge-creation-postgres.spec.ts
+        run: bunx vitest run test/forge-creation-postgres.spec.ts test/forge-preflight-postgres.spec.ts
         env:
           # This test injects triggers and writes fixtures. Its guard accepts
           # only an explicitly named disposable database on loopback.
