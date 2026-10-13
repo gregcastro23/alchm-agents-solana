@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import Link from 'next/link'
 
 import { AlchemicalButton } from './AlchemicalButton'
@@ -9,6 +9,7 @@ import { StatChip, type SacredStat } from './StatChip'
 import { LocationSearch, type LocationData } from '@/components/onboarding/LocationSearch'
 import { useOccultStore, type CommunionTier } from '@/lib/store/occult-store'
 import { cn } from '@/lib/utils'
+import { createForgeAttempt, submitForge, type ForgeIdentity } from '@/lib/agents/forge-client'
 
 /**
  * Cosmic Tools — The Forge (Stitch realization plan, Phase 5, Module 1).
@@ -43,7 +44,8 @@ interface ForgeResult {
   monicaMessage?: string
 }
 
-export function ForgeWizard() {
+export function ForgeWizard({ creatorId, identityUnavailable }: ForgeIdentity) {
+  const forgeAttempt = useRef(createForgeAttempt())
   const [step, setStep] = useState(0)
   const { communionTier, setCommunionTier } = useOccultStore()
   const setBalances = useOccultStore(state => state.setBalances)
@@ -104,49 +106,34 @@ export function ForgeWizard() {
     try {
       const [year, month, day] = date.split('-').map(Number)
       const [hour, minute] = time.split(':').map(Number)
-      const res = await fetch('/api/create-agent', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          name: name.trim(),
-          purpose: purpose.trim(),
-          birthInfo: {
-            year,
-            month,
-            day,
-            hour,
-            minute,
-            latitude: parseFloat(latitude),
-            longitude: parseFloat(longitude),
-          },
-          stats,
-          personalContext: {
-            aboutYourself: aboutYourself.trim() || undefined,
-            lifeStory: lifeStory.trim() || undefined,
-            poetry: poetry.trim() || undefined,
-            values: values.trim() || undefined,
-          },
-        }),
+      const data = await submitForge(forgeAttempt.current, creatorId, {
+        name: name.trim(),
+        purpose: purpose.trim(),
+        birthInfo: {
+          year,
+          month,
+          day,
+          hour,
+          minute,
+          latitude: parseFloat(latitude),
+          longitude: parseFloat(longitude),
+        },
+        stats,
+        personalContext: {
+          aboutYourself: aboutYourself.trim() || undefined,
+          lifeStory: lifeStory.trim() || undefined,
+          poetry: poetry.trim() || undefined,
+          values: values.trim() || undefined,
+        },
       })
-      const data = await res.json()
-      if (!res.ok || !data.success) {
-        // 402 = the forge tribute exceeded the reserves — Monica says it best.
-        const message =
-          res.status === 402 ? (data.monicaMessage ?? data.error) : (data.error ?? undefined)
-        throw new Error(message ?? `The forge faltered (${res.status}).`)
-      }
-      if (data.balances && typeof data.balances.spirit === 'number') {
-        setBalances({
-          spirit: Number(data.balances.spirit),
-          essence: Number(data.balances.essence),
-          matter: Number(data.balances.matter),
-          substance: Number(data.balances.substance),
-        })
+      // A replay carries the original creation-time balances, not a live balance read.
+      if (data.balances && !data.deduplicated) {
+        setBalances(data.balances)
       }
       setResult({
-        agentId: data.agent?.id ?? data.agent?.agentId,
-        name: data.agent?.name ?? name.trim(),
-        monicaConstant: data.agent?.consciousness?.monicaConstant,
+        agentId: data.agent.id,
+        name: data.agent.name,
+        monicaConstant: data.agent.consciousness.monicaConstant,
         monicaMessage: data.monicaMessage,
       })
     } catch (e) {
@@ -426,12 +413,21 @@ export function ForgeWizard() {
                 </p>
               </div>
             ) : (
-              <AlchemicalButton size="lg" onClick={() => void ignite()}>
+              <AlchemicalButton
+                size="lg"
+                disabled={identityUnavailable}
+                onClick={() => void ignite()}
+              >
                 Ignite the Forge
                 <span className="material-symbols-outlined text-[18px]" aria-hidden>
                   local_fire_department
                 </span>
               </AlchemicalButton>
+            )}
+            {identityUnavailable && (
+              <p role="alert" className="font-body-md text-body-md text-red-400 mt-4">
+                Sign-in confirmation is unavailable. Reload this page before creating an agent.
+              </p>
             )}
           </div>
         )}

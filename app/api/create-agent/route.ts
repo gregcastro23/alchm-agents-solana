@@ -2,7 +2,17 @@ import { NextRequest, NextResponse } from 'next/server'
 import { auth } from '@/lib/auth'
 import { rateLimit, getClientIp } from '@/lib/security/rate-limit'
 import { generateId } from '@/lib/utils'
-import { HistoricalAgentsService } from '@/lib/historical-agents-db'
+import type { CreateHistoricalAgentInput } from '@/lib/historical-agents-db'
+import { syncAgenticUserToWten } from '@/lib/agents/agentic-user-sync'
+import { ForgeRequestSchema, forgeRequestHash } from '@/lib/agents/forge-request'
+import {
+  commitForgeCreation,
+  readForgeReplay,
+  ForgeRequestConflict,
+  InsufficientForgeFunds,
+  ForgeUnavailable,
+  type ForgeSuccessResponse,
+} from '@/lib/agents/forge-creation'
 import { analyzePhiAxisIndex } from '@/lib/monica/monica-constant'
 import { getAlchemicalQuantitiesLegacy } from '@/lib/backend'
 import { fetchCurrentPlanetaryPositions } from '@/lib/monica/fetch-current-positions'
@@ -14,178 +24,6 @@ import { AgentGenerator } from '@/lib/consciousness/agent-generator'
 import { calculateKalchm } from '@/lib/thermodynamics/kalchm'
 import type { CraftedAgent, BirthData, ConsciousnessLevel } from '@/lib/agent-types'
 import type { PersonalityParameters } from '@/components/consciousness/advanced-personality-tuner'
-
-interface CreateAgentRequest {
-  // Birth data from wizard
-  name: string
-  birthInfo: {
-    year: number
-    month: number
-    day: number
-    hour: number
-    minute: number
-    latitude: number
-    longitude: number
-  }
-  purpose: string
-  stats: {
-    power: number
-    resonance: number
-    wisdom: number
-    charisma: number
-    intuition: number
-    adaptability: number
-    vitality: number
-  }
-  personalContext?: {
-    aboutYourself?: string
-    lifeStory?: string
-    poetry?: string
-    values?: string
-  }
-  calculatedChart?: any
-  monicaConstant?: number
-
-  // Legacy support
-  birthDate?: string
-  birthTime?: string
-  birthLocation?: {
-    name: string
-    latitude: number
-    longitude: number
-    timezone: string
-  }
-  preferredSpecialty?: string
-  personalityNotes?: string
-  personalityParameters?: PersonalityParameters
-}
-
-interface CreateAgentResponse {
-  success: boolean
-  agent?: CraftedAgent
-  error?: string
-  monicaMessage?: string
-}
-
-interface ValidationResult {
-  isValid: boolean
-  error?: string
-}
-
-// Comprehensive validation function for agent creation data
-function validateAgentCreationData(data: CreateAgentRequest): ValidationResult {
-  // Required fields validation
-  if (!data.name || data.name.trim().length === 0) {
-    return { isValid: false, error: 'Agent name is required and cannot be empty' }
-  }
-
-  if (data.name.length > 100) {
-    return { isValid: false, error: 'Agent name must be 100 characters or less' }
-  }
-
-  // Check for new format (birthInfo) or legacy format (birthDate)
-  const hasNewFormat = data.birthInfo !== undefined
-  const hasLegacyFormat = data.birthDate !== undefined
-
-  if (!hasNewFormat && !hasLegacyFormat) {
-    return { isValid: false, error: 'Birth data is required' }
-  }
-
-  // Validate new format if present
-  if (hasNewFormat) {
-    if (!data.birthInfo.year || !data.birthInfo.month || !data.birthInfo.day) {
-      return { isValid: false, error: 'Complete birth date is required' }
-    }
-    // Validate coordinates
-    if (
-      typeof data.birthInfo.latitude !== 'number' ||
-      data.birthInfo.latitude < -90 ||
-      data.birthInfo.latitude > 90
-    ) {
-      return { isValid: false, error: 'Invalid latitude (must be between -90 and 90)' }
-    }
-    if (
-      typeof data.birthInfo.longitude !== 'number' ||
-      data.birthInfo.longitude < -180 ||
-      data.birthInfo.longitude > 180
-    ) {
-      return { isValid: false, error: 'Invalid longitude (must be between -180 and 180)' }
-    }
-    return { isValid: true }
-  }
-
-  // Legacy validation
-  if (!data.birthDate) {
-    return { isValid: false, error: 'Birth date is required' }
-  }
-
-  if (!data.birthTime) {
-    return { isValid: false, error: 'Birth time is required' }
-  }
-
-  if (!data.birthLocation) {
-    return { isValid: false, error: 'Birth location is required' }
-  }
-
-  // Date validation
-  const birthDate = new Date(data.birthDate)
-  if (isNaN(birthDate.getTime())) {
-    return { isValid: false, error: 'Invalid birth date format' }
-  }
-
-  const now = new Date()
-  const minDate = new Date('1800-01-01')
-
-  if (birthDate > now) {
-    return { isValid: false, error: 'Birth date cannot be in the future' }
-  }
-
-  if (birthDate < minDate) {
-    return { isValid: false, error: 'Birth date cannot be before 1800' }
-  }
-
-  // Time validation
-  const timeRegex = /^([0-1]?[0-9]|2[0-3]):[0-5][0-9]$/
-  if (!timeRegex.test(data.birthTime)) {
-    return { isValid: false, error: 'Birth time must be in HH:MM format (24-hour)' }
-  }
-
-  // Location validation
-  if (!data.birthLocation.name || data.birthLocation.name.trim().length === 0) {
-    return { isValid: false, error: 'Birth location name is required' }
-  }
-
-  if (
-    typeof data.birthLocation.latitude !== 'number' ||
-    data.birthLocation.latitude < -90 ||
-    data.birthLocation.latitude > 90
-  ) {
-    return { isValid: false, error: 'Invalid latitude (must be between -90 and 90)' }
-  }
-
-  if (
-    typeof data.birthLocation.longitude !== 'number' ||
-    data.birthLocation.longitude < -180 ||
-    data.birthLocation.longitude > 180
-  ) {
-    return { isValid: false, error: 'Invalid longitude (must be between -180 and 180)' }
-  }
-
-  if (!data.birthLocation.timezone || data.birthLocation.timezone.trim().length === 0) {
-    return { isValid: false, error: 'Birth location timezone is required' }
-  }
-
-  // Optional fields validation
-  if (data.preferredSpecialty && data.preferredSpecialty.length > 200) {
-    return { isValid: false, error: 'Preferred specialty must be 200 characters or less' }
-  }
-
-  if (data.personalityNotes && data.personalityNotes.length > 1000) {
-    return { isValid: false, error: 'Personality notes must be 1000 characters or less' }
-  }
-
-  return { isValid: true }
-}
 
 // Helper function to enhance personality generation with advanced parameters
 function enhancePersonalityWithParameters(
@@ -278,11 +116,7 @@ function enhancePersonalityWithParameters(
   }
 }
 
-export async function POST(request: NextRequest): Promise<NextResponse<CreateAgentResponse>> {
-  // Set once the forge tribute is debited, so the catch can refund a charge
-  // whose vessel never materialized (the pipeline after the debit can throw:
-  // horoscope generation, the WTEN alchemy fetch, the roster write).
-  let forgeRefund: { userId: string; debitGroupId: string } | undefined
+export async function POST(request: NextRequest): Promise<NextResponse> {
   try {
     const session = await auth()
 
@@ -296,55 +130,40 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateAge
           {
             success: false,
             error: 'Too many agents forged from this address — sign in or slow down',
-          } as CreateAgentResponse,
+          },
           { status: 429, headers: { 'Retry-After': String(Math.ceil(limited.resetMs / 1000)) } }
         )
       }
     }
 
-    const body: CreateAgentRequest = await request.json()
-
-    // Enhanced validation
-    const validation = validateAgentCreationData(body)
-    if (!validation.isValid) {
+    let rawBody: unknown
+    try {
+      rawBody = await request.json()
+    } catch {
+      return NextResponse.json({ success: false, error: 'Invalid JSON request' }, { status: 400 })
+    }
+    const parsed = ForgeRequestSchema.safeParse(rawBody)
+    if (!parsed.success) {
       return NextResponse.json(
-        {
-          success: false,
-          error: validation.error,
-          monicaMessage:
-            'I sense cosmic disturbances in the provided data. Please ensure all birth information is accurate and complete.',
-        },
+        { success: false, error: 'Complete valid agent details are required' },
         { status: 400 }
       )
     }
-
-    // The economy loop: signed-in forging costs ESMS (forge_agent, 45 total).
-    // Debited after validation so malformed input never costs tribute;
-    // anonymous forging stays free behind the per-IP rate limit above.
-    let postForgeBalances:
-      | { spirit: number; essence: number; matter: number; substance: number }
-      | undefined
-    if (session?.user?.id) {
-      const { EconomyService } = await import('@/lib/services/economyService')
-      const { AGENT_OPERATION_COSTS } = await import('@/lib/economy-config')
-      const debit = await EconomyService.debitOperation(session.user.id, 'forge_agent')
-      if (!debit.ok) {
-        return NextResponse.json(
-          {
-            success: false,
-            error: 'Insufficient ESMS reserves to fuel the forge',
-            monicaMessage:
-              'The forge demands tribute the reserves cannot yet bear. Claim your daily yield or attune to gather more essence, then return.',
-            data: { required: AGENT_OPERATION_COSTS.forge_agent },
-          } as CreateAgentResponse & { data: unknown },
-          { status: 402 }
-        )
-      }
-      postForgeBalances = debit.balances
-      forgeRefund = {
-        userId: session.user.id,
-        debitGroupId: debit.transactionGroupId ?? `forge:${session.user.id}:${Date.now()}`,
-      }
+    const body = parsed.data
+    const creatorId = session?.user?.id
+    if (body.clientRequestId && !creatorId) {
+      return NextResponse.json(
+        { success: false, error: 'Sign in to use a creation request ID' },
+        { status: 401 }
+      )
+    }
+    const requestKey =
+      body.clientRequestId && creatorId
+        ? { creatorId, clientRequestId: body.clientRequestId, requestHash: forgeRequestHash(body) }
+        : undefined
+    if (requestKey) {
+      const replay = await readForgeReplay(prisma, requestKey)
+      if (replay) return NextResponse.json(replay)
     }
 
     // Generate unique agent ID
@@ -565,7 +384,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateAge
     const computedPhiAxisIndex =
       body.monicaConstant ?? backendBlueprint.consciousness.monicaConstant
 
-    await HistoricalAgentsService.createAgent({
+    const agentData: CreateHistoricalAgentInput = {
       agentId,
       name: body.name,
       title: body.purpose || backendBlueprint.identity.title,
@@ -603,7 +422,7 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateAge
       essenceScore: synthesis.consciousness.essence,
       matterScore: synthesis.consciousness.matter,
       substanceScore: synthesis.consciousness.substance,
-    })
+    }
 
     const completeAgent: any = {
       ...generatedAgent,
@@ -645,70 +464,78 @@ export async function POST(request: NextRequest): Promise<NextResponse<CreateAge
       ? ' Advanced personality parameters have been applied.'
       : ''
 
-    // Ownership ledger: link the payer to their vessel (created_agents has
-    // the creator relation; historical_agents has no creator column). Best
-    // effort — the forge result must not fail on a ledger hiccup.
-    if (session?.user?.id) {
-      prisma.created_agents
-        .create({
-          data: {
-            creatorId: session.user.id,
-            sourceType: 'philosopher-stone-forge',
-            momentChart: { agentId },
-            blueprint: {
-              agentId,
-              name: body.name,
-              purpose: body.purpose ?? null,
-              attunement: body.stats ?? null,
-            },
-            // COLUMN NAME MISMATCH: created_agents.monicaConstant receives the Phi Axis
-            // Index, NOT the thermodynamic Monica (lib/thermodynamics/kalchm.ts). Renaming
-            // the column needs a migration and is out of scope here — see the NOT NULL
-            // monicaConstant/kalchmConstant migration plan in docs/.
-            monicaConstant: computedPhiAxisIndex,
-            personality: (completeAgent.personality ?? {}) as object,
-          },
-        })
-        .catch(err => console.warn('Forge ownership ledger write failed:', err))
-    }
-
-    return NextResponse.json({
-      success: true,
-      agent: completeAgent,
-      balances: postForgeBalances,
-      monicaMessage: `✨ Consciousness awakening complete! ${body.name} resonates with a Phi Axis Index of ${computedPhiAxisIndex.toFixed(3)}.${contextMessage}${tuningMessage}`,
+    const monicaMessage = `✨ Consciousness awakening complete! ${body.name} resonates with a Phi Axis Index of ${computedPhiAxisIndex.toFixed(3)}.${contextMessage}${tuningMessage}`
+    const success: ForgeSuccessResponse = { success: true, agent: completeAgent, monicaMessage }
+    const result = await commitForgeCreation({
+      creatorId,
+      request: requestKey,
+      agentData,
+      agent: success.agent,
+      monicaMessage: success.monicaMessage,
+      blueprint: {
+        agentId,
+        name: body.name,
+        purpose: body.purpose ?? null,
+        attunement: body.stats ?? null,
+      },
     })
-  } catch (error: any) {
-    console.error('Agent creation failed:', error)
-
-    // The tribute was taken but no vessel emerged — return it. Idempotent on
-    // the debit's transaction group, so a retried catch can't double-refund.
-    if (forgeRefund) {
-      try {
-        const { EconomyService } = await import('@/lib/services/economyService')
-        const { AGENT_OPERATION_COSTS } = await import('@/lib/economy-config')
-        const cost = AGENT_OPERATION_COSTS.forge_agent
-        await EconomyService.creditTokens(
-          forgeRefund.userId,
-          {
-            spirit: cost.Spirit || 0,
-            essence: cost.Essence || 0,
-            matter: cost.Matter || 0,
-            substance: cost.Substance || 0,
-          },
-          'forge_refund',
-          'Forge failed — tribute returned',
-          `forge_refund:${forgeRefund.debitGroupId}`
-        )
-      } catch (refundError) {
-        console.error('Forge refund failed (manual credit needed):', forgeRefund, refundError)
+    // Local completion is authoritative. Delivery cannot refund or roll it back.
+    // Only the winner may deliver its generated metadata; a competing request
+    // must never overwrite the original agent with its discarded computation.
+    try {
+      if (!result.deduplicated) {
+        await syncAgenticUserToWten({
+          agentId,
+          name: agentData.name,
+          bio: agentData.monicaCreationStory || agentData.specialty,
+          birthDate: agentData.birthDate,
+          birthTime: agentData.birthTime,
+          birthLocation: agentData.birthLocation,
+          natalChart: agentData.natalChart,
+          monicaConstant: agentData.monicaConstant,
+          dominantElement: agentData.dominantElement,
+        })
       }
+    } catch (syncError) {
+      console.warn('Forge completed; WTEN synchronization remains pending:', syncError)
     }
-
+    return NextResponse.json(result)
+  } catch (error) {
+    if (error instanceof ForgeRequestConflict) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 409 })
+    }
+    if (error instanceof InsufficientForgeFunds) {
+      const { AGENT_OPERATION_COSTS } = await import('@/lib/economy-config')
+      return NextResponse.json(
+        {
+          success: false,
+          error: error.message,
+          data: { required: AGENT_OPERATION_COSTS.forge_agent },
+        },
+        { status: 402 }
+      )
+    }
+    if (
+      error instanceof ForgeUnavailable ||
+      (error &&
+        typeof error === 'object' &&
+        'code' in error &&
+        (error.code === 'P2021' || error.code === 'P2022'))
+    ) {
+      return NextResponse.json(
+        {
+          success: false,
+          error:
+            'Agent creation is temporarily unavailable. Keep the same request details and try again later.',
+        },
+        { status: 503 }
+      )
+    }
+    console.error('Agent creation failed; all local writes rolled back:', error)
     return NextResponse.json(
       {
         success: false,
-        error: error.message || 'Failed to create agent consciousness',
+        error: 'Failed to create agent consciousness',
         monicaMessage:
           'I apologize, but there was a disturbance in the cosmic energies during the consciousness crafting process. Please try again when the planetary alignments are more favorable.',
       },

@@ -110,6 +110,14 @@ jobs:
       # Kept as its own step so a schema failure is never read as a SQL failure.
       - name: Establish schema (prisma db push, as this repo deploys)
         run: bunx prisma db push --skip-generate --accept-data-loss
+      - name: Generate Prisma client for the established schema
+        run: bun run prisma:generate
+      - name: Forge creation is atomic and creator-scoped under concurrency
+        run: bunx vitest run test/forge-creation-postgres.spec.ts
+        env:
+          # This test injects triggers and writes fixtures. Its guard accepts
+          # only an explicitly named disposable database on loopback.
+          FORGE_TEST_DATABASE_URL: postgresql://postgres:postgres@localhost:5432/sql_prepare_gate
       - name: Reject raw SQL PostgreSQL cannot prepare
         run: bun run scripts/checkRawSqlPrepares.ts
         env:
