@@ -31,6 +31,7 @@ import alchm_mcp
 import pii_scrubber
 from feed_emitter import emit_feed_event
 from secure_compare import bearer_token, secret_matches
+from mcp_probe import tool_response_succeeded
 
 AI_DISCLAIMER_TEXT = (
     "Planetary Agent responses and cosmic recipes are synthesized using Large Language Models (LLMs) "
@@ -2200,11 +2201,9 @@ async def synthetic_mcp_probe(
     except Exception as exc:
         results["feed_error"] = str(exc)
 
-    success = "chat_error" not in results and "feed_error" not in results
-    if success and (not results.get("chat") or results.get("chat", {}).get("error")):
-        success = False
-    if success and (not results.get("feed") or results.get("feed", {}).get("error")):
-        success = False
+    # MCP execution failures live in result.isError, even when the JSON-RPC
+    # request itself succeeds. Missing or malformed replies also fail the probe.
+    success = all(tool_response_succeeded(results.get(name)) for name in ("chat", "feed"))
 
     # Piggyback retention on the 30-min probe: prune mcp_invocations older than the
     # retention window so the table doesn't grow unbounded (nothing else calls this).

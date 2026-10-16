@@ -65,6 +65,7 @@ jobs:
         shell: python
         run: |
           import glob, json, os, subprocess
+          from collections import Counter
           matches = glob.glob(os.path.join("backend", "dist", "pa-mcp*"))
           assert matches, "no pa-mcp binary was produced in backend/dist"
           exe = matches[0]
@@ -82,9 +83,26 @@ jobs:
           assert len(lines) >= 2, f"expected 2 responses; stdout={proc.stdout!r} stderr={proc.stderr!r}"
           init, tools = json.loads(lines[0]), json.loads(lines[1])
           assert init["result"]["serverInfo"]["name"] == "planetary-agents-mcp-server", init
-          names = sorted(t["name"] for t in tools["result"]["tools"])
-          assert len(names) == 4, f"expected 4 tools, got {names}"
-          print("handshake OK:", names)
+          expected_names = {
+              "chat_with_planetary_agent",
+              "list_planetary_agents",
+              "get_agent_feed_discussion",
+              "synthesize_culinary_debate",
+              "trigger_chart_specific_jing_duel",
+              "play_agent_word_duel",
+              "play_jing_arena_move",
+              "plan_weekly_menu",
+          }
+          names = [t["name"] for t in tools["result"]["tools"]]
+          counts = Counter(names)
+          missing = sorted(expected_names - counts.keys())
+          unexpected = sorted(counts.keys() - expected_names)
+          duplicates = sorted(name for name, count in counts.items() if count > 1)
+          assert not (missing or unexpected or duplicates), (
+              f"tool manifest mismatch: missing={missing}, unexpected={unexpected}, "
+              f"duplicates={duplicates}; actual={sorted(names)}"
+          )
+          print("handshake OK:", sorted(names))
 
       - name: Stage artifact with triple-suffixed name
         shell: bash
