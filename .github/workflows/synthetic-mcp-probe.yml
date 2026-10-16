@@ -73,12 +73,32 @@ jobs:
           echo
           echo "---------------------"
 
-          # 200 is success. 401 likely means the secret rotated and
+          # A 200 response must explicitly report successful tool checks.
+          # 401 likely means the secret rotated and
           # GitHub's copy is stale — surface that explicitly so the
           # operator knows to update the secret rather than debug the
           # endpoint.
           case "${http_code}" in
             200)
+              python3 - /tmp/probe-response.json <<'PY' || exit 1
+          import json
+          from pathlib import Path
+          import sys
+
+          try:
+              result = json.loads(Path(sys.argv[1]).read_text())
+          except (OSError, UnicodeError, json.JSONDecodeError) as error:
+              print(f"::error::Probe returned HTTP 200 but its response is not valid JSON: {error}", file=sys.stderr)
+              raise SystemExit(1)
+
+          if not isinstance(result, dict):
+              print("::error::Probe returned HTTP 200 but its response must be a JSON object with boolean success=true.", file=sys.stderr)
+              raise SystemExit(1)
+          if result.get("success") is not True:
+              actual = repr(result.get("success", "<missing>"))
+              print(f"::error::Probe returned HTTP 200 without boolean success=true (success={actual}).", file=sys.stderr)
+              raise SystemExit(1)
+          PY
               echo "Probe successful."
               ;;
             401)

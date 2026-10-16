@@ -363,7 +363,8 @@ export async function POST(request: NextRequest) {
                 cosmicContext,
                 sessionId,
                 controller,
-                encoder
+                encoder,
+                userId
               )
 
               agentResponses.push(response)
@@ -447,7 +448,8 @@ export async function POST(request: NextRequest) {
                 cosmicContext,
                 sessionId,
                 controller,
-                encoder
+                encoder,
+                userId
               )
               agentResponses.push(monicaResponse)
               controller.enqueue(
@@ -578,7 +580,8 @@ async function processAgentResponse(
   cosmicContext: CosmicContext,
   sessionId: string,
   controller?: ReadableStreamDefaultController<any>,
-  encoder?: TextEncoder
+  encoder?: TextEncoder,
+  userId?: string
 ): Promise<AgentResponse> {
   const agentStartTime = Date.now()
 
@@ -697,7 +700,7 @@ async function processAgentResponse(
       agentId: agent.id,
       message: message,
       sessionId: sessionId,
-      userId: 'session-user',
+      userId,
       systemPromptOverride: systemPrompt,
       modelTier: backendModelTier,
     })
@@ -774,9 +777,9 @@ async function processAgentResponse(
     // ============================================================================
     try {
       const craftedAgent = convertToCraftedAgent(agent)
-      if (craftedAgent) {
+      if (craftedAgent && userId) {
         await unifiedTracker.captureSnapshot({
-          userId: 'session-user', // Would use actual user ID in production
+          userId,
           agentId: agent.id,
           agent: craftedAgent,
           sessionId,
@@ -854,7 +857,8 @@ async function processMonicaCoordination(
   cosmicContext: CosmicContext,
   sessionId: string,
   controller?: ReadableStreamDefaultController<any>,
-  encoder?: TextEncoder
+  encoder?: TextEncoder,
+  userId?: string
 ): Promise<AgentResponse> {
   const startTime = Date.now()
 
@@ -914,7 +918,7 @@ Provide insights about the group dynamics, synthesize the wisdom shared by other
       agentId: monicaAgent.id,
       message: message,
       sessionId: sessionId,
-      userId: 'session-user',
+      userId,
       systemPromptOverride: monicaPrompt,
       modelTier: 'free',
     })
@@ -965,9 +969,9 @@ Provide insights about the group dynamics, synthesize the wisdom shared by other
     // ============================================================================
     try {
       const craftedMonica = convertToCraftedAgent(monicaAgent)
-      if (craftedMonica) {
+      if (craftedMonica && userId) {
         await unifiedTracker.captureSnapshot({
-          userId: 'session-user',
+          userId,
           agentId: monicaAgent.id,
           agent: craftedMonica,
           sessionId,

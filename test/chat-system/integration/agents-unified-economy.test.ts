@@ -4,6 +4,7 @@ import { NextRequest } from 'next/server'
 const mocks = vi.hoisted(() => ({
   auth: vi.fn(),
   chat: vi.fn(),
+  multiChat: vi.fn(),
   currentAlchemy: vi.fn(),
   debitDynamic: vi.fn(),
   getBalances: vi.fn(),
@@ -14,7 +15,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('@/lib/auth', () => ({ auth: mocks.auth }))
 vi.mock('@/lib/backend', () => ({
-  backend: { agents: { chat: mocks.chat } },
+  backend: { agents: { chat: mocks.chat, multiChat: mocks.multiChat } },
   getAlchemicalQuantitiesLegacy: mocks.currentAlchemy,
 }))
 vi.mock('@/lib/agents/persona/build-agent-context', () => ({
@@ -64,11 +65,11 @@ vi.mock('@/lib/security-audit-logger', () => ({ logSecurityEvent: vi.fn() }))
 
 import { POST } from '@/app/api/agents/unified/route'
 
-function request(parameters: Record<string, unknown>) {
+function request(parameters: Record<string, unknown>, action = 'chat') {
   return new NextRequest('http://localhost/api/agents/unified', {
     method: 'POST',
     headers: { 'Idempotency-Key': 'chat-request-1' },
-    body: JSON.stringify({ action: 'chat', parameters }),
+    body: JSON.stringify({ action, parameters }),
   })
 }
 
@@ -98,8 +99,53 @@ describe('/api/agents/unified ESMS pricing', () => {
     mocks.debitDynamic.mockResolvedValue({ ok: true, balances })
     mocks.getBalances.mockResolvedValue(balances)
     mocks.chat.mockResolvedValue({ text: 'The water is aligned.' })
+    mocks.multiChat.mockResolvedValue({ responses: [], sessionId: 'council-test' })
     mocks.logInteraction.mockResolvedValue(undefined)
   })
+
+  it.each(['chat', 'multi_agent_chat'])(
+    'uses the verified session identity for %s when parameters assert a different user',
+    async action => {
+      const response = await POST(
+        request(
+          {
+            agentId: 'water-guide',
+            agentIds: ['water-guide'],
+            message: 'Speak.',
+            userId: 'forged-user',
+          },
+          action
+        )
+      )
+
+      expect(response.status).toBe(200)
+      const call = action === 'chat' ? mocks.chat : mocks.multiChat
+      expect(call).toHaveBeenCalledWith(expect.objectContaining({ userId: 'user-1' }))
+    }
+  )
+
+  it.each(['chat', 'multi_agent_chat'])(
+    'keeps anonymous %s calls anonymous when parameters assert a user',
+    async action => {
+      mocks.auth.mockResolvedValueOnce(null)
+      mocks.isAgentFreeThisWeek.mockResolvedValue(true)
+      const response = await POST(
+        request(
+          {
+            agentId: 'water-guide',
+            agentIds: ['water-guide'],
+            message: 'Speak.',
+            userId: 'forged-user',
+          },
+          action
+        )
+      )
+
+      expect(response.status).toBe(200)
+      const call = action === 'chat' ? mocks.chat : mocks.multiChat
+      expect(call).toHaveBeenCalledWith(expect.objectContaining({ userId: undefined }))
+    }
+  )
 
   it('debits the chart-resonant price for an authenticated single-agent chat', async () => {
     const response = await POST(request({ agentId: 'water-guide', message: 'Speak.' }))

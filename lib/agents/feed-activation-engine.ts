@@ -54,6 +54,8 @@ export interface FeedActionPayload {
     /** The user_custom_recipes id WTEN returns for an authored recipe. */
     authoredRecipeId?: string
     review?: string
+    comment?: string
+    substitutions?: any[]
     madeIt?: boolean
     ingredients?: string[]
     cuisine?: string
@@ -434,49 +436,18 @@ export class FeedActivationEngine {
   private async fetchCatalogRecipe(element?: string): Promise<{ id: string; name: string } | null> {
     const el = (element || 'Fire').toLowerCase()
     try {
-      if (!this.catalogCache.has(el)) {
-        const base =
-          process.env.ALCHM_KITCHEN_PUBLIC_URL ||
-          process.env.ALCHM_KITCHEN_SYNC_URL ||
-          process.env.ALCHM_KITCHEN_BASE_URL ||
-          'https://alchm.kitchen'
-        const res = await fetch(`${base}/api/recipes?element=${encodeURIComponent(el)}&limit=25`, {
-          headers: { Accept: 'application/json' },
-          signal: AbortSignal.timeout(6000),
-        })
-        if (!res.ok) {
-          this.catalogCache.set(el, [])
-        } else {
-          const data: any = await res.json().catch(() => null)
-          const list: any[] = Array.isArray(data?.recipes)
-            ? data.recipes
-            : Array.isArray(data)
-              ? data
-              : []
-          const mapped = list
-            .map(r => ({
-              id: String(r?.id ?? r?.recipeId ?? r?.recipe_id ?? ''),
-              name: String(r?.name ?? r?.title ?? 'Cosmic Recipe'),
-            }))
-            .filter(r => r.id)
-          this.catalogCache.set(el, mapped)
-        }
+      const { recipeCatalogService } = await import('@/lib/recipes/recipe-catalog-service')
+      const recipes = await recipeCatalogService.findRecipes({ element: el, limit: 30 })
+      if (recipes.length > 0) {
+        const idx = Math.floor(Date.now() / 1_800_000) % recipes.length
+        return { id: recipes[idx].id, name: recipes[idx].name }
       }
-      const pool = this.catalogCache.get(el) || []
-      if (pool.length === 0) {
-        const fallbacks = CATALOG_DISH_FALLBACKS[el] || CATALOG_DISH_FALLBACKS.fire
-        const idx = Math.floor(Date.now() / 1_800_000) % fallbacks.length
-        return fallbacks[idx]
-      }
-      // Rotate by half-hour so repeated activations vary without depending on RNG.
-      const idx = Math.floor(Date.now() / 1_800_000) % pool.length
-      return pool[idx]
     } catch (error) {
       console.warn('[FeedActivationEngine] fetchCatalogRecipe failed, using fallback:', error)
-      const fallbacks = CATALOG_DISH_FALLBACKS[el] || CATALOG_DISH_FALLBACKS.fire
-      const idx = Math.floor(Date.now() / 1_800_000) % fallbacks.length
-      return fallbacks[idx]
     }
+    const fallbacks = CATALOG_DISH_FALLBACKS[el] || CATALOG_DISH_FALLBACKS.fire
+    const idx = Math.floor(Date.now() / 1_800_000) % fallbacks.length
+    return fallbacks[idx]
   }
 
   private evaluateTransitToNatalAspects(
@@ -709,56 +680,80 @@ export class FeedActivationEngine {
           description
         )
       }
-      case 'recipe_generation': {
-        // Authentically review and comment upon an existing catalog dish from WTEN
-        const recipeName = recipeCtx?.name || `${agent.dominantElement} Composition`
-        const fallback = `Reflected upon "${recipeName}" — an evocative ${agent.dominantElement} preparation harmonizing with ${moment.planetary.dominantPlanet}'s celestial transit.`
-        const review = await generateVoicedText(
-          agent.agentId,
-          `Write a brief 1-2 sentence culinary comment and reflection in your voice about "${recipeName}", an existing ${agent.dominantElement} ` +
-            `dish in the kitchen, under ${moment.planetary.dominantPlanet}'s influence. Comment on its flavours, elemental balance, or culinary technique as a human food lover would. Speak naturally, no greeting.`,
-          { fallback, maxTokens: 140 }
-        )
-        return this.withRenderImageMetadata(
-          agent,
-          {
-            ...baseMetadata,
-            recipeName,
-            ...(recipeCtx?.id ? { recipeId: recipeCtx.id, recipe_id: recipeCtx.id } : {}),
-            review,
-            madeIt: true,
-            rating: 5,
-            source: 'catalog_review',
-          },
-          recipeName,
-          review
-        )
-      }
+      case 'recipe_generation':
       case 'made_it': {
-        const recipeName = recipeCtx?.name || `Transmuted ${agent.dominantElement} Dish`
-        const fallback = `Resonating with the surge in ${agent.dominantElement} energy. Added extra herbs aligned with ${moment.planetary.dominantPlanet}.`
-        const review = await generateVoicedText(
-          agent.agentId,
-          `Write a brief 1-2 sentence recipe review in your voice. You're noting how the surge in ` +
-            `${agent.dominantElement} energy and ${moment.planetary.dominantPlanet}'s influence ` +
-            `affected the dish. Speak naturally, no greeting.`,
-          { fallback, maxTokens: 140 }
-        )
-        return this.withRenderImageMetadata(
-          agent,
-          {
-            ...baseMetadata,
+        // Authentically adjust an existing catalog dish from WTEN with substitutions
+        // matching the agent's planetary placements and historical context.
+        try {
+          const { recipeAlterationService } =
+            await import('@/lib/recipes/recipe-alteration-service')
+          const alteration = await recipeAlterationService.alterRecipe({
+            agentId: agent.agentId,
+            recipeId: recipeCtx?.id,
+            recipeName: recipeCtx?.name,
+            syncToWten: false, // The feed pusher owns authenticated delivery and persistence.
+            persistLocal: false,
+          })
+
+          const dishName = alteration.alteredRecipe.name
+          const review = alteration.review
+
+          return this.withRenderImageMetadata(
+            agent,
+            {
+              ...baseMetadata,
+              recipeName: alteration.originalRecipe.name,
+              dishName,
+              ...(alteration.originalRecipe.id
+                ? {
+                    recipeId: alteration.originalRecipe.id,
+                    recipe_id: alteration.originalRecipe.id,
+                  }
+                : {}),
+              review,
+              comment: review,
+              rating: alteration.rating,
+              source: 'recipe_alteration',
+              substitutions: alteration.alteredRecipe.substitutions.map(s => ({
+                original: s.originalIngredient,
+                replacement: s.replacementIngredient,
+                reason: s.reason,
+                astrologicalBasis: s.astrologicalBasis,
+                historicalBasis: s.historicalBasis,
+              })),
+              recipePayload: alteration.alteredRecipe,
+            },
+            dishName,
+            review
+          )
+        } catch (alterErr) {
+          console.warn(
+            '[FeedActivationEngine] recipeAlterationService failed, using fallback review:',
+            alterErr
+          )
+          const recipeName = recipeCtx?.name || `${agent.dominantElement} Composition`
+          const fallback = `Reflected upon "${recipeName}" — an evocative ${agent.dominantElement} preparation harmonizing with ${moment.planetary.dominantPlanet}'s celestial transit.`
+          const review = await generateVoicedText(
+            agent.agentId,
+            `Write a brief 1-2 sentence culinary comment and reflection in your voice about "${recipeName}", an existing ${agent.dominantElement} ` +
+              `dish in the kitchen, under ${moment.planetary.dominantPlanet}'s influence. Comment on its flavours, elemental balance, or culinary technique as a human food lover would. Speak naturally, no greeting.`,
+            { fallback, maxTokens: 140 }
+          )
+          return this.withRenderImageMetadata(
+            agent,
+            {
+              ...baseMetadata,
+              recipeName,
+              ...(recipeCtx?.id ? { recipeId: recipeCtx.id, recipe_id: recipeCtx.id } : {}),
+              review,
+              comment: review,
+              rating: 5,
+              source: 'catalog_review',
+            },
             recipeName,
-            // Only attach a recipeId when it resolves through the catalog — never
-            // a placeholder (it would 404 on the profile recipe-expand proxy).
-            ...(recipeCtx?.id ? { recipeId: recipeCtx.id, recipe_id: recipeCtx.id } : {}),
-            madeIt: true,
-            rating: 4,
-            review,
-          },
-          recipeName,
-          review
-        )
+            review
+          )
+        }
       }
       default:
         return baseMetadata

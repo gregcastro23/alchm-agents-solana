@@ -5,7 +5,7 @@
 # distribution (`uvx alchm-planetary-agents-mcp` / `planetary-agents-mcp`) for
 # the MCP registry entry io.github.gregcastro23/planetary-agents.
 #
-# Only the 5 modules in the server's import closure are shipped (py-modules
+# Only the 6 required modules in the server's import closure are shipped (py-modules
 # whitelist below) — the server is a thin client that proxies to the hosted
 # FastAPI backend over HTTP, so it does NOT need the rest of backend/. The
 # Railway deploy builds via backend/Dockerfile (pip install -r requirements.txt)
@@ -38,7 +38,7 @@ Homepage = "https://agents.alchm.kitchen"
 Repository = "https://github.com/gregcastro23/alchm-agents-solana"
 
 [tool.setuptools]
-# Flat single-file modules — exactly the server's import closure. `crud`
+# Flat single-file modules — the server's required import closure. `crud`
 # (jing/synastry natal-chart lookup) is intentionally omitted; it is imported
 # lazily and degrades gracefully when absent, so the package stays lean and
 # free of the backend's pydantic/schemas graph.
@@ -48,6 +48,7 @@ py-modules = [
     "mcp_invocation_log",
     "database",
     "models",
+    "secure_compare",
 ]
 
 [tool.ruff]

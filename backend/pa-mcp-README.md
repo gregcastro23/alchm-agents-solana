@@ -25,7 +25,8 @@ transits, ingredient ESMS analysis, recipes, and synastry, this one exposes the
 | `trigger_chart_specific_jing_duel` | Detect birthchart synastry between two agents and stage an in-character elemental duel.                                     |
 | `play_agent_word_duel`             | Invoke an agent or celestial sphere to play a strategic word move with rationale in Word Duels of the Spheres.              |
 | `play_jing_arena_move`             | Invoke an agent or celestial sphere to counter an opening move in the Jing Arena elemental clash minigame.                  |
-| `plan_weekly_menu`                 | Generate an astrologically attuned weekly menu for an agent persona and optionally share it to the feed.                    |
+| `plan_weekly_menu`                 | Generate an unpublished weekly menu draft without saving or sharing it.                                                     |
+| `publish_weekly_menu`              | Publish a reviewed draft using an authorized publisher credential and a stable idempotency key.                             |
 
 ## MCP Resources
 
