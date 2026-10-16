@@ -1,12 +1,14 @@
 /** @vitest-environment node */
 import { describe, expect, it } from 'vitest'
 import { HISTORICAL_AGENTS } from '@/lib/agents/historical'
+import { deriveSacredStats } from '@/lib/agents/persona/derive-sacred-stats'
 import {
   BALANCED_SPREAD,
   BALANCED_TITLE,
   CORE_STAT_KEYS,
   RATING_CEILING,
   RATING_FLOOR,
+  STAT_BASELINES,
   archetypeTitle,
   rateAgent,
   rateStats,
@@ -60,6 +62,9 @@ describe('rateStats', () => {
     expect(r.ratings).toMatchObject({ power: 92, wisdom: 77, resonance: 55, charisma: 62 })
     expect(r.ovr).toBe(70)
     expect(r.spread).toBe(37)
+    // (90 − 76.5) / 8.8 = 1.53 and (70 − 68.4) / 5.8 = 0.28 league standard deviations.
+    expect(r.relativeAdvantage.power).toBe(1.53)
+    expect(r.relativeAdvantage.wisdom).toBe(0.28)
     expect(r.archetype).toEqual({
       kind: 'specialist',
       primary: 'power',
@@ -74,22 +79,46 @@ describe('rateStats', () => {
     expect(specialist.ovr).toBeGreaterThan(generalist.ovr)
   })
 
-  it('breaks ties by canonical stat order, independent of input key order', () => {
-    const a = rateStats(stats({ vitality: 80, wisdom: 80 }))
-    expect(a.archetype.primary).toBe('wisdom')
-    expect(a.archetype.secondary).toBe('vitality')
+  it('names the title from league-relative advantage, not the tallest bar', () => {
+    // power is the tallest bar (84 vs 83), but intuition sits further above its own
+    // league average (+1.04σ vs +0.40σ) — so intuition leads the title.
+    const r = rateStats(stats({ power: 80, intuition: 78 }, 60))
+    expect(r.ratings.power).toBeGreaterThan(r.ratings.intuition)
+    expect(r.relativeAdvantage.intuition).toBeGreaterThan(r.relativeAdvantage.power)
+    expect(r.archetype).toEqual({
+      kind: 'specialist',
+      primary: 'intuition',
+      secondary: 'power',
+      title: 'Sovereign Seer',
+    })
+  })
 
-    const reversed = Object.fromEntries(
-      [...Object.entries(stats({ vitality: 80, wisdom: 80 }))].reverse()
+  it('breaks ties by canonical stat order, independent of input key order', () => {
+    // Every stat exactly at its league mean → zero advantage everywhere → a pure tie.
+    const atMean = Object.fromEntries(
+      CORE_STAT_KEYS.map(k => [k, STAT_BASELINES[k].mean])
     ) as CoreStats
+    const a = rateStats(atMean)
+    expect(Object.values(a.relativeAdvantage).every(v => v === 0)).toBe(true)
+    expect(a.archetype.primary).toBe('power')
+    expect(a.archetype.secondary).toBe('resonance')
+
+    const reversed = Object.fromEntries([...Object.entries(atMean)].reverse()) as CoreStats
     expect(rateStats(reversed)).toEqual(a)
   })
 
-  it('keeps the top two named even for a balanced build', () => {
+  it('names the two largest relative advantages even for a balanced build', () => {
     const r = rateStats(stats({ intuition: 50 + BALANCED_SPREAD / 2 }))
     expect(r.spread).toBeLessThan(BALANCED_SPREAD)
     expect(r.archetype.kind).toBe('balanced')
-    expect(r.archetype.primary).toBe('intuition')
+    expect(r.archetype.title).toBe(BALANCED_TITLE)
+
+    const { primary, secondary } = r.archetype
+    const adv = r.relativeAdvantage
+    for (const key of CORE_STAT_KEYS) {
+      expect(adv[primary]).toBeGreaterThanOrEqual(adv[key])
+      if (key !== primary) expect(adv[secondary]).toBeGreaterThanOrEqual(adv[key])
+    }
   })
 
   it('treats a spread of exactly BALANCED_SPREAD as a specialist', () => {
@@ -170,14 +199,33 @@ describe('historical roster', () => {
     }
   })
 
-  it('does not collapse the roster into a handful of builds (ratchet — raise as this improves)', () => {
-    // KNOWN SKEW: `deriveStatsFromChart` gives `power` a ×25 Monica coefficient
-    // against ×5–10 for the rest, so roster-mean power (≈76) sits ~8 points above
-    // every other stat (≈65–70) and ~70% of agents rate as "… Vanguard". Measured
-    // when this spec was written: 17 distinct titles of a possible 42. Ranking
-    // against roster-relative baselines would give ~26. This floor guards against
-    // getting worse; raise it when the derivation or the ranking is rebalanced.
+  it('keeps STAT_BASELINES calibrated to the roster', () => {
+    const natal = HISTORICAL_AGENTS.map(agent => deriveSacredStats(agent))
+    for (const key of CORE_STAT_KEYS) {
+      const xs = natal.map(s => s[key])
+      const mean = xs.reduce((a, b) => a + b, 0) / xs.length
+      const sd = Math.sqrt(xs.reduce((a, b) => a + (b - mean) ** 2, 0) / xs.length)
+      const pinned = STAT_BASELINES[key]
+      const hint =
+        `${key}: pinned { mean: ${pinned.mean}, sd: ${pinned.sd} } but the roster now measures ` +
+        `{ mean: ${mean.toFixed(1)}, sd: ${sd.toFixed(1)} } — re-pin STAT_BASELINES`
+      expect(Math.abs(mean - pinned.mean), hint).toBeLessThanOrEqual(1)
+      expect(Math.abs(sd - pinned.sd), hint).toBeLessThanOrEqual(1)
+    }
+  })
+
+  it('spreads titles and primaries across the roster (ratchet — raise as this improves)', () => {
+    // `deriveStatsFromChart` gives `power` a ×25 Monica coefficient against ×5–10 for the
+    // rest, so naming by raw height made ~70% of the roster a "… Vanguard" (17 of 42
+    // titles). Naming by league-relative advantage measured 26 distinct titles and no
+    // primary stat above 28% of the roster when this spec was written.
     const distinct = new Set(ratings.map(r => r.archetype.title))
-    expect(distinct.size).toBeGreaterThanOrEqual(15)
+    expect(distinct.size).toBeGreaterThanOrEqual(22)
+
+    const primaryCounts = new Map<string, number>()
+    for (const r of ratings) {
+      primaryCounts.set(r.archetype.primary, (primaryCounts.get(r.archetype.primary) ?? 0) + 1)
+    }
+    expect(Math.max(...primaryCounts.values()) / ratings.length).toBeLessThanOrEqual(0.4)
   })
 })
