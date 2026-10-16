@@ -1,10 +1,21 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { NextRequest } from 'next/server'
 import { recipeCatalogService } from '@/lib/recipes/recipe-catalog-service'
-import { recipeAlterationService } from '@/lib/recipes/recipe-alteration-service'
+import {
+  recipeAlterationService,
+  RecipeNotFoundError,
+} from '@/lib/recipes/recipe-alteration-service'
 import { POST as alterPOST } from '@/app/api/recipes/alter/route'
 import { GET as commentsGET } from '@/app/api/recipes/[recipeId]/comments/route'
 import type { CraftedAgent } from '@/lib/agent-types'
+import * as agentResolver from '@/lib/agents/resolve-any-agent'
+import { prisma } from '@/lib/db'
+import { deliverToWten } from '@/lib/wten/delivery'
+import { generateVoicedText } from '@/lib/agents/persona/voiced-generation'
+
+vi.mock('@/lib/menu-publication', () => ({
+  publicationActor: vi.fn(async () => ({ id: 'test:publisher' })),
+}))
 
 // Mock prisma database
 vi.mock('@/lib/db', () => ({
@@ -68,6 +79,7 @@ vi.mock('@/lib/agents/persona/voiced-generation', () => ({
 
 describe('Recipe Catalog & Alteration Engine', () => {
   beforeEach(() => {
+    vi.restoreAllMocks()
     vi.clearAllMocks()
   })
 
@@ -75,7 +87,8 @@ describe('Recipe Catalog & Alteration Engine', () => {
     it('loads the full 1,000-recipe catalog snapshot', async () => {
       const recipes = await recipeCatalogService.getAllRecipes()
       expect(Array.isArray(recipes)).toBe(true)
-      expect(recipes.length).toBeGreaterThanOrEqual(1000)
+      expect(recipes).toHaveLength(1000)
+      expect(new Set(recipes.map(recipe => recipe.id)).size).toBe(1000)
 
       const sample = recipes[0]
       expect(sample).toBeDefined()
@@ -182,7 +195,7 @@ describe('Recipe Catalog & Alteration Engine', () => {
           { name: 'red wine', amount: 1, unit: 'cup' },
         ],
         instructions: [
-          'Sear beef cubes in olive oil until browned.',
+          'Sear beef chuck roast in olive oil until browned.',
           'Add rosemary and pour in red wine.',
           'Simmer for 2 hours until beef is tender.',
         ],
@@ -190,6 +203,8 @@ describe('Recipe Catalog & Alteration Engine', () => {
         mealType: ['dinner'],
       }
 
+      vi.spyOn(agentResolver, 'resolveAnyAgent').mockResolvedValueOnce(daVinci)
+      vi.spyOn(recipeCatalogService, 'getRecipeById').mockResolvedValueOnce(meatRecipe)
       const result = await recipeAlterationService.alterRecipe({
         agentId: 'leonardo-da-vinci',
         recipeId: meatRecipe.id,
@@ -202,7 +217,10 @@ describe('Recipe Catalog & Alteration Engine', () => {
       expect(result.alteredRecipe).toBeDefined()
       expect(result.review).toBeDefined()
       expect(result.planetarySignature).toBeDefined()
-      expect(result.recipeCommentSaved).toBe(true)
+      expect(result.feedPublished).toBe(true)
+      expect(result.recipeCommentSaved).toBeUndefined()
+      expect(result.localCommentSaved).toBe(true)
+      expect(result.originalRecipe.id).toBe(meatRecipe.id)
 
       // Ensure meat was substituted with a plant-based staple
       const subs = result.alteredRecipe.substitutions
@@ -212,11 +230,15 @@ describe('Recipe Catalog & Alteration Engine', () => {
           s.originalIngredient.toLowerCase().includes('meat')
       )
 
-      if (meatSub) {
-        expect(meatSub.astrologicalBasis).toBeDefined()
-        expect(meatSub.historicalBasis).toBeDefined()
-        expect(meatSub.reason).toBeDefined()
-      }
+      expect(meatSub).toBeDefined()
+      expect(meatSub!.replacementIngredient).not.toMatch(/beef|meat/i)
+      expect(meatSub!.astrologicalBasis).toBeTruthy()
+      expect(meatSub!.historicalBasis).toBeTruthy()
+      expect(meatSub!.reason).toBeTruthy()
+      expect(result.alteredRecipe.ingredients.map(i => i.name).join(' ')).not.toMatch(/beef/i)
+      expect(result.alteredRecipe.instructions[0]).not.toMatch(/beef/i)
+      expect(result.alteredRecipe.instructions[2]).toContain('beef')
+      expect(result.alteredRecipe.instructionReviewRequired).toBe(true)
     })
 
     it('substitutes modern refined wheat with ancient spelt for Hildegard von Bingen', async () => {
@@ -238,6 +260,7 @@ describe('Recipe Catalog & Alteration Engine', () => {
         elementalProperties: { Fire: 0.2, Water: 0.2, Earth: 0.5, Air: 0.1 },
       }
 
+      vi.spyOn(recipeCatalogService, 'getRecipeById').mockResolvedValueOnce(flourRecipe)
       const result = await recipeAlterationService.alterRecipe({
         agentId: 'hildegard-von-bingen',
         recipeId: flourRecipe.id,
@@ -247,7 +270,100 @@ describe('Recipe Catalog & Alteration Engine', () => {
 
       expect(result.ok).toBe(true)
       expect(result.agent.id).toBe('hildegard-of-bingen')
-      expect(result.alteredRecipe.instructions.length).toBeGreaterThan(0)
+      expect(result.originalRecipe.id).toBe(flourRecipe.id)
+      expect(result.alteredRecipe.substitutions).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            originalIngredient: 'white flour',
+            replacementIngredient: expect.stringMatching(/spelt/i),
+          }),
+        ])
+      )
+      expect(result.alteredRecipe.instructions.join(' ')).toMatch(/spelt/i)
+      expect(result.alteredRecipe.instructions.join(' ')).not.toContain('white flour')
+    })
+  })
+
+  describe('Alteration provenance and delivery outcomes', () => {
+    it('rejects an unknown explicit recipe before generating or writing', async () => {
+      await expect(
+        recipeAlterationService.alterRecipe({
+          agentId: 'hildegard-von-bingen',
+          recipeId: 'does-not-exist',
+        })
+      ).rejects.toBeInstanceOf(RecipeNotFoundError)
+      expect(generateVoicedText).not.toHaveBeenCalled()
+      expect(deliverToWten).not.toHaveBeenCalled()
+      expect(prisma.agent_action_events.upsert).not.toHaveBeenCalled()
+    })
+
+    it('keeps local-only delivery distinct from remote publication and removes stale nutrition', async () => {
+      const recipe = (await recipeCatalogService.getAllRecipes()).find(r => r.nutrition)!
+      const originalNutrition = { ...recipe.nutrition }
+      const result = await recipeAlterationService.alterRecipe({
+        agentId: 'hildegard-von-bingen',
+        recipeId: recipe.id,
+        syncToWten: false,
+      })
+      expect(result.feedPublished).toBe(false)
+      expect(result.localCommentSaved).toBe(true)
+      expect(result.feedEventId).toBeUndefined()
+      expect(result.recipeCommentSaved).toBe(false)
+      expect(deliverToWten).not.toHaveBeenCalled()
+      expect(result.alteredRecipe).not.toHaveProperty('nutrition', originalNutrition)
+      expect((result.alteredRecipe as any).nutrition).toBeUndefined()
+      expect((result.alteredRecipe as any).isVegetarian).toBeUndefined()
+      expect(recipe.nutrition).toEqual(originalNutrition)
+      const call = vi.mocked(prisma.agent_action_events.upsert).mock.calls[0][0] as any
+      expect(call.create.metadataPayload).not.toHaveProperty('madeIt')
+      expect(call.create.metadataPayload).not.toHaveProperty('made_it')
+    })
+
+    it('lets activation payload builders defer all writes to the authenticated publisher', async () => {
+      const result = await recipeAlterationService.alterRecipe({
+        agentId: 'hildegard-von-bingen',
+        syncToWten: false,
+        persistLocal: false,
+      })
+      expect(result.feedPublished).toBe(false)
+      expect(result.localCommentSaved).toBe(false)
+      expect(deliverToWten).not.toHaveBeenCalled()
+      expect(prisma.agent_action_events.upsert).not.toHaveBeenCalled()
+    })
+
+    it('preserves a caller rating below four without inventing a positive review', async () => {
+      const result = await recipeAlterationService.alterRecipe({
+        agentId: 'hildegard-von-bingen',
+        rating: 2,
+        syncToWten: false,
+      })
+      expect(result.rating).toBe(2)
+    })
+
+    it('does not treat HTTP success with an application error as publication', async () => {
+      vi.mocked(deliverToWten).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        body: { success: false },
+      } as any)
+      const result = await recipeAlterationService.alterRecipe({ agentId: 'hildegard-von-bingen' })
+      expect(result.feedPublished).toBe(false)
+      expect(result.feedEventId).toBeUndefined()
+      expect(result.recipeCommentSaved).toBeUndefined()
+    })
+
+    it('reports a failed local write separately from confirmed feed delivery', async () => {
+      vi.mocked(prisma.agent_action_events.upsert).mockRejectedValueOnce(new Error('offline'))
+      vi.mocked(deliverToWten).mockResolvedValueOnce({
+        ok: true,
+        status: 200,
+        body: { success: true },
+      } as any)
+      const result = await recipeAlterationService.alterRecipe({ agentId: 'hildegard-von-bingen' })
+      expect(result.feedPublished).toBe(true)
+      expect(result.localCommentSaved).toBe(false)
+      expect(result.feedEventId).toBeUndefined()
+      expect(result.recipeCommentSaved).toBeUndefined()
     })
   })
 
@@ -264,7 +380,7 @@ describe('Recipe Catalog & Alteration Engine', () => {
 
         expect(res.status).toBe(400)
         expect(json.success).toBe(false)
-        expect(json.error).toContain('agentId is required')
+        expect(json.error).toBeTruthy()
       })
 
       it('alters a recipe and posts to the feed & recipe comments', async () => {
@@ -286,7 +402,8 @@ describe('Recipe Catalog & Alteration Engine', () => {
         expect(json.alteredRecipe).toBeDefined()
         expect(json.review).toBeDefined()
         expect(json.planetarySignature).toBeDefined()
-        expect(json.feedEventId).toBeDefined()
+        expect(json.deliveryId).toBeDefined()
+        expect(json.feedPublished).toBe(true)
       })
     })
 

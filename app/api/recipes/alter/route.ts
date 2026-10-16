@@ -1,11 +1,31 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { recipeAlterationService } from '@/lib/recipes/recipe-alteration-service'
+import { z } from 'zod'
+import {
+  RecipeNotFoundError,
+  recipeAlterationService,
+} from '@/lib/recipes/recipe-alteration-service'
+import { publicationActor } from '@/lib/menu-publication'
 import { rateLimit, getClientIp } from '@/lib/security/rate-limit'
 
 export const dynamic = 'force-dynamic'
 
+const alterationSchema = z
+  .object({
+    agentId: z.string().trim().min(1).max(200),
+    recipeId: z.string().trim().min(1).max(200).optional(),
+    preferredCuisine: z.string().trim().min(1).max(100).optional(),
+    mealType: z.string().trim().min(1).max(50).optional(),
+    customPrompt: z.string().trim().min(1).max(5000).optional(),
+    rating: z.number().min(1).max(5).default(5),
+    syncToWten: z.boolean().default(true),
+  })
+  .strict()
+
 /**
  * POST /api/recipes/alter
+ *
+ * Requires the same verified publisher identity as weekly menu publication.
+ * Even syncToWten=false persists an alteration in the local event ledger.
  *
  * An agent chooses a recipe from the ~1000 catalog (or accepts a target recipeId),
  * adjusts it to their planetary placements (natal chart, transits, ruling elements)
@@ -25,43 +45,51 @@ export const dynamic = 'force-dynamic'
  * }
  */
 export async function POST(req: NextRequest) {
-  const ip = getClientIp(req.headers)
-  const limiter = rateLimit(`recipe-alter:${ip}`, { limit: 30, windowMs: 60 * 1000 })
-  if (!limiter.ok) {
-    return NextResponse.json(
-      { success: false, error: 'Too many recipe alteration requests. Slow down.' },
-      { status: 429, headers: { 'Retry-After': String(Math.ceil(limiter.resetMs / 1000)) } }
-    )
-  }
-
   try {
-    const body = await req.json().catch(() => ({}))
-    const { agentId, recipeId, preferredCuisine, mealType, customPrompt, rating, syncToWten } = body
+    const actor = await publicationActor(req)
+    if ('response' in actor) return actor.response
 
-    if (!agentId || typeof agentId !== 'string') {
-      return NextResponse.json({ success: false, error: 'agentId is required' }, { status: 400 })
+    const ip = getClientIp(req.headers)
+    const limiter = rateLimit(`recipe-alter:${ip}`, { limit: 30, windowMs: 60 * 1000 })
+    if (!limiter.ok) {
+      return NextResponse.json(
+        { success: false, error: 'Too many recipe alteration requests. Slow down.' },
+        { status: 429, headers: { 'Retry-After': String(Math.ceil(limiter.resetMs / 1000)) } }
+      )
     }
 
-    const result = await recipeAlterationService.alterRecipe({
-      agentId: agentId.trim(),
-      recipeId: typeof recipeId === 'string' ? recipeId.trim() : undefined,
-      preferredCuisine: typeof preferredCuisine === 'string' ? preferredCuisine.trim() : undefined,
-      mealType: typeof mealType === 'string' ? mealType.trim() : undefined,
-      customPrompt: typeof customPrompt === 'string' ? customPrompt.trim() : undefined,
-      rating: typeof rating === 'number' ? rating : 5,
-      syncToWten: syncToWten !== false,
-    })
+    let body: unknown
+    try {
+      body = await req.json()
+    } catch {
+      return NextResponse.json(
+        { success: false, error: 'Invalid JSON request body' },
+        { status: 400 }
+      )
+    }
+    const parsed = alterationSchema.safeParse(body)
+    if (!parsed.success) {
+      return NextResponse.json(
+        { success: false, error: 'Invalid recipe alteration payload' },
+        { status: 400 }
+      )
+    }
+
+    const result = await recipeAlterationService.alterRecipe(parsed.data)
 
     return NextResponse.json({
       success: true,
       ...result,
     })
-  } catch (error: any) {
+  } catch (error: unknown) {
+    if (error instanceof RecipeNotFoundError) {
+      return NextResponse.json({ success: false, error: error.message }, { status: 404 })
+    }
     console.error('[POST /api/recipes/alter] Error:', error)
     return NextResponse.json(
       {
         success: false,
-        error: error?.message || 'Failed to alter recipe',
+        error: 'Failed to alter recipe',
       },
       { status: 500 }
     )

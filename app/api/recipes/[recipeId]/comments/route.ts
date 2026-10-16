@@ -12,7 +12,7 @@ const ALCHM_KITCHEN_BASE_URL =
 export interface RecipeCommentItem {
   id: string
   author: string
-  authorType: 'agent' | 'user'
+  authorType: 'agent' | 'user' | 'community'
   agentId?: string
   rating?: number
   comment: string
@@ -22,16 +22,22 @@ export interface RecipeCommentItem {
     reason: string
   }>
   planetarySignature?: any
-  postedAt: string
+  postedAt?: string
+}
+
+const LOCAL_COMMENT_LIMIT = 50
+const COMMUNITY_TIP_LIMIT = 10
+
+function firstText(...values: unknown[]): string | undefined {
+  return values.find(value => typeof value === 'string' && value.trim()) as string | undefined
 }
 
 /**
  * GET /api/recipes/[recipeId]/comments
  *
- * Returns all comments, reviews, and agent recipe alterations for this recipe.
- * Combines:
- * 1. Agent alterations from local `agent_action_events` (where agents posted their alterations)
- * 2. Community tips & reviews from WTEN
+ * Returns a bounded selection of recent local recipe comments and WTEN's
+ * top-rated community tips. Source statuses distinguish an empty result from
+ * an unavailable source; WTEN does not expose its complete comment history.
  */
 export async function GET(
   _req: NextRequest,
@@ -43,35 +49,37 @@ export async function GET(
   }
 
   const comments: RecipeCommentItem[] = []
+  const sources = {
+    local: { success: false, limit: LOCAL_COMMENT_LIMIT },
+    wten: { success: false, limit: COMMUNITY_TIP_LIMIT, coverage: 'top-rated-tips' },
+  }
 
   // 1. Fetch agent alterations and comments from local DB
   try {
     const agentEvents = await prisma.agent_action_events.findMany({
       where: {
         eventType: { in: ['recipe_generation', 'made_it', 'recipe_adapted', 'recipe_review'] },
+        OR: [
+          { metadataPayload: { path: ['recipeId'], equals: recipeId } },
+          { metadataPayload: { path: ['recipe_id'], equals: recipeId } },
+        ],
       },
       orderBy: { createdAt: 'desc' },
-      take: 50,
+      take: LOCAL_COMMENT_LIMIT,
     })
+    sources.local.success = true
 
     for (const evt of agentEvents) {
       const metadata = (evt.metadataPayload || {}) as Record<string, any>
-      const evtRecipeId = String(metadata.recipeId || metadata.recipe_id || '')
-      if (
-        evtRecipeId.toLowerCase() === recipeId.toLowerCase() ||
-        evtRecipeId.toLowerCase().replace(/[^a-z0-9]/g, '-') ===
-          recipeId.toLowerCase().replace(/[^a-z0-9]/g, '-')
-      ) {
-        const text = String(
-          metadata.review || metadata.comment || metadata.summary || metadata.dishName || ''
-        )
+      if (metadata.recipeId === recipeId || metadata.recipe_id === recipeId) {
+        const text = firstText(metadata.review, metadata.comment, metadata.summary)
         if (text) {
           comments.push({
             id: evt.id || evt.idempotencyKey,
             author: metadata.agentProfile?.name || metadata.agentDisplayName || evt.agentId,
             authorType: 'agent',
             agentId: evt.agentId,
-            rating: typeof metadata.rating === 'number' ? metadata.rating : 5,
+            rating: typeof metadata.rating === 'number' ? metadata.rating : undefined,
             comment: text,
             substitutions: Array.isArray(metadata.substitutions)
               ? metadata.substitutions
@@ -97,18 +105,26 @@ export async function GET(
 
     if (res.ok) {
       const data = await res.json()
-      const tips: any[] = Array.isArray(data?.tips) ? data.tips : []
-      for (const tip of tips) {
+      if (!Array.isArray(data?.tips) || data.success === false) {
+        throw new Error('Invalid community tips response')
+      }
+      sources.wten.success = true
+      const tips: any[] = data.tips.slice(0, COMMUNITY_TIP_LIMIT)
+      for (const [index, tip] of tips.entries()) {
+        if (!tip || typeof tip !== 'object') continue
         // Dedup against agent alterations already listed
-        const tipText = String(tip.tip || tip.review || '')
-        if (!comments.some(c => c.comment.trim() === tipText.trim())) {
+        const tipText = firstText(tip.tip, tip.review, tip.comment)
+        if (tipText && !comments.some(c => c.comment.trim() === tipText.trim())) {
           comments.push({
-            id: `wten-tip-${comments.length}`,
-            author: String(tip.author || 'Alchm Cook'),
-            authorType: 'user',
+            id: firstText(tip.id) || `wten-tip-${recipeId}-${index}`,
+            author: firstText(tip.author) || 'Community contributor',
+            authorType:
+              tip.authorType === 'agent' || tip.authorType === 'user'
+                ? tip.authorType
+                : 'community',
             rating: typeof tip.rating === 'number' ? tip.rating : undefined,
             comment: tipText,
-            postedAt: tip.postedAt || new Date().toISOString(),
+            postedAt: firstText(tip.postedAt),
           })
         }
       }
@@ -118,12 +134,21 @@ export async function GET(
   }
 
   // Sort newest first
-  comments.sort((a, b) => new Date(b.postedAt).getTime() - new Date(a.postedAt).getTime())
+  const timestamp = (value?: string) => (value ? Date.parse(value) || 0 : 0)
+  comments.sort((a, b) => timestamp(b.postedAt) - timestamp(a.postedAt))
 
-  return NextResponse.json({
-    success: true,
-    recipeId,
-    count: comments.length,
-    comments,
-  })
+  const success = sources.local.success || sources.wten.success
+  return NextResponse.json(
+    {
+      success,
+      degraded: !sources.local.success || !sources.wten.success,
+      bounded: true,
+      sources,
+      recipeId,
+      count: comments.length,
+      comments,
+      ...(!success ? { error: 'Recipe comment sources are unavailable' } : {}),
+    },
+    { status: success ? 200 : 503 }
+  )
 }

@@ -691,7 +691,8 @@ export class FeedActivationEngine {
             agentId: agent.agentId,
             recipeId: recipeCtx?.id,
             recipeName: recipeCtx?.name,
-            syncToWten: false, // The feed pusher will deliver this activation payload to WTEN
+            syncToWten: false, // The feed pusher owns authenticated delivery and persistence.
+            persistLocal: false,
           })
 
           const dishName = alteration.alteredRecipe.name
@@ -711,7 +712,6 @@ export class FeedActivationEngine {
                 : {}),
               review,
               comment: review,
-              madeIt: true,
               rating: alteration.rating,
               source: 'recipe_alteration',
               substitutions: alteration.alteredRecipe.substitutions.map(s => ({
@@ -747,7 +747,6 @@ export class FeedActivationEngine {
               ...(recipeCtx?.id ? { recipeId: recipeCtx.id, recipe_id: recipeCtx.id } : {}),
               review,
               comment: review,
-              madeIt: true,
               rating: 5,
               source: 'catalog_review',
             },

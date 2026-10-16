@@ -86,6 +86,10 @@ export interface ReviewRecipeInput {
 export interface HistoricalRecipeReviewResult {
   ok: boolean
   eventId?: string
+  deliveryId?: string
+  feedPublished?: boolean
+  localCommentSaved?: boolean
+  recipeCommentSaved?: boolean
   agent: {
     id: string
     name: string
@@ -186,8 +190,12 @@ export async function generateHistoricalRecipeReview(
   })
 
   return {
-    ok: true,
+    ok: alteration.ok,
     eventId: alteration.feedEventId,
+    deliveryId: alteration.deliveryId,
+    feedPublished: alteration.feedPublished,
+    localCommentSaved: alteration.localCommentSaved,
+    recipeCommentSaved: alteration.recipeCommentSaved,
     agent: {
       id: alteration.agent.id,
       name: alteration.agent.name,
@@ -212,31 +220,27 @@ export async function generateHistoricalRecipeReview(
  * Returns recent recipe reviews by historical agents
  */
 export async function getRecentHistoricalRecipeReviews(limit = 20) {
-  try {
-    const rows = await prisma.agent_action_events.findMany({
-      where: {
-        eventType: { in: ['made_it', 'recipe_generation'] },
-      },
-      orderBy: { createdAt: 'desc' },
-      take: limit,
-    })
+  const rows = await prisma.agent_action_events.findMany({
+    where: {
+      eventType: { in: ['made_it', 'recipe_generation'] },
+    },
+    orderBy: { createdAt: 'desc' },
+    take: limit,
+  })
 
-    return rows
-      .map(r => {
-        const meta = (r.metadataPayload || {}) as Record<string, any>
-        return {
-          id: r.id,
-          agentId: r.agentId,
-          agentName: meta.agentProfile?.name || r.agentId,
-          recipeId: meta.recipeId || meta.recipe_id,
-          recipeName: meta.recipeName || meta.dishName || 'Kitchen Recipe',
-          rating: meta.rating || 5,
-          review: meta.review || meta.description || '',
-          createdAt: r.createdAt.toISOString(),
-        }
-      })
-      .filter(r => r.review && r.recipeId)
-  } catch {
-    return []
-  }
+  return rows
+    .map(r => {
+      const meta = (r.metadataPayload || {}) as Record<string, any>
+      return {
+        id: r.id,
+        agentId: r.agentId,
+        agentName: meta.agentProfile?.name || r.agentId,
+        recipeId: meta.recipeId || meta.recipe_id,
+        recipeName: meta.recipeName || meta.dishName || 'Kitchen Recipe',
+        rating: typeof meta.rating === 'number' ? meta.rating : undefined,
+        review: meta.review || meta.description || '',
+        createdAt: r.createdAt.toISOString(),
+      }
+    })
+    .filter(r => r.review && r.recipeId)
 }

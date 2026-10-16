@@ -10,10 +10,9 @@ import { generateVoicedText } from '@/lib/agents/persona/voiced-generation'
 import { getCurrentPlanetaryPositions } from '@/lib/calculate-transits'
 import { PlanetaryHourCalculator } from '@/lib/planetary-hour'
 import { deliverToWten, stableEventId } from '@/lib/wten/delivery'
-import { FOOD_PROFILES } from '@/lib/food-recommendation-rules'
 
 function getInternalApiSecret(): string {
-  return process.env.INTERNAL_API_SECRET || process.env.ALCHM_KITCHEN_SYNC_SECRET || ''
+  return process.env.INTERNAL_API_SECRET || ''
 }
 
 const ALCHM_KITCHEN_BASE_URL =
@@ -33,6 +32,13 @@ export interface IngredientSubstitution {
   historicalBasis: string
 }
 
+export class RecipeNotFoundError extends Error {
+  constructor(recipeId: string) {
+    super(`Recipe "${recipeId}" not found in catalog`)
+    this.name = 'RecipeNotFoundError'
+  }
+}
+
 export interface AlterRecipeInput {
   agentId: string
   recipeId?: string
@@ -43,6 +49,8 @@ export interface AlterRecipeInput {
   rating?: number
   location?: { lat: number; lon: number }
   syncToWten?: boolean
+  /** Payload builders can defer persistence to their authenticated caller. */
+  persistLocal?: boolean
 }
 
 export interface RecipeAlterationResult {
@@ -59,6 +67,7 @@ export interface RecipeAlterationResult {
     ingredients: CatalogIngredient[]
     instructions: string[]
     substitutions: IngredientSubstitution[]
+    instructionReviewRequired: boolean
     elementalProperties?: Record<string, number>
   }
   agent: {
@@ -79,7 +88,11 @@ export interface RecipeAlterationResult {
     natalPositions: Array<{ planet: string; sign: string; degree: number }>
     transitPositions: Array<{ planet: string; degree: number }>
   }
+  deliveryId: string
+  feedPublished: boolean
+  localCommentSaved: boolean
   feedEventId?: string
+  /** Unknown unless WTEN explicitly confirms its separate comment write. */
   recipeCommentSaved?: boolean
   error?: string
 }
@@ -149,12 +162,7 @@ export class RecipeAlterationService {
    * then publishing the alteration on the feed and as a comment on the recipe.
    */
   async alterRecipe(input: AlterRecipeInput): Promise<RecipeAlterationResult> {
-    const {
-      agentId,
-      location = { lat: 40.7128, lon: -74.006 },
-      syncToWten = true,
-      rating = 5,
-    } = input
+    const { agentId, syncToWten = true, persistLocal = true, rating = 5 } = input
 
     // 1. Resolve the agent with full natal chart and historical diet
     const agent = await resolveAnyAgent(agentId)
@@ -168,6 +176,7 @@ export class RecipeAlterationService {
     let catalogDish: CatalogRecipe | null = null
     if (input.recipeId) {
       catalogDish = await recipeCatalogService.getRecipeById(input.recipeId)
+      if (!catalogDish) throw new RecipeNotFoundError(input.recipeId)
     }
 
     if (!catalogDish) {
@@ -189,6 +198,7 @@ export class RecipeAlterationService {
       const all = await recipeCatalogService.getAllRecipes()
       catalogDish = all[0]
     }
+    if (!catalogDish) throw new Error('No catalog recipes available')
 
     // 3. Compute real-time celestial moment and planetary signature
     const now = new Date()
@@ -241,13 +251,15 @@ export class RecipeAlterationService {
       input.customPrompt
     )
 
-    const clampedRating = Math.min(5, Math.max(4, Math.round(rating)))
+    const clampedRating = Number.isFinite(rating) ? Math.min(5, Math.max(1, Math.round(rating))) : 5
 
     // 7. Publish to local agent_action_events
     const agentEmail = `${agent.id}@agentic.alchm.kitchen`
     const idempotencyKey = stableEventId(`alteration:${agent.id}:${catalogDish.id}`, {
       dateSlot: Math.floor(Date.now() / 900_000), // 15-minute idempotency window
-      substitutionsCount: substitutions.length,
+      alteredRecipe,
+      review,
+      rating: clampedRating,
     })
 
     const metadataPayload = {
@@ -259,8 +271,6 @@ export class RecipeAlterationService {
       rating: clampedRating,
       review,
       comment: review, // Mirrored as review & comment for WTEN consumers
-      madeIt: true,
-      made_it: true,
       source: 'recipe_alteration',
       substitutions: substitutions.map(s => ({
         original: s.originalIngredient,
@@ -282,10 +292,13 @@ export class RecipeAlterationService {
       },
     }
 
-    let feedEventId = idempotencyKey
-    let recipeCommentSaved = false
+    let feedEventId: string | undefined
+    let feedPublished = false
+    let localCommentSaved = false
+    let recipeCommentSaved: boolean | undefined = syncToWten ? undefined : false
 
-    // 8. Deliver to WTEN feed (which dual-writes as a comment into user_recipe_interactions)
+    // WTEN attempts the comment mirror separately. Feed acknowledgement alone
+    // cannot confirm that the recipe interaction was saved.
     if (syncToWten) {
       try {
         const delivery = await deliverToWten({
@@ -302,8 +315,11 @@ export class RecipeAlterationService {
           eventId: idempotencyKey,
         })
 
-        if (delivery.ok) {
-          recipeCommentSaved = true
+        if (delivery.ok && (delivery.body as any)?.success === true) {
+          feedPublished = true
+          if (typeof (delivery.body as any)?.recipeCommentSaved === 'boolean') {
+            recipeCommentSaved = (delivery.body as any).recipeCommentSaved
+          }
           if ((delivery.body as any)?.event?.id) {
             feedEventId = String((delivery.body as any).event.id)
           }
@@ -313,30 +329,34 @@ export class RecipeAlterationService {
       }
     }
 
-    // 9. Persist in local DB
-    try {
-      await prisma.agent_action_events.upsert({
-        where: { idempotencyKey },
-        update: {
-          postedAt: new Date(),
-          metadataPayload: metadataPayload as any,
-          status: 'completed',
-        },
-        create: {
-          agentId: agent.id,
-          agentEmail,
-          eventType: 'recipe_generation',
-          triggerType: 'recipe_alteration',
-          triggerSummary: `${agent.name} altered "${catalogDish.name}" with ${substitutions.length} substitutions`,
-          metadataPayload: metadataPayload as any,
-          score: 0.98,
-          idempotencyKey,
-          status: 'completed',
-          postedAt: new Date(),
-        },
-      })
-    } catch (dbErr) {
-      console.warn(`[RecipeAlterationService] local DB upsert skipped:`, dbErr)
+    // The local comment remains useful even when remote publication fails.
+    const localMetadata = { ...metadataPayload, feedPublished }
+    if (persistLocal) {
+      try {
+        await prisma.agent_action_events.upsert({
+          where: { idempotencyKey },
+          update: {
+            postedAt: new Date(),
+            metadataPayload: localMetadata as any,
+            status: 'completed',
+          },
+          create: {
+            agentId: agent.id,
+            agentEmail,
+            eventType: 'recipe_generation',
+            triggerType: 'recipe_alteration',
+            triggerSummary: `${agent.name} altered "${catalogDish.name}" with ${substitutions.length} substitutions`,
+            metadataPayload: localMetadata as any,
+            score: 0.98,
+            idempotencyKey,
+            status: 'completed',
+            postedAt: new Date(),
+          },
+        })
+        localCommentSaved = true
+      } catch (dbErr) {
+        console.warn(`[RecipeAlterationService] local DB upsert skipped:`, dbErr)
+      }
     }
 
     return {
@@ -357,6 +377,9 @@ export class RecipeAlterationService {
       review,
       rating: clampedRating,
       planetarySignature,
+      deliveryId: idempotencyKey,
+      feedPublished,
+      localCommentSaved,
       feedEventId,
       recipeCommentSaved,
     }
@@ -594,7 +617,10 @@ export class RecipeAlterationService {
     agent: CraftedAgent,
     original: CatalogRecipe,
     substitutions: IngredientSubstitution[]
-  ): CatalogRecipe & { substitutions: IngredientSubstitution[] } {
+  ): CatalogRecipe & {
+    substitutions: IngredientSubstitution[]
+    instructionReviewRequired: boolean
+  } {
     // 1. Build updated ingredients
     const subMap = new Map<string, IngredientSubstitution>()
     for (const sub of substitutions) {
@@ -629,8 +655,20 @@ export class RecipeAlterationService {
       ...original,
       id: `${original.id}-alt-${agent.id.replace(/[^a-z0-9_-]/gi, '')}`,
       name: alteredName,
+      // Ingredient changes invalidate the source recipe's nutrition and dietary claims.
+      // These need a separate calculation for the adapted recipe.
+      nutrition: undefined,
+      allergens: undefined,
+      tags: undefined,
+      isVegetarian: undefined,
+      isVegan: undefined,
+      isGlutenFree: undefined,
+      isDairyFree: undefined,
       ingredients: updatedIngredients,
       instructions: updatedInstructions,
+      // Exact ingredient references are rewritten, but abbreviated references,
+      // cooking methods and timings cannot be safely inferred by string replacement.
+      instructionReviewRequired: substitutions.length > 0,
       substitutions,
     }
   }

@@ -112,7 +112,7 @@ const menuSchema = z
 
 type PublicationActor = { id: string } | { response: NextResponse }
 
-async function publicationActor(request: Request): Promise<PublicationActor> {
+export async function publicationActor(request: Request): Promise<PublicationActor> {
   const token = extractDesktopApiKey(request)
   if (token) {
     if (process.env.PA_USER_API_KEY && safeEqual(token, process.env.PA_USER_API_KEY)) {
