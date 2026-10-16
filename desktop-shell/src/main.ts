@@ -5333,6 +5333,7 @@ async function requestAgentText(
   userMessage: string,
   turnContext: AgentTurnContext = { groupAgents: [agent], priorResponses: [] }
 ): Promise<AgentTextResult | null> {
+  const conversationId = `desktop:${getActiveChatKey()}:${agent.id}`
   if (agent.source === 'app-guide') {
     return {
       content: buildMonicaGuideReply(userMessage, turnContext),
@@ -5356,6 +5357,8 @@ async function requestAgentText(
           agentName: agent.name,
           message: userMessage,
           conversationHistory: priorHistory,
+          sessionId: conversationId,
+          context: { visibility: 'private' },
           _meta: {
             apiKey: apiKey,
             caller: 'alchm-desktop-shell',
@@ -5392,20 +5395,21 @@ async function requestAgentText(
       const chatPayload = {
         agentId: agent.id,
         message: userMessage,
-        sessionId: `desktop-${agent.id}-${Date.now()}`,
+        sessionId: conversationId,
         modelTier: 'free',
         context: {
           conversationHistory: priorHistory,
           groupContext: groupContext || undefined,
           mcpTool: 'chat_with_planetary_agent',
           caller: 'alchm-desktop-shell-direct',
+          visibility: 'private',
         },
       }
 
       const response = await withTimeout(
         fetch(`${backendUrl}/api/chat`, {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: { 'Content-Type': 'application/json', 'X-API-Key': state.account.apiKey },
           body: JSON.stringify(chatPayload),
         }),
         30_000,

@@ -3,7 +3,7 @@ import os
 from datetime import datetime, timedelta
 from typing import Any, Dict, Optional, Tuple
 
-from sqlalchemy import select, delete
+from sqlalchemy import select, delete, or_
 from database import SessionLocal
 from models import DesktopApiKey, MCPInvocation, User, UserSubscription
 from secure_compare import secret_matches
@@ -40,16 +40,18 @@ def resolve_api_key_sync(db, api_key: str) -> Tuple[Optional[str], Optional[str]
 
     # 2. Database key lookup
     try:
+        now = datetime.utcnow()
         stmt = select(DesktopApiKey).where(
             DesktopApiKey.token == api_key,  # secret-compare-ok: SQL WHERE clause, evaluated by Postgres
-            DesktopApiKey.isActive.is_(True)
+            DesktopApiKey.isActive.is_(True),
+            or_(DesktopApiKey.expiresAt.is_(None), DesktopApiKey.expiresAt > now),
         )
         result = db.execute(stmt)
         key_row = result.scalar_one_or_none()
         
         if key_row:
             # Update lastUsedAt in the background/sync path
-            key_row.lastUsedAt = datetime.utcnow()
+            key_row.lastUsedAt = now
             db.commit()
 
             user_id = key_row.userId
@@ -88,7 +90,9 @@ def resolve_api_key_sync(db, api_key: str) -> Tuple[Optional[str], Optional[str]
 
 def validate_and_gate_invocation(
     tool_name: str, 
-    arguments: Dict[str, Any]
+    arguments: Dict[str, Any],
+    *,
+    resolved_identity: Optional[Tuple[Optional[str], Optional[str], str]] = None,
 ) -> Tuple[Dict[str, Any], Optional[str], Optional[str], str, Optional[str]]:
     """Validates the invocation arguments and applies model-tier / debate gating.
     
@@ -100,15 +104,19 @@ def validate_and_gate_invocation(
       - resolved_model_tier: str
     """
     # Extract _meta properties
-    meta = arguments.get("_meta") or {}
+    meta = arguments.get("_meta") if isinstance(arguments.get("_meta"), dict) else {}
     api_key = meta.get("apiKey") or meta.get("api_key")
 
     # Resolve authorization
-    db = SessionLocal()
-    try:
-        api_key_id, user_id, auth_tier = resolve_api_key_sync(db, api_key)
-    finally:
-        db.close()
+    if resolved_identity is None:
+        db = SessionLocal()
+        try:
+            api_key_id, user_id, auth_tier = resolve_api_key_sync(db, api_key)
+        finally:
+            db.close()
+    else:
+        # Supplied by the trusted HTTP identity lookup, never from tool arguments.
+        api_key_id, user_id, auth_tier = resolved_identity
 
     # Determine original requested modelTier
     orig_model_tier = arguments.get("modelTier") or "free"

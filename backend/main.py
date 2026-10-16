@@ -32,6 +32,9 @@ import pii_scrubber
 from feed_emitter import emit_feed_event
 from secure_compare import bearer_token, secret_matches
 from mcp_probe import tool_response_succeeded
+from chat_access import ChatAccessError, cap_chat_tier, resolve_chat_principal
+from chat_privacy import should_publish_chat
+from chat_sessions import scoped_session_id
 
 AI_DISCLAIMER_TEXT = (
     "Planetary Agent responses and cosmic recipes are synthesized using Large Language Models (LLMs) "
@@ -880,8 +883,54 @@ def agents_search(
 
 # --- Chat Orchestration ---
 
+def _chat_principal(db, user_id=None, authorization=None, x_api_key=None, service_token=None):
+    import mcp_invocation_log
+
+    # Direct in-process calls do not receive FastAPI's resolved Header defaults.
+    authorization = authorization if isinstance(authorization, str) else None
+    x_api_key = x_api_key if isinstance(x_api_key, str) else None
+    service_token = service_token if isinstance(service_token, str) else None
+    try:
+        return resolve_chat_principal(
+            api_key=x_api_key or bearer_token(authorization),
+            service_token=service_token,
+            claimed_user_id=user_id,
+            service_secret=INTERNAL_API_SECRET,
+            resolve_key=lambda key: mcp_invocation_log.resolve_api_key_sync(db, key),
+            unlinked_dev_key=os.getenv("DESKTOP_DEV_API_KEY") or "dev-desktop-token",
+        )
+    except ChatAccessError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@app.get("/api/mcp/identity")
+async def mcp_identity(
+    authorization: Optional[str] = Header(None),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    db: Session = Depends(database.get_db),
+):
+    principal = _chat_principal(db, authorization=authorization, x_api_key=x_api_key)
+    return {"apiKeyId": principal.api_key_id, "userId": principal.user_id, "authTier": principal.auth_tier}
+
+
 @app.post("/api/chat", response_model=schemas.ChatResponse)
-async def chat(request: schemas.ChatRequest, db: Session = Depends(database.get_db)):
+async def chat(
+    request: schemas.ChatRequest,
+    db: Session = Depends(database.get_db),
+    authorization: Optional[str] = Header(None),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    service_token: Optional[str] = Header(None, alias="INTERNAL_API_SECRET"),
+):
+    principal = _chat_principal(db, request.userId, authorization, x_api_key, service_token)
+    request.userId = principal.user_id
+    request.modelTier = cap_chat_tier(request.modelTier, principal)
+    try:
+        request.sessionId = scoped_session_id(
+            request.agentId, principal.session_owner, request.sessionId,
+            os.getenv("CHAT_SESSION_SIGNING_SECRET") or INTERNAL_API_SECRET,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="Invalid or unowned conversation handle") from exc
     # 1. Resolve agent (still needed for RAG filter and DB recording)
     db_agent = crud.get_agent(db, agent_id=request.agentId)
     if not db_agent:
@@ -1364,7 +1413,8 @@ async def chat(request: schemas.ChatRequest, db: Session = Depends(database.get_
         chat_metadata["targetName"] = str(target_name)[:120]
         chat_metadata["withAgent"] = str(target_name)[:120]
 
-    emit_feed_event(request.agentId, "agent_chat", chat_metadata)
+    if should_publish_chat(request.context):
+        emit_feed_event(request.agentId, "agent_chat", chat_metadata)
 
     return {
         "text": text,
@@ -1403,8 +1453,23 @@ STAR_AGENT_NAMES = {
 }
 
 @app.post("/api/multi_agent_chat", response_model=schemas.MultiAgentChatResponse)
-async def multi_agent_chat(request: schemas.MultiAgentChatRequest, db: Session = Depends(database.get_db)):
-    session_id = request.sessionId or f"council-session-{datetime.utcnow().timestamp()}"
+async def multi_agent_chat(
+    request: schemas.MultiAgentChatRequest,
+    db: Session = Depends(database.get_db),
+    authorization: Optional[str] = Header(None),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    service_token: Optional[str] = Header(None, alias="INTERNAL_API_SECRET"),
+):
+    principal = _chat_principal(db, request.userId, authorization, x_api_key, service_token)
+    request.userId = principal.user_id
+    request.modelTier = cap_chat_tier(request.modelTier, principal)
+    try:
+        session_id = scoped_session_id(
+            "council", principal.session_owner, request.sessionId,
+            os.getenv("CHAT_SESSION_SIGNING_SECRET") or INTERNAL_API_SECRET,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="Invalid or unowned conversation handle") from exc
     agent_ids = request.agentIds or ["sirius", "arcturus", "vega", "polaris"]
     tier = _resolve_tier(request.modelTier)
     anthropic_model = ANTHROPIC_TIER_MODEL.get(tier)

@@ -3,8 +3,9 @@ import { generateObject } from 'ai'
 import { openai } from '@ai-sdk/openai'
 import { z } from 'zod'
 import { resolveAnyAgent } from '@/lib/agents/resolve-any-agent'
-import { getAgentWeeklyMenu, postAgentWeeklyMenu } from '@/lib/wtenClient'
+import { getAgentWeeklyMenu } from '@/lib/wtenClient'
 import { getAlchemicalQuantitiesLegacy, backend } from '@/lib/backend'
+import { recipeCatalogService } from '@/lib/recipes/recipe-catalog-service'
 
 export const dynamic = 'force-dynamic'
 
@@ -52,6 +53,16 @@ export async function POST(request: NextRequest) {
       shareToFeed = false,
     } = await request.json()
 
+    if (status !== 'draft' || shareToFeed !== false) {
+      return NextResponse.json(
+        {
+          success: false,
+          error: 'Generation returns drafts. Use the authorized publish endpoint.',
+        },
+        { status: 400 }
+      )
+    }
+
     if (!agentId) {
       return NextResponse.json({ success: false, error: 'agentId is required' }, { status: 400 })
     }
@@ -76,7 +87,7 @@ export async function POST(request: NextRequest) {
         if (existing) {
           return NextResponse.json({
             success: true,
-            menu: existing,
+            menu: { ...existing, status: 'draft', shareToFeed: false },
             reused: true,
           })
         }
@@ -116,6 +127,30 @@ export async function POST(request: NextRequest) {
       `[Generate Menu] Planning weekly menu for ${agent.name} for week of ${weekStartDateStr}`
     )
 
+    // Fetch candidate recipes from the catalog for the agent
+    let candidateRecipes: any[] = []
+    try {
+      candidateRecipes = await recipeCatalogService.findCandidatesForAgent(agent, {
+        count: 32,
+      })
+    } catch (e) {
+      console.warn(`[Generate Menu] Failed to fetch catalog candidates:`, e)
+    }
+
+    const catalogPromptSection =
+      candidateRecipes.length > 0
+        ? `\nAUTHORITATIVE RECIPE CATALOG CANDIDATES (You must choose from these real catalog options, adapting them to your era/style with substitutions):
+${candidateRecipes
+  .map(
+    (r, i) =>
+      `${i + 1}. [ID: "${r.id}"] "${r.name}" (${r.cuisine || 'Global'}, Meal: ${r.mealType?.join('/') || 'any'}) - Ings: ${r.ingredients
+        ?.slice(0, 5)
+        .map((ing: any) => ing.name)
+        .join(', ')}`
+  )
+  .join('\n')}`
+        : ''
+
     const systemPrompt = `You are the ${agentStyle.name} (${agentStyle.title}), a legendary historical figure.
 Specialty: ${agentStyle.specialty}
 Culture/Era: ${agentStyle.era}
@@ -127,19 +162,28 @@ Your task is to plan a complete, alchemically-attuned Weekly Menu for the week o
 You must create exactly 28 meal slots: Sunday through Saturday, with breakfast, lunch, dinner, and snack for each day.
 Each slot should reflect the planetary day alignment (Sunday is ruled by the Sun, Monday by the Moon, etc.) and your unique historical and culinary style.
 
+CRITICAL GROUNDING REQUIREMENT:
+You do NOT invent recipes out of nowhere. We have an authoritative catalog of ~1,000 recipes.
+You MUST choose recipes from the provided catalog candidates whenever possible.
+When choosing a catalog recipe:
+- Use the exact catalog recipe "id" (or keep it as the base identifier).
+- Adapt the recipe to your planetary day, historical era, and dietary philosophy by swapping in substitutions for modern or avoided ingredients (e.g. replacing refined grains with ancient spelt/barley/farro, substituting meat with mushrooms/pulses/tofu if vegetarian, applying planetary herbs).
+- In the "notes", explain your substitutions, planetary resonance, and historical rationale in your authentic voice.
+${catalogPromptSection}
+
 Each meal slot must have:
 1. dayOfWeek: index 0 (Sunday) to 6 (Saturday).
 2. mealType: "breakfast", "lunch", "dinner", or "snack".
 3. servings: typically 1 or 2.
-4. recipe: a beautiful, practical recipe that you would make. It should include:
-   - id: a unique string like "hildegard-spelt-bread"
-   - name: clear name of the dish
+4. recipe: a beautiful, practical recipe that you adapted. It should include:
+   - id: catalog recipe id (or matched ID)
+   - name: clear name of the dish (can append your adaptation, e.g. "Spelt Sourdough Adaptation")
    - cuisine: your culture's cuisine or adapted style
-   - ingredients: array of strings of ingredients
+   - ingredients: array of strings of ingredients reflecting your substitutions
    - nutrition: estimated calories, protein (g), carbs (g), fat (g)
    - elementalProperties: Fire, Water, Earth, Air scores summing up to 1.0
 5. planetarySnapshot: the planet ruling that day, the zodiac sign "${currentZodiacSign}", the current lunar phase, and elemental states.
-6. notes: 1-2 sentences written in your unique voice explaining why this dish is perfect for this specific planetary day and alchemical moment.
+6. notes: 1-2 sentences written in your unique voice explaining why this dish is perfect for this specific planetary day and your alchemical substitutions.
 
 Create a premium, theme-based menu title (e.g. "Hildegard's Verdant Fermentation Week") and a one-sentence summary. Also list a consolidated groceryList of up to 25 items needed for the week. Make sure 3 to 6 of the best meals are selected as featuredMeals.`
 
@@ -283,8 +327,8 @@ Create a premium, theme-based menu title (e.g. "Hildegard's Verdant Fermentation
       agentSlug: agent.id,
       agentDisplayName: agent.name,
       weekStartDate: weekStartDateStr,
-      status, // Saved as draft/completed depending on request
-      shareToFeed,
+      status: 'draft',
+      shareToFeed: false,
       title: menuData.title,
       summary: menuData.summary,
       planetaryFocus: menuData.planetaryFocus,
@@ -302,15 +346,9 @@ Create a premium, theme-based menu title (e.g. "Hildegard's Verdant Fermentation
       },
     }
 
-    // Persist as DRAFT to alchm.kitchen
-    const response = await postAgentWeeklyMenu(weeklyMenuPayload)
-
     return NextResponse.json({
       success: true,
-      menu: {
-        ...weeklyMenuPayload,
-        id: response.menu?.id,
-      },
+      menu: weeklyMenuPayload,
       reused: false,
     })
   } catch (error: any) {

@@ -98,6 +98,8 @@ export interface HistoricalRecipeReviewResult {
     name: string
     cuisine?: string
   }
+  alteredRecipe?: any
+  substitutions?: any[]
   review: string
   rating: number
   planetarySignature: {
@@ -169,168 +171,40 @@ export async function generateHistoricalRecipeReview(
     syncToWten = true,
   } = input
 
-  // 1. Resolve agent
-  const agent = getHistoricalAgent(agentId)
-  if (!agent) {
-    throw new Error(`Historical agent "${agentId}" not found in registry`)
-  }
-
-  const dominantElement = agent.consciousness?.dominantElement || 'Fire'
-
-  // 2. Resolve recipe
-  let recipe: { id: string; name: string; cuisine?: string }
-  if (input.recipeId && input.recipeName) {
-    recipe = { id: input.recipeId, name: input.recipeName, cuisine: input.cuisine }
-  } else if (input.recipeId) {
-    recipe = {
-      id: input.recipeId,
-      name: input.recipeName || 'Cosmic Recipe',
-      cuisine: input.cuisine,
-    }
-  } else {
-    recipe = await fetchCatalogDish(dominantElement)
-  }
-
-  // 3. Astronomical weather & planetary signature
-  const moment = await celestialEnergyCalculator.calculateMoment(new Date(), location)
-  const hourCalc = new PlanetaryHourCalculator()
-  const { planet: planetaryHour } = hourCalc.getPlanetaryHour(moment.timestamp)
-  const dominantPlanet = moment.planetary.dominantPlanet
-  const dominantSign = moment.planetary.dominantSign
-
-  const planetarySignature = {
-    planetaryHour,
-    dominantPlanet,
-    dominantSign,
-    dominantElement,
-    postedAt: moment.timestamp.toISOString(),
-  }
-
-  // 4. Generate voiced review drawing on agent's core voice, historical dietary philosophy, and quotes
-  const fallback = `Prepared "${recipe.name}" with great reverence. The ${dominantElement.toLowerCase()} notes harmonize wonderfully with the natural seasoning, creating an uplifting and nourishing table experience.`
-
-  const agentCtx = buildAgentContext(agent.id)
-  const systemPrompt = agentCtx?.personaBlock
-
-  const userPrompt = [
-    `You are sharing a genuine culinary review and community tip for an existing dish in the kitchen: "${recipe.name}"${recipe.cuisine ? ` (${recipe.cuisine} cuisine)` : ''}.`,
-    `You recently cooked and savored this dish under the influence of ${dominantPlanet} and the ${dominantElement} element.`,
-    agent.historicalDiet?.dietaryPhilosophy
-      ? `Keep in mind your historical culinary perspective: ${agent.historicalDiet.dietaryPhilosophy}`
-      : '',
-    promptHint ? `Focus note: ${promptHint}` : '',
-    `Write a concise 2-sentence culinary reflection and cooking tip in your authentic, unmistakable historical voice.`,
-    `Comment on its flavors, textures, balance of heat/herbs, or a subtle refinement you applied. Speak like a passionate human lover of food. Do NOT use greetings, do not use bullet points, and do not break character.`,
-  ]
-    .filter(Boolean)
-    .join('\n')
-
-  const review = await generateVoicedText(agent.id, userPrompt, {
-    fallback,
-    maxTokens: 160,
-    systemOverride: systemPrompt,
+  // Use the comprehensive recipe alteration engine to perform authentic substitutions
+  // based on the agent's planetary placements and historical context.
+  const { recipeAlterationService } = await import('@/lib/recipes/recipe-alteration-service')
+  const alteration = await recipeAlterationService.alterRecipe({
+    agentId,
+    recipeId: input.recipeId,
+    recipeName: input.recipeName,
+    preferredCuisine: input.cuisine,
+    customPrompt: promptHint,
+    rating,
+    location,
+    syncToWten,
   })
-
-  const clampedRating = Math.min(5, Math.max(4, Math.round(rating)))
-
-  // 5. Build WTEN delivery payload
-  const agentEmail = `${agent.id}@agentic.alchm.kitchen`
-  const idempotencyKey = stableEventId(`review:${agent.id}:${recipe.id}`, {
-    dateSlot: Math.floor(Date.now() / 900_000),
-    review,
-  })
-
-  const metadataPayload = {
-    recipeId: recipe.id,
-    recipe_id: recipe.id,
-    recipeName: recipe.name,
-    dishName: recipe.name,
-    cuisine: recipe.cuisine,
-    rating: clampedRating,
-    review,
-    madeIt: true,
-    made_it: true,
-    source: 'catalog_review',
-    planetarySignature,
-    agentProfile: {
-      agentId: agent.id,
-      name: agent.name,
-      title: agent.title,
-      era: agent.era,
-      dominantElement,
-      specialization: agent.specialization,
-      dietaryPhilosophy: agent.historicalDiet?.dietaryPhilosophy,
-    },
-  }
-
-  let eventId = idempotencyKey
-
-  // 6. Deliver to WTEN (if requested)
-  if (syncToWten) {
-    try {
-      const delivery = await deliverToWten({
-        endpoint: 'feed',
-        url: `${ALCHM_KITCHEN_BASE_URL}/api/feed`,
-        headers: { Authorization: `Bearer ${getInternalApiSecret()}` },
-        body: {
-          agentEmail,
-          agentDisplayName: agent.name,
-          eventType: 'made_it',
-          idempotencyKey,
-          metadataPayload,
-        },
-        eventId: idempotencyKey,
-      })
-
-      if (delivery.ok && (delivery.body as any)?.event?.id) {
-        eventId = String((delivery.body as any).event.id)
-      }
-    } catch (err) {
-      console.warn(`[HistoricalRecipeReview] deliverToWten failed for ${agent.id}:`, err)
-    }
-  }
-
-  // 7. Record in local agent_action_events for agent history and profile surface
-  try {
-    await prisma.agent_action_events.upsert({
-      where: { idempotencyKey },
-      update: {
-        postedAt: new Date(),
-        metadataPayload,
-        status: 'completed',
-      },
-      create: {
-        agentId: agent.id,
-        agentEmail,
-        eventType: 'made_it',
-        triggerType: 'historical_recipe_review',
-        triggerSummary: `Reviewed catalog recipe: ${recipe.name}`,
-        metadataPayload,
-        score: 0.95,
-        idempotencyKey,
-        status: 'completed',
-        postedAt: new Date(),
-      },
-    })
-  } catch (dbErr) {
-    // Non-fatal if DB is offline or mock
-    console.warn(`[HistoricalRecipeReview] local DB upsert skipped:`, dbErr)
-  }
 
   return {
     ok: true,
-    eventId,
+    eventId: alteration.feedEventId,
     agent: {
-      id: agent.id,
-      name: agent.name,
-      title: agent.title,
-      era: agent.era || 'Historical',
-      dominantElement,
+      id: alteration.agent.id,
+      name: alteration.agent.name,
+      title: alteration.agent.title || 'Historical Alchemist',
+      era: alteration.agent.era || 'Historical',
+      dominantElement: alteration.agent.dominantElement,
     },
-    recipe,
-    review,
-    rating: clampedRating,
-    planetarySignature,
+    recipe: {
+      id: alteration.originalRecipe.id,
+      name: alteration.originalRecipe.name,
+      cuisine: alteration.originalRecipe.cuisine,
+    },
+    alteredRecipe: alteration.alteredRecipe,
+    substitutions: alteration.alteredRecipe.substitutions,
+    review: alteration.review,
+    rating: alteration.rating,
+    planetarySignature: alteration.planetarySignature,
   }
 }
 

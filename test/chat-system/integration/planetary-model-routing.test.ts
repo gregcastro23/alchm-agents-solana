@@ -184,6 +184,7 @@ describe('Planetary agent model routing', () => {
         agentId: planetaryAgent?.id,
         message: 'What should humans do with this transit?',
         modelTier: 'free',
+        userId: 'planetary-routing-user',
       })
     )
   })
@@ -213,6 +214,7 @@ describe('Planetary agent model routing', () => {
         agentId: 'sun-leo',
         message: 'Give guidance for this transit.',
         modelTier: 'free',
+        userId: undefined,
       })
     )
   })

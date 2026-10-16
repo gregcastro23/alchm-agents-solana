@@ -92,6 +92,7 @@ jobs:
               "play_agent_word_duel",
               "play_jing_arena_move",
               "plan_weekly_menu",
+              "publish_weekly_menu",
           }
           names = [t["name"] for t in tools["result"]["tools"]]
           counts = Counter(names)

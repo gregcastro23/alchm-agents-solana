@@ -36,6 +36,14 @@ vi.mock('@/lib/wtenClient', () => ({
   postAgentWeeklyMenu: vi.fn(),
 }))
 
+vi.mock('@/lib/db', () => ({ prisma: {} }))
+vi.mock('@/lib/security/privileged-api-auth', () => ({
+  requireAdminRequest: vi.fn(async () => ({
+    ok: false,
+    response: new Response(JSON.stringify({ error: 'Authentication required' }), { status: 401 }),
+  })),
+}))
+
 vi.mock('@/lib/backend', () => ({
   getAlchemicalQuantitiesLegacy: vi.fn(async () => ({})),
   backend: {
@@ -133,11 +141,19 @@ describe('Weekly Menu Planner Integration', () => {
       expect(data.menu.title).toBe("Hildegard's Verdant Fermentation Week")
       expect(data.menu.meals).toHaveLength(28)
       expect(mockGenerateObject).toHaveBeenCalledOnce()
-      expect(mockPostAgentWeeklyMenu).toHaveBeenCalledOnce()
+      expect(data.menu.status).toBe('draft')
+      expect(data.menu.shareToFeed).toBe(false)
+      expect(mockPostAgentWeeklyMenu).not.toHaveBeenCalled()
     })
 
     it('reuses existing menu if it already exists and regenerate is false', async () => {
-      const existingMenu = { id: 'existing-id', title: 'Existing Menu', meals: [] }
+      const existingMenu = {
+        id: 'existing-id',
+        title: 'Existing Menu',
+        meals: [],
+        status: 'completed',
+        shareToFeed: true,
+      }
       mockGetAgentWeeklyMenu.mockResolvedValueOnce(existingMenu)
 
       const request = new NextRequest('http://localhost/api/menu-planner/generate', {
@@ -155,6 +171,10 @@ describe('Weekly Menu Planner Integration', () => {
       expect(data.success).toBe(true)
       expect(data.reused).toBe(true)
       expect(data.menu.id).toBe('existing-id')
+      expect(data.menu.status).toBe('draft')
+      expect(data.menu.shareToFeed).toBe(false)
+      expect(existingMenu.status).toBe('completed')
+      expect(mockPostAgentWeeklyMenu).not.toHaveBeenCalled()
       expect(mockGenerateObject).not.toHaveBeenCalled()
     })
 
@@ -180,7 +200,23 @@ describe('Weekly Menu Planner Integration', () => {
       expect(data.reused).toBe(false)
       expect(data.menu.title).toBe("Hildegard's Verdant Fermentation Week")
       expect(mockGenerateObject).toHaveBeenCalledOnce()
+      expect(mockPostAgentWeeklyMenu).not.toHaveBeenCalled()
     })
+
+    it.each([{ status: 'completed' }, { shareToFeed: true }])(
+      'rejects publication flags %o before generation',
+      async flags => {
+        const response = await generatePOST(
+          new NextRequest('http://localhost/api/menu-planner/generate', {
+            method: 'POST',
+            body: JSON.stringify({ agentId: 'hildegard-of-bingen', ...flags }),
+          })
+        )
+        expect(response.status).toBe(400)
+        expect(mockGenerateObject).not.toHaveBeenCalled()
+        expect(mockPostAgentWeeklyMenu).not.toHaveBeenCalled()
+      }
+    )
   })
 
   describe('Proxy Weekly API Routes (/api/menu-planner/weekly)', () => {
@@ -202,7 +238,7 @@ describe('Weekly Menu Planner Integration', () => {
       expect(mockGetAgentWeeklyMenu).toHaveBeenCalledWith('hildegard-of-bingen', '2026-05-31')
     })
 
-    it('successfully proxies POST requests to complete and publish', async () => {
+    it('blocks anonymous legacy POST publication', async () => {
       const payload = {
         agentSlug: 'hildegard-of-bingen',
         weekStartDate: '2026-05-31',
@@ -225,10 +261,9 @@ describe('Weekly Menu Planner Integration', () => {
       const response = await weeklyPOST(request)
       const data = await response.json()
 
-      expect(response.status).toBe(200)
-      expect(data.success).toBe(true)
-      expect(data.feedShared).toBe(true)
-      expect(mockPostAgentWeeklyMenu).toHaveBeenCalledWith(payload)
+      expect(response.status).toBe(401)
+      expect(data.error).toBe('Authentication required')
+      expect(mockPostAgentWeeklyMenu).not.toHaveBeenCalled()
     })
   })
 })

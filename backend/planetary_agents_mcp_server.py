@@ -4,6 +4,8 @@ import asyncio
 import json
 import os
 import sys
+import uuid
+from contextvars import ContextVar
 from typing import Any, Dict, List, Optional
 
 import httpx
@@ -42,6 +44,7 @@ FRONTEND_URL = _resolve_url(
     "http://localhost:3000",
 )
 DEFAULT_MODEL_TIER = os.getenv("PLANETARY_AGENTS_MCP_MODEL_TIER", "free")
+_INVOCATION_CREDENTIAL: ContextVar[Optional[str]] = ContextVar("mcp_credential", default=None)
 
 AGENT_ALIASES = {
     "socrates": "socrates",
@@ -79,6 +82,11 @@ TOOLS: List[Dict[str, Any]] = [
                     "type": "array",
                     "items": {"type": "string"},
                     "description": "Optional recent turns to provide as lightweight context.",
+                },
+                "sessionId": {
+                    "type": "string",
+                    "maxLength": 512,
+                    "description": "Conversation handle returned by a previous call; omit to start a new private conversation.",
                 },
                 "modelTier": {
                     "type": "string",
@@ -232,7 +240,7 @@ TOOLS: List[Dict[str, Any]] = [
     },
     {
         "name": "plan_weekly_menu",
-        "description": "Plan an agentic weekly menu attuned to the agent's planetary/culinary style.",
+        "description": "Generate an unpublished weekly menu draft without saving or sharing it. Use publish_weekly_menu for authorized publication.",
         "inputSchema": {
             "type": "object",
             "properties": {
@@ -246,15 +254,28 @@ TOOLS: List[Dict[str, Any]] = [
                 },
                 "status": {
                     "type": "string",
-                    "enum": ["draft", "completed"],
-                    "description": "Save as draft or complete it immediately to share to the feed.",
+                    "enum": ["draft"],
+                    "description": "Only draft is accepted. Publication requires publish_weekly_menu.",
                 },
                 "shareToFeed": {
                     "type": "boolean",
-                    "description": "Explicitly share to feed when status is completed.",
+                    "description": "Must be false; planning does not publish to the feed.",
                 },
             },
             "required": ["agentName"],
+        },
+    },
+    {
+        "name": "publish_weekly_menu",
+        "description": "Publish a reviewed weekly menu draft. Requires an authorized publisher credential and a stable idempotency key; retries must use the same key and exact menu.",
+        "annotations": {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True, "openWorldHint": True},
+        "inputSchema": {
+            "type": "object",
+            "properties": {
+                "menu": {"type": "object", "description": "The exact menu object returned by plan_weekly_menu."},
+                "idempotencyKey": {"type": "string", "minLength": 1, "maxLength": 200},
+            },
+            "required": ["menu", "idempotencyKey"],
         },
     },
 ]
@@ -603,12 +624,14 @@ async def _backend_chat(
     context: Optional[Dict[str, Any]] = None,
     model_tier: Optional[str] = None,
     sky_state: Optional[Dict[str, Any]] = None,
+    session_id: Optional[str] = None,
 ) -> Dict[str, Any]:
     agent_id = _agent_id(agent_name)
     merged_context = dict(context or {})
     if conversation_history:
         merged_context["conversationHistory"] = conversation_history[-12:]
     merged_context["mcpTool"] = "chat_with_planetary_agent"
+    merged_context.setdefault("visibility", "private")
     if sky_state and "liveSkyState" not in merged_context:
         # Personas always read from a fresh sky snapshot. We only set the
         # field when the caller didn't already provide one (allows the
@@ -620,13 +643,17 @@ async def _backend_chat(
     payload = {
         "agentId": agent_id,
         "message": message,
-        "sessionId": f"mcp-{agent_id}",
+        "sessionId": session_id or f"mcp-{agent_id}-{uuid.uuid4().hex}",
         "context": merged_context,
         "modelTier": model_tier or DEFAULT_MODEL_TIER,
     }
 
     async with httpx.AsyncClient(timeout=45.0) as client:
-        response = await client.post(f"{BACKEND_URL.rstrip('/')}/api/chat", json=payload)
+        credential = _INVOCATION_CREDENTIAL.get()
+        response = await client.post(
+            f"{BACKEND_URL.rstrip('/')}/api/chat", json=payload,
+            headers={"X-API-Key": credential} if credential else {},
+        )
         response.raise_for_status()
         data = response.json()
 
@@ -644,6 +671,9 @@ async def chat_with_planetary_agent(arguments: Dict[str, Any]) -> Dict[str, Any]
     message = str(arguments.get("message") or "").strip()
     if not agent_name or not message:
         return _text_result({"error": "agentName and message are required"}, is_error=True)
+    session_id = arguments.get("sessionId")
+    if session_id is not None and (not isinstance(session_id, str) or len(session_id) > 512):
+        return _text_result({"error": "sessionId must be a string of at most 512 characters"}, is_error=True)
 
     sky_state = await _live_sky_context()
 
@@ -655,6 +685,7 @@ async def chat_with_planetary_agent(arguments: Dict[str, Any]) -> Dict[str, Any]
             context=arguments.get("context") if isinstance(arguments.get("context"), dict) else None,
             model_tier=arguments.get("modelTier"),
             sky_state=sky_state,
+            **({"session_id": session_id} if session_id else {}),
         )
         # Surface the sky snapshot in the tool result so the calling LLM
         # can quote it directly without a second round-trip.
@@ -816,20 +847,20 @@ async def plan_weekly_menu(arguments: Dict[str, Any]) -> Dict[str, Any]:
     
     agent_id = _agent_id(agent_name)
     week_start_date = arguments.get("weekStartDate")
-    status = arguments.get("status") or "completed"
-    share_to_feed = arguments.get("shareToFeed")
-    if share_to_feed is None:
-        share_to_feed = (status == "completed")
+    if arguments.get("status", "draft") != "draft" or arguments.get("shareToFeed", False) is not False:
+        return _text_result({"error": "Planning only creates drafts; use publish_weekly_menu to publish."}, is_error=True)
         
     try:
         async with httpx.AsyncClient(timeout=60.0) as client:
-            # 1. Generate menu (saves as draft)
+            # Generation returns an unpublished draft without saving it.
             gen_resp = await client.post(
                 f"{FRONTEND_URL.rstrip('/')}/api/menu-planner/generate",
                 json={
                     "agentId": agent_id,
                     "weekStartDate": week_start_date,
-                    "regenerate": True
+                    "regenerate": False,
+                    "status": "draft",
+                    "shareToFeed": False,
                 }
             )
             gen_resp.raise_for_status()
@@ -838,31 +869,13 @@ async def plan_weekly_menu(arguments: Dict[str, Any]) -> Dict[str, Any]:
             if not gen_data.get("success") or not gen_data.get("menu"):
                 raise ValueError(gen_data.get("error") or "Failed to generate menu")
                 
-            menu = gen_data["menu"]
-            
-            # 2. If status is completed, post to weekly proxy to complete and share to feed
-            if status == "completed":
-                menu["status"] = "completed"
-                menu["shareToFeed"] = share_to_feed
-                
-                post_resp = await client.post(
-                    f"{FRONTEND_URL.rstrip('/')}/api/menu-planner/weekly",
-                    json=menu
-                )
-                post_resp.raise_for_status()
-                post_data = post_resp.json()
-                
-                return _text_result({
-                    "success": True,
-                    "message": f"Successfully planned and shared weekly menu '{menu.get('title')}' for {agent_name}!",
-                    "menu": post_data.get("menu") or menu,
-                    "feedShared": post_data.get("feedShared", False)
-                })
+            menu = {**gen_data["menu"], "status": "draft", "shareToFeed": False}
                 
             return _text_result({
                 "success": True,
-                "message": f"Successfully planned draft weekly menu '{menu.get('title')}' for {agent_name}!",
-                "menu": menu
+                "message": f"Generated unpublished weekly menu draft for {agent_name}.",
+                "menu": menu,
+                "feedShared": False,
             })
             
     except Exception as exc:
@@ -874,6 +887,32 @@ async def plan_weekly_menu(arguments: Dict[str, Any]) -> Dict[str, Any]:
             },
             is_error=True
         )
+
+
+async def publish_weekly_menu(arguments: Dict[str, Any]) -> Dict[str, Any]:
+    credential = _INVOCATION_CREDENTIAL.get()
+    if not credential:
+        return _text_result({"error": "An authorized publisher credential is required."}, is_error=True)
+    menu = arguments.get("menu")
+    key = arguments.get("idempotencyKey")
+    if not isinstance(menu, dict) or not menu:
+        return _text_result({"error": "menu must be the reviewed draft object."}, is_error=True)
+    if not isinstance(key, str) or not 1 <= len(key) <= 200 or any(not 33 <= ord(c) <= 126 for c in key):
+        return _text_result({"error": "idempotencyKey must contain 1–200 visible ASCII characters."}, is_error=True)
+    try:
+        async with httpx.AsyncClient(timeout=60.0) as client:
+            response = await client.post(
+                f"{FRONTEND_URL.rstrip('/')}/api/menu-planner/publish",
+                json={"menu": menu},
+                headers={"X-API-Key": credential, "Idempotency-Key": key},
+            )
+            response.raise_for_status()
+            payload = response.json()
+            if not isinstance(payload, dict) or payload.get("success") is not True:
+                raise ValueError("Publication did not confirm success")
+            return _text_result(payload)
+    except Exception as exc:
+        return _text_result({"error": "publish_weekly_menu failed", "message": str(exc)}, is_error=True)
 
 
 async def list_planetary_agents(arguments: Dict[str, Any]) -> Dict[str, Any]:
@@ -1048,8 +1087,35 @@ TOOL_HANDLERS = {
     "play_agent_word_duel": play_agent_word_duel,
     "play_jing_arena_move": play_jing_arena_move,
     "plan_weekly_menu": plan_weekly_menu,
+    "publish_weekly_menu": publish_weekly_menu,
 }
 
+
+
+def _invocation_credential(arguments: Dict[str, Any]) -> Optional[str]:
+    meta = arguments.get("_meta") if isinstance(arguments.get("_meta"), dict) else {}
+    credential = meta.get("apiKey") or meta.get("api_key") or os.getenv("PA_MCP_API_KEY") or os.getenv("PA_USER_API_KEY")
+    if credential is not None and (not isinstance(credential, str) or not credential.strip()):
+        raise ValueError("Invalid MCP credential")
+    return credential
+
+
+async def _backend_identity(credential: Optional[str]):
+    if not credential:
+        return None, None, "anonymous"
+    async with httpx.AsyncClient(timeout=10.0) as client:
+        response = await client.get(
+            f"{BACKEND_URL.rstrip('/')}/api/mcp/identity",
+            headers={"X-API-Key": credential},
+        )
+        response.raise_for_status()
+        identity = response.json()
+    if not isinstance(identity, dict) or identity.get("authTier") not in {"anonymous", "standard", "alchemist"}:
+        raise ValueError("Backend returned an invalid identity")
+    for field in ("apiKeyId", "userId"):
+        if identity.get(field) is not None and not isinstance(identity[field], str):
+            raise ValueError("Backend returned an invalid identity")
+    return identity.get("apiKeyId"), identity.get("userId"), identity["authTier"]
 
 
 async def handle_request(message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
@@ -1229,7 +1295,11 @@ async def handle_request(message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             arguments = params.get("arguments") if isinstance(params.get("arguments"), dict) else {}
 
             # Gate and validate before dispatching
-            gated_args, api_key_id, user_id, auth_tier, resolved_model_tier = mcp_invocation_log.validate_and_gate_invocation(name, arguments)
+            credential = _invocation_credential(arguments)
+            identity = await _backend_identity(credential)
+            gated_args, api_key_id, user_id, auth_tier, resolved_model_tier = mcp_invocation_log.validate_and_gate_invocation(
+                name, arguments, resolved_identity=identity,
+            )
 
             handler = TOOL_HANDLERS.get(name)
             if handler is None:
@@ -1239,6 +1309,7 @@ async def handle_request(message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
             success = True
             error_message = None
             result = None
+            credential_token = _INVOCATION_CREDENTIAL.set(credential)
 
             try:
                 result = await handler(gated_args)
@@ -1257,11 +1328,12 @@ async def handle_request(message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                 error_message = str(exc)
                 raise exc
             finally:
+                _INVOCATION_CREDENTIAL.reset(credential_token)
                 completed_at = datetime.utcnow()
                 latency_ms = int((completed_at - called_at).total_seconds() * 1000)
 
                 # Extract caller
-                meta = arguments.get("_meta") or {}
+                meta = arguments.get("_meta") if isinstance(arguments.get("_meta"), dict) else {}
                 caller = meta.get("caller") or "anonymous"
 
                 # Resolve agentId
