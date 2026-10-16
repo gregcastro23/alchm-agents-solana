@@ -1094,7 +1094,7 @@ TOOL_HANDLERS = {
 
 def _invocation_credential(arguments: Dict[str, Any]) -> Optional[str]:
     meta = arguments.get("_meta") if isinstance(arguments.get("_meta"), dict) else {}
-    credential = meta.get("apiKey") or meta.get("api_key") or os.getenv("PA_MCP_API_KEY") or os.getenv("PA_USER_API_KEY")
+    credential = meta.get("apiKey") or meta.get("api_key") or os.getenv("PA_MCP_API_KEY") or os.getenv("PA_USER_API_KEY") or None
     if credential is not None and (not isinstance(credential, str) or not credential.strip()):
         raise ValueError("Invalid MCP credential")
     return credential
