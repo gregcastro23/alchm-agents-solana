@@ -52,7 +52,7 @@ def test_resolve_launch_published_package_with_bun(monkeypatch):
     launch = alchm_mcp._resolve_launch()
     assert launch["mode"] == "published-package"
     assert launch["command"] == "bun"
-    assert launch["args"] == ["x", "@alchm/mcp-server"]
+    assert launch["args"] == ["x", "@alchm/mcp-server@1.1.2"]
     assert launch["cwd"] is None
 
 
@@ -73,7 +73,7 @@ def test_config_status_surfaces_launch_mode(monkeypatch):
     status = alchm_mcp.config_status()
     assert status["launchMode"] == "published-package"
     assert status["serverPathExists"] is False
-    assert status["publishedPackage"] == "@alchm/mcp-server"
+    assert status["publishedPackage"] == "@alchm/mcp-server@1.1.2"
 
 
 def test_default_server_path_supports_shallow_container_layout(monkeypatch):

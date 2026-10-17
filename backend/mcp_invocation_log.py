@@ -269,3 +269,18 @@ async def prune_mcp_invocations(retain_days: int = 7) -> int:
             db.close()
 
     return await loop.run_in_executor(None, _db_prune)
+
+
+async def drain_and_close(timeout: float = 5.0) -> None:
+    """Drain all in-flight invocation log writes before shutdown."""
+    if not _INFLIGHT_WRITES:
+        return
+    pending = list(_INFLIGHT_WRITES)
+    if pending:
+        try:
+            await asyncio.wait_for(
+                asyncio.gather(*pending, return_exceptions=True),
+                timeout=timeout,
+            )
+        except (asyncio.TimeoutError, asyncio.CancelledError):
+            pass

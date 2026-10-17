@@ -24,8 +24,41 @@ DEFAULT_PROTOCOL_VERSION = "2025-06-18"
 # alchm-kitchen → @alchm/mcp-server). Used as the launch fallback when no local
 # WhatToEatNext source tree is checked out, so deploys and the bundled pa-mcp
 # desktop sidecar can still reach live transits/recipes instead of degrading to
-# no Alchm data. Pin a version by setting ALCHM_MCP_PACKAGE=@alchm/mcp-server@1.1.1.
-DEFAULT_PACKAGE = "@alchm/mcp-server"
+# no Alchm data. Pin a version by setting ALCHM_MCP_PACKAGE=@alchm/mcp-server@1.1.2.
+DEFAULT_PACKAGE = "@alchm/mcp-server@1.1.2"
+
+# Child process environment whitelist to prevent leaking host secrets (OpenAI,
+# Anthropic, Solana wallets, Stripe secrets) to child subprocesses.
+_ALLOWED_ENV_EXACT = {
+    "PATH",
+    "HOME",
+    "USER",
+    "LOGNAME",
+    "TMPDIR",
+    "LANG",
+    "LC_ALL",
+    "SHELL",
+    "TERM",
+    "BUN_INSTALL",
+    "NODE_ENV",
+    "NODE_PATH",
+    "DATABASE_URL",
+}
+_ALLOWED_ENV_PREFIXES = ("ALCHM_MCP_",)
+
+
+def _sanitized_child_env() -> Dict[str, str]:
+    """Build a clean environment dictionary for the Alchm MCP child process."""
+    clean: Dict[str, str] = {}
+    for key, value in os.environ.items():
+        if key in _ALLOWED_ENV_EXACT or any(key.startswith(p) for p in _ALLOWED_ENV_PREFIXES):
+            clean[key] = value
+    database_url = os.getenv("ALCHM_MCP_DATABASE_URL") or os.getenv("DATABASE_URL")
+    if database_url:
+        clean["DATABASE_URL"] = database_url
+    if "PATH" not in clean:
+        clean["PATH"] = os.defpath
+    return clean
 
 # Launch circuit-breaker. When a launcher fails to boot (missing `bun`/`node`
 # runtime, or a published package that crashes on startup — e.g. an undeclared
@@ -252,7 +285,11 @@ class AlchmMCPClient:
         self._proc: Optional[asyncio.subprocess.Process] = None
         self._request_id = 0
         self._start_lock = asyncio.Lock()
-        self._request_lock = asyncio.Lock()
+        self._write_lock = asyncio.Lock()
+        max_concurrency = int(os.getenv("ALCHM_MCP_MAX_CONCURRENCY", "4"))
+        self._semaphore = asyncio.Semaphore(max(1, max_concurrency))
+        self._pending_requests: Dict[int, asyncio.Future[Dict[str, Any]]] = {}
+        self._stdout_task: Optional[asyncio.Task[None]] = None
         self._stderr_task: Optional[asyncio.Task[None]] = None
         self._stderr_tail: deque[str] = deque(maxlen=20)
         self._stdout_tail: deque[str] = deque(maxlen=20)
@@ -286,13 +323,10 @@ class AlchmMCPClient:
 
             # Resolve the launch plan: explicit override → local dev source →
             # published npm package. No longer hard-fails when the sibling WTEN
-            # source is absent; it falls back to `bunx @alchm/mcp-server`.
+            # source is absent; it falls back to `bunx @alchm/mcp-server@1.1.2`.
             launch = _resolve_launch()
             command, args = launch["command"], launch["args"]
-            env = os.environ.copy()
-            database_url = os.getenv("ALCHM_MCP_DATABASE_URL") or os.getenv("DATABASE_URL")
-            if database_url:
-                env["DATABASE_URL"] = database_url
+            env = _sanitized_child_env()
 
             try:
                 try:
@@ -313,6 +347,7 @@ class AlchmMCPClient:
                     ) from exc
 
                 self._stderr_task = asyncio.create_task(self._drain_stderr())
+                self._stdout_task = asyncio.create_task(self._drain_stdout())
                 await self._initialize()
             except Exception:
                 # Open the breaker with exponential backoff, then re-raise so the
@@ -343,6 +378,49 @@ class AlchmMCPClient:
             if decoded:
                 self._stderr_tail.append(decoded)
 
+    async def _drain_stdout(self) -> None:
+        proc = self._proc
+        if not proc or not proc.stdout:
+            return
+        while True:
+            try:
+                line = await proc.stdout.readline()
+            except (asyncio.CancelledError, Exception):
+                break
+            if not line:
+                break
+            try:
+                message = json.loads(line.decode("utf-8"))
+            except json.JSONDecodeError:
+                decoded = line.decode("utf-8", errors="replace").strip()
+                if decoded:
+                    self._stdout_tail.append(decoded)
+                continue
+
+            msg_id = message.get("id")
+            if msg_id is not None and msg_id in self._pending_requests:
+                fut = self._pending_requests.pop(msg_id)
+                if not fut.done():
+                    if "error" in message:
+                        error = message["error"]
+                        detail = error.get("message") if isinstance(error, dict) else str(error)
+                        fut.set_exception(AlchmMCPError(f"Alchm MCP request failed: {detail}"))
+                    else:
+                        result = message.get("result")
+                        fut.set_result(result if isinstance(result, dict) else {})
+
+        # Process exited or stdout closed. Reject any lingering futures.
+        stderr_tail = "; ".join(self._stderr_tail)
+        stdout_tail = "; ".join(self._stdout_tail)
+        exit_err = AlchmMCPError(
+            f"Alchm MCP process exited while requests were pending: "
+            f"stderr={stderr_tail} stdout={stdout_tail}"
+        )
+        for fut in list(self._pending_requests.values()):
+            if not fut.done():
+                fut.set_exception(exit_err)
+        self._pending_requests.clear()
+
     async def _initialize(self) -> None:
         protocol_version = os.getenv("ALCHM_MCP_PROTOCOL_VERSION", DEFAULT_PROTOCOL_VERSION)
         await self._request(
@@ -357,56 +435,48 @@ class AlchmMCPClient:
         await self.list_tools(refresh=True)
 
     async def _notify(self, method: str, params: Optional[Dict[str, Any]] = None) -> None:
-        await self._write({"jsonrpc": "2.0", "method": method, **({"params": params} if params else {})})
+        async with self._write_lock:
+            await self._write({"jsonrpc": "2.0", "method": method, **({"params": params} if params else {})})
 
-    async def _request(self, method: str, params: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        if not self._proc or not self._proc.stdout:
+    async def _request(
+        self,
+        method: str,
+        params: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        if not self._proc or not self._proc.stdout or not self._proc.stdin:
             raise AlchmMCPError("Alchm MCP process is not running")
 
-        async with self._request_lock:
+        if timeout is None:
+            timeout = float(os.getenv("ALCHM_MCP_TIMEOUT_SECONDS", "8"))
+
+        async with self._semaphore:
+            loop = asyncio.get_running_loop()
             self._request_id += 1
             request_id = self._request_id
-            await self._write(
-                {
-                    "jsonrpc": "2.0",
-                    "id": request_id,
-                    "method": method,
-                    **({"params": params} if params is not None else {}),
-                }
-            )
+            fut: asyncio.Future[Dict[str, Any]] = loop.create_future()
+            self._pending_requests[request_id] = fut
 
-            timeout = float(os.getenv("ALCHM_MCP_TIMEOUT_SECONDS", "8"))
-            while True:
-                try:
-                    line = await asyncio.wait_for(self._proc.stdout.readline(), timeout=timeout)
-                except asyncio.TimeoutError as exc:
-                    raise AlchmMCPError(f"Alchm MCP request timed out: {method}") from exc
-
-                if not line:
-                    stderr_tail = "; ".join(self._stderr_tail)
-                    stdout_tail = "; ".join(self._stdout_tail)
-                    raise AlchmMCPError(
-                        f"Alchm MCP process exited while waiting for {method}: "
-                        f"stderr={stderr_tail} stdout={stdout_tail}"
+            try:
+                async with self._write_lock:
+                    await self._write(
+                        {
+                            "jsonrpc": "2.0",
+                            "id": request_id,
+                            "method": method,
+                            **({"params": params} if params is not None else {}),
+                        }
                     )
-
-                try:
-                    message = json.loads(line.decode("utf-8"))
-                except json.JSONDecodeError:
-                    decoded = line.decode("utf-8", errors="replace").strip()
-                    if decoded:
-                        self._stdout_tail.append(decoded)
-                    continue
-
-                if message.get("id") != request_id:
-                    continue
-                if "error" in message:
-                    error = message["error"]
-                    detail = error.get("message") if isinstance(error, dict) else str(error)
-                    raise AlchmMCPError(f"Alchm MCP {method} failed: {detail}")
-
-                result = message.get("result")
-                return result if isinstance(result, dict) else {}
+                return await asyncio.wait_for(fut, timeout=timeout)
+            except asyncio.TimeoutError as exc:
+                self._pending_requests.pop(request_id, None)
+                raise AlchmMCPError(f"Alchm MCP request timed out: {method}") from exc
+            except asyncio.CancelledError:
+                self._pending_requests.pop(request_id, None)
+                raise
+            except Exception:
+                self._pending_requests.pop(request_id, None)
+                raise
 
     async def _write(self, message: Dict[str, Any]) -> None:
         if not self._proc or not self._proc.stdin:
@@ -431,30 +501,40 @@ class AlchmMCPClient:
         self._tools = [tool for tool in tools if isinstance(tool, dict)]
         return self._tools
 
-    async def call_tool(self, name: str, arguments: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    async def call_tool(
+        self,
+        name: str,
+        arguments: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
+    ) -> Dict[str, Any]:
         if name not in ALCHM_MCP_TOOL_NAMES:
             raise AlchmMCPError(f"Unsupported Alchm MCP tool: {name}")
         await self.ensure_started()
-        result = await self._request("tools/call", {"name": name, "arguments": arguments or {}})
+        result = await self._request("tools/call", {"name": name, "arguments": arguments or {}}, timeout=timeout)
         if result.get("isError"):
             raise AlchmMCPError(_content_text(result) or f"Alchm MCP tool failed: {name}")
         return result
 
-    async def call_tool_json(self, name: str, arguments: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
-        return parse_tool_json(await self.call_tool(name, arguments))
+    async def call_tool_json(
+        self,
+        name: str,
+        arguments: Optional[Dict[str, Any]] = None,
+        timeout: Optional[float] = None,
+    ) -> Dict[str, Any]:
+        return parse_tool_json(await self.call_tool(name, arguments, timeout=timeout))
 
     async def close(self) -> None:
         proc = self._proc
         self._proc = None
         self._tools = None
 
-        if proc and proc.returncode is None:
-            proc.terminate()
+        if self._stdout_task:
+            self._stdout_task.cancel()
             try:
-                await asyncio.wait_for(proc.wait(), timeout=3)
-            except asyncio.TimeoutError:
-                proc.kill()
-                await proc.wait()
+                await self._stdout_task
+            except asyncio.CancelledError:
+                pass
+            self._stdout_task = None
 
         if self._stderr_task:
             self._stderr_task.cancel()
@@ -463,6 +543,24 @@ class AlchmMCPClient:
             except asyncio.CancelledError:
                 pass
             self._stderr_task = None
+
+        # Fail any remaining in-flight requests
+        for fut in self._pending_requests.values():
+            if not fut.done():
+                fut.set_exception(AlchmMCPError("Alchm MCP client closed"))
+        self._pending_requests.clear()
+
+        if proc and proc.returncode is None:
+            if hasattr(proc, "terminate"):
+                proc.terminate()
+            try:
+                if hasattr(proc, "wait"):
+                    await asyncio.wait_for(proc.wait(), timeout=3)
+            except asyncio.TimeoutError:
+                if hasattr(proc, "kill"):
+                    proc.kill()
+                if hasattr(proc, "wait"):
+                    await proc.wait()
 
 
 _CLIENT = AlchmMCPClient()
@@ -477,12 +575,16 @@ async def list_tools() -> List[Dict[str, Any]]:
     return await _CLIENT.list_tools()
 
 
-async def call_tool_json(name: str, arguments: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+async def call_tool_json(
+    name: str,
+    arguments: Optional[Dict[str, Any]] = None,
+    timeout: Optional[float] = None,
+) -> Dict[str, Any]:
     # Single telemetry chokepoint: every public tool wrapper and both call paths
     # (main.py chat hydration + the PA MCP server's debate/jing tools) route through
     # here, so recording success/error here covers all call sites uniformly.
     try:
-        result = await _CLIENT.call_tool_json(name, arguments)
+        result = await _CLIENT.call_tool_json(name, arguments, timeout=timeout)
     except Exception as exc:
         record_error(name, exc)
         raise

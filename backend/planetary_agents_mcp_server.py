@@ -13,6 +13,7 @@ import httpx
 import alchm_mcp
 from datetime import datetime
 import mcp_invocation_log
+from mcp_context import EvidenceSnapshot, ExecutionContext
 from mcp_contracts import ContractValidationError, validate_arguments, validate_result, tool_schemas
 from secure_compare import secret_matches
 
@@ -462,6 +463,7 @@ async def _backend_chat(
     model_tier: Optional[str] = None,
     sky_state: Optional[Dict[str, Any]] = None,
     session_id: Optional[str] = None,
+    execution_context: Optional[ExecutionContext] = None,
 ) -> Dict[str, Any]:
     agent_id = _agent_id(agent_name)
     merged_context = dict(context or {})
@@ -477,6 +479,10 @@ async def _backend_chat(
         if "lunarPhase" in sky_state and "lunarPhase" not in merged_context:
             merged_context["lunarPhase"] = sky_state["lunarPhase"]
 
+    if execution_context and execution_context.evidence_snapshot:
+        merged_context.setdefault("evidenceSnapshot", execution_context.evidence_snapshot.to_dict())
+        merged_context.setdefault("evidenceSnapshotId", execution_context.evidence_snapshot.snapshot_id)
+
     payload = {
         "agentId": agent_id,
         "message": message,
@@ -485,11 +491,21 @@ async def _backend_chat(
         "modelTier": model_tier or DEFAULT_MODEL_TIER,
     }
 
-    async with httpx.AsyncClient(timeout=45.0) as client:
-        credential = _INVOCATION_CREDENTIAL.get()
+    headers: Dict[str, str] = {}
+    if execution_context:
+        headers.update(execution_context.correlation_headers())
+    credential = _INVOCATION_CREDENTIAL.get()
+    if credential:
+        headers["X-API-Key"] = credential
+
+    timeout_seconds = 45.0
+    if execution_context:
+        timeout_seconds = min(45.0, max(5.0, execution_context.remaining_budget))
+
+    async with httpx.AsyncClient(timeout=timeout_seconds) as client:
         response = await client.post(
             f"{BACKEND_URL.rstrip('/')}/api/chat", json=payload,
-            headers={"X-API-Key": credential} if credential else {},
+            headers=headers,
         )
         response.raise_for_status()
         data = response.json()
@@ -513,6 +529,16 @@ async def chat_with_planetary_agent(arguments: Dict[str, Any]) -> Dict[str, Any]
         return _text_result({"error": "sessionId must be a string of at most 512 characters"}, is_error=True)
 
     sky_state = await _live_sky_context()
+    snapshot = EvidenceSnapshot.create(
+        sky_transits=sky_state,
+        tool="chat_with_planetary_agent",
+    )
+    exec_ctx = ExecutionContext(
+        request_id=f"req_{uuid.uuid4().hex[:12]}",
+        deadline_seconds=45.0,
+        caller="chat_with_planetary_agent",
+        evidence_snapshot=snapshot,
+    )
 
     try:
         result = await _backend_chat(
@@ -522,12 +548,14 @@ async def chat_with_planetary_agent(arguments: Dict[str, Any]) -> Dict[str, Any]
             context=arguments.get("context") if isinstance(arguments.get("context"), dict) else None,
             model_tier=arguments.get("modelTier"),
             sky_state=sky_state,
+            execution_context=exec_ctx,
             **({"session_id": session_id} if session_id else {}),
         )
         # Surface the sky snapshot in the tool result so the calling LLM
         # can quote it directly without a second round-trip.
         if sky_state:
             result["liveSkyState"] = sky_state
+        result["evidenceSnapshotId"] = snapshot.snapshot_id
         return _text_result(result)
     except Exception as exc:
         return _text_result(
@@ -536,6 +564,7 @@ async def chat_with_planetary_agent(arguments: Dict[str, Any]) -> Dict[str, Any]
                 "message": str(exc),
                 "backendUrl": BACKEND_URL,
                 "liveSkyState": sky_state,
+                "evidenceSnapshotId": snapshot.snapshot_id,
             },
             is_error=True,
         )
@@ -615,6 +644,20 @@ async def synthesize_culinary_debate(arguments: Dict[str, Any]) -> Dict[str, Any
     except Exception as exc:
         data_errors.append(f"generate_cosmic_recipe: {exc}")
 
+    snapshot = EvidenceSnapshot.create(
+        sky_transits=sky_state,
+        alchemical_scan=alchemical_scan,
+        recipe_candidates=recipe_candidates,
+        ingredients=ingredients,
+        tool="synthesize_culinary_debate",
+    )
+    exec_ctx = ExecutionContext(
+        request_id=f"req_{uuid.uuid4().hex[:12]}",
+        deadline_seconds=60.0,
+        caller="synthesize_culinary_debate",
+        evidence_snapshot=snapshot,
+    )
+
     # Auto-detect and trigger a chart-specific Jing interaction between the main debating agents
     triggered_jing = None
     if len(agents) >= 2:
@@ -643,6 +686,8 @@ async def synthesize_culinary_debate(arguments: Dict[str, Any]) -> Dict[str, Any
         "ingredients": ingredients,
         "alchemicalScan": alchemical_scan,
         "recipeCandidates": recipe_candidates,
+        "evidenceSnapshot": snapshot.to_dict(),
+        "evidenceSnapshotId": snapshot.snapshot_id,
         "topic": "culinary debate",
     }
     if triggered_jing:
@@ -658,6 +703,7 @@ async def synthesize_culinary_debate(arguments: Dict[str, Any]) -> Dict[str, Any
                 context=context,
                 model_tier=model_tier,
                 sky_state=sky_state,
+                execution_context=exec_ctx,
             )
         except Exception as exc:
             return {"agentName": agent, "agentId": _agent_id(agent), "error": str(exc)}
@@ -673,6 +719,7 @@ async def synthesize_culinary_debate(arguments: Dict[str, Any]) -> Dict[str, Any
             "triggeredJing": triggered_jing,
             "dataErrors": data_errors,
             "dialogue": dialogue,
+            "evidenceSnapshotId": snapshot.snapshot_id,
         }
     )
 
@@ -1310,6 +1357,7 @@ async def main() -> None:
         await run_stdio(sys.modules[__name__])
     finally:
         await alchm_mcp.close_client()
+        await mcp_invocation_log.drain_and_close()
 
 
 def run() -> None:
