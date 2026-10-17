@@ -1,10 +1,48 @@
 # Planetary Agents MCP Server
 
+## Typed contracts and SDK transport (Phase 3)
+
+The stdio transport uses the official Python SDK, pinned to `mcp==2.3.0`.
+This project requires Python 3.11+. The SDK serves modern `2026-07-28`
+`server/discover` requests and legacy initialization on the same transport;
+changing `PLANETARY_AGENTS_MCP_PROTOCOL_VERSION` does not select its wire behavior.
+The desktop probes discovery and falls back to legacy initialization only after
+an unsupported-method response.
+
+All nine tools advertise Pydantic-generated `inputSchema` and `outputSchema`.
+Arguments are bounded and validated before identity lookup or provider work.
+Successful results are validated and returned as both `structuredContent` and
+identical JSON text for older clients. Tool execution/output failures retain
+`isError`; malformed arguments return an invalid-parameters error.
+
+Standard tool metadata is `params._meta`. Existing `params.arguments._meta`
+credentials remain supported. Conflicting credential values are rejected;
+only the normalized API key and bounded `caller` metadata reach the invocation
+boundary. Protocol and arbitrary metadata are not copied into telemetry.
+
+Install the locked sidecar runtime from the repository root, then run the source
+server or build with the separately pinned PyInstaller version:
+
+```bash
+python -m pip install --require-hashes -r backend/requirements-mcp.lock
+python -m pip install "pyinstaller==6.22.3"
+python backend/mcp_smoke.py --python backend/planetary_agents_mcp_server.py
+```
+
+The smoke harness uses disposable local storage and no model/publication calls.
+It checks discovery/legacy initialization, all nine schemas, local resources and
+prompts, argument rejection, structured/text equivalence, and EOF shutdown.
+Release CI runs it against each native frozen binary. `PA_MCP_DATA_DIR` can select
+an isolated telemetry directory for frozen runtime checks.
+
+See the [Phase 3 verification record](../docs/development/mcp-phase3-2026-10-17.md)
+for the tested compatibility matrix and remaining Phase 4/5 work.
+
 ## Identity, private conversations, and publication
 
 The server now exposes nine tools, including the separate `publish_weekly_menu`
 operation. Configure a client credential with `PA_MCP_API_KEY`, or pass the
-existing `_meta.apiKey` field on a tool call. The backend verifies the credential
+standard `params._meta.apiKey` field on a tool call (the legacy argument location also works). The backend verifies the credential
 through `/api/mcp/identity` and verifies it again when chat executes; the local
 sidecar database is not the source of cloud entitlements. Expired and revoked
 keys cannot identify a user or request privileged model tiers.
@@ -24,8 +62,7 @@ Desktop chat sends private visibility explicitly. Server-to-server chat callers
 authenticate with `INTERNAL_API_SECRET` and must derive forwarded `userId` from
 their verified session. Public callers cannot assert another user's identity.
 
-`plan_weekly_menu` returns an unpublished draft without saving, regenerating a
-saved menu, or sharing to the feed. It rejects `status: "completed"` and
+`plan_weekly_menu` returns an unpublished draft without saving it or sharing to the feed. It rejects `status: "completed"` and
 `shareToFeed: true`. To publish a reviewed draft, call `publish_weekly_menu` with
 `menu` and a stable `idempotencyKey` of 1–200 visible ASCII characters. Publishing
 requires a verified admin/operator/alchemist role or the configured

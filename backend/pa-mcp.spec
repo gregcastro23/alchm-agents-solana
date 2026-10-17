@@ -48,6 +48,9 @@ a = Analysis(
         'mcp_invocation_log',
         'database',
         'models',
+        'mcp_contracts',
+        'mcp_sdk_adapter',
+        'pydantic_core._pydantic_core',
         # SQLAlchemy SQLite dialect — analysis sometimes misses these
         # because they're loaded by URL inspection at runtime. The
         # desktop sidecar only ever uses SQLite (database.py falls back
@@ -92,11 +95,9 @@ a = Analysis(
         'PyQt6',
         'PySide2',
         'PySide6',
-        # FastAPI server — only needed by the HTTP backend, not the
-        # stdio MCP server. Excluding it drops uvicorn + starlette.
+        # FastAPI belongs to the HTTP application. Starlette and uvicorn
+        # remain available because they are imported by the official SDK.
         'fastapi',
-        'uvicorn',
-        'starlette',
         # OpenAI / Anthropic — the MCP server proxies to the backend
         # over HTTP via httpx; it never calls these directly.
         'openai',
@@ -117,12 +118,8 @@ a = Analysis(
         # they're absent. Excluding them shrinks the bundle slightly
         # and unblocks cross-arch builds from Apple Silicon.
         'sqlalchemy.cyextension',
-        # Pydantic v2 ships a Rust core (.so) that is per-arch. Nothing
-        # in the MCP server's import graph uses pydantic — it gets
-        # pulled in transitively by venv-mate packages. Drop it.
-        'pydantic',
-        'pydantic_core',
-        '_pydantic_core',
+        # Pydantic and its native core are required by the typed MCP SDK.
+        # Build with a target-native environment for each architecture.
     ],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,

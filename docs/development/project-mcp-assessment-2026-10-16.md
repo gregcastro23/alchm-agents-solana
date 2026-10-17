@@ -1,5 +1,7 @@
 # Project MCP assessment and upgrade recommendations
 
+> Implementation update — October 17, 2026: Phases 1 and 2 are implemented, and Phase 3 now has typed contracts, the official SDK transport, paired desktop compatibility, and local source/native-binary verification. See the [Phase 3 record](mcp-phase3-2026-10-17.md). This assessment preserves the original baseline findings; its later-phase recommendations remain roadmap work.
+
 Date: October 16, 2026. Code baseline: `ca8825e` (October 12, 2026). Scope: the Planetary Agents Python MCP server, its Alchm data-server connection, desktop clients, and adjacent agent execution paths. This is a source-code assessment with isolated behavior checks; it does not establish the deployed version, live traffic, latency, cost, or production incident status.
 
 ## Assessment

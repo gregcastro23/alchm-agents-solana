@@ -18,6 +18,8 @@ from zipfile import ZipFile
 BACKEND = Path(__file__).resolve().parents[1]
 REQUIRED_MODULES = {
     "planetary_agents_mcp_server.py",
+    "mcp_contracts.py",
+    "mcp_sdk_adapter.py",
     "alchm_mcp.py",
     "mcp_invocation_log.py",
     "database.py",
@@ -83,6 +85,11 @@ class MCPPackagingTests(unittest.TestCase):
                     "assert secure_compare.secret_matches('wheel-test', 'wheel-test'); "
                     "assert not secure_compare.secret_matches('wrong', 'wheel-test'); "
                     "assert not secure_compare.secret_matches('', ''); "
+                    "import mcp_contracts, mcp_sdk_adapter; "
+                    "assert mcp_contracts.__loader__.archive == sys.argv[1]; "
+                    "assert mcp_sdk_adapter.__loader__.archive == sys.argv[1]; "
+                    "validated = mcp_contracts.validate_arguments('chat_with_planetary_agent', {'agentName': 'Socrates', 'message': 'wheel test'}); "
+                    "assert validated['message'] == 'wheel test'; "
                     "assert 'database' not in sys.modules; "
                     "assert 'main' not in sys.modules",
                     str(wheel),

@@ -4,11 +4,14 @@ import {
   postCircleOffer,
   type CircleFailure,
 } from '@/lib/alchm-transmute-sync'
+import { feedStreamBus } from '@/lib/agents/feed-stream-bus'
 
 export interface CircleAgent {
   userId: string
   agentEmail: string
   agentName: string
+  name?: string
+  email?: string
 }
 
 function logRefusal(agent: CircleAgent, action: string, result: CircleFailure): void {
@@ -25,6 +28,11 @@ export async function circleStep(agent: CircleAgent): Promise<void> {
       logRefusal(agent, 'board', board)
       return
     }
+
+    if (board.recentTrades || board.resonanceWindows) {
+      feedStreamBus.hydrate(board.recentTrades, board.resonanceWindows)
+    }
+
     if (!board.market.live || !board.needs || board.needs.lacking.length === 0) return
 
     const today = new Date().toISOString().slice(0, 10)
@@ -49,6 +57,30 @@ export async function circleStep(agent: CircleAgent): Promise<void> {
         const result = await acceptCircleOffer(agent.agentEmail, offer.id)
         if (result.ok) {
           console.info(`[AgentCircle] ${agent.agentEmail} traded ${JSON.stringify(result.trade)}`)
+          if (result.trade && (result.trade.resonanceBonusPct ?? 0) > 0) {
+            feedStreamBus.recordTrade({
+              type: 'triplicate-trade',
+              id: result.trade.transactionGroupId || offer.id,
+              tradeId: result.trade.transactionGroupId || offer.id,
+              timestamp: new Date().toISOString(),
+              makerName: offer.maker?.name || 'Alchemist',
+              takerName:
+                agent.name ||
+                agent.agentName?.trim() ||
+                agent.email ||
+                agent.agentEmail ||
+                'Alchemist',
+              aspectName: result.trade.aspectDescription || 'Triplicate Synastry Alignment',
+              aspectDescription: result.trade.aspectDescription || 'Triplicate Synastry Alignment',
+              // Maker gave what Taker received; Maker received what Taker gave
+              gaveToken: result.trade.received.tokenType,
+              gaveAmount: result.trade.received.amount,
+              receivedToken: result.trade.gave.tokenType,
+              receivedAmount: result.trade.gave.amount,
+              resonanceBonusPct: result.trade.resonanceBonusPct ?? 0,
+              transitCatalyst: result.trade.transitCatalyst || 'Live Sky Transit',
+            })
+          }
         } else {
           logRefusal(agent, 'accept', result)
         }

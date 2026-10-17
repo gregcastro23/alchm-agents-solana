@@ -2,6 +2,16 @@
 
 Research date: October 16, 2026. Scope: current official MCP specifications and Python SDK documentation, applied to the project's Python stdio server and desktop client boundary. This memo records recommendations, not implemented changes or verification of a deployed server. Sources were checked live; only first-party protocol and SDK sources are used.
 
+## Implementation update — October 17, 2026
+
+Phase 3 now uses the official SDK `mcp==2.3.0` with typed contracts and a paired
+desktop adapter. The tagged release supports Python 3.10+; the project chooses
+Python 3.11+ for its build/runtime baseline. The earlier statement about the
+repository's 3.11 minimum describes SDK `main`, not the pinned release's metadata.
+See the [Phase 3 verification record](mcp-phase3-2026-10-17.md). Remaining
+recommendations below describe later phases rather than capabilities already
+implemented.
+
 ## Recommendation
 
 Keep the desktop stdio transport and move protocol handling into the official Python SDK behind explicit, typed project services. Improve authentication, input/output contracts and execution lifecycle before adding more tools. Upgrade the Python sidecar and TypeScript/Rust desktop client together, with legacy compatibility tests. A hosted HTTP MCP endpoint is a separate product decision, not a prerequisite for these improvements.

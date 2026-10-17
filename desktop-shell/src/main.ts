@@ -1,5 +1,6 @@
 import './styles.css'
 import { LocalMcpClient } from './localMcpClient'
+import { parseMcpToolJson } from './mcpToolResult'
 
 import type { CraftedAgent, Element } from '../../lib/agent-types'
 import { DEMO_AGENTS } from '../../lib/demo-agents-data'
@@ -1895,21 +1896,6 @@ function mcpAgentPayload(agent: LocalAgent): {
   return { id: agent.id, natalChart: { planets } }
 }
 
-function parseMcpToolJson<T = unknown>(result: unknown): T | null {
-  const content = (result as { content?: Array<{ text?: string }> } | null)?.content
-  if (!Array.isArray(content)) return null
-  const text = content
-    .map(item => (item && typeof item.text === 'string' ? item.text : ''))
-    .join('\n')
-    .trim()
-  if (!text) return null
-  try {
-    return JSON.parse(text) as T
-  } catch {
-    return null
-  }
-}
-
 async function refreshJingOverlays(force = false): Promise<void> {
   const overlays = state.runtime.jingOverlays
   const casterId = state.jingCasterId
@@ -2052,10 +2038,9 @@ async function generateJingTurnText(
         _meta: { apiKey, caller: 'alchm-desktop-jing' },
       },
     })
-    if (mcpResult?.content?.[0]?.text) {
-      const payload = JSON.parse(mcpResult.content[0].text)
-      if (payload.text) return payload.text
-    }
+    const payload = parseMcpToolJson<{ text?: string; error?: string }>(mcpResult)
+    if (payload?.error) throw new Error(payload.error)
+    if (payload?.text) return payload.text
   } catch (err) {
     console.warn(`[Jing Path 1] MCP failed for ${agent.name}:`, err)
   }
@@ -5366,9 +5351,8 @@ async function requestAgentText(
         },
       })
 
-      if (mcpResult && mcpResult.content && mcpResult.content[0]) {
-        const payloadText = mcpResult.content[0].text
-        const payload = JSON.parse(payloadText)
+      const payload = parseMcpToolJson<{ text?: string; error?: string }>(mcpResult)
+      if (payload) {
         if (payload.error) {
           throw new Error(payload.error)
         }
@@ -6734,7 +6718,9 @@ function bindEvents() {
         // The setNotice below is the user-facing channel; gate the
         // verbose dump behind dev mode so production logs stay quiet.
         if (import.meta.env.DEV) console.log('Test Alchm MCP success:', result)
-        setNotice('Alchm MCP OK: ' + (result?.content?.[0]?.text?.slice(0, 40) || 'Success'))
+        const payload = parseMcpToolJson(result)
+        if (!payload) throw new Error('Empty MCP tool result')
+        setNotice('Alchm MCP OK: ' + JSON.stringify(payload).slice(0, 40))
       } catch (err: any) {
         setNotice('Alchm MCP Fail: ' + err.message)
       }
@@ -6755,7 +6741,9 @@ function bindEvents() {
           },
         })
         if (import.meta.env.DEV) console.log('Test PA MCP success:', result)
-        setNotice('PA MCP OK: ' + (result?.content?.[0]?.text?.slice(0, 40) || 'Success'))
+        const payload = parseMcpToolJson(result)
+        if (!payload) throw new Error('Empty MCP tool result')
+        setNotice('PA MCP OK: ' + JSON.stringify(payload).slice(0, 40))
       } catch (err: any) {
         setNotice('PA MCP Fail: ' + err.message)
       }
