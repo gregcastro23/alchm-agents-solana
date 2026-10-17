@@ -114,7 +114,8 @@ def test_every_body_matches_the_independent_ephemeris(instant):
     for body in BODIES:
         got = positions[body]
         assert circular_delta(got["exactLongitude"], expected[body]["longitude"]) < TOLERANCE_DEG, (instant, body)
-        assert got["isRetrograde"] is expected[body]["retrograde"], (instant, body)
+        if not expected[body].get("retro_boundary"):  # a planet at its station: either flag is defensible
+            assert got["isRetrograde"] is expected[body]["retrograde"], (instant, body)
         assert got["sign"] == SIGNS[int(expected[body]["longitude"] // 30)] or circular_delta(
             got["exactLongitude"], round(expected[body]["longitude"] / 30) * 30
         ) < TOLERANCE_DEG, (instant, body)  # a sign differs only if the body sits on a cusp
@@ -271,3 +272,27 @@ def test_a_body_swiss_ephemeris_cannot_compute_is_a_503_not_a_partial_chart(monk
 
     assert response.status_code == 503
     assert "Pluto" in response.json()["message"]
+
+
+@pytest.mark.parametrize(
+    "longitude,sign,degree,minute,exact",
+    [
+        (359.99996, "Aries", 0, 0, 0.0),  # rounds to 360 -> 0, never "Pisces 29°59′ / 0.0"
+        (29.99996, "Taurus", 0, 0, 30.0),  # rounds to 30 -> next sign
+        (359.99994, "Pisces", 29, 59, 359.9999),
+        (0.0, "Aries", 0, 0, 0.0),
+        (201.893, "Libra", 21, 53, 201.893),
+        (-0.00002, "Aries", 0, 0, 0.0),  # swisseph never returns it, but the maths must hold
+    ],
+)
+def test_sign_degree_minute_and_exact_longitude_always_agree(monkeypatch, longitude, sign, degree, minute, exact):
+    real = main.ephemeris_service.calculate_single_planet
+    monkeypatch.setattr(
+        main.ephemeris_service,
+        "calculate_single_planet",
+        lambda pid, jd: {**real(pid, jd), "longitude": longitude, "speed": 0.5},
+    )
+
+    sun = main._planetary_positions_for(datetime(2026, 10, 15))["Sun"]
+
+    assert (sun["sign"], sun["degree"], sun["minute"], sun["exactLongitude"]) == (sign, degree, minute, exact)

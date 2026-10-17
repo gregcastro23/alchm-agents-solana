@@ -651,17 +651,21 @@ def _planetary_positions_for(dt: datetime) -> Dict[str, Dict[str, Any]]:
         except Exception as exc:
             raise EphemerisUnavailable(f"Swiss Ephemeris failed for {planet}: {exc}") from exc
 
-        longitude = raw["longitude"] % 360.0
+        # exactLongitude, sign, degree and minute all derive from the SAME rounded value, so a
+        # body at 359.99996° is "Aries 0°00′ / 0.0", never "Pisces 29°59′ / 0.0".
+        exact = round(raw["longitude"] % 360.0, 4)
+        if exact >= 360.0:
+            exact = 0.0
         speed = raw["speed"]
-        degree_float = longitude % 30.0
+        degree_float = exact % 30.0
         degree = int(degree_float)
         minute = min(59, int((degree_float - degree) * 60.0))  # zodiacal degrees truncate, never round up
         retrograde = speed < 0
         positions[planet] = {
-            "sign": ZODIAC_SIGNS[int(longitude // 30)],
+            "sign": ZODIAC_SIGNS[int(exact // 30)],
             "degree": degree,
             "minute": minute,
-            "exactLongitude": round(longitude, 4) % 360.0,
+            "exactLongitude": exact,
             "isRetrograde": retrograde,
             "retrogradeSymbol": "℞" if retrograde else "",
             "longitudeSpeed": round(speed, 6),
