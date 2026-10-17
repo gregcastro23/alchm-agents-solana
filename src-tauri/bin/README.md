@@ -61,6 +61,20 @@ scripts/build-sidecar.sh --all-mac-archs
 scripts/build-sidecar.sh --skip-orchestrator --skip-alchm-mcp
 ```
 
+The Python sidecar requires Python 3.11+, the exact runtime lock, and the tested
+PyInstaller version. Prepare the host environment before building:
+
+```bash
+python3.11 -m venv backend/venv
+backend/venv/bin/python -m pip install --require-hashes -r backend/requirements-mcp.lock
+backend/venv/bin/python -m pip install "pyinstaller==6.22.3"
+```
+
+Existing environments are checked against the applicable lock entries before
+freezing. Set `PA_MCP_X86_PYTHON` to a Rosetta-capable Python 3.11+ interpreter
+when creating the separate Intel environment on Apple Silicon. Native Pydantic
+validation libraries must match the target architecture.
+
 Output is staged at `<binary>.tmp` and atomically moved into place only
 on success, so a failed build never leaves you with a half-written
 binary.
@@ -92,10 +106,10 @@ the target OS. Two paths:
 
 ### Path A — GitHub Actions matrix (recommended, now implemented for pa-mcp)
 
-This is **live** for `pa-mcp` at `.github/workflows/sidecar-release.yml`. It
-fans out across `macos-latest` (arm64), `macos-13` (Intel), `windows-latest`,
+This is configured for `pa-mcp` at `.github/workflows/sidecar-release.yml`. It
+fans out across `macos-15` (arm64), `macos-15-intel` (Intel), `windows-latest`,
 and `ubuntu-latest`, builds the spec on each, drives a real MCP
-`initialize` + `tools/list` handshake as a smoke test, and uploads one
+legacy initialization and modern discovery smoke test, including typed tool validation, and uploads one
 `pa-mcp-<triple>` artifact per platform. Trigger it by pushing a `v*` /
 `sidecar-*` tag, or manually via the Actions tab (`workflow_dispatch`). The
 sketch below is the underlying shape (the other three sidecars are not yet in
@@ -106,9 +120,9 @@ the matrix):
 strategy:
   matrix:
     include:
-      - os: macos-latest
+      - os: macos-15
         triple: aarch64-apple-darwin
-      - os: macos-13 # last x86_64 macOS runner
+      - os: macos-15-intel # explicit x86_64 runner
         triple: x86_64-apple-darwin
       - os: windows-latest
         triple: x86_64-pc-windows-msvc

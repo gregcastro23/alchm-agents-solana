@@ -14,6 +14,19 @@ It is the cognitive/agent counterpart to the data-focused
 transits, ingredient ESMS analysis, recipes, and synastry, this one exposes the
 **personas that reason over them**.
 
+## Runtime and compatibility
+
+Requires Python 3.11+. The stdio transport uses the official Python MCP SDK
+`2.3.0`; modern `2026-07-28` discovery and legacy initialization are supported.
+Every tool advertises typed input/output schemas and returns structured JSON
+alongside compatible JSON text. Credentials belong in standard request `_meta`
+or `PA_MCP_API_KEY`; legacy argument `_meta` remains accepted. Conflicting
+credentials fail before downstream work.
+
+Source/native builds use `backend/requirements-mcp.lock` and PyInstaller
+`6.22.3`. Do not reuse a build environment with a different SDK/native dependency
+set; the local build script checks the lock before freezing.
+
 ## Tools
 
 | Tool                               | What it does                                                                                                                |

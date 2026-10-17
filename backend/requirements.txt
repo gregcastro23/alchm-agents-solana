@@ -1,7 +1,8 @@
 fastapi
 uvicorn
 httpx
-pydantic
+pydantic>=2.12,<3
+mcp==2.3.0
 python-dotenv
 alembic
 sqlalchemy

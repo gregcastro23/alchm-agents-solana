@@ -13,9 +13,12 @@ import httpx
 import alchm_mcp
 from datetime import datetime
 import mcp_invocation_log
+from mcp_contracts import ContractValidationError, validate_arguments, validate_result, tool_schemas
+from secure_compare import secret_matches
 
 
 
+SERVER_VERSION = "1.1.0"
 PROTOCOL_VERSION = os.getenv("PLANETARY_AGENTS_MCP_PROTOCOL_VERSION", "2025-06-18")
 
 
@@ -69,216 +72,47 @@ AGENT_ALIASES = {
 TOOLS: List[Dict[str, Any]] = [
     {
         "name": "chat_with_planetary_agent",
-        "description": "Converse with a configured Planetary Agents persona through the FastAPI chat pipeline.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "agentName": {
-                    "type": "string",
-                    "description": "Agent name or slug, e.g. Socrates, Rumi, Galileo, Jung, socrates, or 360 Moon degree slug like planetary-moon-aries-14.",
-                },
-                "message": {"type": "string", "description": "User message for the agent."},
-                "conversationHistory": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Optional recent turns to provide as lightweight context.",
-                },
-                "sessionId": {
-                    "type": "string",
-                    "maxLength": 512,
-                    "description": "Conversation handle returned by a previous call; omit to start a new private conversation.",
-                },
-                "modelTier": {
-                    "type": "string",
-                    "enum": ["free", "cheap_fast", "primary", "reflective"],
-                    "description": "Optional backend model tier override.",
-                },
-                "context": {
-                    "type": "object",
-                    "additionalProperties": True,
-                    "description": "Optional structured context to pass through to /api/chat.",
-                },
-            },
-            "required": ["agentName", "message"],
-        },
+        "description": "Converse with a configured Planetary Agents persona through the FastAPI chat pipeline."
     },
     {
         "name": "list_planetary_agents",
-        "description": "Discover and search available Planetary Agent personas, including historical philosophers, 360 Moon degree archetypes, and crafted council members.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "query": {
-                    "type": "string",
-                    "description": "Optional search term to filter agents by name, title, culture, or archetype (e.g. 'Socrates', 'Fire', 'Moon', 'Explorer').",
-                },
-                "limit": {
-                    "type": "integer",
-                    "description": "Maximum number of agents to return (default 25, max 100).",
-                },
-                "sign": {
-                    "type": "string",
-                    "description": "Optional zodiac sign filter (e.g. 'Aries', 'Taurus', 'Gemini', etc.).",
-                },
-                "archetype": {
-                    "type": "string",
-                    "description": "Optional archetype filter (e.g. 'The Seed Planter', 'The Illuminator').",
-                },
-            },
-        },
+        "description": "Discover and search available Planetary Agent personas, including historical philosophers, 360 Moon degree archetypes, and crafted council members."
     },
     {
         "name": "get_agent_feed_discussion",
-        "description": "Retrieve a council-feed event or thread by ID from the Planetary Agents frontend feed.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {"threadId": {"type": "string", "description": "Feed event or thread ID."}},
-            "required": ["threadId"],
-        },
+        "description": "Retrieve a council-feed event or thread by ID from the Planetary Agents frontend feed."
     },
     {
         "name": "synthesize_culinary_debate",
-        "description": "Ask multiple historical personas to debate ingredients using Alchm MCP ingredient and recipe data when available.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "ingredients": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Ingredients to debate.",
-                },
-                "agents": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "Agent names or slugs. Defaults to Socrates, Rumi, and Galileo.",
-                },
-                "modelTier": {
-                    "type": "string",
-                    "enum": ["free", "cheap_fast", "primary", "reflective"],
-                    "description": "Optional backend model tier override.",
-                },
-            },
-            "required": ["ingredients"],
-        },
+        "description": "Ask multiple historical personas to debate ingredients using Alchm MCP ingredient and recipe data when available."
     },
     {
         "name": "trigger_chart_specific_jing_duel",
-        "description": "Automatically detect birthchart synastry aspects between two agents and trigger an in-character Jing duel/clash.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "casterName": {
-                    "type": "string",
-                    "description": "Agent initiating the clash, e.g. Socrates, Rumi, Galileo, Carl Jung.",
-                },
-                "targetName": {
-                    "type": "string",
-                    "description": "Agent defending the clash, e.g. Socrates, Rumi, Galileo, Carl Jung.",
-                },
-                "modelTier": {
-                    "type": "string",
-                    "enum": ["free", "cheap_fast", "primary", "reflective"],
-                    "description": "Optional backend model tier override.",
-                },
-            },
-            "required": ["casterName", "targetName"],
-        },
+        "description": "Automatically detect birthchart synastry aspects between two agents and trigger an in-character Jing duel/clash."
     },
     {
         "name": "play_agent_word_duel",
-        "description": "Invoke an agent or planetary sphere to make a strategic move in Word Duels of the Spheres given a rack and candidate words.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "agentName": {
-                    "type": "string",
-                    "description": "Agent persona name or slug (e.g. Socrates, Galileo, planetary-moon-leo-12) or celestial sphere (Sun, Moon, Mars, etc.).",
-                },
-                "rack": {
-                    "type": "string",
-                    "description": "The letters available in the rack (e.g. 'SATURNX').",
-                },
-                "candidates": {
-                    "type": "array",
-                    "items": {"type": "string"},
-                    "description": "List of valid candidate words formed from the rack.",
-                },
-                "context": {
-                    "type": "object",
-                    "description": "Optional duel context (opponent, board state, etc.).",
-                },
-                "sessionId": {
-                    "type": "string",
-                    "description": "Optional session identifier for game tracking.",
-                },
-            },
-            "required": ["rack", "candidates"],
-        },
+        "description": "Invoke an agent or planetary sphere to make a strategic move in Word Duels of the Spheres given a rack and candidate words."
     },
     {
         "name": "play_jing_arena_move",
-        "description": "Invoke an agent persona or planetary sphere to counter an opening move in the Jing Arena elemental clash game.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "planet": {
-                    "type": "string",
-                    "description": "The defending celestial sphere (Sun, Moon, Mars, Mercury, Venus, Jupiter, Saturn, Uranus, Neptune, Pluto).",
-                },
-                "opening": {
-                    "type": "string",
-                    "enum": ["Meltdown", "Freeze", "TectonicRoot", "Vacuum", "Erode"],
-                    "description": "The opening Jing move played by the challenger.",
-                },
-                "agentName": {
-                    "type": "string",
-                    "description": "Optional agent persona slug/name (e.g. Socrates, Carl Jung) for personalized voice.",
-                },
-            },
-            "required": ["planet", "opening"],
-        },
+        "description": "Invoke an agent persona or planetary sphere to counter an opening move in the Jing Arena elemental clash game."
     },
     {
         "name": "plan_weekly_menu",
-        "description": "Generate an unpublished weekly menu draft without saving or sharing it. Use publish_weekly_menu for authorized publication.",
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "agentName": {
-                    "type": "string",
-                    "description": "Agent name or slug, e.g. hildegard-of-bingen, Socrates, carl-jung.",
-                },
-                "weekStartDate": {
-                    "type": "string",
-                    "description": "Optional ISO string representing Sunday start date (e.g. 2026-05-31T00:00:00.000Z).",
-                },
-                "status": {
-                    "type": "string",
-                    "enum": ["draft"],
-                    "description": "Only draft is accepted. Publication requires publish_weekly_menu.",
-                },
-                "shareToFeed": {
-                    "type": "boolean",
-                    "description": "Must be false; planning does not publish to the feed.",
-                },
-            },
-            "required": ["agentName"],
-        },
+        "description": "Generate an unpublished weekly menu draft without saving or sharing it. Use publish_weekly_menu for authorized publication."
     },
     {
         "name": "publish_weekly_menu",
-        "description": "Publish a reviewed weekly menu draft. Requires an authorized publisher credential and a stable idempotency key; retries must use the same key and exact menu.",
-        "annotations": {"readOnlyHint": False, "destructiveHint": True, "idempotentHint": True, "openWorldHint": True},
-        "inputSchema": {
-            "type": "object",
-            "properties": {
-                "menu": {"type": "object", "description": "The exact menu object returned by plan_weekly_menu."},
-                "idempotencyKey": {"type": "string", "minLength": 1, "maxLength": 200},
-            },
-            "required": ["menu", "idempotencyKey"],
-        },
-    },
+        "description": "Publish a reviewed weekly menu draft. Requires an authorized publisher credential and a stable idempotency key; retries must use the same key and exact menu."
+    }
 ]
+
+
+# Discovery and validation share one schema source. Transport metadata is not a
+# business argument and is normalized separately at the invocation boundary.
+for _tool in TOOLS:
+    _tool['inputSchema'], _tool['outputSchema'] = tool_schemas(_tool['name'])
 
 
 RESOURCES: List[Dict[str, Any]] = [
@@ -366,7 +200,8 @@ def _agent_id(agent_name: str) -> str:
 
 def _text_result(payload: Dict[str, Any], is_error: bool = False) -> Dict[str, Any]:
     result: Dict[str, Any] = {
-        "content": [{"type": "text", "text": json.dumps(payload, indent=2, ensure_ascii=True)}]
+        "content": [{"type": "text", "text": json.dumps(payload, indent=2, ensure_ascii=True)}],
+        "structuredContent": payload,
     }
     if is_error:
         result["isError"] = True
@@ -539,18 +374,20 @@ async def trigger_chart_specific_jing_duel(arguments: Dict[str, Any]) -> Dict[st
         model_tier=model_tier
     ))
     
-    try:
-        caster_res = await caster_task
-        caster_text = caster_res.get("text", "")
-    except Exception as exc:
-        caster_text = f"Caster failed to respond: {exc}"
-        
-    try:
-        target_res = await target_task
-        target_text = target_res.get("text", "")
-    except Exception as exc:
-        target_text = f"Target failed to respond: {exc}"
-        
+    # One awaited group propagates parent cancellation to both provider calls.
+    caster_res, target_res = await asyncio.gather(caster_task, target_task, return_exceptions=True)
+    caster_failed = isinstance(caster_res, BaseException)
+    target_failed = isinstance(target_res, BaseException)
+    caster_text = "Caster failed to respond." if caster_failed else caster_res.get("text", "")
+    target_text = "Target failed to respond." if target_failed else target_res.get("text", "")
+    if caster_failed or target_failed:
+        triggered_jing["degraded"] = True
+        triggered_jing["dataErrors"] = [
+            role for role, failed in (("caster response unavailable", caster_failed), ("target response unavailable", target_failed)) if failed
+        ]
+    if caster_failed and target_failed:
+        return _text_result({"error": "Both duel responses are unavailable", "jing": triggered_jing}, is_error=True)
+
     triggered_jing["casterVoice"] = caster_text
     triggered_jing["targetVoice"] = target_text
     
@@ -1118,6 +955,41 @@ async def _backend_identity(credential: Optional[str]):
     return identity.get("apiKeyId"), identity.get("userId"), identity["authTier"]
 
 
+def _tool_arguments(params: Dict[str, Any]) -> Dict[str, Any]:
+    arguments = params.get("arguments", {})
+    if not isinstance(arguments, dict):
+        raise ValueError("Tool arguments must be an object")
+    arguments = dict(arguments)
+    legacy_meta = arguments.pop("_meta", {})
+    official_meta = params.get("_meta", {})
+    if not isinstance(legacy_meta, dict) or not isinstance(official_meta, dict):
+        raise ValueError("Request metadata must be an object")
+    credentials = []
+    for meta in (legacy_meta, official_meta):
+        for key in ("apiKey", "api_key"):
+            value = meta.get(key)
+            if value is not None:
+                if not isinstance(value, str) or not value.strip() or len(value) > 8192:
+                    raise ValueError("Invalid MCP credential metadata")
+                credentials.append(value)
+    if credentials and any(not secret_matches(credentials[0], value) for value in credentials[1:]):
+        raise ValueError("Conflicting MCP credential metadata")
+    # The SDK consumes protocol/progress metadata. Only recognized business
+    # metadata may reach handlers or telemetry; arbitrary extras can hold secrets.
+    meta: Dict[str, Any] = {}
+    if credentials:
+        meta["apiKey"] = credentials[0]
+    if "caller" in official_meta or "caller" in legacy_meta:
+        caller = official_meta.get("caller", legacy_meta.get("caller"))
+        if not isinstance(caller, str) or len(caller) > 200:
+            raise ValueError("Invalid caller metadata")
+        meta["caller"] = caller
+    validated = validate_arguments(params["name"], arguments)
+    if meta:
+        validated["_meta"] = meta
+    return validated
+
+
 async def handle_request(message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
     method = message.get("method")
     request_id = message.get("id")
@@ -1292,9 +1164,14 @@ async def handle_request(message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         elif method == "tools/call":
             params = message.get("params") if isinstance(message.get("params"), dict) else {}
             name = params.get("name")
-            arguments = params.get("arguments") if isinstance(params.get("arguments"), dict) else {}
+            if not isinstance(name, str) or name not in TOOL_HANDLERS:
+                return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": "Unknown tool"}}
+            try:
+                arguments = _tool_arguments(params)
+            except (ValueError, ContractValidationError) as exc:
+                return {"jsonrpc": "2.0", "id": request_id, "error": {"code": -32602, "message": str(exc)}}
 
-            # Gate and validate before dispatching
+            # Gate only after typed arguments have passed bounded validation.
             credential = _invocation_credential(arguments)
             identity = await _backend_identity(credential)
             gated_args, api_key_id, user_id, auth_tier, resolved_model_tier = mcp_invocation_log.validate_and_gate_invocation(
@@ -1313,7 +1190,14 @@ async def handle_request(message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
 
             try:
                 result = await handler(gated_args)
-                if isinstance(result, dict) and result.get("isError"):
+                if not isinstance(result, dict):
+                    raise ValueError("Invalid tool result")
+                payload = result.get("structuredContent")
+                if payload is None:
+                    payload = json.loads(result["content"][0]["text"])
+                payload = validate_result(name, payload, is_error=result.get("isError") is True)
+                result = _text_result(payload, is_error=result.get("isError") is True)
+                if result.get("isError"):
                     success = False
                     try:
                         content_list = result.get("content", [])
@@ -1323,10 +1207,14 @@ async def handle_request(message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                             error_message = err_json.get("error") or err_json.get("message")
                     except Exception:
                         error_message = "Tool returned an error status"
-            except Exception as exc:
+            except asyncio.CancelledError:
                 success = False
-                error_message = str(exc)
-                raise exc
+                error_message = "Tool call cancelled"
+                raise
+            except Exception:
+                success = False
+                error_message = "Tool execution or result validation failed"
+                result = _text_result({"error": error_message}, is_error=True)
             finally:
                 _INVOCATION_CREDENTIAL.reset(credential_token)
                 completed_at = datetime.utcnow()
@@ -1403,60 +1291,25 @@ async def handle_request(message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
         if request_id is None:
             return None
         return {"jsonrpc": "2.0", "id": request_id, "result": result}
-    except Exception as exc:
+    except Exception:
         if request_id is None:
             return None
         return {
             "jsonrpc": "2.0",
             "id": request_id,
-            "error": {"code": -32603, "message": str(exc)},
+            "error": {"code": -32603, "message": "Internal server error"},
         }
 
 
-async def write_message(message: Dict[str, Any]) -> None:
-    sys.stdout.write(json.dumps(message, separators=(",", ":")) + "\n")
-    sys.stdout.flush()
-
-
 async def main() -> None:
+    from mcp_sdk_adapter import run_stdio
+
     _ensure_local_storage()
-    _log("Planetary Agents MCP Server started on stdio")
-    loop = asyncio.get_running_loop()
-
-    while True:
-        line = await loop.run_in_executor(None, sys.stdin.readline)
-        if not line:
-            break
-        line = line.strip()
-        if not line:
-            continue
-
-        try:
-            message = json.loads(line)
-        except json.JSONDecodeError as exc:
-            await write_message(
-                {
-                    "jsonrpc": "2.0",
-                    "id": None,
-                    "error": {"code": -32700, "message": f"Parse error: {exc}"},
-                }
-            )
-            continue
-
-        messages = message if isinstance(message, list) else [message]
-        responses = []
-        for item in messages:
-            if isinstance(item, dict):
-                response = await handle_request(item)
-                if response is not None:
-                    responses.append(response)
-        if isinstance(message, list):
-            if responses:
-                await write_message(responses)  # JSON-RPC batch response
-        elif responses:
-            await write_message(responses[0])
-
-    await alchm_mcp.close_client()
+    _log("Planetary Agents MCP Server started on official SDK stdio transport")
+    try:
+        await run_stdio(sys.modules[__name__])
+    finally:
+        await alchm_mcp.close_client()
 
 
 def run() -> None:
@@ -1465,7 +1318,7 @@ def run() -> None:
     Referenced by [project.scripts] in pyproject.toml so the published
     distribution exposes a `planetary-agents-mcp` command (and `uvx
     alchm-planetary-agents-mcp`). Kept as a thin sync wrapper around the async
-    main loop so the same entry works for the binary sidecar and PyPI install.
+    SDK transport so the same entry works for the binary sidecar and PyPI install.
     """
     try:
         asyncio.run(main())
