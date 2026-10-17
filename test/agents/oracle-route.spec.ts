@@ -422,7 +422,7 @@ describe('POST /api/agents/oracle: no answer is non-2xx (503), never a stub', ()
     await expectUnavailable(await POST(post({ question: 'Q?' })))
   })
 
-  it('cuts off a hung provider at 8 s, aborts it, and tries the next link', async () => {
+  it('cuts off a hung provider at 6 s, aborts it, and tries the next link', async () => {
     vi.useFakeTimers()
     vi.stubEnv('OPENAI_API_KEY', 'test-openai-key')
     const signals: AbortSignal[] = []
@@ -433,7 +433,7 @@ describe('POST /api/agents/oracle: no answer is non-2xx (503), never a stub', ()
     mocks.generateText.mockResolvedValueOnce({ text: 'Second link answered.' })
 
     const pending = POST(post({ question: 'Q?' }))
-    await vi.advanceTimersByTimeAsync(7_999)
+    await vi.advanceTimersByTimeAsync(5_999)
     expect(mocks.generateText).toHaveBeenCalledTimes(1)
     expect(signals[0].aborted).toBe(false)
     await vi.advanceTimersByTimeAsync(1)
@@ -444,7 +444,7 @@ describe('POST /api/agents/oracle: no answer is non-2xx (503), never a stub', ()
     expect(await res.json()).toMatchObject({ provider: 'openai', answer: 'Second link answered.' })
   })
 
-  it('answers 503 inside 14 s even when every link hangs', async () => {
+  it('answers 503 inside 12 s even when every link hangs', async () => {
     vi.useFakeTimers()
     vi.stubEnv('GOOGLE_GENERATIVE_AI_API_KEY', 'test-google-key')
     vi.stubEnv('OPENAI_API_KEY', 'test-openai-key')
@@ -456,17 +456,17 @@ describe('POST /api/agents/oracle: no answer is non-2xx (503), never a stub', ()
 
     const started = Date.now()
     const pending = POST(post({ question: 'Q?' }))
-    // Links get 8 s, then the 6 s left of the 14 s budget; the third never starts.
-    await vi.advanceTimersByTimeAsync(14_000)
+    // Two links get 6 s each, which is the whole 12 s budget; the third never starts.
+    await vi.advanceTimersByTimeAsync(12_000)
 
     await expectUnavailable(await pending)
-    expect(Date.now() - started).toBeLessThanOrEqual(14_000)
+    expect(Date.now() - started).toBeLessThanOrEqual(12_000)
     expect(mocks.generateText).toHaveBeenCalledTimes(2)
     expect(signals.every(signal => signal.aborted)).toBe(true)
   })
 
   it('stays inside the function limit and the feeder 30 s timeout', () => {
-    expect(route.maxDuration).toBeGreaterThan(14)
+    expect(route.maxDuration).toBeGreaterThan(12)
     expect(route.maxDuration).toBeLessThan(30)
   })
 })
@@ -508,6 +508,29 @@ describe('OPTIONS /api/agents/oracle and route config', () => {
     expect(route.runtime).toBe('nodejs')
     expect(route.dynamic).toBe('force-dynamic')
     expect(route.revalidate).toBe(0)
+  })
+})
+
+describe('POST /api/agents/oracle: text that cannot be sent to a provider', () => {
+  it('rejects a lone surrogate in the question or the context with 400, before any model call', async () => {
+    for (const body of [
+      { question: 'bad \uD800 text' },
+      { question: 'bad \uDC00 text' },
+      { question: 'ok', context: 'half \uD83D pair' },
+    ]) {
+      const res = await POST(post(body))
+      expect(res.status).toBe(400)
+      expect((await res.json()).success).toBe(false)
+    }
+    expect(mocks.generateText).not.toHaveBeenCalled()
+  })
+
+  it('still accepts a well-formed astral character', async () => {
+    const res = await POST(
+      post({ question: 'Who holds the Crown \u{1F451}?', context: 'sky \u{1F319}' })
+    )
+
+    expect(res.status).toBe(200)
   })
 })
 

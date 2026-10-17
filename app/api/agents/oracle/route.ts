@@ -40,11 +40,13 @@ const MAX_CONTEXT_CHARS = 2000
 const MAX_OUTPUT_TOKENS = 280
 const REPLY_LIMIT_INSTRUCTION = 'Reply in at most 120 words.'
 
-// The feeder waits 30 s per attempt and the player's client 25-30 s. Bound each
-// provider call and the whole walk so a slow chain answers 503 (which sends the
-// feeder to its own fallback) instead of keeping the player waiting.
-const PROVIDER_TIMEOUT_MS = 8_000
-const ORACLE_DEADLINE_MS = 14_000
+// The feeder waits 30 s per attempt and the player's client stops waiting after 25 s. The
+// feeder asks the FastAPI primary and then this app in turn, so two full budgets
+// (12 s + 12 s) must fit inside the 25 s. Bound each provider call and the whole walk so a
+// slow chain answers 503 (which sends the feeder to its own fallback) instead of keeping
+// the player waiting. Same numbers as backend/oracle_brain.py.
+const PROVIDER_TIMEOUT_MS = 6_000
+const ORACLE_DEADLINE_MS = 12_000
 
 const UNAVAILABLE_ERROR = 'No LLM provider available to channel the oracle.'
 
@@ -87,6 +89,9 @@ function gate(request: NextRequest): NextResponse | null {
 
 // ─── Request parsing ─────────────────────────────────────────────────────────
 
+// A lone UTF-16 surrogate is not text any provider accepts (Python rejects it when encoding to UTF-8).
+const LONE_SURROGATE = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/
+
 type ParsedRequest = { ok: true; question: string; context: string } | { ok: false; error: string }
 
 function parseOracleRequest(body: unknown): ParsedRequest {
@@ -100,6 +105,9 @@ function parseOracleRequest(body: unknown): ParsedRequest {
   if (!question) {
     return { ok: false, error: 'Invalid or missing question. Must not be empty.' }
   }
+  if (LONE_SURROGATE.test(question)) {
+    return { ok: false, error: 'Invalid question. Must be valid Unicode text.' }
+  }
   if (Buffer.byteLength(question, 'utf8') > MAX_QUESTION_BYTES) {
     return { ok: false, error: `Invalid question. Must be at most ${MAX_QUESTION_BYTES} bytes.` }
   }
@@ -111,6 +119,9 @@ function parseOracleRequest(body: unknown): ParsedRequest {
   // Trim, then cap by code point (not UTF-16 unit) so an astral character is
   // never split and this agrees with the Python brain's `strip()[:2000]`.
   const trimmed = (rawContext ?? '').trim()
+  if (LONE_SURROGATE.test(trimmed)) {
+    return { ok: false, error: 'Invalid context. Must be valid Unicode text.' }
+  }
   const context =
     trimmed.length > MAX_CONTEXT_CHARS
       ? Array.from(trimmed).slice(0, MAX_CONTEXT_CHARS).join('')
