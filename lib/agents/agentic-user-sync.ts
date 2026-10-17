@@ -1,10 +1,11 @@
 import { prisma } from '@/lib/db'
+import type { Prisma } from '@prisma/client'
 import { signDegreeToLongitude } from '@/lib/enhanced-astronomical-calculator'
 import { syncAgentToWten, type SyncAgentProfilePayload } from '@/lib/wtenClient'
 
 const AGENTIC_DOMAIN = '@agentic.alchm.kitchen'
 
-interface EnsureAgenticUserInput {
+export interface EnsureAgenticUserInput {
   agentId: string
   name: string
   bio?: string | null
@@ -85,70 +86,78 @@ export function agenticEmailFor(agentId: string): string {
   return `${agentId}${AGENTIC_DOMAIN}`
 }
 
-export async function ensureAgenticUserAndSync(input: EnsureAgenticUserInput): Promise<void> {
+/** Provision only local rows inside the caller's transaction. No network work runs here. */
+export async function provisionAgenticUser(
+  input: EnsureAgenticUserInput,
+  tx: Prisma.TransactionClient
+): Promise<string> {
   const email = agenticEmailFor(input.agentId)
   const natalPositions = extractNatalPositions(input.natalChart)
 
-  const userId = await prisma.$transaction(async tx => {
-    const user = await tx.users.upsert({
-      where: { email },
-      create: {
-        email,
-        name: input.name,
-        provider: 'agentic',
-        role: 'agent',
-        isAgentic: true,
-        verified: true,
-      } as any,
-      update: {
-        name: input.name,
-        isAgentic: true,
-        role: 'agent',
-        verified: true,
-      } as any,
-      select: { id: true },
-    })
-
-    await tx.user_profiles.upsert({
-      where: { userId: user.id },
-      create: {
-        userId: user.id,
-        birthDate: input.birthDate,
-        birthTime: input.birthTime,
-        birthLocation: input.birthLocation as any,
-        natalChart: input.natalChart as any,
-        natalPositions: natalPositions as any,
-        monicaConstant: input.monicaConstant,
-        dominantElement: input.dominantElement,
-        bio: input.bio,
-      },
-      update: {
-        birthDate: input.birthDate,
-        birthTime: input.birthTime,
-        birthLocation: input.birthLocation as any,
-        natalChart: input.natalChart as any,
-        natalPositions: natalPositions as any,
-        monicaConstant: input.monicaConstant,
-        dominantElement: input.dominantElement,
-        bio: input.bio,
-      },
-    })
-
-    await tx.tokenBalance.upsert({
-      where: { userId: user.id },
-      create: {
-        userId: user.id,
-        spirit: 0,
-        essence: 0,
-        matter: 0,
-        substance: 0,
-        updatedAt: new Date(),
-      },
-      update: {},
-    })
-
-    return user.id
+  const user = await tx.users.upsert({
+    where: { email },
+    create: {
+      email,
+      name: input.name,
+      provider: 'agentic',
+      role: 'agent',
+      isAgentic: true,
+      verified: true,
+    } as any,
+    update: {
+      name: input.name,
+      isAgentic: true,
+      role: 'agent',
+      verified: true,
+    } as any,
+    select: { id: true },
   })
+
+  await tx.user_profiles.upsert({
+    where: { userId: user.id },
+    create: {
+      userId: user.id,
+      birthDate: input.birthDate,
+      birthTime: input.birthTime,
+      birthLocation: input.birthLocation as any,
+      natalChart: input.natalChart as any,
+      natalPositions: natalPositions as any,
+      monicaConstant: input.monicaConstant,
+      dominantElement: input.dominantElement,
+      bio: input.bio,
+    },
+    update: {
+      birthDate: input.birthDate,
+      birthTime: input.birthTime,
+      birthLocation: input.birthLocation as any,
+      natalChart: input.natalChart as any,
+      natalPositions: natalPositions as any,
+      monicaConstant: input.monicaConstant,
+      dominantElement: input.dominantElement,
+      bio: input.bio,
+    },
+  })
+
+  await tx.tokenBalance.upsert({
+    where: { userId: user.id },
+    create: {
+      userId: user.id,
+      spirit: 0,
+      essence: 0,
+      matter: 0,
+      substance: 0,
+      updatedAt: new Date(),
+    },
+    update: {},
+  })
+
+  return user.id
+}
+
+/** Call after local creation commits; a failed delivery can be retried independently. */
+export async function syncAgenticUserToWten(input: EnsureAgenticUserInput): Promise<void> {
+  const email = agenticEmailFor(input.agentId)
+  const natalPositions = extractNatalPositions(input.natalChart)
 
   const profile: SyncAgentProfilePayload = {
     bio: input.bio ?? undefined,
@@ -163,7 +172,12 @@ export async function ensureAgenticUserAndSync(input: EnsureAgenticUserInput): P
 
   const { wtenUserId } = await syncAgentToWten(email, input.name, profile)
   await prisma.users.update({
-    where: { id: userId },
+    where: { email },
     data: { alchmKitchenUserId: wtenUserId } as any,
   })
+}
+
+export async function ensureAgenticUserAndSync(input: EnsureAgenticUserInput): Promise<void> {
+  await prisma.$transaction(tx => provisionAgenticUser(input, tx))
+  await syncAgenticUserToWten(input)
 }
