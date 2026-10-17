@@ -964,6 +964,17 @@ def agents_search(
 # and word duels / jings arrive in bursts.
 
 
+# The real requests are a few hundred bytes (25 candidate words, a 7-letter rack).
+BRAIN_MAX_BODY_BYTES = 16 * 1024
+# duel_brain's own bounds, enforced here at the boundary because the routes are public.
+BRAIN_MAX_CANDIDATES = 50
+BRAIN_MAX_WORD_LENGTH = 15
+BRAIN_MAX_RACK_TILES = 26
+BRAIN_MAX_ID_LENGTH = 100
+_RACK_STRING = re.compile(r"[A-Za-z]{1,26}")
+_PLAYER_WORD = re.compile(r"[A-Za-z]{1,15}")
+
+
 def _env_positive_int(name: str, default: int) -> int:
     try:
         value = int(os.getenv(name, ""))
@@ -996,6 +1007,9 @@ class _CallerGate:
         self.callers: Dict[str, SlidingWindowRateLimiter] = {}
 
     def check(self, http_request: Request) -> None:
+        declared = http_request.headers.get("content-length", "")
+        if declared.isdigit() and int(declared) > BRAIN_MAX_BODY_BYTES:
+            raise HTTPException(status_code=413, detail="Request body too large")
         ip_hash = _caller_ip_hash(http_request)
         limiter = self.callers.get(ip_hash)
         if limiter is None:
@@ -1023,9 +1037,9 @@ _oracle_gate = _CallerGate(
 _word_duel_gate = _CallerGate(
     "word-duel",
     per_caller_env="BRAIN_WORD_DUEL_PER_CALLER_PER_MIN",
-    per_caller_default=120,
+    per_caller_default=60,  # every call may reach a model, and in production the one that answers is paid
     global_env="BRAIN_WORD_DUEL_GLOBAL_PER_MIN",
-    global_default=600,
+    global_default=300,
     window_s=60.0,
 )
 _jing_gate = _CallerGate(
@@ -1048,6 +1062,50 @@ def _word_duel_rate_gate(http_request: Request) -> None:
 
 def _jing_rate_gate(http_request: Request) -> None:
     _jing_gate.check(http_request)
+
+
+def _clean_rack(rack: Any) -> Optional[Any]:
+    """A bounded rack, or None. duel_brain expands a {letter: count} map to a string
+    of that many letters, so an unbounded count is a one-request memory exhaustion."""
+    if isinstance(rack, str):
+        return rack if _RACK_STRING.fullmatch(rack) else None
+    if isinstance(rack, dict):
+        total = 0
+        for letter, count in rack.items():
+            if not (isinstance(letter, str) and len(letter) == 1 and letter.isascii() and letter.isalpha()):
+                return None
+            if isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= BRAIN_MAX_RACK_TILES:
+                return None
+            total += count
+        return rack if 0 < total <= BRAIN_MAX_RACK_TILES else None
+    return None
+
+
+def _clean_candidates(candidates: List[Any]) -> List[str]:
+    """First BRAIN_MAX_CANDIDATES words. Caller-supplied scores are dropped: they are never trusted."""
+    words: List[str] = []
+    for item in candidates[:BRAIN_MAX_CANDIDATES]:
+        word = item.get("word") if isinstance(item, dict) else item
+        if isinstance(word, str) and 0 < len(word.strip()) <= BRAIN_MAX_WORD_LENGTH:
+            words.append(word.strip())
+    return words
+
+
+def _clean_duel_context(context: Dict[str, Any]) -> Dict[str, Any]:
+    """Only the fields duel_brain reads, type- and size-checked: playerWord is interpolated
+    into the model prompt, so free text from a public caller must not reach it."""
+    clean: Dict[str, Any] = {}
+    player_word = context.get("playerWord")
+    if isinstance(player_word, str) and _PLAYER_WORD.fullmatch(player_word):
+        clean["playerWord"] = player_word
+    for key, upper in (("playerScore", 10_000), ("round", 1_000), ("seasonDegree", 360)):
+        value = context.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= upper:
+            clean[key] = value
+    agent_id = context.get("agentId")
+    if isinstance(agent_id, str) and 0 < len(agent_id) <= BRAIN_MAX_ID_LENGTH:
+        clean["agentId"] = agent_id
+    return clean
 
 
 def _brain_error(status_code: int, error: str, **extra: Any) -> JSONResponse:
@@ -1077,10 +1135,11 @@ async def agents_word_duel(
         if not duel_brain.is_planet(planet):
             return _brain_error(400, "Invalid or missing planet. Must be one of the ten spheres.")
 
-        rack = request.rack
-        # JS semantics: null/undefined/"" are falsy (rejected); {} is a valid map.
-        if rack is None or not isinstance(rack, (str, dict)) or rack == "":
-            return _brain_error(400, "Invalid or missing rack. Must be a string or {letter:count} map.")
+        rack = _clean_rack(request.rack)
+        if rack is None:
+            return _brain_error(
+                400, "Invalid or missing rack. Must be 1-26 letters, or a {letter:count} map of at most 26 tiles."
+            )
 
         # Thin brain: the caller MUST supply candidates (PA owns no dictionary).
         if not isinstance(request.candidates, list):
@@ -1089,8 +1148,10 @@ async def agents_word_duel(
                 "Missing candidates[]. Send the legal words from your solver (string[] or {word,score}[]).",
             )
 
-        context = request.context if isinstance(request.context, dict) else None
+        context = _clean_duel_context(request.context) if isinstance(request.context, dict) else None
         agent_id = request.agentId if isinstance(request.agentId, str) else None
+        if agent_id is not None and not 0 < len(agent_id) <= BRAIN_MAX_ID_LENGTH:
+            agent_id = None
         if not agent_id and context and isinstance(context.get("agentId"), str):
             agent_id = context["agentId"]
 
@@ -1112,7 +1173,7 @@ async def agents_word_duel(
         move = await duel_brain.choose_word_move(
             planet=planet,
             rack=rack,
-            candidates=request.candidates,
+            candidates=_clean_candidates(request.candidates),
             context=context,
             agent=agent_channel,
         )
@@ -1165,7 +1226,7 @@ async def agents_jing(
         persona_block = None
         agent_name = None
         agent_id = request.agentId if isinstance(request.agentId, str) else None
-        if agent_id:
+        if agent_id and len(agent_id) <= BRAIN_MAX_ID_LENGTH:
             try:
                 row = crud.get_agent(db, agent_id=agent_id)
                 if row:
