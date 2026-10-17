@@ -36,6 +36,8 @@ os.environ.setdefault("ALCHM_MCP_ENABLED", "false")
 
 import oidc  # noqa: E402
 
+# The limiter's real defaults, read at import: the autouse fixture below opens them for every test.
+DEFAULT_LIMITS = (oidc.RATE_PER_CALLER_PER_MIN, oidc.RATE_GLOBAL_PER_MIN)
 ISSUER = "https://api.agents.alchm.kitchen"
 SESSION_COOKIE = "__Secure-authjs.session-token=abc"  # what Auth.js v5 sets for the kitchen session
 KITCHEN_USER = {
@@ -684,3 +686,221 @@ def test_main_app_refuses_a_foreign_origin_even_though_cors_would_reflect_it(app
     assert resp.status_code == 403
     assert "token" not in resp.text
     assert seen == []
+
+
+# O11: the "oversized" parametrisation has no session-token in it, so it is 401 either way.
+def test_oversized_cookie_header_that_does_contain_a_session_token_never_reaches_the_kitchen(
+    oidc_client, signing_key, monkeypatch
+):
+    seen = _kitchen_returns(monkeypatch, {"user": KITCHEN_USER})
+    cookie = "__Secure-authjs.session-token=" + "x" * 20_000
+
+    resp = oidc_client.post("/oidc/token", headers={"Cookie": cookie})
+
+    assert resp.status_code == 401
+    assert seen == []
+
+
+# O29: a 302 must be answered 503 AND must not be followed anywhere (the old test's repeated 302
+# ends in TooManyRedirects -> 503 whether or not redirects are followed).
+def test_a_kitchen_redirect_is_not_followed_even_once(oidc_client, signing_key, monkeypatch):
+    hits = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        hits.append(str(request.url))
+        if request.url.host == "evil.example":
+            return httpx.Response(200, json={"user": KITCHEN_USER})
+        return httpx.Response(302, headers={"location": "https://evil.example/session"})
+
+    _stub_kitchen(monkeypatch, handler)
+
+    resp = oidc_client.post("/oidc/token", headers={"Cookie": SESSION_COOKIE})
+
+    assert resp.status_code == 503
+    assert hits == [oidc.KITCHEN_SESSION_URL]
+
+
+# O30: the timeout is actually handed to the HTTP client.
+def test_the_kitchen_call_is_bounded_by_KITCHEN_TIMEOUT_S(oidc_client, signing_key, monkeypatch):
+    seen_kwargs = {}
+
+    def _client(*args, **kwargs):
+        seen_kwargs.update(kwargs)
+        kwargs["transport"] = httpx.MockTransport(lambda r: httpx.Response(200, json={"user": KITCHEN_USER}))
+        return _REAL_ASYNC_CLIENT(*args, **kwargs)
+
+    monkeypatch.setattr(oidc.httpx, "AsyncClient", _client)
+    monkeypatch.setattr(oidc, "KITCHEN_TIMEOUT_S", 1.25)
+
+    assert oidc_client.post("/oidc/token", headers={"Cookie": SESSION_COOKIE}).status_code == 200
+    assert seen_kwargs["timeout"] == 1.25
+
+
+# O31: a read/connect TIMEOUT is an outage (503), not an unhandled exception (500).
+@pytest.mark.parametrize("exc", [httpx.ReadTimeout, httpx.ConnectTimeout, httpx.ReadError, httpx.RemoteProtocolError])
+def test_kitchen_timeouts_and_protocol_errors_are_503(oidc_client, signing_key, monkeypatch, exc):
+    def _boom(request: httpx.Request) -> httpx.Response:
+        raise exc("kitchen slow", request=request)
+
+    _stub_kitchen(monkeypatch, _boom)
+
+    for resp in (
+        oidc_client.post("/oidc/token", headers={"Cookie": SESSION_COOKIE}),
+        oidc_client.get("/oidc/session", headers={"Cookie": SESSION_COOKIE}),
+    ):
+        assert resp.status_code == 503 and resp.json() == {"error": "kitchen_unreachable"}
+
+
+# O32: a 4xx from the kitchen (WAF block, rate limit) is an outage, never "not signed in".
+@pytest.mark.parametrize("status", [400, 401, 403, 404, 429])
+def test_kitchen_4xx_is_503_not_a_logout(oidc_client, signing_key, monkeypatch, status):
+    _stub_kitchen(monkeypatch, lambda request: httpx.Response(status, json={"error": "blocked"}))
+
+    resp = oidc_client.post("/oidc/token", headers={"Cookie": SESSION_COOKIE})
+
+    assert resp.status_code == 503
+
+
+# O39/O40: the sliding window actually slides.
+def test_rate_limit_window_expires_after_a_minute(oidc_client, signing_key, monkeypatch):
+    _kitchen_returns(monkeypatch, {"user": KITCHEN_USER})
+    monkeypatch.setattr(oidc, "RATE_PER_CALLER_PER_MIN", 1)
+    clock = [1000.0]
+    monkeypatch.setattr(oidc, "_now", lambda: clock[0])
+    post = lambda: oidc_client.post(  # noqa: E731
+        "/oidc/token", headers={"Cookie": SESSION_COOKIE, "X-Forwarded-For": "203.0.113.9"}
+    ).status_code
+
+    assert post() == 200
+    assert post() == 429
+    clock[0] += 59.0
+    assert post() == 429
+    clock[0] += 2.0  # 61 s after the first call
+    assert post() == 200
+
+
+# O41: the caller table is bounded.
+def test_rate_limiter_caller_table_is_bounded(oidc_client, signing_key, monkeypatch):
+    _kitchen_returns(monkeypatch, {"user": KITCHEN_USER})
+    monkeypatch.setattr(oidc, "_MAX_RATE_CALLERS", 5)
+
+    for i in range(20):
+        oidc_client.post("/oidc/token", headers={"Cookie": SESSION_COOKIE, "X-Forwarded-For": f"198.51.100.{i}"})
+
+    assert len(oidc._rate_callers) <= 5
+
+
+# O42: /oidc/session is a kitchen-calling route too.
+def test_session_peek_is_rate_limited_per_caller(oidc_client, no_signing_key, monkeypatch):
+    seen = _kitchen_returns(monkeypatch, {"user": KITCHEN_USER})
+    monkeypatch.setattr(oidc, "RATE_PER_CALLER_PER_MIN", 2)
+    get = lambda: oidc_client.get(  # noqa: E731
+        "/oidc/session", headers={"Cookie": SESSION_COOKIE, "X-Forwarded-For": "203.0.113.5"}
+    ).status_code
+
+    assert [get(), get(), get()] == [200, 200, 429]
+    assert len(seen) == 2
+
+
+# O37: the rate-limit identity is X-Real-IP, else the first X-Forwarded-For hop (shared with the brain gates).
+def test_rate_limit_identity_prefers_x_real_ip_then_the_first_forwarded_hop(oidc_client, signing_key, monkeypatch):
+    _kitchen_returns(monkeypatch, {"user": KITCHEN_USER})
+    monkeypatch.setattr(oidc, "RATE_PER_CALLER_PER_MIN", 1)
+    post = lambda **extra: oidc_client.post(  # noqa: E731
+        "/oidc/token", headers={"Cookie": SESSION_COOKIE, **extra}
+    ).status_code
+
+    assert post(**{"X-Forwarded-For": "203.0.113.1, 10.0.0.1"}) == 200
+    assert post(**{"X-Forwarded-For": "203.0.113.1, 10.0.0.2"}) == 429  # same client behind a different proxy hop
+    assert post(**{"X-Real-IP": "192.0.2.7", "X-Forwarded-For": "198.51.100.1"}) == 200
+    assert post(**{"X-Real-IP": "192.0.2.7", "X-Forwarded-For": "198.51.100.2"}) == 429  # a forged XFF does not help
+
+
+# O44/O45/O46: every response these routes can emit is uncacheable, not only 200/401/503-kitchen.
+def test_403_429_and_503_key_responses_are_also_no_store(oidc_client, signing_key, monkeypatch):
+    _kitchen_returns(monkeypatch, {"user": KITCHEN_USER})
+    denied = oidc_client.post("/oidc/token", headers={"Origin": "https://evil.example", "Cookie": SESSION_COOKIE})
+    monkeypatch.setattr(oidc, "RATE_PER_CALLER_PER_MIN", 0)
+    limited = oidc_client.post("/oidc/token", headers={"Cookie": SESSION_COOKIE})
+    monkeypatch.delenv("OIDC_SIGNING_KEY_PEM", raising=False)
+    monkeypatch.setattr(oidc, "_key_cache", None)
+    keyless = oidc_client.post("/oidc/token", headers={"Cookie": SESSION_COOKIE})
+
+    assert (denied.status_code, limited.status_code, keyless.status_code) == (403, 429, 503)
+    for resp in (denied, limited, keyless):
+        assert resp.headers["cache-control"] == "no-store", resp.status_code
+
+
+# O26: a non-RSA key that is >= 2048 bits and has no .key_size-based rejection (DSA).
+def test_a_large_dsa_key_is_rejected_as_not_rsa_not_a_500(oidc_client, monkeypatch):
+    from cryptography.hazmat.primitives import serialization
+    from cryptography.hazmat.primitives.asymmetric import dsa
+
+    key = dsa.generate_private_key(key_size=2048)
+    pem = key.private_bytes(
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+    ).decode("ascii")
+    monkeypatch.setenv("OIDC_SIGNING_KEY_PEM", pem)
+    monkeypatch.setattr(oidc, "_key_cache", None)
+    monkeypatch.setattr(oidc, "_key_error", None)
+
+    resp = oidc_client.get("/.well-known/jwks.json")
+
+    assert resp.status_code == 503 and resp.json()["error"] == "oidc_key_invalid"
+
+
+# ---------------------------------------------------------------------------
+# Review round: cookies, subjects and the global budget
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize("cookie", ["__Secure-authjs.session-token=caf\u00e9", "\u00fc=1; authjs.session-token=x", "authjs.session-token=\U0001f36a"])
+def test_a_non_ascii_cookie_header_is_401_not_a_500_and_never_reaches_the_kitchen(oidc_client, signing_key, monkeypatch, cookie):
+    seen = _kitchen_returns(monkeypatch, {"user": KITCHEN_USER})
+    raw = cookie.encode("utf-8")  # what a client sending UTF-8 cookie bytes puts on the wire
+
+    token = oidc_client.post("/oidc/token", headers=[(b"cookie", raw)])
+    session = oidc_client.get("/oidc/session", headers=[(b"cookie", raw)])
+
+    assert token.status_code == 401 and session.status_code == 200 and session.json() == {"user": None}
+    assert seen == []
+
+
+@pytest.mark.parametrize(
+    "subject,expected",
+    [
+        ("7b1f0c6e-3a52-4c1d-9a7e-5f0d2b8c9e41", "7b1f0c6e-3a52-4c1d-9a7e-5f0d2b8c9e41"),
+        (42, "42"),  # a numeric id is stringified, as before
+        ("x" * 128, "x" * 128),
+    ],
+)
+def test_a_well_formed_kitchen_subject_becomes_the_token_subject(oidc_client, signing_key, monkeypatch, subject, expected):
+    _kitchen_returns(monkeypatch, {"user": {**KITCHEN_USER, "id": subject}})
+
+    resp = oidc_client.post("/oidc/token", headers={"Cookie": SESSION_COOKIE})
+
+    assert resp.status_code == 200
+    assert resp.json()["claims"]["sub"] == expected
+    assert jwt.decode(resp.json()["token"], options={"verify_signature": False})["sub"] == expected
+
+
+@pytest.mark.parametrize(
+    "subject",
+    ["x" * 129, "bad\nid", "tab\tid", "\x00", "", "   ", True, False, ["a"], {"a": 1}, 3.5, None],
+    ids=lambda s: repr(s)[:24],
+)
+def test_a_malformed_kitchen_subject_never_mints_a_token(oidc_client, signing_key, monkeypatch, subject):
+    """The subject is the player's permanent identity; SpacetimeDB rejects one over 128 bytes."""
+    _kitchen_returns(monkeypatch, {"user": {**KITCHEN_USER, "id": subject}})
+
+    resp = oidc_client.post("/oidc/token", headers={"Cookie": SESSION_COOKIE})
+
+    assert resp.status_code == 401 and resp.json() == {"error": "not_signed_in"}
+    assert "token" not in resp.text
+
+
+def test_default_limits_make_the_global_window_a_backstop_not_a_tight_ceiling():
+    """Junk cookies with a plausible name reach the kitchen (only it can tell they are junk) and spend the global
+    window, so a low ceiling would let a flood lock real sign-ins out. 60/min per caller, 6000/min overall."""
+    assert DEFAULT_LIMITS == (60, 6000)
+    assert DEFAULT_LIMITS[1] >= 100 * DEFAULT_LIMITS[0]

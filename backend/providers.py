@@ -336,6 +336,7 @@ async def run_chain(
     temperature: Optional[float] = None,
     structured_schema: Optional[Dict[str, Any]] = None,
     per_call_timeout_s: Optional[float] = None,
+    require_text: bool = False,
 ) -> Optional[CallResult]:
     """
     Walk the chain. Skip keyless providers. Log fallback_event on each failure.
@@ -347,6 +348,9 @@ async def run_chain(
     link cannot consume the whole latency budget of a caller with a deadline
     (the Pentacles brain routes). An outer ``asyncio.wait_for`` around the whole
     chain cannot do this: it would cancel the walk instead of advancing it.
+
+    ``require_text`` makes an empty or whitespace-only completion count as a failure and
+    advance the walk, for callers with no deterministic answer to fall back to (the Oracle).
     """
     for i, cfg in enumerate(chain):
         if not cfg.api_key:
@@ -374,6 +378,8 @@ async def run_chain(
                 result = await asyncio.wait_for(call, timeout=per_call_timeout_s)
             else:
                 result = await call
+            if require_text and not (result.text or "").strip():
+                raise ValueError("empty completion")
             if cfg.name == "anthropic" and result.cache is not None:
                 cached_total = result.cache["read"] + result.cache["write"]
                 read_ratio = (

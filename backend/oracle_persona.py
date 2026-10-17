@@ -14,7 +14,7 @@ question and the live-sky context go in the USER turn, never in here.
 
 The same text is mirrored in ``lib/agents/oracle-persona.ts`` for the Vercel
 fallback route. Both copies are pinned to ``ORACLE_SYSTEM_PROMPT_SHA256``;
-``backend/tests/test_oracle_persona.py`` and ``test/agents/oracle-persona.spec.ts``
+``backend/tests/test_pentacles_brain.py`` and ``test/agents/oracle-persona.spec.ts``
 assert the same digest, so drift between the runtimes fails whichever side moved.
 """
 

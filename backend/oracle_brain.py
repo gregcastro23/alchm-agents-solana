@@ -58,13 +58,22 @@ def parse_request(question: Any, context: Any) -> "tuple[str, str]":
     question = question.strip()
     if not question:
         raise OracleInputError("Invalid or missing question. Must not be empty.")
-    if len(question.encode("utf-8")) > MAX_QUESTION_BYTES:
+    try:
+        question_bytes = len(question.encode("utf-8"))
+    except UnicodeEncodeError:  # a lone surrogate, e.g. the JSON escape ud800: not text any provider can take
+        raise OracleInputError("Invalid question. Must be valid Unicode text.") from None
+    if question_bytes > MAX_QUESTION_BYTES:
         raise OracleInputError(
             f"Invalid question. Must be at most {MAX_QUESTION_BYTES} bytes."
         )
     if context is not None and not isinstance(context, str):
         raise OracleInputError("Invalid context. Must be a string.")
-    return question, (context or "").strip()[:MAX_CONTEXT_CHARS]
+    context = (context or "").strip()[:MAX_CONTEXT_CHARS]
+    try:
+        context.encode("utf-8")
+    except UnicodeEncodeError:
+        raise OracleInputError("Invalid context. Must be valid Unicode text.") from None
+    return question, context
 
 
 def build_user_message(question: str, context: str) -> str:
@@ -95,17 +104,19 @@ async def answer(
     every provider failed, or the overall deadline passed).
 
     Latency budget: each provider call is bounded (ORACLE_PROVIDER_TIMEOUT_SECONDS,
-    default 8) so a hung link advances the chain, and the whole walk is bounded
-    (ORACLE_TIMEOUT_SECONDS, default 14) to stay inside the feeder's 30 s attempt
-    timeout and the ~25 s the player's client waits.
+    default 6) so a hung link advances the chain, and the whole walk is bounded
+    (ORACLE_TIMEOUT_SECONDS, default 12). The player's client stops waiting after 25 s
+    and the feeder asks this brain and then the Vercel brain in turn, so two full
+    budgets (12 s + 12 s) fit inside it. An empty completion counts as a failure and
+    advances the walk, as it does on the Vercel route.
     """
     chain = providers.build_chain(tier, anthropic_model)
     if not any(cfg.api_key for cfg in chain):
         print("oracle_unavailable reason=no_provider_keys", flush=True)
         return None
 
-    total_timeout = _env_seconds("ORACLE_TIMEOUT_SECONDS", 14.0)
-    per_call_timeout = _env_seconds("ORACLE_PROVIDER_TIMEOUT_SECONDS", 8.0)
+    total_timeout = _env_seconds("ORACLE_TIMEOUT_SECONDS", 12.0)
+    per_call_timeout = _env_seconds("ORACLE_PROVIDER_TIMEOUT_SECONDS", 6.0)
     started = time.monotonic()
     try:
         result = await asyncio.wait_for(
@@ -118,6 +129,7 @@ async def answer(
                 tier=tier,
                 max_tokens=MAX_OUTPUT_TOKENS,
                 per_call_timeout_s=per_call_timeout,
+                require_text=True,
             ),
             timeout=total_timeout,
         )

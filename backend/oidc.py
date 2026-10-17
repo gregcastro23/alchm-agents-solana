@@ -58,6 +58,8 @@ import jwt
 from fastapi import APIRouter, Request
 from fastapi.responses import JSONResponse
 
+from client_ip import client_ip
+
 router = APIRouter()
 
 ISSUER = "https://api.agents.alchm.kitchen"
@@ -83,7 +85,11 @@ def _env_float(name: str, default: float) -> float:
 KITCHEN_TIMEOUT_S = _env_float("KITCHEN_SESSION_TIMEOUT_S", 4.0)
 # One sign-in is one /oidc/token call; these bound the calls that reach the kitchen.
 RATE_PER_CALLER_PER_MIN = int(_env_float("OIDC_RATE_PER_CALLER_PER_MIN", 60))
-RATE_GLOBAL_PER_MIN = int(_env_float("OIDC_RATE_GLOBAL_PER_MIN", 1200))
+# The global window is only a backstop for the kitchen. It is deliberately roomy: anyone can
+# send a cookie with a plausible name, only the kitchen can tell it is junk, and junk calls
+# spend this budget, so a low ceiling would let a flood lock real players out of sign-in.
+RATE_GLOBAL_PER_MIN = int(_env_float("OIDC_RATE_GLOBAL_PER_MIN", 6000))
+MAX_SUBJECT_LENGTH = 128  # SpacetimeDB rejects an issuer or subject over 128 bytes
 MAX_COOKIE_HEADER_BYTES = 16 * 1024
 NO_STORE = {"Cache-Control": "no-store", "Pragma": "no-cache"}
 
@@ -248,9 +254,15 @@ async def fetch_kitchen_user(cookie_header: Optional[str]) -> Optional[Dict[str,
     if not isinstance(data, dict):
         return None  # Auth.js answers a bare `null` when anonymous
     user = data.get("user")
-    if not isinstance(user, dict) or not user.get("id"):
+    if not isinstance(user, dict):
         return None
-    return user
+    subject = user.get("id")
+    if isinstance(subject, bool) or not isinstance(subject, (str, int)):
+        return None
+    subject = str(subject)
+    if not subject.strip() or len(subject) > MAX_SUBJECT_LENGTH or not subject.isprintable():
+        return None  # the subject becomes the player's permanent identity: never mint one from garbage
+    return {**user, "id": subject}
 
 
 def _public_user(user: Dict[str, Any]) -> Dict[str, Any]:
@@ -330,8 +342,8 @@ def _origin_denied(request: Request) -> Optional[JSONResponse]:
 def has_session_cookie(cookie_header: Optional[str]) -> bool:
     """True when the Cookie header carries something that can be an Auth.js session token
     (authjs.session-token, __Secure-authjs.session-token, chunked .0/.1 variants)."""
-    if not cookie_header or len(cookie_header.encode("utf-8")) > MAX_COOKIE_HEADER_BYTES:
-        return False
+    if not cookie_header or not cookie_header.isascii() or len(cookie_header) > MAX_COOKIE_HEADER_BYTES:
+        return False  # real cookie headers are ASCII; anything else cannot be forwarded as a header value
     return any("session-token" in pair.split("=", 1)[0].strip().lower() for pair in cookie_header.split(";"))
 
 
@@ -344,10 +356,13 @@ def _within(window: Deque[float], limit: int, now: float) -> bool:
     return True
 
 
+def _now() -> float:
+    return time.monotonic()
+
+
 def _rate_limited(request: Request) -> bool:
-    forwarded = request.headers.get("x-forwarded-for", "")
-    caller = forwarded.split(",")[0].strip() or (request.client.host if request.client else "unknown")
-    now = time.monotonic()
+    caller = client_ip(request)
+    now = _now()
     with _rate_lock:
         window = _rate_callers.get(caller)
         if window is None:

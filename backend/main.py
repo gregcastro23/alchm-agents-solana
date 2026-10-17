@@ -1,5 +1,6 @@
 from fastapi import FastAPI, HTTPException, Header, Depends, Request
 from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 import hashlib
@@ -37,6 +38,8 @@ except Exception as _oidc_import_error:  # a broken issuer must not take the who
     print(f"[oidc] issuer failed to import, /oidc/* and /.well-known/* are not served: {_oidc_import_error}", flush=True)
 import duel_brain
 import oracle_brain
+from body_limit import BodyLimitMiddleware
+from client_ip import client_ip
 from feed_emitter import emit_feed_event
 from secure_compare import bearer_token, secret_matches
 from mcp_probe import tool_response_succeeded
@@ -600,6 +603,13 @@ async def _ephemeris_unavailable_handler(_request: Request, exc: EphemerisUnavai
     )
 
 
+def _naive_utc(value: datetime) -> datetime:
+    """The ephemeris is evaluated in UT: convert an aware datetime, read a naive one as UTC."""
+    if value.tzinfo is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
+
+
 def _request_datetime(payload: Dict[str, Any]) -> datetime:
     now = datetime.utcnow()
     # Clients commonly send an ISO datetime in `date` (e.g.
@@ -765,9 +775,10 @@ async def current_planetary_positions():
 @app.post("/api/planetary/positions/bulk")
 async def bulk_planetary_positions(request: schemas.BulkPositionsRequest):
     samples = []
-    current = request.startDate
+    current = _naive_utc(request.startDate)
+    end = _naive_utc(request.endDate)
     step = timedelta(hours=max(request.intervalHours, 0.25))
-    while current <= request.endDate and len(samples) < 500:
+    while current <= end and len(samples) < 500:
         samples.append({
             "timestamp": current.isoformat(),
             "positions": {
@@ -980,6 +991,9 @@ BRAIN_MAX_CANDIDATES = 50
 BRAIN_MAX_WORD_LENGTH = 15
 BRAIN_MAX_RACK_TILES = 26
 BRAIN_MAX_ID_LENGTH = 100
+BRAIN_PATHS = frozenset({"/api/agents/oracle", "/api/agents/jing", "/api/agents/word-duel"})
+# Outermost, so an oversized body is refused before FastAPI reads any of it (see body_limit.py).
+app.add_middleware(BodyLimitMiddleware, paths=BRAIN_PATHS, max_bytes=BRAIN_MAX_BODY_BYTES)
 _RACK_STRING = re.compile(r"[A-Za-z]{1,26}")
 _PLAYER_WORD = re.compile(r"[A-Za-z]{1,15}")
 
@@ -1016,9 +1030,6 @@ class _CallerGate:
         self.callers: Dict[str, SlidingWindowRateLimiter] = {}
 
     def check(self, http_request: Request) -> None:
-        declared = http_request.headers.get("content-length", "")
-        if declared.isdigit() and int(declared) > BRAIN_MAX_BODY_BYTES:
-            raise HTTPException(status_code=413, detail="Request body too large")
         ip_hash = _caller_ip_hash(http_request)
         limiter = self.callers.get(ip_hash)
         if limiter is None:
@@ -1168,7 +1179,7 @@ async def agents_word_duel(
         agent_channel = None
         if agent_id:
             try:
-                row = crud.get_agent(db, agent_id=agent_id)
+                row = await run_in_threadpool(crud.get_agent, db, agent_id=agent_id)
                 if row:
                     agent_channel = {
                         "agentId": row.agentId,
@@ -1205,7 +1216,7 @@ async def agents_word_duel(
         }
     except Exception as error:
         print(f"[word-duel] Error handling duel move: {error}", flush=True)
-        return _brain_error(500, "Internal server error.", message=str(error) or "Unknown error")
+        return _brain_error(500, "Internal server error.")
 
 
 @app.post("/api/agents/jing", dependencies=[Depends(_jing_rate_gate)])
@@ -1237,7 +1248,7 @@ async def agents_jing(
         agent_id = request.agentId if isinstance(request.agentId, str) else None
         if agent_id and len(agent_id) <= BRAIN_MAX_ID_LENGTH:
             try:
-                row = crud.get_agent(db, agent_id=agent_id)
+                row = await run_in_threadpool(crud.get_agent, db, agent_id=agent_id)
                 if row:
                     persona_block = prompts.get_agent_system_prompt(row.__dict__)
                     agent_name = row.name
@@ -1258,7 +1269,7 @@ async def agents_jing(
         }
     except Exception as error:
         print(f"[jing] Error handling jing move: {error}", flush=True)
-        return _brain_error(500, "Internal server error.", message=str(error) or "Unknown error")
+        return _brain_error(500, "Internal server error.")
 
 
 @app.post("/api/agents/oracle", dependencies=[Depends(_oracle_rate_gate)])
@@ -1301,7 +1312,7 @@ async def agents_oracle(request: schemas.OracleRequest):
         }
     except Exception as error:
         print(f"[oracle] Error handling oracle question: {error}", flush=True)
-        return _brain_error(500, "Internal server error.", message=str(error) or "Unknown error")
+        return _brain_error(500, "Internal server error.")
 
 
 # --- Chat Orchestration ---
@@ -1983,8 +1994,7 @@ _RECIPE_LIMITER_MAX_KEYS = 10_000
 
 def _caller_ip_hash(http_request: Request) -> str:
     """Keyed hash of the caller IP — enough to correlate abuse, not to recover the IP."""
-    forwarded = http_request.headers.get("x-forwarded-for", "")
-    ip = forwarded.split(",")[0].strip() or (http_request.client.host if http_request.client else "unknown")
+    ip = client_ip(http_request)
     key = (os.getenv("LOG_HASH_SALT") or INTERNAL_API_SECRET or "asol").encode("utf-8")
     return hmac.new(key, ip.encode("utf-8"), hashlib.sha256).hexdigest()[:16]
 

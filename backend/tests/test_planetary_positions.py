@@ -17,7 +17,8 @@ future change that quietly swaps the engine back for an approximation fails here
 import json
 import os
 import sys
-from datetime import datetime, timedelta
+import time
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 import pytest
@@ -296,3 +297,72 @@ def test_sign_degree_minute_and_exact_longitude_always_agree(monkeypatch, longit
     sun = main._planetary_positions_for(datetime(2026, 10, 15))["Sun"]
 
     assert (sun["sign"], sun["degree"], sun["minute"], sun["exactLongitude"]) == (sign, degree, minute, exact)
+
+
+# P17/P18/P19: no fixture instant has non-zero seconds or microseconds, so those JD terms were unpinned.
+def test_seconds_and_microseconds_move_the_moon_by_the_right_amount():
+    base = main._planetary_positions_for(datetime(2026, 10, 15, 5, 43, 0))["Moon"]
+    plus59 = main._planetary_positions_for(datetime(2026, 10, 15, 5, 43, 59))["Moon"]
+    expected = base["longitudeSpeed"] * 59 / 86400  # about 0.009 degrees
+    assert abs(circular_delta(plus59["exactLongitude"], base["exactLongitude"]) - expected) < 0.0005
+    micro = main._planetary_positions_for(datetime(2026, 10, 15, 5, 43, 0, 999999))["Moon"]
+    assert circular_delta(micro["exactLongitude"], base["exactLongitude"]) < 0.0003  # under one second of motion
+
+
+# P22: the old test only looked at the Sun on 1 January, which is the same in 0069 and 1969.
+def test_year_69_is_computed_for_year_69_not_1969():
+    import swisseph as swe
+
+    jd = date(69, 1, 1).toordinal() + 1721424.5 + 0.5  # proleptic Gregorian, noon UT, independent of the code under test
+    moon, _flag = swe.calc_ut(jd, swe.MOON, swe.FLG_MOSEPH)
+    mars, _flag = swe.calc_ut(jd, swe.MARS, swe.FLG_MOSEPH)
+    got = positions_at("0069-01-01T12:00:00")
+    assert circular_delta(got["Moon"]["exactLongitude"], moon[0]) < 0.05
+    assert circular_delta(got["Mars"]["exactLongitude"], mars[0]) < 0.05
+
+
+# P10: naive timestamps are UTC, whatever zone the server runs in.
+def test_naive_timestamps_are_read_as_utc_whatever_the_machine_timezone(monkeypatch):
+    zone = os.environ.get("TZ")
+    monkeypatch.setenv("TZ", "Pacific/Auckland")
+    time.tzset()
+    try:
+        naive = client.post("/api/planetary/positions", json={"date": "2026-10-15T05:43:00"}).json()
+        zulu = client.post("/api/planetary/positions", json={"date": "2026-10-15T05:43:00Z"}).json()
+    finally:
+        monkeypatch.undo()
+        if zone is None:
+            os.environ.pop("TZ", None)
+        time.tzset()
+    assert naive["birth_info"] == zulu["birth_info"] and naive["planetary_positions"] == zulu["planetary_positions"]
+
+
+# NEW (source defect): /api/planetary/positions/bulk discards the UTC offset the single endpoint converts.
+def test_bulk_converts_utc_offsets_like_the_single_endpoint():
+    def moon(start):
+        r = client.post("/api/planetary/positions/bulk", json={"startDate": start, "endDate": start, "intervalHours": 1})
+        assert r.status_code == 200
+        return r.json()["samples"][0]["positions"]["planetary_positions"]["Moon"]["exactLongitude"]
+
+    assert circular_delta(moon("2026-10-15T10:43:00+05:00"), moon("2026-10-15T05:43:00Z")) < 0.001
+
+
+# P26/P27: the bulk endpoint is capped and its step is floored (each sample is ten ephemeris calls).
+def test_bulk_is_capped_at_500_samples_and_the_step_is_at_least_a_quarter_hour():
+    capped = client.post(
+        "/api/planetary/positions/bulk",
+        json={"startDate": "2026-01-01T00:00:00", "endDate": "2026-12-31T00:00:00", "intervalHours": 0.25},
+    ).json()
+    floored = client.post(
+        "/api/planetary/positions/bulk",
+        json={"startDate": "2026-10-15T00:00:00", "endDate": "2026-10-15T01:00:00", "intervalHours": 0.01},
+    ).json()
+    assert capped["count"] == 500
+    assert floored["count"] == 5  # 00:00, 00:15, 00:30, 00:45, 01:00
+
+
+# P24/P25: the derived speed fields carry the unit the Next.js client displays.
+def test_derived_speed_fields_are_consistent_with_longitude_speed():
+    for name, p in positions_at("2026-10-15T05:43:00").items():
+        assert p["arcminutesPerDay"] == pytest.approx(p["longitudeSpeed"] * 60, abs=1e-3), name
+        assert p["speedDisplay"] == f"{round(p['longitudeSpeed'], 3)}°/day", name
