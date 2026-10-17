@@ -423,7 +423,7 @@ def test_kitchen_outage_is_503_never_401(oidc_client, signing_key, monkeypatch):
         httpx.Response(302, headers={"location": "https://evil.example/"}),
         httpx.Response(200, text="<html>not json</html>"),
     ],
-    ids=["upstream-500", "redirect-not-followed", "non-json-200"],
+    ids=["upstream-500", "bare-302", "non-json-200"],
 )
 def test_indefinite_kitchen_answers_are_503(oidc_client, signing_key, monkeypatch, response):
     _stub_kitchen(monkeypatch, lambda request: response)

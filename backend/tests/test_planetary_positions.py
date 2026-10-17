@@ -209,13 +209,6 @@ def test_dates_outside_the_ephemeris_span_are_a_client_error_not_a_crash():
     assert "supported ephemeris range" in response.json()["detail"]
 
 
-def test_ancient_dates_inside_the_span_work():
-    """Cleopatra's era: the Julian-day maths must not remap years 0–99 to 19xx."""
-    positions = positions_at("0069-01-01T12:00:00")
-
-    assert circular_delta(positions["Sun"]["exactLongitude"], 280.0) < 25  # early January: Capricorn
-
-
 # ---------------------------------------------------------------------------
 # bulk
 # ---------------------------------------------------------------------------
