@@ -1,4 +1,5 @@
 from fastapi import FastAPI, HTTPException, Header, Depends, Request
+from fastapi.responses import JSONResponse
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 import hashlib
@@ -30,6 +31,8 @@ import tilt_skillet_generation
 import alchm_mcp
 import pii_scrubber
 import oidc
+import duel_brain
+import oracle_brain
 from feed_emitter import emit_feed_event
 from secure_compare import bearer_token, secret_matches
 from mcp_probe import tool_response_succeeded
@@ -887,6 +890,302 @@ def agents_search(
             for a in rows
         ],
     }
+
+
+# --- Pentacles brain: Word Duel, Jing Arena and Oracle (public, rate-limited) ---
+#
+# Consumed by the Pentacles feeders (gregcastro23/Pentacles feeder/brain.ts):
+#   POST <base><path>, Content-Type: application/json, NO auth header; one
+#   attempt here, one at the Vercel fallback, then the feeder's own local logic.
+#   Any network error, non-2xx status, non-JSON body or contract-violating body
+#   counts as a failure and triggers the fallback — so when this brain cannot
+#   answer it must answer NON-2xx, never 200 with stub text.
+#
+# History: these routes were restored from gregcastro23/alchm-agents-app
+# (0473bf7, bac55c1 — dropped by a force-push) after the Railway service was
+# repointed at this repo and they vanished (404/405 in production). See
+# duel_brain.py (byte-identical to 0473bf7) and oracle_brain.py (new).
+#
+# Static paths cannot collide with GET/PUT/DELETE /api/agents/{agent_id}: those
+# match the path but not the method, and Starlette prefers a full match over a
+# partial one regardless of registration order. Without these routes the same
+# partial match is what produced the 405 seen in production.
+#
+# The routes must stay public (the feeder sends no credentials), so the LLM-backed
+# ones sit behind a per-caller + global sliding-window gate in the style of the
+# /api/generate-recipe limiter. Limits are env-configurable and generous enough
+# for a single Pentacles feeder IP: its Oracle is capped at 60 questions an hour,
+# and word duels / jings arrive in bursts.
+
+
+def _env_positive_int(name: str, default: int) -> int:
+    try:
+        value = int(os.getenv(name, ""))
+        return value if value > 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+class _CallerGate:
+    """Per-caller (keyed IP hash) plus global sliding-window gate for a public route."""
+
+    MAX_CALLERS = 10_000
+
+    def __init__(
+        self,
+        route: str,
+        *,
+        per_caller_env: str,
+        per_caller_default: int,
+        global_env: str,
+        global_default: int,
+        window_s: float,
+    ):
+        self.route = route
+        self.window_s = window_s
+        self.per_caller_limit = _env_positive_int(per_caller_env, per_caller_default)
+        self.global_limiter = SlidingWindowRateLimiter(
+            limit=_env_positive_int(global_env, global_default), window=window_s
+        )
+        self.callers: Dict[str, SlidingWindowRateLimiter] = {}
+
+    def check(self, http_request: Request) -> None:
+        ip_hash = _caller_ip_hash(http_request)
+        limiter = self.callers.get(ip_hash)
+        if limiter is None:
+            if len(self.callers) >= self.MAX_CALLERS:
+                self.callers.clear()
+            limiter = SlidingWindowRateLimiter(limit=self.per_caller_limit, window=self.window_s)
+            self.callers[ip_hash] = limiter
+        if not limiter.is_allowed() or not self.global_limiter.is_allowed():
+            print(f"brain_rate_limited route={self.route} ip_hash={ip_hash}", flush=True)
+            raise HTTPException(
+                status_code=429,
+                detail="Too Many Requests",
+                headers={"Retry-After": str(int(min(self.window_s, 60)))},
+            )
+
+
+_oracle_gate = _CallerGate(
+    "oracle",
+    per_caller_env="BRAIN_ORACLE_PER_CALLER_PER_HOUR",
+    per_caller_default=120,  # the feeder caps itself at 60/hour
+    global_env="BRAIN_ORACLE_GLOBAL_PER_HOUR",
+    global_default=400,
+    window_s=3600.0,
+)
+_word_duel_gate = _CallerGate(
+    "word-duel",
+    per_caller_env="BRAIN_WORD_DUEL_PER_CALLER_PER_MIN",
+    per_caller_default=120,
+    global_env="BRAIN_WORD_DUEL_GLOBAL_PER_MIN",
+    global_default=600,
+    window_s=60.0,
+)
+_jing_gate = _CallerGate(
+    "jing",
+    per_caller_env="BRAIN_JING_PER_CALLER_PER_MIN",
+    per_caller_default=120,
+    global_env="BRAIN_JING_GLOBAL_PER_MIN",
+    global_default=600,
+    window_s=60.0,
+)
+
+
+def _oracle_rate_gate(http_request: Request) -> None:
+    _oracle_gate.check(http_request)
+
+
+def _word_duel_rate_gate(http_request: Request) -> None:
+    _word_duel_gate.check(http_request)
+
+
+def _jing_rate_gate(http_request: Request) -> None:
+    _jing_gate.check(http_request)
+
+
+def _brain_error(status_code: int, error: str, **extra: Any) -> JSONResponse:
+    return JSONResponse(status_code=status_code, content={"success": False, "error": error, **extra})
+
+
+@app.post("/api/agents/word-duel", dependencies=[Depends(_word_duel_rate_gate)])
+async def agents_word_duel(
+    request: schemas.WordDuelRequest, db: Session = Depends(database.get_db)
+):
+    """In-character Word Duel move brain.
+
+    Request: { planet, rack, candidates: string[] | [{word,score}], context?,
+               agentId?, sessionId?, userId?, source? }
+    Response: { success, planet, move: { word, rationale, score, source,
+                provider?, model?, latencyMs }, timestamp }
+
+    The played word is ALWAYS one of the supplied candidates (a model's pick is
+    re-validated against them), and ``move.score`` is always recomputed here with
+    the shared scorer — the Pentacles reducer trusts it and does not re-check the
+    word, so neither a model's claim nor the caller's score is ever echoed.
+    Errors: 400 (planet/rack), 422 (candidates missing, or empty — there is no
+    legal word to play, so the caller must yield locally), 500.
+    """
+    try:
+        planet = request.planet
+        if not duel_brain.is_planet(planet):
+            return _brain_error(400, "Invalid or missing planet. Must be one of the ten spheres.")
+
+        rack = request.rack
+        # JS semantics: null/undefined/"" are falsy (rejected); {} is a valid map.
+        if rack is None or not isinstance(rack, (str, dict)) or rack == "":
+            return _brain_error(400, "Invalid or missing rack. Must be a string or {letter:count} map.")
+
+        # Thin brain: the caller MUST supply candidates (PA owns no dictionary).
+        if not isinstance(request.candidates, list):
+            return _brain_error(
+                422,
+                "Missing candidates[]. Send the legal words from your solver (string[] or {word,score}[]).",
+            )
+
+        context = request.context if isinstance(request.context, dict) else None
+        agent_id = request.agentId if isinstance(request.agentId, str) else None
+        if not agent_id and context and isinstance(context.get("agentId"), str):
+            agent_id = context["agentId"]
+
+        # Optional persona channeling — a known historical agent lends its voice.
+        agent_channel = None
+        if agent_id:
+            try:
+                row = crud.get_agent(db, agent_id=agent_id)
+                if row:
+                    agent_channel = {
+                        "agentId": row.agentId,
+                        "name": row.name,
+                        "title": row.title,
+                        "personalityCore": row.personalityCore or {},
+                    }
+            except Exception as lookup_err:
+                print(f"[word-duel] agent lookup skipped: {lookup_err}", flush=True)
+
+        move = await duel_brain.choose_word_move(
+            planet=planet,
+            rack=rack,
+            candidates=request.candidates,
+            context=context,
+            agent=agent_channel,
+        )
+        if move.get("source") == "yield" or not move.get("word"):
+            # No legal candidate survived. A 200 with word "" would be a body the
+            # feeder rejects as contract-violating; say so explicitly instead.
+            return _brain_error(
+                422,
+                "no_legal_candidates",
+                message="No candidate word can be played from this rack; yield the turn.",
+            )
+        # Match JSON.stringify: absent (undefined) optional keys are omitted.
+        move = {k: v for k, v in move.items() if v is not None}
+
+        return {
+            "success": True,
+            "planet": planet,
+            "move": move,
+            "timestamp": duel_brain.now_iso_z(),
+        }
+    except Exception as error:
+        print(f"[word-duel] Error handling duel move: {error}", flush=True)
+        return _brain_error(500, "Internal server error.", message=str(error) or "Unknown error")
+
+
+@app.post("/api/agents/jing", dependencies=[Depends(_jing_rate_gate)])
+async def agents_jing(
+    request: schemas.JingDuelRequest, db: Session = Depends(database.get_db)
+):
+    """In-character Jing Arena counter brain.
+
+    Given a planet and the player's OPENING move, returns the move that planet
+    plays to counter it (the winning reply on the fixed counter graph) plus a
+    one-line voice. Deterministic unless agentId names a known agent (then an
+    LLM voice is attempted, with the counter voice kept as fallback).
+
+    Request:  { planet, opening, agentId?, source? }
+    Response: { success, planet, move, voice, element, source, timestamp }
+    """
+    try:
+        planet = request.planet
+        if not duel_brain.is_planet(planet):
+            return _brain_error(400, "Invalid or missing planet. Must be one of the ten spheres.")
+        opening = request.opening
+        if not duel_brain.is_jing_move(opening):
+            return _brain_error(
+                400, "Invalid or missing opening. Must be Meltdown|Freeze|TectonicRoot|Vacuum|Erode."
+            )
+
+        persona_block = None
+        agent_name = None
+        agent_id = request.agentId if isinstance(request.agentId, str) else None
+        if agent_id:
+            try:
+                row = crud.get_agent(db, agent_id=agent_id)
+                if row:
+                    persona_block = prompts.get_agent_system_prompt(row.__dict__)
+                    agent_name = row.name
+            except Exception as lookup_err:
+                print(f"[jing] agent lookup skipped: {lookup_err}", flush=True)
+
+        result = await duel_brain.choose_jing_move(
+            planet, opening, persona_block=persona_block, agent_name=agent_name
+        )
+        return {
+            "success": True,
+            "planet": planet,
+            "move": result["move"],
+            "voice": result["voice"],
+            "element": result["element"],
+            "source": "counter",
+            "timestamp": duel_brain.now_iso_z(),
+        }
+    except Exception as error:
+        print(f"[jing] Error handling jing move: {error}", flush=True)
+        return _brain_error(500, "Internal server error.", message=str(error) or "Unknown error")
+
+
+@app.post("/api/agents/oracle", dependencies=[Depends(_oracle_rate_gate)])
+async def agents_oracle(request: schemas.OracleRequest):
+    """The Pentacles Oracle: a game-aware answer to a player's question.
+
+    Request:  { question: str (trimmed, 1..500 bytes), context?: str }
+              context is derived data only — the live-sky block plus the zone /
+              faction summary the feeder builds; it never carries birth data.
+    Response: { answer, provider, model, timestamp } — provider/model name the
+              link of the fallback chain that answered. Which links exist follows
+              the same tiering as /api/chat: the free chain (Groq → Cerebras →
+              Qwen → Gemini → OpenRouter, then OpenAI last-ditch) unless the
+              deploy's HISTORICAL_AGENT_DEFAULT_TIER is paid, in which case
+              Anthropic leads. Links without an API key are skipped.
+    Errors:   400 bad question/context; 503 when no provider answered in time.
+              There is deliberately no stub answer: the feeder treats any non-2xx
+              as "try the fallback", but would publish a 200 body to the player.
+    """
+    try:
+        try:
+            question, context = oracle_brain.parse_request(request.question, request.context)
+        except oracle_brain.OracleInputError as bad_input:
+            return _brain_error(400, str(bad_input))
+
+        tier = _resolve_tier(None)
+        result = await oracle_brain.answer(
+            question,
+            context,
+            tier=tier,
+            anthropic_model=ANTHROPIC_TIER_MODEL.get(tier),
+        )
+        if result is None:
+            return _brain_error(503, "No LLM provider available to channel the oracle.")
+        return {
+            "answer": result.text,
+            "provider": result.provider,
+            "model": result.model,
+            "timestamp": duel_brain.now_iso_z(),
+        }
+    except Exception as error:
+        print(f"[oracle] Error handling oracle question: {error}", flush=True)
+        return _brain_error(500, "Internal server error.", message=str(error) or "Unknown error")
 
 
 # --- Chat Orchestration ---

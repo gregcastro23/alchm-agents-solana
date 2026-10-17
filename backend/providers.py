@@ -16,6 +16,7 @@ OpenAI is the paid last-ditch. Everything between Anthropic and OpenAI is free.
 """
 from __future__ import annotations
 
+import asyncio
 import os
 import json
 import time
@@ -334,10 +335,18 @@ async def run_chain(
     response_format: Optional[Dict[str, Any]] = None,
     temperature: Optional[float] = None,
     structured_schema: Optional[Dict[str, Any]] = None,
+    per_call_timeout_s: Optional[float] = None,
 ) -> Optional[CallResult]:
     """
     Walk the chain. Skip keyless providers. Log fallback_event on each failure.
     Return the first successful result, or None if every provider failed.
+
+    ``per_call_timeout_s`` bounds each provider call (None = unbounded, the SDK
+    defaults, which is what /api/chat has always done). A call that exceeds it
+    counts as a failure and the walk moves on to the next provider, so one hung
+    link cannot consume the whole latency budget of a caller with a deadline
+    (the Pentacles brain routes). An outer ``asyncio.wait_for`` around the whole
+    chain cannot do this: it would cancel the walk instead of advancing it.
     """
     for i, cfg in enumerate(chain):
         if not cfg.api_key:
@@ -349,9 +358,9 @@ async def run_chain(
                 and temperature is None
                 and structured_schema is None
             ):
-                result = await call_provider(cfg, persona_block, rag_block, user_message)
+                call = call_provider(cfg, persona_block, rag_block, user_message)
             else:
-                result = await call_provider_with_options(
+                call = call_provider_with_options(
                     cfg,
                     persona_block,
                     rag_block,
@@ -361,6 +370,10 @@ async def run_chain(
                     temperature=temperature,
                     structured_schema=structured_schema,
                 )
+            if per_call_timeout_s:
+                result = await asyncio.wait_for(call, timeout=per_call_timeout_s)
+            else:
+                result = await call
             if cfg.name == "anthropic" and result.cache is not None:
                 cached_total = result.cache["read"] + result.cache["write"]
                 read_ratio = (
@@ -386,7 +399,10 @@ async def run_chain(
                 )
             return result
         except Exception as e:
-            reason = "rate_limit" if is_quota_error(e) else "error"
+            if isinstance(e, asyncio.TimeoutError):
+                reason = "timeout"
+            else:
+                reason = "rate_limit" if is_quota_error(e) else "error"
             next_name = "none"
             for nxt in chain[i + 1 :]:
                 if nxt.api_key:
@@ -394,7 +410,8 @@ async def run_chain(
                     break
             print(
                 f"fallback_event provider={cfg.name} reason={reason} "
-                f"next={next_name} agentId={agent_id} error={str(e)[:200]}",
+                f"next={next_name} agentId={agent_id} "
+                f"error={(str(e) or type(e).__name__)[:200]}",
                 flush=True,
             )
             continue
