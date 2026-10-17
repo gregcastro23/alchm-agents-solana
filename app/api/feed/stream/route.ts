@@ -30,6 +30,14 @@ export async function GET(req: Request) {
       // Open the stream with an immediate comment so proxies don't buffer
       enqueue('retry: 5000\n: feed-stream open\n\n')
 
+      // Warm-up burst: send cached triplicate trades and active resonance windows
+      for (const trade of feedStreamBus.getRecentTrades()) {
+        enqueue(`event: feed\ndata: ${JSON.stringify(trade)}\n\n`)
+      }
+      for (const win of feedStreamBus.getActiveWindows()) {
+        enqueue(`event: resonance_window\ndata: ${JSON.stringify(win)}\n\n`)
+      }
+
       const unsubscribe = feedStreamBus.subscribe(message => {
         enqueue(`event: ${message.event}\ndata: ${JSON.stringify(message.data)}\n\n`)
       })

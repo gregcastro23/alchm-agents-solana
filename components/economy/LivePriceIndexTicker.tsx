@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Flame,
   Droplets,
@@ -17,6 +17,10 @@ import {
 } from 'lucide-react'
 import { useElementalPriceIndex } from '@/hooks/useElementalPriceIndex'
 import type { EsmsTokenName } from '@/lib/economy/price-index-contract'
+import type {
+  CircleBoardResonanceWindow,
+  TriplicateTradeEvent,
+} from '@/components/cosmic-agents/types'
 
 interface LivePriceIndexTickerProps {
   variant?: 'ribbon' | 'matrix' | 'compact'
@@ -138,6 +142,59 @@ export function LivePriceIndexTicker({
     useElementalPriceIndex({ refreshIntervalMs: 15000 })
 
   const [copiedMint, setCopiedMint] = useState<string | null>(null)
+  const [triplicateTrades, setTriplicateTrades] = useState<TriplicateTradeEvent[]>([])
+  const [resonanceWindows, setResonanceWindows] = useState<CircleBoardResonanceWindow[]>([])
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+
+    let es: EventSource | null = null
+    try {
+      es = new EventSource('/api/feed/stream')
+
+      const handleFeed = (event: MessageEvent) => {
+        try {
+          const payload = JSON.parse(event.data)
+          if (payload && payload.type === 'triplicate-trade') {
+            const trade = payload as TriplicateTradeEvent
+            setTriplicateTrades(prev => {
+              const key = trade.tradeId || trade.id
+              if (prev.some(t => (t.tradeId || t.id) === key)) return prev
+              return [trade, ...prev].slice(0, 10)
+            })
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      const handleResonanceWindow = (event: MessageEvent) => {
+        try {
+          const payload = JSON.parse(event.data)
+          if (payload && payload.windowKey) {
+            const win = payload as CircleBoardResonanceWindow
+            setResonanceWindows(prev => {
+              if (prev.some(w => w.windowKey === win.windowKey)) return prev
+              return [win, ...prev].slice(0, 5)
+            })
+          }
+        } catch {
+          // ignore
+        }
+      }
+
+      es.addEventListener('feed', handleFeed)
+      es.addEventListener('resonance_window', handleResonanceWindow)
+    } catch {
+      // EventSource fallback
+    }
+
+    return () => {
+      if (es) {
+        es.close()
+      }
+    }
+  }, [])
 
   const copyToClipboard = (text: string, axis: string) => {
     if (typeof navigator !== 'undefined') {
@@ -146,6 +203,104 @@ export function LivePriceIndexTicker({
       setTimeout(() => setCopiedMint(null), 2000)
     }
   }
+
+  const renderQuotePill = (quote: (typeof quotesList)[0], idx: number, isDuplicate = false) => {
+    const vis = TOKEN_VISUALS[quote.axis]
+    const Icon = vis.icon
+    const change = formatChange(quote.change24hPct)
+    const isPrimaryQuote = !isDuplicate && idx < quotesList.length
+
+    return (
+      <div
+        key={`${quote.axis}-${idx}-${isDuplicate ? 'dup' : 'orig'}`}
+        onClick={() => onElementClick?.(quote.axis)}
+        onKeyDown={event => {
+          if (isPrimaryQuote && onElementClick && (event.key === 'Enter' || event.key === ' ')) {
+            event.preventDefault()
+            onElementClick(quote.axis)
+          }
+        }}
+        role={isPrimaryQuote ? (onElementClick ? 'button' : 'group') : undefined}
+        tabIndex={isPrimaryQuote && onElementClick ? 0 : undefined}
+        aria-hidden={!isPrimaryQuote}
+        aria-label={
+          isPrimaryQuote
+            ? `${quote.name} (${quote.symbol}) ESMS Token index: ${formatIndex(quote)} IDX on Solana Devnet`
+            : undefined
+        }
+        title={
+          isPrimaryQuote
+            ? `${quote.name} (${quote.symbol}) ESMS Token index on Solana Devnet`
+            : undefined
+        }
+        className="inline-flex items-center gap-2.5 px-3 py-1 rounded-full bg-[#0e1014] border border-[#23262B] hover:border-[#8c947c]/60 transition-colors"
+      >
+        <Icon className={`w-3.5 h-3.5 ${vis.text}`} aria-hidden="true" />
+        <span className="font-mono-label text-[10px] font-bold text-[#e0e4d2]">{quote.symbol}</span>
+        <span className="font-mono-label text-[11px] text-[#e0e4d2] font-semibold">
+          {formatIndex(quote)} IDX
+        </span>
+        <span
+          className={`font-mono-label text-[9px] px-1.5 py-0.2 rounded font-bold flex items-center gap-0.5 ${
+            change.isPositive ? 'text-[#b8fc4b] bg-[#b8fc4b]/10' : 'text-[#ff7b72] bg-[#ff7b72]/10'
+          }`}
+        >
+          {change.isPositive ? (
+            <TrendingUp className="w-2.5 h-2.5 inline" aria-hidden="true" />
+          ) : (
+            <TrendingDown className="w-2.5 h-2.5 inline" aria-hidden="true" />
+          )}
+          {change.text}
+        </span>
+        <span className="text-[9px] font-mono-label text-[#8c947c] hidden sm:inline">
+          [SKY {Math.round(quote.weight * 100)}%]
+        </span>
+      </div>
+    )
+  }
+
+  const renderTradePill = (trade: TriplicateTradeEvent, idx: number, isDuplicate = false) => (
+    <div
+      key={`triplicate-${trade.tradeId || trade.id}-${idx}-${isDuplicate ? 'dup' : 'orig'}`}
+      className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#171409] border border-amber-500/50 shadow-[0_0_12px_rgba(245,158,11,0.2)]"
+      title={`Astrolabe Triplicate Trade: ${trade.aspectDescription}`}
+    >
+      <Sparkles className="w-3.5 h-3.5 text-amber-400 animate-pulse" aria-hidden="true" />
+      <span className="font-mono-label text-[10px] font-bold text-amber-300">
+        TRIPLICATE: {trade.makerName} ⇄ {trade.takerName}
+      </span>
+      <span className="font-mono-label text-[10px] text-[#e0e4d2]">
+        {trade.gaveAmount} {trade.gaveToken} ➔ {trade.receivedAmount} {trade.receivedToken}
+      </span>
+      <span className="font-mono-label text-[9px] px-1.5 py-0.2 rounded font-bold text-[#b8fc4b] bg-[#b8fc4b]/15 border border-[#b8fc4b]/30">
+        +{trade.resonanceBonusPct}% REBATE
+      </span>
+    </div>
+  )
+
+  const renderWindowPill = (win: CircleBoardResonanceWindow, idx: number, isDuplicate = false) => (
+    <div
+      key={`window-${win.windowKey}-${idx}-${isDuplicate ? 'dup' : 'orig'}`}
+      className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#0a1a14] border border-emerald-500/50 shadow-[0_0_12px_rgba(16,185,129,0.2)]"
+      title={`Celestial Resonance Window: ${win.harmonicAspect} via ${win.transitCatalyst}`}
+    >
+      <Sparkles className="w-3.5 h-3.5 text-emerald-400" aria-hidden="true" />
+      <span className="font-mono-label text-[10px] font-bold text-emerald-300 uppercase">
+        WINDOW: {win.harmonicAspect}
+      </span>
+      <span className="font-mono-label text-[9px] px-1.5 py-0.2 rounded font-bold text-[#b8fc4b] bg-[#b8fc4b]/15 border border-[#b8fc4b]/30">
+        +{win.bonusPct}% SYNASTRY
+      </span>
+    </div>
+  )
+
+  const renderTickerTapeBatch = (batchKey: string, isDuplicate = false) => (
+    <React.Fragment key={batchKey}>
+      {quotesList.map((quote, idx) => renderQuotePill(quote, idx, isDuplicate))}
+      {resonanceWindows.map((win, idx) => renderWindowPill(win, idx, isDuplicate))}
+      {triplicateTrades.map((trade, idx) => renderTradePill(trade, idx, isDuplicate))}
+    </React.Fragment>
+  )
 
   // ==========================================================================
   // 1. RIBBON / MARQUEE TICKER TAPE VARIANT
@@ -179,68 +334,12 @@ export function LivePriceIndexTicker({
                   {loading ? 'SYNCING CANONICAL ESMS ORACLE…' : (error ?? 'PRICE ORACLE OFFLINE')}
                 </span>
               ) : (
-                [...quotesList, ...quotesList, ...quotesList, ...quotesList].map((quote, idx) => {
-                  const vis = TOKEN_VISUALS[quote.axis]
-                  const Icon = vis.icon
-                  const change = formatChange(quote.change24hPct)
-                  const isPrimaryQuote = idx < quotesList.length
-
-                  return (
-                    <div
-                      key={`${quote.axis}-${idx}`}
-                      onClick={() => onElementClick?.(quote.axis)}
-                      onKeyDown={event => {
-                        if (
-                          isPrimaryQuote &&
-                          onElementClick &&
-                          (event.key === 'Enter' || event.key === ' ')
-                        ) {
-                          event.preventDefault()
-                          onElementClick(quote.axis)
-                        }
-                      }}
-                      role={isPrimaryQuote ? (onElementClick ? 'button' : 'group') : undefined}
-                      tabIndex={isPrimaryQuote && onElementClick ? 0 : undefined}
-                      aria-hidden={!isPrimaryQuote}
-                      aria-label={
-                        isPrimaryQuote
-                          ? `${quote.name} (${quote.symbol}) ESMS Token index: ${formatIndex(quote)} IDX on Solana Devnet`
-                          : undefined
-                      }
-                      title={
-                        isPrimaryQuote
-                          ? `${quote.name} (${quote.symbol}) ESMS Token index on Solana Devnet`
-                          : undefined
-                      }
-                      className="inline-flex items-center gap-2.5 px-3 py-1 rounded-full bg-[#0e1014] border border-[#23262B] hover:border-[#8c947c]/60 transition-colors"
-                    >
-                      <Icon className={`w-3.5 h-3.5 ${vis.text}`} aria-hidden="true" />
-                      <span className="font-mono-label text-[10px] font-bold text-[#e0e4d2]">
-                        {quote.symbol}
-                      </span>
-                      <span className="font-mono-label text-[11px] text-[#e0e4d2] font-semibold">
-                        {formatIndex(quote)} IDX
-                      </span>
-                      <span
-                        className={`font-mono-label text-[9px] px-1.5 py-0.2 rounded font-bold flex items-center gap-0.5 ${
-                          change.isPositive
-                            ? 'text-[#b8fc4b] bg-[#b8fc4b]/10'
-                            : 'text-[#ff7b72] bg-[#ff7b72]/10'
-                        }`}
-                      >
-                        {change.isPositive ? (
-                          <TrendingUp className="w-2.5 h-2.5 inline" aria-hidden="true" />
-                        ) : (
-                          <TrendingDown className="w-2.5 h-2.5 inline" aria-hidden="true" />
-                        )}
-                        {change.text}
-                      </span>
-                      <span className="text-[9px] font-mono-label text-[#8c947c] hidden sm:inline">
-                        [SKY {Math.round(quote.weight * 100)}%]
-                      </span>
-                    </div>
-                  )
-                })
+                <>
+                  {renderTickerTapeBatch('batch-0', false)}
+                  {renderTickerTapeBatch('batch-1', true)}
+                  {renderTickerTapeBatch('batch-2', true)}
+                  {renderTickerTapeBatch('batch-3', true)}
+                </>
               )}
             </div>
           </div>
@@ -319,6 +418,28 @@ export function LivePriceIndexTicker({
           </button>
         </div>
       </div>
+
+      {/* Astrolabe Triplicate Trades & Active Resonance Windows Panel */}
+      {(triplicateTrades.length > 0 || resonanceWindows.length > 0) && (
+        <div className="glass-panel p-4 rounded-xl border border-amber-500/30 bg-[#0c0d08]/60 space-y-3">
+          <div className="flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <Sparkles className="w-4 h-4 text-amber-400 animate-pulse" aria-hidden="true" />
+              <h4 className="font-headline-sm text-sm font-bold text-amber-200 uppercase tracking-wider">
+                Live Astrolabe Triplicate Trades & Resonance Windows
+              </h4>
+            </div>
+            <span className="font-mono-label text-[9px] px-2 py-0.5 rounded border border-amber-500/40 text-amber-300 bg-amber-500/10">
+              SSE STREAM ACTIVE
+            </span>
+          </div>
+
+          <div className="flex flex-wrap gap-2.5">
+            {resonanceWindows.map((win, idx) => renderWindowPill(win, idx, false))}
+            {triplicateTrades.map((trade, idx) => renderTradePill(trade, idx, false))}
+          </div>
+        </div>
+      )}
 
       {/* Four ESMS quantity cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-5">
