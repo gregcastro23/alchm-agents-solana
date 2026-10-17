@@ -37,6 +37,7 @@ os.environ.setdefault("ALCHM_MCP_ENABLED", "false")
 import oidc  # noqa: E402
 
 ISSUER = "https://api.agents.alchm.kitchen"
+SESSION_COOKIE = "__Secure-authjs.session-token=abc"  # what Auth.js v5 sets for the kitchen session
 KITCHEN_USER = {
     "id": "7b1f0c6e-3a52-4c1d-9a7e-5f0d2b8c9e41",
     "email": "seeker@example.test",
@@ -74,6 +75,19 @@ def signing_key(monkeypatch, private_pem):
 def no_signing_key(monkeypatch):
     monkeypatch.delenv("OIDC_SIGNING_KEY_PEM", raising=False)
     monkeypatch.setattr(oidc, "_key_cache", None)
+
+
+@pytest.fixture(autouse=True)
+def _fresh_rate_state(monkeypatch):
+    """The limiter is process-wide; every test starts with an empty one and generous limits."""
+    monkeypatch.setattr(oidc, "RATE_PER_CALLER_PER_MIN", 10_000)
+    monkeypatch.setattr(oidc, "RATE_GLOBAL_PER_MIN", 10_000)
+    monkeypatch.delenv("OIDC_ALLOWED_ORIGINS", raising=False)
+    oidc._rate_callers.clear()
+    oidc._rate_global.clear()
+    yield
+    oidc._rate_callers.clear()
+    oidc._rate_global.clear()
 
 
 @pytest.fixture
@@ -202,12 +216,50 @@ def test_escaped_newline_pem_is_accepted(monkeypatch, private_pem):
     assert loaded["jwk"]["alg"] == "RS256"
 
 
-def test_malformed_pem_fails_loudly_instead_of_being_ignored(monkeypatch):
-    monkeypatch.setenv("OIDC_SIGNING_KEY_PEM", "-----BEGIN PRIVATE KEY-----\nnope\n")
-    monkeypatch.setattr(oidc, "_key_cache", None)
+@pytest.mark.parametrize("which", ["garbage", "ec", "public", "weak-rsa"])
+def test_an_unusable_key_is_logged_once_and_answered_503_invalid_not_a_bare_500(
+    oidc_client, monkeypatch, capsys, which
+):
+    from cryptography.hazmat.primitives.asymmetric import ec
 
-    with pytest.raises(ValueError):
-        oidc.load_signing_key()
+    weak = rsa.generate_private_key(public_exponent=65537, key_size=1024)
+    ec_key = ec.generate_private_key(ec.SECP256R1())
+    private = lambda k: k.private_bytes(  # noqa: E731
+        serialization.Encoding.PEM, serialization.PrivateFormat.PKCS8, serialization.NoEncryption()
+    ).decode("ascii")
+    pem = {
+        "garbage": "-----BEGIN PRIVATE KEY-----\nnope\n-----END PRIVATE KEY-----\n",
+        "ec": private(ec_key),
+        "public": ec_key.public_key().public_bytes(
+            serialization.Encoding.PEM, serialization.PublicFormat.SubjectPublicKeyInfo
+        ).decode("ascii"),
+        "weak-rsa": private(weak),
+    }[which]
+    monkeypatch.setenv("OIDC_SIGNING_KEY_PEM", pem)
+    monkeypatch.setattr(oidc, "_key_cache", None)
+    monkeypatch.setattr(oidc, "_key_error", None)
+
+    first = oidc_client.get("/.well-known/jwks.json")
+    second = oidc_client.get("/.well-known/jwks.json")
+    token = oidc_client.post("/oidc/token", headers={"Cookie": SESSION_COOKIE})
+
+    assert first.status_code == second.status_code == token.status_code == 503
+    assert first.json()["error"] == "oidc_key_invalid"
+    assert oidc.load_signing_key() is None
+    out = capsys.readouterr().out
+    assert out.count("OIDC_SIGNING_KEY_PEM is set but unusable") == 1  # once, not per request
+    assert "BEGIN" not in out and "nope" not in out  # the PEM itself is never logged
+
+
+def test_a_malformed_env_value_does_not_stop_the_module_importing(monkeypatch):
+    monkeypatch.setenv("KITCHEN_SESSION_TIMEOUT_S", "4s")
+    monkeypatch.setenv("OIDC_RATE_PER_CALLER_PER_MIN", "lots")
+
+    assert oidc._env_float("KITCHEN_SESSION_TIMEOUT_S", 4.0) == 4.0
+    assert oidc._env_float("OIDC_RATE_PER_CALLER_PER_MIN", 60) == 60
+    assert oidc._env_float("OIDC_UNSET_ANYWHERE", 1.5) == 1.5
+    monkeypatch.setenv("KITCHEN_SESSION_TIMEOUT_S", "-3")
+    assert oidc._env_float("KITCHEN_SESSION_TIMEOUT_S", 4.0) == 4.0
 
 
 # ---------------------------------------------------------------------------
@@ -220,7 +272,7 @@ def test_token_endpoint_issues_an_rs256_jwt_for_audience_pentacles(
 ):
     seen = _kitchen_returns(monkeypatch, {"user": KITCHEN_USER, "expires": "2099-01-01"})
 
-    resp = oidc_client.post("/oidc/token", headers={"Cookie": "session=abc"})
+    resp = oidc_client.post("/oidc/token", headers={"Cookie": SESSION_COOKIE})
 
     assert resp.status_code == 200
     body = resp.json()
@@ -262,7 +314,7 @@ def test_token_endpoint_issues_an_rs256_jwt_for_audience_pentacles(
 
 def test_token_is_rejected_for_the_wrong_audience(oidc_client, signing_key, monkeypatch):
     _kitchen_returns(monkeypatch, {"user": KITCHEN_USER})
-    token = oidc_client.post("/oidc/token", headers={"Cookie": "s=1"}).json()["token"]
+    token = oidc_client.post("/oidc/token", headers={"Cookie": SESSION_COOKIE}).json()["token"]
     jwk = oidc_client.get("/.well-known/jwks.json").json()["keys"][0]
 
     with pytest.raises(jwt.InvalidAudienceError):
@@ -280,7 +332,7 @@ def test_optional_claims_are_omitted_rather_than_null(
 ):
     _kitchen_returns(monkeypatch, {"user": {"id": "only-an-id", "email": None, "name": ""}})
 
-    token = oidc_client.post("/oidc/token", headers={"Cookie": "s=1"}).json()["token"]
+    token = oidc_client.post("/oidc/token", headers={"Cookie": SESSION_COOKIE}).json()["token"]
 
     claims = jwt.decode(token, options={"verify_signature": False})
     assert set(claims) == {"iss", "sub", "aud", "iat", "exp"}
@@ -305,25 +357,47 @@ def test_token_endpoint_forwards_the_cookie_to_the_kitchen_only(
 
 
 @pytest.mark.parametrize("anonymous", [None, {"user": None}, {"user": {}}, {"user": {"email": "x"}}])
-def test_token_endpoint_answers_401_for_an_anonymous_session(
+def test_token_endpoint_answers_401_when_the_kitchen_says_the_session_is_anonymous(
     oidc_client, signing_key, monkeypatch, anonymous
 ):
     _kitchen_returns(monkeypatch, anonymous)
 
-    resp = oidc_client.post("/oidc/token")
+    resp = oidc_client.post("/oidc/token", headers={"Cookie": SESSION_COOKIE})
 
     assert resp.status_code == 401
     assert resp.json() == {"error": "not_signed_in"}
 
 
-def test_token_endpoint_sends_no_cookie_header_when_the_caller_has_none(
-    oidc_client, signing_key, monkeypatch
+@pytest.mark.parametrize(
+    "cookie",
+    [None, "", "theme=dark; locale=en", "csrf=1; __Host-authjs.csrf-token=abc", "a=b;c", "x" * 20_000],
+    ids=["none", "empty", "unrelated", "csrf-only", "malformed", "oversized"],
+)
+def test_a_request_without_a_session_cookie_is_401_locally_and_never_reaches_the_kitchen(
+    oidc_client, signing_key, monkeypatch, cookie
 ):
-    seen = _kitchen_returns(monkeypatch, None)
+    seen = _kitchen_returns(monkeypatch, {"user": KITCHEN_USER})
+    headers = {} if cookie is None else {"Cookie": cookie}
 
-    oidc_client.post("/oidc/token")
+    token = oidc_client.post("/oidc/token", headers=headers)
+    session = oidc_client.get("/oidc/session", headers=headers)
 
-    assert "cookie" not in seen[0].headers
+    assert token.status_code == 401 and token.json() == {"error": "not_signed_in"}
+    assert session.status_code == 200 and session.json() == {"user": None}
+    assert seen == []  # the issuer is not an anonymous amplifier for alchm.kitchen
+
+
+@pytest.mark.parametrize(
+    "name",
+    ["__Secure-authjs.session-token", "authjs.session-token", "__Secure-authjs.session-token.0", "next-auth.session-token"],
+)
+def test_every_auth_js_session_cookie_spelling_reaches_the_kitchen(oidc_client, signing_key, monkeypatch, name):
+    seen = _kitchen_returns(monkeypatch, {"user": KITCHEN_USER})
+
+    resp = oidc_client.post("/oidc/token", headers={"Cookie": f"theme=dark; {name}=abc"})
+
+    assert resp.status_code == 200 and len(seen) == 1
+    assert seen[0].headers["cookie"] == f"theme=dark; {name}=abc"  # forwarded verbatim, as before
 
 
 def test_kitchen_outage_is_503_never_401(oidc_client, signing_key, monkeypatch):
@@ -334,7 +408,7 @@ def test_kitchen_outage_is_503_never_401(oidc_client, signing_key, monkeypatch):
 
     _stub_kitchen(monkeypatch, _boom)
 
-    resp = oidc_client.post("/oidc/token", headers={"Cookie": "s=1"})
+    resp = oidc_client.post("/oidc/token", headers={"Cookie": SESSION_COOKIE})
 
     assert resp.status_code == 503
     assert resp.json() == {"error": "kitchen_unreachable"}
@@ -352,7 +426,7 @@ def test_kitchen_outage_is_503_never_401(oidc_client, signing_key, monkeypatch):
 def test_indefinite_kitchen_answers_are_503(oidc_client, signing_key, monkeypatch, response):
     _stub_kitchen(monkeypatch, lambda request: response)
 
-    resp = oidc_client.post("/oidc/token", headers={"Cookie": "s=1"})
+    resp = oidc_client.post("/oidc/token", headers={"Cookie": SESSION_COOKIE})
 
     assert resp.status_code == 503
     assert resp.json() == {"error": "kitchen_unreachable"}
@@ -363,11 +437,133 @@ def test_token_endpoint_answers_503_without_a_key_and_skips_the_kitchen(
 ):
     seen = _kitchen_returns(monkeypatch, {"user": KITCHEN_USER})
 
-    resp = oidc_client.post("/oidc/token", headers={"Cookie": "s=1"})
+    resp = oidc_client.post("/oidc/token", headers={"Cookie": SESSION_COOKIE})
 
     assert resp.status_code == 503
     assert resp.json()["error"] == "oidc_key_not_configured"
     assert seen == []
+
+
+# ---------------------------------------------------------------------------
+# Gates on the routes that act on a cookie
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://pentacles.alchm.kitchen",
+        "https://alchm.kitchen",
+        "https://agents.alchm.kitchen",
+        "https://a.b.alchm.kitchen",
+        "https://PENTACLES.ALCHM.KITCHEN",
+        "https://pentacles.alchm.kitchen:443",
+        "http://localhost:5173",
+        "http://127.0.0.1:3000",
+        "http://[::1]:3000",
+    ],
+)
+def test_first_party_and_local_dev_origins_are_allowed(origin):
+    assert oidc.origin_allowed(origin)
+
+
+@pytest.mark.parametrize(
+    "origin",
+    [
+        "https://evil.example",
+        "https://alchm.kitchen.evil.example",
+        "https://evilalchm.kitchen",
+        "https://alchm-kitchen.example",
+        "http://pentacles.alchm.kitchen",  # not https
+        "https://pentacles.alchm.kitchen:8443",
+        "https://localhost:3000",  # local dev is plain http
+        "null",  # sandboxed iframes and file:// pages
+        "",
+        "ftp://alchm.kitchen",
+        "https://alchm.kitchen@evil.example",
+        "https://user:pw@alchm.kitchen",
+        "https://alchm.kitchen/path",
+        "https://alchm.kitchen?x=1",
+        "https://pentacles.vercel.app",  # cross-site: the cookie could never be sent from there
+    ],
+)
+def test_any_other_origin_is_refused(origin):
+    assert not oidc.origin_allowed(origin)
+
+
+def test_extra_origins_come_from_the_environment_exactly(monkeypatch):
+    monkeypatch.setenv("OIDC_ALLOWED_ORIGINS", "https://pentacles.example, https://staging.example/")
+
+    assert oidc.origin_allowed("https://pentacles.example")
+    assert oidc.origin_allowed("https://staging.example")
+    assert not oidc.origin_allowed("https://pentacles.example.evil.test")
+    assert not oidc.origin_allowed("https://other.example")
+
+
+@pytest.mark.parametrize("method,path", [("post", "/oidc/token"), ("get", "/oidc/session")])
+def test_a_disallowed_origin_is_403_before_the_kitchen_is_asked(oidc_client, signing_key, monkeypatch, method, path):
+    seen = _kitchen_returns(monkeypatch, {"user": KITCHEN_USER})
+
+    resp = getattr(oidc_client, method)(path, headers={"Origin": "https://evil.example", "Cookie": SESSION_COOKIE})
+
+    assert resp.status_code == 403 and resp.json() == {"error": "origin_not_allowed"}
+    assert seen == []
+
+
+@pytest.mark.parametrize("method,path", [("post", "/oidc/token"), ("get", "/oidc/session")])
+def test_requests_without_an_origin_header_are_not_browser_cross_origin_calls_and_pass(
+    oidc_client, signing_key, monkeypatch, method, path
+):
+    _kitchen_returns(monkeypatch, {"user": KITCHEN_USER})
+
+    resp = getattr(oidc_client, method)(path, headers={"Cookie": SESSION_COOKIE})
+
+    assert resp.status_code == 200
+
+
+def test_the_kitchen_calling_routes_are_rate_limited_per_caller_and_globally(oidc_client, signing_key, monkeypatch):
+    seen = _kitchen_returns(monkeypatch, {"user": KITCHEN_USER})
+    monkeypatch.setattr(oidc, "RATE_PER_CALLER_PER_MIN", 2)
+    post = lambda ip: oidc_client.post(  # noqa: E731
+        "/oidc/token", headers={"Cookie": SESSION_COOKIE, "X-Forwarded-For": ip}
+    )
+
+    assert [post("203.0.113.1").status_code for _ in range(3)] == [200, 200, 429]
+    limited = post("203.0.113.1")
+    assert limited.headers["retry-after"] == "60" and limited.json() == {"error": "rate_limited"}
+    assert post("203.0.113.2").status_code == 200  # another caller has its own window
+    assert len(seen) == 3  # the refused calls never reached the kitchen
+
+    monkeypatch.setattr(oidc, "RATE_PER_CALLER_PER_MIN", 10_000)
+    monkeypatch.setattr(oidc, "RATE_GLOBAL_PER_MIN", 4)  # 3 already used above
+    assert [post(f"198.51.100.{i}").status_code for i in range(3)] == [200, 429, 429]
+
+
+def test_cookie_less_requests_do_not_spend_the_rate_budget(oidc_client, signing_key, monkeypatch):
+    seen = _kitchen_returns(monkeypatch, {"user": KITCHEN_USER})
+    monkeypatch.setattr(oidc, "RATE_PER_CALLER_PER_MIN", 1)
+
+    for _ in range(5):  # every anonymous page load asks once
+        assert oidc_client.post("/oidc/token").status_code == 401
+
+    assert oidc_client.post("/oidc/token", headers={"Cookie": SESSION_COOKIE}).status_code == 200
+    assert len(seen) == 1
+
+
+@pytest.mark.parametrize("status,kitchen", [(200, {"user": KITCHEN_USER}), (401, None), (503, "down")])
+def test_token_and_session_responses_are_never_cacheable(oidc_client, signing_key, monkeypatch, status, kitchen):
+    if kitchen == "down":
+        _stub_kitchen(monkeypatch, lambda request: httpx.Response(500))
+    else:
+        _kitchen_returns(monkeypatch, kitchen)
+    headers = {"Cookie": SESSION_COOKIE}
+
+    token = oidc_client.post("/oidc/token", headers=headers)
+    session = oidc_client.get("/oidc/session", headers=headers)
+
+    assert token.status_code == status
+    for resp in (token, session, oidc_client.post("/oidc/token"), oidc_client.get("/oidc/session")):
+        assert resp.headers["cache-control"] == "no-store" and resp.headers["pragma"] == "no-cache"
 
 
 # ---------------------------------------------------------------------------
@@ -380,7 +576,7 @@ def test_session_peek_returns_the_public_user_and_never_a_token(
 ):
     _kitchen_returns(monkeypatch, {"user": KITCHEN_USER})
 
-    resp = oidc_client.get("/oidc/session", headers={"Cookie": "s=1"})
+    resp = oidc_client.get("/oidc/session", headers={"Cookie": SESSION_COOKIE})
 
     assert resp.status_code == 200
     assert resp.json() == {
@@ -397,10 +593,10 @@ def test_session_peek_is_null_for_anonymous_and_503_on_outage(
     oidc_client, no_signing_key, monkeypatch
 ):
     _kitchen_returns(monkeypatch, None)
-    assert oidc_client.get("/oidc/session").json() == {"user": None}
+    assert oidc_client.get("/oidc/session", headers={"Cookie": SESSION_COOKIE}).json() == {"user": None}
 
     _stub_kitchen(monkeypatch, lambda request: httpx.Response(502))
-    resp = oidc_client.get("/oidc/session")
+    resp = oidc_client.get("/oidc/session", headers={"Cookie": SESSION_COOKIE})
     assert resp.status_code == 503
     assert resp.json() == {"error": "kitchen_unreachable"}
 
@@ -430,7 +626,7 @@ def test_main_app_serves_jwks_and_issues_tokens(app_client, signing_key, monkeyp
     assert jwks.json()["keys"][0]["alg"] == "RS256"
 
     _kitchen_returns(monkeypatch, {"user": KITCHEN_USER})
-    resp = app_client.post("/oidc/token", headers={"Cookie": "s=1"})
+    resp = app_client.post("/oidc/token", headers={"Cookie": SESSION_COOKIE})
     assert resp.status_code == 200
     assert jwt.decode(resp.json()["token"], options={"verify_signature": False})["aud"] == "pentacles"
 
@@ -470,10 +666,21 @@ def test_main_app_answers_the_pentacles_clients_credentialed_fetch(app_client, s
 
     resp = app_client.post(
         "/oidc/token",
-        headers={"Origin": origin, "Cookie": "__Secure-authjs.session-token=abc", "Accept": "application/json"},
+        headers={"Origin": origin, "Cookie": SESSION_COOKIE, "Accept": "application/json"},
     )
 
     assert resp.status_code == 200
     assert resp.headers["access-control-allow-origin"] == origin
     assert resp.headers["access-control-allow-credentials"] == "true"
     assert resp.json()["token"]
+
+
+def test_main_app_refuses_a_foreign_origin_even_though_cors_would_reflect_it(app_client, signing_key, monkeypatch):
+    """allow_origins=["*"] with credentials reflects any origin app-wide; /oidc/token must not serve it."""
+    seen = _kitchen_returns(monkeypatch, {"user": KITCHEN_USER})
+
+    resp = app_client.post("/oidc/token", headers={"Origin": "https://evil.example", "Cookie": SESSION_COOKIE})
+
+    assert resp.status_code == 403
+    assert "token" not in resp.text
+    assert seen == []

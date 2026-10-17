@@ -30,7 +30,11 @@ import recipe_metrics
 import tilt_skillet_generation
 import alchm_mcp
 import pii_scrubber
-import oidc
+try:
+    import oidc
+except Exception as _oidc_import_error:  # a broken issuer must not take the whole API down with it
+    oidc = None
+    print(f"[oidc] issuer failed to import, /oidc/* and /.well-known/* are not served: {_oidc_import_error}", flush=True)
 import duel_brain
 import oracle_brain
 from feed_emitter import emit_feed_event
@@ -122,7 +126,8 @@ app.add_middleware(
 # so these routes must live at this origin. The signing key is read lazily from
 # OIDC_SIGNING_KEY_PEM: a deployment without it still boots, and only the
 # key-dependent routes answer 503.
-app.include_router(oidc.router)
+if oidc is not None:
+    app.include_router(oidc.router)
 
 try:
     import ephemeris_service
