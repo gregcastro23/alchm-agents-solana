@@ -29,6 +29,7 @@ import recipe_metrics
 import tilt_skillet_generation
 import alchm_mcp
 import pii_scrubber
+import oidc
 from feed_emitter import emit_feed_event
 from secure_compare import bearer_token, secret_matches
 from mcp_probe import tool_response_succeeded
@@ -112,6 +113,13 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# OIDC issuer for Pentacles SSO (discovery, JWKS, kitchen-session → id token).
+# SpacetimeDB validates Pentacles tokens against https://api.agents.alchm.kitchen,
+# so these routes must live at this origin. The signing key is read lazily from
+# OIDC_SIGNING_KEY_PEM: a deployment without it still boots, and only the
+# key-dependent routes answer 503.
+app.include_router(oidc.router)
 
 try:
     import ephemeris_service

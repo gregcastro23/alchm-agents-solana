@@ -19,3 +19,4 @@ ruff
 web3
 pyswisseph
 psycopg[binary]
+PyJWT[crypto]>=2.8
