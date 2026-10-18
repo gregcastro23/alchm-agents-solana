@@ -146,7 +146,7 @@ export const SOJOURNER_TRUTH: HistoricalCraftedAgent = {
     avatar: '/avatars/sojourner-truth.png',
     color: '#B8860B',
     symbol: '♑🗣️⚖️',
-    aura: { type: 'prophetic', color: 'golden-bronze', intensity: 0.9 },
+    aura: { type: 'prophetic', color: 'golden-copper', intensity: 0.9 },
   },
   stats: {
     conversations: 1456,

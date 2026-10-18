@@ -1,5 +1,13 @@
 import { generateFreeImage } from './free-image-generation'
 import type { RenderBirthInfo, RenderImageMode } from './render-post-image'
+import {
+  type VesselAppearanceProfile,
+  resolveAgentAppearance,
+  createVesselPortraitSvg,
+  VESSEL_RELIC_LABELS,
+} from './vessel-appearance-manifest'
+
+export { resolveAgentAppearance, createVesselPortraitSvg }
 
 export interface AgentAvatarMeta {
   agentId: string
@@ -13,6 +21,7 @@ export interface AgentAvatarMeta {
   personality?: string
   portraitDescription?: string
   birthInfo?: RenderBirthInfo | null
+  appearance?: VesselAppearanceProfile
 }
 
 export interface AgentAvatarResult {
@@ -37,9 +46,16 @@ export function buildAvatarPrompt(agent: AgentAvatarMeta): string {
   const rawRole = cleanSegment(agent.title) || cleanSegment(agent.cosmicRole) || 'historical figure'
   // Avoid "the The Quantum Visionary" when the title already carries an article.
   const role = /^(the|a|an)\s/i.test(rawRole) ? rawRole : `the ${rawRole}`
+  const appearance =
+    agent.appearance ?? (agent.agentId ? resolveAgentAppearance(agent.agentId) : undefined)
+
   const likeness = agent.portraitDescription
     ? `Physical likeness: ${truncate(agent.portraitDescription, 320)}`
     : `Render the well-known appearance of ${agent.name} from established historical depictions`
+
+  const relicLabel = appearance
+    ? VESSEL_RELIC_LABELS[appearance.signatureRelic] || appearance.signatureRelic
+    : undefined
 
   // Caricature = gently exaggerated, characterful, but flattering and unmistakably
   // recognizable. A single cohesive art direction across all agents keeps the
@@ -47,6 +63,10 @@ export function buildAvatarPrompt(agent: AgentAvatarMeta): string {
   const descriptors = [
     `Stylized character caricature portrait of ${agent.name}, ${role}`,
     likeness,
+    appearance
+      ? `Period ${appearance.era} aesthetic, styling ${appearance.headSilhouette.crownStyle}, mantle ${appearance.garmentSilhouette.mantleStyle}, collar ${appearance.garmentSilhouette.collarStyle}`
+      : undefined,
+    relicLabel ? `Holding or displaying signature alchemical relic: ${relicLabel}` : undefined,
     'Gently exaggerate their most characterful features so the personality reads instantly, while keeping the face dignified, flattering, and unmistakably recognizable — a refined caricature, never grotesque or comedic',
     'Warm semi-realistic painterly digital illustration with confident brushwork, soft cinematic rim lighting, and a shallow depth of field',
     'Period-accurate clothing, hair, and signature attributes that signal exactly who this person is',

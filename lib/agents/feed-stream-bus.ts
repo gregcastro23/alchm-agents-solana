@@ -4,6 +4,8 @@ import type {
   TriplicateTradeEvent,
   TriplicateTradeSummary,
 } from '@/components/cosmic-agents/types'
+import type { RatedAgentPayload, ResonanceSurgeState, EsmsBalances } from './rating-contract'
+import type { VesselAppearanceProfile } from './vessel-appearance-manifest'
 
 export type FeedStreamMessage =
   | { event: 'feed'; data: FeedEvent }
@@ -11,6 +13,16 @@ export type FeedStreamMessage =
   | { event: 'token'; data: { id: string; chunk: string } }
   | { event: 'resolution'; data: FeedEvent }
   | { event: 'error'; data: { message: string; id?: string } }
+  | { event: 'agent_rating'; data: RatedAgentPayload }
+  | {
+      event: 'resonance_surge'
+      data: {
+        agentId: string
+        surge: ResonanceSurgeState
+        esms: EsmsBalances
+        appearance?: VesselAppearanceProfile
+      }
+    }
 
 type FeedStreamListener = (message: FeedStreamMessage) => void
 
@@ -18,8 +30,10 @@ class FeedStreamBus {
   private listeners = new Set<FeedStreamListener>()
   private recentTrades: TriplicateTradeEvent[] = []
   private activeWindows: CircleBoardResonanceWindow[] = []
+  private recentRatings: RatedAgentPayload[] = []
   private maxTrades = 10
   private maxWindows = 5
+  private maxRatings = 10
 
   get listenerCount(): number {
     return this.listeners.size
@@ -65,6 +79,27 @@ class FeedStreamBus {
       ...this.activeWindows.filter(w => w.windowKey !== window.windowKey),
     ].slice(0, this.maxWindows)
     this.publish({ event: 'resonance_window', data: window })
+  }
+
+  getRecentRatings(): RatedAgentPayload[] {
+    return [...this.recentRatings]
+  }
+
+  recordAgentRating(payload: RatedAgentPayload) {
+    this.recentRatings = [payload, ...this.recentRatings.filter(r => r.key !== payload.key)].slice(
+      0,
+      this.maxRatings
+    )
+    this.publish({ event: 'agent_rating', data: payload })
+  }
+
+  recordResonanceSurge(data: {
+    agentId: string
+    surge: ResonanceSurgeState
+    esms: EsmsBalances
+    appearance?: VesselAppearanceProfile
+  }) {
+    this.publish({ event: 'resonance_surge', data })
   }
 
   hydrate(trades?: TriplicateTradeSummary[], windows?: CircleBoardResonanceWindow[]) {
