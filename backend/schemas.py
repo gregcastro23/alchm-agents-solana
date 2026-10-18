@@ -812,3 +812,16 @@ class OracleRequest(BaseModel):
     # Older callers also sent `planet`; extra="allow" tolerates it and the route ignores it.
 
     model_config = ConfigDict(extra="allow")
+
+
+class PillarDuelRequest(BaseModel):
+    planet: Optional[Any] = None
+    opening: Optional[Any] = None  # Pillar name or id (1..14)
+    sky: Optional[Any] = None  # diurnal | nocturnal (defaults to diurnal)
+    challengerChart: Optional[Any] = None  # optional custom chart {signs: [...], ascendantSign?, timeKnown?}
+    challengerPools: Optional[Any] = None  # optional custom pools [Spirit, Essence, Matter, Substance]
+    agentPools: Optional[Any] = None  # optional custom agent pools
+    source: Optional[Any] = None
+
+    model_config = ConfigDict(extra="allow")
+
