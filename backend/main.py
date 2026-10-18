@@ -38,6 +38,7 @@ except Exception as _oidc_import_error:  # a broken issuer must not take the who
     print(f"[oidc] issuer failed to import, /oidc/* and /.well-known/* are not served: {_oidc_import_error}", flush=True)
 import duel_brain
 import oracle_brain
+import pillar_brain
 from body_limit import BodyLimitMiddleware
 from client_ip import client_ip
 from feed_emitter import emit_feed_event
@@ -75,9 +76,15 @@ sync_rate_limiter = SlidingWindowRateLimiter(limit=60, window=60.0)
 KINETICS_STATE = {}
 KINETICS_STATE_LOCK = threading.Lock()
 
-# Initialize database
-models.Base.metadata.create_all(bind=database.engine)
-database.ensure_postgres_runtime_schema()
+# Initialize database (resilient to remote quota exhaustion / transient outages)
+try:
+    models.Base.metadata.create_all(bind=database.engine)
+    database.ensure_postgres_runtime_schema()
+except Exception as _db_init_err:
+    print(
+        f"[database] Warning: database schema init skipped (degraded mode / over quota): {_db_init_err}",
+        flush=True,
+    )
 
 from contextlib import asynccontextmanager
 
@@ -1084,6 +1091,21 @@ def _jing_rate_gate(http_request: Request) -> None:
     _jing_gate.check(http_request)
 
 
+_pillar_gate = _CallerGate(
+    "pillar",
+    per_caller_env="BRAIN_PILLAR_PER_CALLER_PER_MIN",
+    per_caller_default=120,
+    global_env="BRAIN_PILLAR_GLOBAL_PER_MIN",
+    global_default=600,
+    window_s=60.0,
+)
+
+
+def _pillar_rate_gate(http_request: Request) -> None:
+    _pillar_gate.check(http_request)
+
+
+
 def _clean_rack(rack: Any) -> Optional[Any]:
     """A bounded rack, or None. duel_brain expands a {letter: count} map to a string
     of that many letters, so an unbounded count is a one-request memory exhaustion."""
@@ -1312,6 +1334,85 @@ async def agents_oracle(request: schemas.OracleRequest):
         }
     except Exception as error:
         print(f"[oracle] Error handling oracle question: {error}", flush=True)
+        return _brain_error(500, "Internal server error.")
+
+
+@app.post("/api/agents/pillar", dependencies=[Depends(_pillar_rate_gate)])
+async def agents_pillar(request: schemas.PillarDuelRequest):
+    """Fourteen Alchemical Pillars Arena companion brain.
+
+    Given a planet agent, an opponent opening pillar (name or id 1..14), and sky sect,
+    evaluates the alchemical circuit best response from the agent's legal hand,
+    returning the chosen pillar, power ratio, magnitude, and characterful voice line.
+
+    Request:  { planet, opening, sky?, challengerChart?, challengerPools?, agentPools?, source? }
+    Response: { success, planet, pillar, pillarId, voice, source, willWin, winner, powerRatio, magnitude, timestamp }
+    """
+    try:
+        planet = request.planet
+        if not pillar_brain.is_planetary_agent(planet):
+            return _brain_error(
+                400,
+                "Invalid or missing planet agent. Must be one of the ten planetary spheres.",
+            )
+
+        opening = request.opening
+        opening_spec = None
+        if isinstance(opening, int) and not isinstance(opening, bool):
+            opening_spec = pillar_brain.pillar_by_id(opening)
+        elif isinstance(opening, str):
+            opening_spec = pillar_brain.pillar_by_name(opening)
+
+        if not opening_spec:
+            return _brain_error(
+                400,
+                f'Invalid opening pillar "{opening}". Must be one of the Fourteen Alchemical Pillars.',
+            )
+
+        sky_sect = "nocturnal" if str(request.sky or "").lower() == "nocturnal" else "diurnal"
+
+        challenger_chart = None
+        if isinstance(request.challengerChart, dict) and isinstance(request.challengerChart.get("signs"), list):
+            challenger_chart = request.challengerChart
+
+        challenger_pools = None
+        if isinstance(request.challengerPools, list) and len(request.challengerPools) == 4:
+            try:
+                challenger_pools = [float(x) for x in request.challengerPools]
+            except (ValueError, TypeError):
+                challenger_pools = None
+
+        agent_pools = None
+        if isinstance(request.agentPools, list) and len(request.agentPools) == 4:
+            try:
+                agent_pools = [float(x) for x in request.agentPools]
+            except (ValueError, TypeError):
+                agent_pools = None
+
+        duel = pillar_brain.answer_pillar_duel(
+            agent_planet=planet,
+            opening_pillar_id=opening_spec["id"],
+            challenger_chart=challenger_chart,
+            challenger_pools=challenger_pools,
+            sky=sky_sect,
+            agent_pools=agent_pools,
+        )
+
+        return {
+            "success": True,
+            "planet": planet,
+            "pillar": duel["chosenPillar"]["name"],
+            "pillarId": duel["chosenPillar"]["id"],
+            "voice": duel["voice"],
+            "source": "best-response",
+            "willWin": duel["willWin"],
+            "winner": duel["outcome"]["winner"],
+            "powerRatio": duel["outcome"]["ratioB"],
+            "magnitude": duel["outcome"]["magnitudeB"],
+            "timestamp": pillar_brain.now_iso_z(),
+        }
+    except Exception as error:
+        print(f"[pillar] Error handling agent pillar move: {error}", flush=True)
         return _brain_error(500, "Internal server error.")
 
 
