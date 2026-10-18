@@ -224,10 +224,16 @@ async function ratedPayload(
     }),
     resolveLiveSky().then(
       sky => ({ sky, error: undefined }),
-      (error: unknown) => ({
-        sky: null,
-        error: error instanceof SkyUnavailableError ? error.message : 'live sky unavailable',
-      })
+      (error: unknown) => {
+        console.error(
+          '[rating] live sky unavailable:',
+          describeError(error instanceof SkyUnavailableError && error.cause ? error.cause : error)
+        )
+        return {
+          sky: null,
+          error: error instanceof SkyUnavailableError ? error.message : 'live sky unavailable',
+        }
+      }
     ),
   ])
   return buildRatedAgentPayload({

@@ -59,7 +59,9 @@
  * `degraded.reason` reaches anonymous callers, so it never carries a driver error, a code or a
  * value: only `'ledger unavailable'`, `'ledger row invalid'`, `'no ledger row'`,
  * `'owner wallet is private'`, `'spacetimedb holdings rejected'`, `'baseline unavailable'`.
- * The detail (error class and code) goes to `options.onDegraded` for the caller's own log.
+ * The detail goes to `options.onDegraded` for the caller's own log: `Name (code)` for a driver
+ * error, or this module's own validation message for a corrupt row (which renders at most 40
+ * characters of the offending value).
  *
  * Nothing here derives thermodynamics or hashes, reads the wall clock, or uses randomness.
  */
@@ -97,8 +99,11 @@ export interface ResolveEsmsOptions {
   /** Whose wallet a creator-owned vessel may read. Default `'deny'`; see "Whose wallet". */
   creatorWallet?: CreatorWalletPolicy
   /**
-   * Called with the stage and a sanitised detail (error class and code, never a message) each
-   * time a step falls through, for the caller's own log. Never receives a secret or a value.
+   * Called with the stage and a sanitised detail each time a step FAILS, for the caller's own
+   * log: `Name (code)` for a driver error, or this module's own validation message for a corrupt
+   * row — which renders at most 40 characters of the offending value. Never a driver message,
+   * a connection string or a secret. Not called for a clean `'no ledger row'`, a wallet the
+   * policy keeps private (a decision, not a failure) or in strict mode (which throws).
    */
   onDegraded?: (stage: 'spacetimedb' | 'ledger' | 'baseline', detail: string) => void
   /**
@@ -181,7 +186,9 @@ export function isUserAvatarId(agentId: string): boolean {
 function describeValue(value: unknown): string {
   try {
     const text = typeof value === 'string' ? JSON.stringify(value) : String(value)
-    return text.length > 40 ? `${text.slice(0, 37)}...` : text
+    // By code point: a cut by UTF-16 unit can split a surrogate pair into an ill-formed string.
+    const chars = Array.from(text)
+    return chars.length > 40 ? `${chars.slice(0, 37).join('')}...` : text
   } catch {
     return '<unprintable>'
   }
@@ -312,16 +319,17 @@ let rosterElements: Promise<ReadonlyMap<string, unknown>> | null = null
 /** `id → consciousness.alchemicalElements` for `HISTORICAL_AGENTS`, imported once and lazily. */
 function loadRosterElements(): Promise<ReadonlyMap<string, unknown>> {
   if (rosterElements === null) {
-    rosterElements = import('@/lib/agents/historical').then(
-      ({ HISTORICAL_AGENTS }) =>
-        new Map<string, unknown>(
-          HISTORICAL_AGENTS.map(agent => [agent.id, agent.consciousness.alchemicalElements])
-        ),
-      error => {
-        rosterElements = null // do not cache a failed import
+    rosterElements = import('@/lib/agents/historical')
+      .then(
+        ({ HISTORICAL_AGENTS }) =>
+          new Map<string, unknown>(
+            HISTORICAL_AGENTS.map(agent => [agent.id, agent.consciousness.alchemicalElements])
+          )
+      )
+      .catch(error => {
+        rosterElements = null // do not cache a failed import, or a module that resolved malformed
         throw error
-      }
-    )
+      })
   }
   return rosterElements
 }
@@ -459,14 +467,13 @@ export async function resolveAgentEsmsBalances(
     reasons.push('no ledger row')
   } catch (cause) {
     if (strict) throw new EsmsLedgerUnavailableError(agentId, cause)
-    reasons.push(
-      cause instanceof CreatorWalletPrivateError
-        ? 'owner wallet is private'
-        : cause instanceof EsmsValueError
-          ? 'ledger row invalid'
-          : 'ledger unavailable'
-    )
-    note('ledger', cause)
+    if (cause instanceof CreatorWalletPrivateError) {
+      // A policy decision, not a failure: nothing to log on every anonymous request.
+      reasons.push('owner wallet is private')
+    } else {
+      reasons.push(cause instanceof EsmsValueError ? 'ledger row invalid' : 'ledger unavailable')
+      note('ledger', cause)
+    }
   }
 
   // 3. The deterministic baseline.

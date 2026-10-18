@@ -62,9 +62,13 @@ export interface LiveSky {
   bodies: SkyBodies
 }
 
+/**
+ * No usable sky. The `message` is fixed text that may reach an anonymous caller as
+ * `degraded.sky`; the original failure, if any, is on `cause` for the caller's own log.
+ */
 export class SkyUnavailableError extends Error {
-  constructor(message: string) {
-    super(message)
+  constructor(message: string, options?: { cause?: unknown }) {
+    super(message, options)
     this.name = 'SkyUnavailableError'
   }
 }
@@ -180,9 +184,20 @@ export function longitudesFromLocalCalculator(at: Date): SkyLongitudes {
   return out as SkyLongitudes
 }
 
+/**
+ * How far `options.now` may sit from the real clock before the DEFAULT backend is skipped: that
+ * endpoint serves the sky as it is right now, so labelling it with another instant would be a
+ * false `at`. A caller that passes its own `fetchBackend` vouches for its payload.
+ */
+export const BACKEND_SKY_TOLERANCE_MS = 5 * 60_000
+
 export interface ResolveLiveSkyOptions {
+  /** The instant to rate the sky at; default the real clock. */
   now?: Date
-  /** Fetch the backend's `/planetary/current` payload. Defaults to the shared backend client. */
+  /**
+   * Fetch the backend's `/planetary/current` payload. Defaults to the agents backend, which is
+   * consulted only while `now` is within `BACKEND_SKY_TOLERANCE_MS` of the real clock.
+   */
   fetchBackend?: () => Promise<unknown>
   /** Give up on the backend after this many milliseconds (default 4000). */
   timeoutMs?: number
@@ -214,20 +229,24 @@ function withTimeout<T>(promise: Promise<T>, ms: number): Promise<T> {
  */
 export async function resolveLiveSky(options: ResolveLiveSkyOptions = {}): Promise<LiveSky> {
   const now = options.now ?? new Date()
-  const fetchBackend = options.fetchBackend ?? defaultFetchBackend
-  try {
-    const raw = await withTimeout(fetchBackend(), options.timeoutMs ?? 4000)
-    const longitudes = longitudesFromBackend(raw)
-    if (longitudes) return deriveLiveSky(longitudes, 'swiss-ephemeris', now)
-  } catch {
-    // The backend is best-effort here: fall through to the labelled local sky.
+  const injected = options.fetchBackend ?? null
+  const fetchBackend = injected ?? defaultFetchBackend
+  const backendIsForNow =
+    injected !== null || Math.abs(now.getTime() - Date.now()) <= BACKEND_SKY_TOLERANCE_MS
+  if (backendIsForNow) {
+    try {
+      const raw = await withTimeout(fetchBackend(), options.timeoutMs ?? 4000)
+      const longitudes = longitudesFromBackend(raw)
+      if (longitudes) return deriveLiveSky(longitudes, 'swiss-ephemeris', now)
+    } catch {
+      // The backend is best-effort here: fall through to the labelled local sky.
+    }
   }
   try {
     return deriveLiveSky(longitudesFromLocalCalculator(now), 'vsop87-approximation', now)
   } catch (error) {
     if (error instanceof SkyUnavailableError) throw error
-    throw new SkyUnavailableError(
-      `No sky could be computed: ${error instanceof Error ? error.message : String(error)}`
-    )
+    // The cause is not repeated: this text reaches anonymous callers as `degraded.sky`.
+    throw new SkyUnavailableError('No sky could be computed', { cause: error })
   }
 }
