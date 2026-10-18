@@ -114,6 +114,15 @@ Every call in either direction is tabulated, with file:line, in [`docs/integrati
 
 ⚠️ **`api.agents.alchm.kitchen` builds from this repo's `main`** (Railway `planetary agents`, root `backend`, `/backend/Dockerfile`) — since 2026-09-23; before that it built from `gregcastro23/alchm-agents-app`. A merge that touches `backend/` therefore deploys the Python API too.
 
+### Pentacle Vessel Rating
+
+`GET/POST /api/agents/rating` (`app/api/agents/rating/route.ts`, maths in `lib/agents/rating/`) is the one place a Pentacles vessel's OVR, Alchemical Seals, Resonance Surge, look and zone synergies are computed; `pentacles` and the UI read it. Contract, tiers and limits: [`docs/integrations/PENTACLE_VESSEL_RATING.md`](docs/integrations/PENTACLE_VESSEL_RATING.md). The rules that matter:
+
+- **A person's wallet is private; the route is public.** A vessel someone forged reads _their_ `token_balances` row, so an anonymous `GET` gets the baseline (`degraded.esms: "owner wallet is private"`) — the wallet is read only for `Authorization: Bearer $INTERNAL_API_SECRET` or the signed-in creator. Roster agents' wallets are agentic users' and public. Never pass `creatorWallet: 'allow'` from a public path.
+- **`esms-balance-resolver.ts` and the barrel must stay client-importable and must not mention `@/lib/db`, even lazily** (Next compiles client components in the SSR layer, where a `typeof window` guard folds away). The Prisma store is `esms-ledger-store.server.ts`; `test/agents/rating-client-safe.spec.ts` walks the import graph.
+- **`degraded.*` text is a fixed vocabulary** — it reaches anonymous callers. Error class and code go to `onDegraded` and the server log, never into a response.
+- A chart is rated only if every degree is within its sign and the ascendant within the zodiac; `monicaConstant` is clamped to 0–10. The writers (`philosophers-stone/create`) store client-supplied charts.
+
 ### Two-Layer Backend
 
 The app has two distinct backends that must stay in sync:

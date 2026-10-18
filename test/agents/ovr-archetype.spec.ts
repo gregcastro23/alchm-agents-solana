@@ -6,6 +6,7 @@ import {
   BALANCED_SPREAD,
   BALANCED_TITLE,
   CORE_STAT_KEYS,
+  OVR_RANK_WEIGHTS,
   RATING_CEILING,
   RATING_FLOOR,
   STAT_BASELINES,
@@ -143,6 +144,38 @@ describe('archetype titles', () => {
     }
     expect(titles.size).toBe(42)
     expect(titles.has(BALANCED_TITLE)).toBe(false)
+  })
+})
+
+describe('OVR weights', () => {
+  it('weights the best rating 1.6, the second-best 1.3 and every other rating 1', () => {
+    expect([...OVR_RANK_WEIGHTS]).toEqual([1.6, 1.3])
+
+    // Its own generator, so the samples do not depend on which other tests ran first.
+    let seed = 0x51ed270b
+    const rand = () => {
+      seed = (Math.imul(seed, 1664525) + 1013904223) >>> 0
+      return seed / 2 ** 32
+    }
+    for (let i = 0; i < 1000; i++) {
+      const build = {} as Record<CoreStatKey, number>
+      for (const key of CORE_STAT_KEYS) build[key] = Math.round(rand() * 100)
+      const rating = rateStats(build)
+      const [best, second, ...rest] = Object.values(rating.ratings).sort((a, b) => b - a)
+      const expected = Math.round(
+        (best * 1.6 + second * 1.3 + rest.reduce((a, b) => a + b, 0)) / (1.6 + 1.3 + rest.length)
+      )
+      expect(rating.ovr, JSON.stringify(build)).toBe(expected)
+    }
+  })
+
+  it('counts a tied best rating once at 1.6 and once at 1.3', () => {
+    // power and resonance both 100 → rating 99; the other five stats 0 → rating 25.
+    // (99·1.6 + 99·1.3 + 25·5) / 7.9 = 412.1 / 7.9 = 52.16 → 52
+    const r = rateStats(stats({ power: 100, resonance: 100 }, 0))
+    expect(r.ratings.power).toBe(99)
+    expect(r.ratings.resonance).toBe(99)
+    expect(r.ovr).toBe(52)
   })
 })
 
