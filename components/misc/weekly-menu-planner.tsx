@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
@@ -61,6 +61,7 @@ export default function WeeklyMenuPlanner({ agentId, agentName, onClose }: Weekl
   const [selectedDay, setSelectedDay] = useState<number>(0)
   const [selectedMeal, setSelectedMeal] = useState<WeeklyMenuMeal | null>(null)
   const [activeTab, setActiveTab] = useState<'planner' | 'grocery'>('planner')
+  const publicationKey = useRef<string | null>(null)
 
   useEffect(() => {
     fetchMenu()
@@ -81,6 +82,7 @@ export default function WeeklyMenuPlanner({ agentId, agentName, onClose }: Weekl
       const data = await res.json()
       if (data.success) {
         setMenu(data.menu)
+        publicationKey.current = crypto.randomUUID()
         if (regenerate) {
           toast.success('Successfully regenerated cosmic menu!')
         }
@@ -98,17 +100,17 @@ export default function WeeklyMenuPlanner({ agentId, agentName, onClose }: Weekl
     if (!menu) return
     setPublishing(true)
     try {
-      const res = await fetch('/api/menu-planner/weekly', {
+      publicationKey.current ??= crypto.randomUUID()
+      const res = await fetch('/api/menu-planner/publish', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          ...menu,
-          status: 'completed',
-          shareToFeed: true,
-        }),
+        headers: {
+          'Content-Type': 'application/json',
+          'Idempotency-Key': publicationKey.current,
+        },
+        body: JSON.stringify({ menu }),
       })
-      if (!res.ok) throw new Error('Publishing failed')
       const data = await res.json()
+      if (!res.ok) throw new Error(data.error || 'Publishing failed')
       if (data.success) {
         setMenu(prev => (prev ? { ...prev, status: 'completed', shareToFeed: true } : null))
         toast.success(`Published & Shared ${agentName}'s Feed Event!`, {

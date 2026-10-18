@@ -1,10 +1,21 @@
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { backend } from '@/lib/backend'
+
+const { originalServiceSecret } = vi.hoisted(() => {
+  const originalServiceSecret = process.env.INTERNAL_API_SECRET
+  process.env.INTERNAL_API_SECRET = 'chat-metadata-test-service-secret'
+  return { originalServiceSecret }
+})
 
 const REQUIRED_METADATA_FIELDS = ['tier', 'provider', 'model', 'cache'] as const
 
 describe('backend /api/chat metadata contract', () => {
   const originalFetch = global.fetch
+
+  afterAll(() => {
+    if (originalServiceSecret === undefined) delete process.env.INTERNAL_API_SECRET
+    else process.env.INTERNAL_API_SECRET = originalServiceSecret
+  })
 
   beforeEach(() => {
     vi.useFakeTimers({ shouldAdvanceTime: true })
@@ -58,6 +69,14 @@ describe('backend /api/chat metadata contract', () => {
     expect(result.metadata.tier).toBe('free')
     expect(result.metadata.provider).toBe('groq')
     expect(result.metadata.model).toBe('llama-3.3-70b-versatile')
+    expect(global.fetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/chat'),
+      expect.objectContaining({
+        headers: expect.objectContaining({
+          INTERNAL_API_SECRET: 'chat-metadata-test-service-secret',
+        }),
+      })
+    )
   })
 
   it('preserves a cache object when Anthropic is the used provider', async () => {

@@ -1,6 +1,10 @@
 // Agent Types for Consciousness Crafting System
 // The Philosopher's Stone - Gallery & Agent Management
 
+import type { VesselAppearanceProfile } from './agents/vessel-appearance-manifest'
+
+export type { VesselAppearanceProfile }
+
 export interface Coordinates {
   lat: number
   lon: number
@@ -545,8 +549,10 @@ export interface CraftedAgent {
   // Specialized Abilities
   abilities: Abilities
 
-  // Visual Representation
-  appearance: Appearance
+  // Visual Representation & Vessel Likeness
+  appearance?: Appearance | VesselAppearanceProfile
+  avatarModelUrl?: string
+  headMeshUrl?: string
 
   // Interaction Metrics
   stats: AgentStats

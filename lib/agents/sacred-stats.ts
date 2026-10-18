@@ -1,5 +1,8 @@
 import { CraftedAgent } from '@/lib/agent-types'
 import { AlchemicalProfile } from './alchemical-profiles'
+import { clampStat, computeOvr } from './rating-contract'
+
+export { clampStat, computeOvr }
 
 export interface SacredStats {
   // ── Core Archetypes (Sacred 7) ──────────────────────────────────
@@ -120,14 +123,14 @@ export function calculateSevenSacredStats(
   )
 
   return {
-    // Sacred 7
-    power: Math.round(power),
-    resonance: Math.round(resonanceVal),
-    wisdom: Math.round(wisdomVal),
-    charisma: Math.round(charismaVal),
-    intuition: Math.round(intuitionVal),
-    adaptability: Math.round(adaptabilityVal),
-    vitality: Math.round(vitalityVal),
+    // Sacred 7 (clamped to [25, 99] canonical vessel scale)
+    power: clampStat(power),
+    resonance: clampStat(resonanceVal),
+    wisdom: clampStat(wisdomVal),
+    charisma: clampStat(charismaVal),
+    intuition: clampStat(intuitionVal),
+    adaptability: clampStat(adaptabilityVal),
+    vitality: clampStat(vitalityVal),
     // Planetary 12
     solarAgency: Math.round(solarAgency),
     lunarReceptivity: Math.round(lunarReceptivity),
@@ -142,4 +145,19 @@ export function calculateSevenSacredStats(
     plutonicIntegration: Math.round(plutonicIntegration),
     kineticAlignment: Math.round(kineticAlignmentScore),
   }
+}
+
+/**
+ * Convenience helper to compute OWA OVR across Sacred 7 stats
+ */
+export function computeSacredOvr(stats: {
+  power: number
+  resonance: number
+  wisdom: number
+  charisma: number
+  intuition: number
+  adaptability: number
+  vitality: number
+}): number {
+  return computeOvr(stats)
 }

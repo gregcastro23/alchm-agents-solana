@@ -33,6 +33,8 @@ export const revalidate = 0
 export async function POST(req: NextRequest) {
   try {
     const { planet, sign, degree, question, time, sessionId } = await req.json()
+    const user = await getCurrentUser(req)
+    const verifiedUserId = user?.id
 
     // Create or use existing conversation context
     let conversationContext: ConversationContext
@@ -168,7 +170,7 @@ Always provide astrological wisdom that's accurate to traditional planetary dign
         agentId: `${planet.toLowerCase()}-${sign.toLowerCase()}`,
         message: question || 'Tell me about this planetary position',
         sessionId: conversationContext.sessionId,
-        userId: 'session-user',
+        userId: verifiedUserId,
         systemPromptOverride: systemPrompt,
         modelTier: 'free',
       })
@@ -208,8 +210,7 @@ Always provide astrological wisdom that's accurate to traditional planetary dign
 
       // Log to database for consciousness evolution tracking
       try {
-        const user = await getCurrentUser(req)
-        const userId = user?.id || getUserIdFromRequest(req)
+        const userId = verifiedUserId || getUserIdFromRequest(req)
         const agentId = `${planet.toLowerCase()}-${sign.toLowerCase()}`
 
         let dignityScore = 0

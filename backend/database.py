@@ -67,7 +67,7 @@ def _frozen_sqlite_dsn() -> str:
     app has no credentials for. A CWD-relative path is avoided because Tauri
     spawns the sidecar with an unpredictable working directory.
     """
-    base = os.path.join(os.path.expanduser("~"), ".alchm")
+    base = os.getenv("PA_MCP_DATA_DIR") or os.path.join(os.path.expanduser("~"), ".alchm")
     try:
         os.makedirs(base, exist_ok=True)
         return "sqlite:///" + os.path.join(base, "pa-mcp-telemetry.db")
@@ -112,7 +112,7 @@ engine = create_engine(
     SQLALCHEMY_DATABASE_URL,
     connect_args={"check_same_thread": False}
     if SQLALCHEMY_DATABASE_URL.startswith("sqlite")
-    else {},
+    else {"connect_timeout": 5},
     pool_recycle=1800,
     pool_pre_ping=True,
 )

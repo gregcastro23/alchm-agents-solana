@@ -114,6 +114,10 @@ Every call in either direction is tabulated, with file:line, in [`docs/integrati
 
 ⚠️ **`api.agents.alchm.kitchen` builds from this repo's `main`** (Railway `planetary agents`, root `backend`, `/backend/Dockerfile`) — since 2026-09-23; before that it built from `gregcastro23/alchm-agents-app`. A merge that touches `backend/` therefore deploys the Python API too.
 
+### Pentacles brain & OIDC issuer
+
+`api.agents.alchm.kitchen` is also the brain and the sign-in issuer for the **Pentacles** game: `POST /api/agents/{oracle,jing,word-duel}` and `/oidc/*` + `/.well-known/*`. They are public, rate limited, and were once lost to a force-push in the repo they came from — the contract, the history and the traps are in [`docs/integrations/PENTACLES_BRAIN.md`](docs/integrations/PENTACLES_BRAIN.md). The one rule that matters: **when a brain cannot answer it must answer non-2xx**, because the feeder treats a `200` as the answer and shows it to the player.
+
 ### Pentacle Vessel Rating
 
 `GET/POST /api/agents/rating` (`app/api/agents/rating/route.ts`, maths in `lib/agents/rating/`) is the one place a Pentacles vessel's OVR, Alchemical Seals, Resonance Surge, look and zone synergies are computed; `pentacles` and the UI read it. Contract, tiers and limits: [`docs/integrations/PENTACLE_VESSEL_RATING.md`](docs/integrations/PENTACLE_VESSEL_RATING.md). The rules that matter:
@@ -200,7 +204,7 @@ The central Next.js API endpoint is `app/api/planetary-positions/route.ts`. The 
 
 Every position and chart now carries a required `source: 'swiss-ephemeris' | 'vsop87-approximation'`, so a caller cannot mistake the approximation for a measurement, and the approximation **withholds** a body that violates its plausibility bounds rather than returning a wrong number.
 
-**The real ephemeris is on the Node backend, not the Python one.** `backend/` contains two services: the Python FastAPI app (`NEXT_PUBLIC_BACKEND_URL`), whose `/api/planetary/positions` is a circular-orbit approximation with `isRetrograde` hardcoded `False` and no `swisseph` anywhere; and a Bun/TypeScript service (`backend/package.json`, `backend/src/`) that declares `swisseph` and mounts it at `/api/planets`. `lib/swiss-ephemeris-service.ts` talks to the latter via `NEXT_PUBLIC_EPHEMERIS_BACKEND_URL` and stamps Swiss provenance only on a payload that validates — routing it through the Python backend stamped `swiss-ephemeris` on circular-orbit output.
+**Both backends now compute with Swiss Ephemeris.** The Python FastAPI app (`NEXT_PUBLIC_BACKEND_URL`) serves `/api/planetary/positions`, `/planetary/current` and the bulk endpoint from `pyswisseph` (Moshier mode, no data files) through `backend/ephemeris_service.py`, stamped `source: "swiss-ephemeris"`, agreeing with an independent VSOP87 ephemeris to 0.0025° (`backend/tests/test_planetary_positions.py`). Until 2026-10 those endpoints were a circular-orbit model with arbitrary phase offsets and `isRetrograde` hardcoded `False` — on 2026-10-15 it put the Sun at 11° Aquarius when it stood at 22° Libra, and the Pentacles Oracle injected that into every question. If Swiss Ephemeris is unavailable they answer **503**, never an approximation. The Bun/TypeScript service (`backend/package.json`, `backend/src/`) also declares `swisseph` and mounts it at `/api/planets`; `lib/swiss-ephemeris-service.ts` talks to that one via `NEXT_PUBLIC_EPHEMERIS_BACKEND_URL` and stamps Swiss provenance only on a payload that validates.
 
 **Dates:** use `utcDateFromParts` from the calculator, never `Date.UTC(year, …)` or `new Date(year, …)` — both remap years 0–99 to 1900–1999 silently, per spec (Cleopatra, stored as `0069-01-01`, was computed as 1969). Julian-day conversion is **proleptic Gregorian at every epoch, in both directions**; the convention and how to reverse it are stated in the calculator.
 

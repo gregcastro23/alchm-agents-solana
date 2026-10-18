@@ -20,6 +20,40 @@ interface JsonRpcResponse {
 
 export type LocalMcpStatus = 'checking' | 'online' | 'offline'
 
+const MODERN_PROTOCOL = '2026-07-28'
+const LEGACY_PROTOCOL = '2025-06-18'
+const LEGACY_PROTOCOLS = new Set(['2024-11-05', '2025-03-26', LEGACY_PROTOCOL, '2025-11-25'])
+const CLIENT_INFO = { name: 'alchm-desktop-shell', version: '1.0.0' }
+const RETRYABLE_METHODS = new Set([
+  'server/discover',
+  'initialize',
+  'ping',
+  'tools/list',
+  'resources/list',
+  'resources/templates/list',
+  'resources/read',
+  'prompts/list',
+  'prompts/get',
+])
+
+function isObject(value: unknown): value is Record<string, any> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
+function validCapabilities(value: unknown): value is Record<string, unknown> {
+  return isObject(value) && Object.values(value).every(isObject)
+}
+
+class McpRpcError extends Error {
+  constructor(
+    readonly code: number,
+    message: string
+  ) {
+    super(message)
+    this.name = 'McpRpcError'
+  }
+}
+
 /**
  * Snapshot of the client's externally-observable state. Consumed by
  * useSyncExternalStore in the React hook (see hooks/useLocalMcp.ts).
@@ -29,6 +63,9 @@ export type LocalMcpStatus = 'checking' | 'online' | 'offline'
 export interface LocalMcpSnapshot {
   status: LocalMcpStatus
   lastError: string | null
+  protocolVersion: string | null
+  capabilities: Record<string, unknown> | null
+  serverInfo: { name: string; version: string } | null
   /**
    * Tail of recent stderr lines from the sidecar process. Capped at
    * STDERR_RING_SIZE so this never grows unbounded for a long-lived
@@ -45,12 +82,11 @@ export interface LocalMcpSnapshot {
 const STDERR_RING_SIZE = 200
 
 /**
- * call() retry budget for transient JSON-RPC failures: 2 retries on
- * top of the initial attempt, with exponential backoff starting at
- * 250ms. Currently transient failures are detected as either the
- * underlying child process being dead or a write error to stdin — a
- * fully-handed JSON-RPC error response is NOT retried, since the
- * sidecar made an intentional decision to refuse.
+ * Retry budget for discovery/read transport failures: 2 retries after the
+ * initial attempt, with exponential backoff starting at 250ms. Tool calls
+ * receive no automatic replay because their write outcome may be uncertain.
+ * Only process-unavailable and stdin-write failures permit a retry; explicit
+ * JSON-RPC errors and timeouts remain final.
  */
 const CALL_RETRY_ATTEMPTS = 2
 const CALL_RETRY_BASE_DELAY_MS = 250
@@ -68,10 +104,16 @@ export class LocalMcpClient {
   private child: any = null
   private pendingRequests = new Map<
     string | number,
-    { resolve: (val: any) => void; reject: (err: any) => void }
+    {
+      resolve: (val: any) => void
+      reject: (err: any) => void
+      timer: ReturnType<typeof setTimeout>
+    }
   >()
   private nextId = 1
   private buffer = ''
+  private generation = 0
+  private wireProtocol = MODERN_PROTOCOL
 
   // ---- Subscriber-style state. Replaces the single onStatusChange
   // callback the constructor used to take, but the constructor still
@@ -81,6 +123,9 @@ export class LocalMcpClient {
   private snapshot: LocalMcpSnapshot = {
     status: 'offline',
     lastError: null,
+    protocolVersion: null,
+    capabilities: null,
+    serverInfo: null,
     stderrLog: [],
   }
   private stderrRing: string[] = []
@@ -173,9 +218,19 @@ export class LocalMcpClient {
       this.reconnectTimer = null
     }
     this.stopped = false
+    const generation = ++this.generation
+    this.rejectPending('MCP connection restarting')
+    this.buffer = ''
+    this.wireProtocol = MODERN_PROTOCOL
 
     try {
-      this.emit({ status: 'checking', lastError: null })
+      this.emit({
+        status: 'checking',
+        lastError: null,
+        protocolVersion: null,
+        capabilities: null,
+        serverInfo: null,
+      })
 
       // Process hygiene: kill existing process attached to window if any.
       const globalKey = `__mcp_child_${this.commandName}`
@@ -194,7 +249,7 @@ export class LocalMcpClient {
         : Command.sidecar(this.commandName)
 
       command.stdout.on('data', (data: string) => {
-        this.handleStdout(data)
+        if (generation === this.generation) this.handleStdout(data)
       })
 
       command.stderr.on('data', (data: string) => {
@@ -206,30 +261,93 @@ export class LocalMcpClient {
 
       command.on('close', (data: any) => {
         console.warn(`[${this.commandName}] sidecar process closed:`, data)
-        this.handleProcessClose()
+        if (generation === this.generation) this.handleProcessClose()
       })
 
-      this.child = await command.spawn()
+      const spawned = await command.spawn()
+      if (generation !== this.generation || this.stopped) {
+        await spawned.kill()
+        return
+      }
+      this.child = spawned
       ;(window as any)[globalKey] = this.child
 
-      // MCP initialize handshake. Using the same call() path the rest
-      // of the client uses means initialize benefits from the retry
-      // budget — useful for the first-spawn race where the sidecar's
-      // stdin isn't fully wired yet.
-      const initResult = await this.call('initialize', {
-        protocolVersion: '2024-11-05',
-        capabilities: {},
-        clientInfo: { name: 'alchm-desktop-shell', version: '1.0.0' },
-      })
-      console.log(`[${this.commandName}] initialized successfully:`, initResult)
-
-      await this.sendNotification('notifications/initialized')
+      // Modern MCP is stateless: discover the server with protocol metadata on
+      // every request. Only a method-not-found response permits legacy fallback.
+      let discovery: any
+      try {
+        discovery = await this.call('server/discover')
+      } catch (error) {
+        if (!(error instanceof McpRpcError) || error.code !== -32601) throw error
+        this.wireProtocol = LEGACY_PROTOCOL
+        const initialized = await this.call('initialize', {
+          protocolVersion: LEGACY_PROTOCOL,
+          capabilities: {},
+          clientInfo: CLIENT_INFO,
+        })
+        if (
+          !isObject(initialized) ||
+          !LEGACY_PROTOCOLS.has(initialized.protocolVersion) ||
+          !validCapabilities(initialized.capabilities) ||
+          !isObject(initialized.serverInfo) ||
+          typeof initialized.serverInfo.name !== 'string' ||
+          typeof initialized.serverInfo.version !== 'string'
+        )
+          throw new Error('Invalid or unsupported MCP initialize response')
+        this.wireProtocol = initialized.protocolVersion
+        await this.sendNotification('notifications/initialized')
+        this.emit({
+          protocolVersion: initialized.protocolVersion,
+          capabilities: initialized.capabilities,
+          serverInfo: {
+            name: initialized.serverInfo.name,
+            version: initialized.serverInfo.version,
+          },
+        })
+      }
+      if (this.wireProtocol === MODERN_PROTOCOL) {
+        if (
+          !isObject(discovery) ||
+          discovery.resultType !== 'complete' ||
+          !Array.isArray(discovery.supportedVersions) ||
+          !discovery.supportedVersions.every((version: unknown) => typeof version === 'string') ||
+          !discovery.supportedVersions.includes(MODERN_PROTOCOL) ||
+          !validCapabilities(discovery.capabilities) ||
+          (discovery._meta !== undefined && !isObject(discovery._meta))
+        )
+          throw new Error('Invalid or unsupported MCP discovery response')
+        const serverInfo = discovery._meta?.['io.modelcontextprotocol/serverInfo']
+        if (
+          serverInfo !== undefined &&
+          (!isObject(serverInfo) ||
+            typeof serverInfo.name !== 'string' ||
+            typeof serverInfo.version !== 'string')
+        ) {
+          throw new Error('Invalid MCP server information')
+        }
+        this.emit({
+          protocolVersion: MODERN_PROTOCOL,
+          capabilities: discovery.capabilities,
+          serverInfo: serverInfo ?? null,
+        })
+      }
+      if (generation !== this.generation || this.stopped) return
 
       this.emit({ status: 'online', lastError: null })
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error)
       console.error(`Failed to start sidecar ${this.commandName}:`, error)
+      if (generation !== this.generation) return
+      const failedChild = this.child
       this.child = null
+      if (failedChild) {
+        try {
+          await failedChild.kill()
+        } catch {
+          /* best-effort process cleanup */
+        }
+      }
+      this.rejectPending(message)
       this.emit({ status: 'offline', lastError: message })
       this.scheduleReconnect()
     }
@@ -237,6 +355,8 @@ export class LocalMcpClient {
 
   async stop(): Promise<void> {
     this.stopped = true
+    this.generation++
+    this.rejectPending('MCP client stopped')
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer)
       this.reconnectTimer = null
@@ -256,16 +376,21 @@ export class LocalMcpClient {
     this.child = null
     // Fail any in-flight requests so callers don't hang forever waiting
     // on a response that will never arrive.
-    for (const [, pending] of this.pendingRequests) {
-      pending.reject(new Error(`Sidecar ${this.commandName} exited mid-request`))
-    }
-    this.pendingRequests.clear()
+    this.rejectPending(`Sidecar ${this.commandName} exited mid-request`)
 
     this.emit({
       status: 'offline',
       lastError: this.snapshot.lastError ?? 'sidecar process closed',
     })
     this.scheduleReconnect()
+  }
+
+  private rejectPending(message: string): void {
+    for (const pending of this.pendingRequests.values()) {
+      clearTimeout(pending.timer)
+      pending.reject(new Error(message))
+    }
+    this.pendingRequests.clear()
   }
 
   private scheduleReconnect(): void {
@@ -287,15 +412,18 @@ export class LocalMcpClient {
   /**
    * Send a JSON-RPC request and await the response.
    *
-   * Retries: transient failures (no child process, write error) are
-   * retried up to CALL_RETRY_ATTEMPTS times with exponential backoff.
+   * Discovery/read requests retry transient failures with exponential backoff.
+   * tools/call never retries automatically, including after a failed write.
    * Server-side JSON-RPC errors (response.error populated) are NOT
    * retried — the sidecar made a decision and asking again won't
    * change it.
    */
   async call(method: string, params: any = {}): Promise<any> {
     let lastErr: unknown = null
-    for (let attempt = 0; attempt <= CALL_RETRY_ATTEMPTS; attempt++) {
+    // A failed write can have delivered part or all of a mutation. The caller
+    // must reconcile it; silently replaying tools/call can publish twice.
+    const retryAttempts = RETRYABLE_METHODS.has(method) ? CALL_RETRY_ATTEMPTS : 0
+    for (let attempt = 0; attempt <= retryAttempts; attempt++) {
       if (attempt > 0) {
         const delay = CALL_RETRY_BASE_DELAY_MS * 2 ** (attempt - 1)
         await new Promise(r => setTimeout(r, delay))
@@ -334,27 +462,29 @@ export class LocalMcpClient {
     const request: JsonRpcRequest = {
       jsonrpc: '2.0',
       method,
-      params,
+      params: this.requestParams(method, params),
       id,
     }
     return new Promise((resolve, reject) => {
-      this.pendingRequests.set(id, { resolve, reject })
-      try {
-        this.writeToStdin(request)
-      } catch (e) {
+      const timer = setTimeout(() => {
+        if (!this.pendingRequests.has(id)) return
         this.pendingRequests.delete(id)
-        reject(new TransportError(`stdin write failed: ${describeError(e)}`))
-        return
-      }
-
-      // Auto-timeout after 30 seconds. The retry layer in call() can
-      // give us another attempt, so this isn't terminal on its own.
-      setTimeout(() => {
-        if (this.pendingRequests.has(id)) {
-          this.pendingRequests.delete(id)
-          reject(new Error(`MCP Request timed out: ${method} (id: ${id})`))
-        }
+        reject(new Error(`MCP Request timed out: ${method} (id: ${id})`))
+        void this.sendNotification('notifications/cancelled', {
+          requestId: id,
+          reason: 'Desktop request timed out',
+        }).catch(() => {
+          /* process may already have exited */
+        })
       }, 30000)
+      this.pendingRequests.set(id, { resolve, reject, timer })
+      void this.writeToStdin(request).catch(error => {
+        const pending = this.pendingRequests.get(id)
+        if (!pending) return
+        this.pendingRequests.delete(id)
+        clearTimeout(timer)
+        reject(new TransportError(`stdin write failed: ${describeError(error)}`))
+      })
     })
   }
 
@@ -363,17 +493,49 @@ export class LocalMcpClient {
     const request: JsonRpcRequest = {
       jsonrpc: '2.0',
       method,
-      params,
+      params: this.requestParams(method, params),
     }
-    this.writeToStdin(request)
+    await this.writeToStdin(request)
   }
 
-  private writeToStdin(request: JsonRpcRequest) {
+  private requestParams(method: string, params: any): Record<string, any> {
+    const result = isObject(params) ? { ...params } : {}
+    const args = isObject(result.arguments) ? { ...result.arguments } : {}
+    const legacyMeta = method === 'tools/call' && isObject(args._meta) ? args._meta : {}
+    const requestMeta = isObject(result._meta) ? result._meta : {}
+    const legacyCredential = legacyMeta.apiKey ?? legacyMeta.api_key
+    const requestCredential = requestMeta.apiKey ?? requestMeta.api_key
+    if (
+      legacyCredential !== undefined &&
+      requestCredential !== undefined &&
+      legacyCredential !== requestCredential
+    )
+      throw new Error('Conflicting MCP credentials')
+    const metadata = { ...legacyMeta, ...requestMeta }
+    if (method === 'tools/call') {
+      delete args._meta
+      result.arguments = args
+    }
+    if (this.wireProtocol === MODERN_PROTOCOL) {
+      result._meta = {
+        ...metadata,
+        'io.modelcontextprotocol/protocolVersion': MODERN_PROTOCOL,
+        'io.modelcontextprotocol/clientInfo': CLIENT_INFO,
+        'io.modelcontextprotocol/clientCapabilities': {},
+      }
+    } else {
+      delete result._meta
+      if (method === 'tools/call' && Object.keys(metadata).length) result.arguments._meta = metadata
+    }
+    return result
+  }
+
+  private async writeToStdin(request: JsonRpcRequest): Promise<void> {
     if (!this.child) {
       throw new TransportError('child process not running')
     }
     const line = JSON.stringify(request) + '\n'
-    this.child.write(line)
+    await this.child.write(line)
   }
 
   private handleStdout(data: string) {
@@ -387,12 +549,16 @@ export class LocalMcpClient {
 
       try {
         const response: JsonRpcResponse = JSON.parse(line)
+        if (!isObject(response) || response.jsonrpc !== '2.0') {
+          throw new Error('Invalid JSON-RPC response')
+        }
         if (response.id !== undefined && response.id !== null) {
           const handler = this.pendingRequests.get(response.id)
           if (handler) {
             this.pendingRequests.delete(response.id)
+            clearTimeout(handler.timer)
             if (response.error) {
-              handler.reject(new Error(response.error.message))
+              handler.reject(new McpRpcError(response.error.code, response.error.message))
             } else {
               handler.resolve(response.result)
             }
