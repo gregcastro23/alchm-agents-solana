@@ -1,13 +1,17 @@
 import { NextRequest, NextResponse } from 'next/server'
 import { HISTORICAL_AGENTS, getHistoricalAgent } from '@/lib/agents/historical'
-import { resolveAgentEsmsBalances } from '@/lib/agents/rating/esms-balance-resolver'
+import {
+  resolveAgentEsmsBalances,
+  type CreatorWalletPolicy,
+} from '@/lib/agents/rating/esms-balance-resolver'
+import { prismaLedgerLoader } from '@/lib/agents/rating/esms-ledger-store.server'
 import { SkyUnavailableError, resolveLiveSky } from '@/lib/agents/rating/live-sky'
 import { ESMS_TOKENS, type EsmsHoldings } from '@/lib/agents/rating/seals-surge'
 import {
-  VESSEL_ALIASES,
   buildRatedAgentPayload,
   ratableFromForgedRow,
   ratableFromRoster,
+  resolveVesselAlias,
   summarizeVessel,
   type RatableVessel,
 } from '@/lib/agents/rating/vessel-payload'
@@ -27,6 +31,19 @@ import { bearerMatches } from '@/lib/security/secure-compare'
  * Resonance Surge and the vessel's look; this route only assembles them
  * (`lib/agents/rating/vessel-payload.ts`).
  *
+ * ## Whose balances a GET may show
+ *
+ * A roster agent's wallet is an agentic user's and is public. A vessel a PERSON forged reads
+ * that person's `token_balances` row, and a person's balance is private (the app's own
+ * `/api/economy/balances` is session-gated) — while this route is unauthenticated with CORS `*`
+ * and the gallery lists every forged vessel id. So a public GET never reads a creator's wallet:
+ * it answers the baseline, `esmsSource: "fallback"`, `degraded.esms: "owner wallet is private"`,
+ * and the Seals are computed from that baseline, so a tier cannot leak the balance either. The
+ * wallet is read only for (a) a server caller presenting `Authorization: Bearer
+ * INTERNAL_API_SECRET`, or (b) a signed-in session whose user IS the creator. A cross-origin
+ * browser sends neither: `*` forbids credentialed requests, and the `Authorization` header
+ * fails the preflight (`Access-Control-Allow-Headers` is `Content-Type`).
+ *
  * POST never writes the ledger. ESMS balances are ledger-backed (the authoritative off-chain
  * ledger is `token_balances`) and deliberately not editable from a request. A pushed holding
  * is live SpacetimeDB table state: it is validated, used for the recalculation, and kept for
@@ -43,6 +60,7 @@ const READ_CORS = {
   'Access-Control-Allow-Headers': 'Content-Type',
 }
 const NO_STORE = { 'Cache-Control': 'no-store' }
+const RETRY = { 'Retry-After': '60' }
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: READ_CORS })
@@ -92,7 +110,69 @@ function json(
   })
 }
 
+/** Error class and driver code only: a message can carry a connection string or a path. */
+function describeError(error: unknown): string {
+  if (!(error instanceof Error)) return typeof error
+  const code = (error as { code?: unknown }).code
+  return typeof code === 'string' ? `${error.name} (${code})` : error.name
+}
+
 class AgentLookupUnavailable extends Error {}
+
+/** The ledger id a vessel's wallet and pushed holdings are keyed by (an alias folds into it). */
+function ledgerIdOf(vessel: RatableVessel): string {
+  return resolveVesselAlias(vessel.agentId) ?? vessel.agentId
+}
+
+/** Does the request carry the server-to-server secret? Fails closed when none is configured. */
+function hasInternalSecret(request: NextRequest): boolean {
+  const secret = process.env.INTERNAL_API_SECRET
+  return secret ? bearerMatches(request.headers.get('authorization'), secret) : false
+}
+
+/**
+ * Who may read a forged vessel's creator wallet on a GET: a server holding the secret, or the
+ * signed-in creator themselves. Anyone else, and any failure to find out, is denied.
+ */
+async function creatorWalletPolicy(request: NextRequest): Promise<CreatorWalletPolicy> {
+  if (hasInternalSecret(request)) return 'allow'
+  try {
+    const { auth } = await import('@/lib/auth')
+    const userId = (await auth())?.user?.id
+    if (typeof userId === 'string' && userId !== '') return { userId }
+  } catch {
+    // No session is no entitlement; an auth outage must not open the wallet either.
+  }
+  return 'deny'
+}
+
+/**
+ * The request body as text, refusing more than `max` bytes however it arrives (a declared
+ * `Content-Length` is only a hint, and a chunked body declares none). `null` means too large.
+ */
+async function readBoundedText(request: NextRequest, max: number): Promise<string | null> {
+  if (!request.body) return ''
+  const reader = request.body.getReader()
+  const chunks: Uint8Array[] = []
+  let total = 0
+  for (;;) {
+    const { done, value } = await reader.read()
+    if (done) break
+    total += value.byteLength
+    if (total > max) {
+      await reader.cancel().catch(() => undefined)
+      return null
+    }
+    chunks.push(value)
+  }
+  const joined = new Uint8Array(total)
+  let offset = 0
+  for (const chunk of chunks) {
+    joined.set(chunk, offset)
+    offset += chunk.byteLength
+  }
+  return new TextDecoder().decode(joined)
+}
 
 type Lookup =
   | { found: true; vessel: RatableVessel }
@@ -100,10 +180,10 @@ type Lookup =
 
 /** Roster first (with the avatar alias), then a user-forged `historical_agents` row. */
 async function resolveVessel(agentId: string): Promise<Lookup> {
-  const canonical = VESSEL_ALIASES[agentId] ?? agentId
-  const rostered = getHistoricalAgent(canonical)
+  const alias = resolveVesselAlias(agentId)
+  const rostered = getHistoricalAgent(alias ?? agentId)
   if (rostered) {
-    const requested = VESSEL_ALIASES[agentId] ? agentId : rostered.id
+    const requested = alias ? agentId : rostered.id
     return { found: true, vessel: ratableFromRoster(rostered, requested) }
   }
   try {
@@ -113,7 +193,7 @@ async function resolveVessel(agentId: string): Promise<Lookup> {
     const vessel = ratableFromForgedRow(row)
     return vessel ? { found: true, vessel } : { found: false, reason: 'unratable' }
   } catch (error) {
-    throw new AgentLookupUnavailable(error instanceof Error ? error.message : String(error))
+    throw new AgentLookupUnavailable(describeError(error))
   }
 }
 
@@ -128,10 +208,20 @@ function notRated(agentId: string, reason: 'unknown' | 'unratable', readable: bo
       )
 }
 
-async function ratedPayload(vessel: RatableVessel, spacetime: EsmsHoldings | null) {
-  const ledgerAgentId = VESSEL_ALIASES[vessel.agentId] ?? vessel.agentId
+async function ratedPayload(
+  vessel: RatableVessel,
+  spacetime: EsmsHoldings | null,
+  creatorWallet: CreatorWalletPolicy
+) {
   const [balances, skyResult] = await Promise.all([
-    resolveAgentEsmsBalances(ledgerAgentId, { spacetime, strict: false }),
+    resolveAgentEsmsBalances(ledgerIdOf(vessel), {
+      spacetime,
+      strict: false,
+      loadLedger: prismaLedgerLoader,
+      creatorWallet,
+      onDegraded: (stage, detail) =>
+        console.error(`[rating] esms ${stage} fell through: ${detail}`),
+    }),
     resolveLiveSky().then(
       sky => ({ sky, error: undefined }),
       (error: unknown) => ({
@@ -162,19 +252,13 @@ function badAgentId(raw: string | null, readable = true) {
 
 export async function GET(request: NextRequest) {
   try {
+    // Charge the caller first; the shared bucket is charged only by a request that will do
+    // real work (a ledger read, a sky fetch), never by a malformed id or the static roster.
     const caller = rateLimit(`rating:${getClientIp(request.headers)}`, {
       limit: envLimit('RATING_API_PER_CALLER_PER_MIN', 120),
       windowMs: MINUTE_MS,
     })
-    const overall = caller.ok
-      ? rateLimit('rating:global', {
-          limit: envLimit('RATING_API_GLOBAL_PER_MIN', 1200),
-          windowMs: MINUTE_MS,
-        })
-      : caller
-    if (!caller.ok || !overall.ok) {
-      return json({ success: false, error: 'Too Many Requests' }, 429, { 'Retry-After': '60' })
-    }
+    if (!caller.ok) return json({ success: false, error: 'Too Many Requests' }, 429, RETRY)
 
     const params = request.nextUrl.searchParams
     if (params.get('roster') === 'true') {
@@ -188,16 +272,30 @@ export async function GET(request: NextRequest) {
     const invalid = badAgentId(agentId)
     if (invalid) return invalid
 
+    const overall = rateLimit('rating:global', {
+      limit: envLimit('RATING_API_GLOBAL_PER_MIN', 1200),
+      windowMs: MINUTE_MS,
+    })
+    if (!overall.ok) return json({ success: false, error: 'Too Many Requests' }, 429, RETRY)
+
     const lookup = await resolveVessel(agentId as string)
     if (!lookup.found) return notRated(agentId as string, lookup.reason, true)
     const { vessel } = lookup
-    return json(await ratedPayload(vessel, readPushed(vessel.agentId)), 200)
+
+    // Only a person's vessel has a private wallet; a roster agent's is public.
+    const creatorWallet =
+      vessel.origin === 'forged' ? await creatorWalletPolicy(request) : ('deny' as const)
+    const live =
+      vessel.origin === 'roster' || creatorWallet === 'allow'
+        ? readPushed(ledgerIdOf(vessel))
+        : null
+    return json(await ratedPayload(vessel, live, creatorWallet), 200)
   } catch (error) {
     if (error instanceof AgentLookupUnavailable) {
       console.error('[rating] agent lookup unavailable:', error.message)
       return json({ success: false, error: 'Agent lookup is temporarily unavailable.' }, 503)
     }
-    console.error('[rating] GET failed:', error instanceof Error ? error.message : error)
+    console.error('[rating] GET failed:', describeError(error))
     return json({ success: false, error: 'Internal server error.' }, 500)
   }
 }
@@ -224,11 +322,19 @@ export async function POST(request: NextRequest) {
   }
 
   try {
+    const tooLarge = () => json({ success: false, error: 'Request body too large' }, 413, {}, false)
     const declared = Number(request.headers.get('content-length') ?? '')
-    if (Number.isFinite(declared) && declared > MAX_POST_BYTES) {
-      return json({ success: false, error: 'Request body too large' }, 413, {}, false)
+    if (Number.isFinite(declared) && declared > MAX_POST_BYTES) return tooLarge()
+    const text = await readBoundedText(request, MAX_POST_BYTES)
+    if (text === null) return tooLarge()
+
+    let parsed: unknown = null
+    try {
+      parsed = JSON.parse(text)
+    } catch {
+      // An unparseable body fails validation below, with the same 400 as any other bad body.
     }
-    const body = (await request.json().catch(() => null)) as Record<string, unknown> | null
+    const body = parsed as Record<string, unknown> | null
     const agentId = typeof body?.agentId === 'string' ? body.agentId : null
     const invalid = badAgentId(agentId, false)
     if (invalid) return invalid
@@ -250,8 +356,11 @@ export async function POST(request: NextRequest) {
     if (!lookup.found) return notRated(agentId as string, lookup.reason, false)
     const { vessel } = lookup
 
-    rememberPushed(vessel.agentId, balances)
-    return json(await ratedPayload(vessel, balances), 200, {}, false)
+    // The feeder holds the secret, so the creator wallet is its to read; the pushed holdings
+    // win anyway. Remember them only once the recalculation has succeeded.
+    const payload = await ratedPayload(vessel, balances, 'allow')
+    rememberPushed(ledgerIdOf(vessel), balances)
+    return json(payload, 200, {}, false)
   } catch (error) {
     if (error instanceof AgentLookupUnavailable) {
       console.error('[rating] agent lookup unavailable:', error.message)
@@ -262,7 +371,7 @@ export async function POST(request: NextRequest) {
         false
       )
     }
-    console.error('[rating] POST failed:', error instanceof Error ? error.message : error)
+    console.error('[rating] POST failed:', describeError(error))
     return json({ success: false, error: 'Internal server error.' }, 500, {}, false)
   }
 }

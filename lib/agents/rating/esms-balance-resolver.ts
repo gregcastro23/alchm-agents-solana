@@ -16,8 +16,9 @@
  *   2. the Prisma ledger    — `token_balances` (spirit/essence/matter/substance, Decimal(12,4))
  *      is the authoritative off-chain ESMS ledger. A historical or sprite agent is provisioned
  *      as an 'agentic' user (`<agentId>@agentic.alchm.kitchen`) and owns that user's row; a
- *      created / user-avatar vessel has no wallet of its own and reads its CREATOR's row.
- *      `esmsSource: 'database'`.
+ *      created / user-avatar vessel has no wallet of its own and would read its CREATOR's row
+ *      — a person's wallet, which is read only when `creatorWallet` says the caller may (see
+ *      "Whose wallet" below). `esmsSource: 'database'`.
  *   3. a deterministic baseline — the agent's own `consciousness.alchemicalElements` when it is
  *      in `HISTORICAL_AGENTS` (0.25–0.98 whole tokens, so Copper at most by design), else
  *      zeros. `esmsSource: 'fallback'`, always with `degraded.reason`.
@@ -33,18 +34,32 @@
  *
  * ## Isomorphism
  *
- * Nothing here imports `@/lib/db`, `@prisma/client`, `pg`, `server-only` or a `node:` module
- * at the top level, so client code can import the types and pure helpers
- * (`parseEsmsHoldings`, `decimalToWholeTokens`, `holdingsFromAlchemicalElements`). The default
- * ledger store reaches Prisma through a dynamic `import('@/lib/db')` inside a
- * `typeof window === 'undefined'` branch, which bundlers drop from client builds; in a browser
- * the default loader fails with an ordinary error and the non-strict path degrades. The ledger
- * is injectable (`options.loadLedger`, or `createLedgerLoader(store)`), and so is every test.
+ * Nothing in this module reaches `@/lib/db`, `@prisma/client`, `pg`, `server-only` or a `node:`
+ * module — not even through a dynamic import, which a client component's SSR compile would
+ * still follow — so client code can import all of it. The Prisma-backed store lives in
+ * `./esms-ledger-store.server.ts` (`import 'server-only'`); a server caller passes its
+ * `prismaLedgerLoader` as `options.loadLedger`. With no loader the ledger step fails like any
+ * unreadable ledger: the baseline in non-strict mode, `EsmsLedgerUnavailableError` in strict.
  *
- * ## Authorization is the caller's job
+ * ## Whose wallet
  *
- * Resolving a user vessel reads its creator's wallet. This module performs no access check;
- * a route that exposes the result must decide who may see which agent's balances.
+ * A vessel a person forged reads that person's `token_balances` row, and a person's balance is
+ * private (`/api/economy/balances` is session-gated). `options.creatorWallet` decides:
+ *
+ *   • `'deny'` (default) — a creator-owned vessel is never read; the result is the baseline
+ *     with `degraded.reason: 'owner wallet is private'`. Agentic (roster, sprite) wallets are
+ *     not people's and are unaffected.
+ *   • `{ userId }` — read it only when that user is the creator (a signed-in owner).
+ *   • `'allow'` — read it for anyone (a trusted server-to-server caller, or an admin surface).
+ *
+ * The route that exposes a result is still the one that proves who is asking.
+ *
+ * ## Failure text is fixed vocabulary
+ *
+ * `degraded.reason` reaches anonymous callers, so it never carries a driver error, a code or a
+ * value: only `'ledger unavailable'`, `'ledger row invalid'`, `'no ledger row'`,
+ * `'owner wallet is private'`, `'spacetimedb holdings rejected'`, `'baseline unavailable'`.
+ * The detail (error class and code) goes to `options.onDegraded` for the caller's own log.
  *
  * Nothing here derives thermodynamics or hashes, reads the wall clock, or uses randomness.
  */
@@ -78,7 +93,14 @@ export interface ResolveEsmsOptions {
    * Replaces the default Prisma ledger loader. Resolve `null` for "no ledger row"; throw for
    * "could not read". Values may be numbers or Decimal-likes and are validated either way.
    */
-  loadLedger?: (agentId: string) => Promise<EsmsHoldings | null>
+  loadLedger?: (agentId: string, context: LedgerContext) => Promise<EsmsHoldings | null>
+  /** Whose wallet a creator-owned vessel may read. Default `'deny'`; see "Whose wallet". */
+  creatorWallet?: CreatorWalletPolicy
+  /**
+   * Called with the stage and a sanitised detail (error class and code, never a message) each
+   * time a step falls through, for the caller's own log. Never receives a secret or a value.
+   */
+  onDegraded?: (stage: 'spacetimedb' | 'ledger' | 'baseline', detail: string) => void
   /**
    * `true` for admin surfaces: a ledger read that throws (or returns a corrupt row) throws
    * `EsmsLedgerUnavailableError`, and an invalid `spacetime` override throws `RangeError`,
@@ -92,6 +114,33 @@ export interface ResolveRosterEsmsOptions extends Omit<ResolveEsmsOptions, 'spac
   spacetime?: Readonly<Record<string, Readonly<EsmsHoldings> | null | undefined>>
   /** Maximum concurrent ledger reads; a positive integer. Default `ESMS_ROSTER_CONCURRENCY`. */
   concurrency?: number
+}
+
+/**
+ * Whose wallet a vessel with a human creator may read: nobody's (`'deny'`, the default),
+ * everybody's (`'allow'`), or only the named user's.
+ */
+export type CreatorWalletPolicy = 'allow' | 'deny' | { userId: string }
+
+/** What a ledger loader is told about the request it serves. */
+export interface LedgerContext {
+  creatorWallet: CreatorWalletPolicy
+}
+
+/** The ledger step found the vessel's wallet belongs to a person the policy does not cover. */
+export class CreatorWalletPrivateError extends Error {
+  constructor(agentId: string) {
+    super(`The wallet behind "${agentId}" is private`)
+    this.name = 'CreatorWalletPrivateError'
+  }
+}
+
+/** A value this module's own validators rejected; its message is ours and safe to show. */
+export class EsmsValueError extends RangeError {
+  constructor(message: string) {
+    super(message)
+    this.name = 'EsmsValueError'
+  }
 }
 
 /** Thrown in strict mode when the Prisma ledger could not be read. `cause` is the original error. */
@@ -189,10 +238,10 @@ function claimedNumber(value: unknown): number | undefined {
 export function decimalToWholeTokens(value: unknown, label = 'amount'): number {
   const amount = claimedNumber(value)
   if (amount === undefined || !Number.isFinite(amount)) {
-    throw new RangeError(`Invalid ${label}: ${describeValue(value)} is not a finite number`)
+    throw new EsmsValueError(`Invalid ${label}: ${describeValue(value)} is not a finite number`)
   }
   if (amount < 0) {
-    throw new RangeError(`Invalid ${label}: ${describeValue(value)} is negative`)
+    throw new EsmsValueError(`Invalid ${label}: ${describeValue(value)} is negative`)
   }
   return amount === 0 ? 0 : amount
 }
@@ -212,7 +261,7 @@ function zeroHoldings(): EsmsHoldings {
  */
 export function parseEsmsHoldings(raw: unknown): EsmsHoldings {
   if (!isRecord(raw)) {
-    throw new RangeError(`Invalid ESMS holdings: ${describeValue(raw)} is not an object`)
+    throw new EsmsValueError(`Invalid ESMS holdings: ${describeValue(raw)} is not an object`)
   }
   const holdings = zeroHoldings()
   for (const token of ESMS_TOKENS) {
@@ -224,13 +273,13 @@ export function parseEsmsHoldings(raw: unknown): EsmsHoldings {
 /** The caller-supplied live override: stricter than a ledger row — real numbers only. */
 function parseLiveHoldings(raw: unknown): EsmsHoldings {
   if (!isRecord(raw)) {
-    throw new RangeError(`Invalid spacetimedb holdings: ${describeValue(raw)} is not an object`)
+    throw new EsmsValueError(`Invalid spacetimedb holdings: ${describeValue(raw)} is not an object`)
   }
   const holdings = zeroHoldings()
   for (const token of ESMS_TOKENS) {
     const value = raw[token]
     if (typeof value !== 'number' || !Number.isFinite(value) || value < 0) {
-      throw new RangeError(
+      throw new EsmsValueError(
         `Invalid spacetimedb ${token} balance: ${describeValue(value)} is not a finite non-negative number`
       )
     }
@@ -248,9 +297,9 @@ export function holdingsFromAlchemicalElements(elements: unknown): EsmsHoldings 
   }
 }
 
-/** Sanitised failure text: validation messages are ours; anything else is name + code only. */
+/** Sanitised failure text: our own validation messages, else class name + code only. */
 function describeFailure(cause: unknown): string {
-  if (cause instanceof RangeError) return cause.message
+  if (cause instanceof EsmsValueError) return cause.message
   const name = cause instanceof Error ? cause.name : typeof cause
   const code = isRecord(cause) && typeof cause.code === 'string' ? ` (${cause.code})` : ''
   return `${name}${code}`
@@ -291,7 +340,7 @@ export async function baselineEsmsHoldings(agentId: string): Promise<EsmsHolding
 
 // ─── The Prisma ledger ───────────────────────────────────────────────────────
 
-/** The three reads the ledger needs; the default talks to Prisma, a test supplies fakes. */
+/** The three reads the ledger needs; `esms-ledger-store.server.ts` talks to Prisma, a test supplies fakes. */
 export interface EsmsLedgerStore {
   /** `users.id` of the agentic user with this email, or `null`. */
   findAgenticUserId(email: string): Promise<string | null>
@@ -302,52 +351,6 @@ export interface EsmsLedgerStore {
 }
 
 /**
- * Prisma, loaded on first use. Inside the `typeof window` branch so a client bundle drops the
- * import (and `@/lib/db`, which is `server-only`) entirely.
- */
-async function loadPrisma() {
-  if (typeof window === 'undefined') {
-    const { prisma } = await import('@/lib/db')
-    return prisma
-  }
-  throw new Error('The ESMS ledger can only be read on the server')
-}
-
-export const defaultLedgerStore: EsmsLedgerStore = {
-  async findAgenticUserId(email) {
-    const prisma = await loadPrisma()
-    const user = await prisma.users.findFirst({
-      where: { email, isAgentic: true },
-      select: { id: true },
-    })
-    return user?.id ?? null
-  },
-
-  async findCreatorUserId(agentId) {
-    const prisma = await loadPrisma()
-    // A forged vessel's public id lives in the blueprint JSON (`app/api/create-agent`); the
-    // row's own cuid is matched too. Oldest first, so a re-forged id keeps its original creator.
-    const vessel = await prisma.created_agents.findFirst({
-      where: {
-        creatorId: { not: null },
-        OR: [{ id: agentId }, { blueprint: { path: ['agentId'], equals: agentId } }],
-      },
-      orderBy: { createdAt: 'asc' },
-      select: { creatorId: true },
-    })
-    return vessel?.creatorId ?? null
-  },
-
-  async findBalanceRow(userId) {
-    const prisma = await loadPrisma()
-    return prisma.tokenBalance.findUnique({
-      where: { userId },
-      select: { spirit: true, essence: true, matter: true, substance: true },
-    })
-  },
-}
-
-/**
  * Build a ledger loader over a store. Which user's row an id reads:
  *
  *   • a roster (historical) agent → its agentic user;
@@ -355,30 +358,44 @@ export const defaultLedgerStore: EsmsLedgerStore = {
  *   • any other id (a forged vessel, a sprite) → its creator if `created_agents` knows it,
  *     else the agentic user.
  *
+ * A creator is a person, so reading that row needs the context's `creatorWallet` policy to
+ * cover them (default `'deny'`): otherwise the loader throws `CreatorWalletPrivateError`
+ * before any balance is read.
+ *
  * Resolves `null` when no user, or no `token_balances` row, is found; throws when the store
  * throws or the row is corrupt (negative / non-finite / non-numeric).
  */
 export function createLedgerLoader(
-  store: EsmsLedgerStore = defaultLedgerStore,
+  store: EsmsLedgerStore,
   isRoster: (agentId: string) => Promise<boolean> = isRosterAgent
-): (agentId: string) => Promise<EsmsHoldings | null> {
+): (agentId: string, context?: LedgerContext) => Promise<EsmsHoldings | null> {
   const agentic = (agentId: string) => store.findAgenticUserId(agenticEmailForAgent(agentId))
 
-  async function ledgerUserId(agentId: string): Promise<string | null> {
-    if (isUserAvatarId(agentId)) return store.findCreatorUserId(agentId)
-    if (await isRoster(agentId)) return agentic(agentId)
-    return (await store.findCreatorUserId(agentId)) ?? agentic(agentId)
+  async function creatorUserId(
+    agentId: string,
+    policy: CreatorWalletPolicy
+  ): Promise<string | null> {
+    const creatorId = await store.findCreatorUserId(agentId)
+    if (creatorId === null) return null
+    const mayRead =
+      policy === 'allow' || (typeof policy === 'object' && policy.userId === creatorId)
+    if (!mayRead) throw new CreatorWalletPrivateError(agentId)
+    return creatorId
   }
 
-  return async agentId => {
-    const userId = await ledgerUserId(agentId)
+  async function ledgerUserId(agentId: string, policy: CreatorWalletPolicy) {
+    if (isUserAvatarId(agentId)) return creatorUserId(agentId, policy)
+    if (await isRoster(agentId)) return agentic(agentId)
+    return (await creatorUserId(agentId, policy)) ?? agentic(agentId)
+  }
+
+  return async (agentId, context) => {
+    const userId = await ledgerUserId(agentId, context?.creatorWallet ?? 'deny')
     if (userId === null) return null
     const row = await store.findBalanceRow(userId)
     return row === null ? null : parseEsmsHoldings(row)
   }
 }
-
-let defaultLoader: ((agentId: string) => Promise<EsmsHoldings | null>) | null = null
 
 // ─── Resolving ───────────────────────────────────────────────────────────────
 
@@ -411,7 +428,15 @@ export async function resolveAgentEsmsBalances(
 ): Promise<ResolvedEsmsBalances> {
   assertAgentId(agentId)
   const strict = options.strict === true
+  const creatorWallet = options.creatorWallet ?? 'deny'
   const reasons: string[] = []
+  const note = (stage: 'spacetimedb' | 'ledger' | 'baseline', cause: unknown) => {
+    try {
+      options.onDegraded?.(stage, describeFailure(cause))
+    } catch {
+      // A logging hook must never change the answer.
+    }
+  }
 
   // 1. Live SpacetimeDB holdings the caller already read.
   if (options.spacetime !== undefined && options.spacetime !== null) {
@@ -419,14 +444,15 @@ export async function resolveAgentEsmsBalances(
       return resultOf(agentId, parseLiveHoldings(options.spacetime), 'spacetimedb', [])
     } catch (error) {
       if (strict) throw error
-      reasons.push(`spacetimedb holdings rejected: ${describeFailure(error)}`)
+      reasons.push('spacetimedb holdings rejected')
+      note('spacetimedb', error)
     }
   }
 
   // 2. The Prisma ledger.
   try {
-    const loadLedger = options.loadLedger ?? (defaultLoader ??= createLedgerLoader())
-    const ledger = await loadLedger(agentId)
+    if (!options.loadLedger) throw new Error('no ledger configured')
+    const ledger = await options.loadLedger(agentId, { creatorWallet })
     if (ledger !== null && ledger !== undefined) {
       return resultOf(agentId, parseEsmsHoldings(ledger), 'database', reasons)
     }
@@ -434,10 +460,13 @@ export async function resolveAgentEsmsBalances(
   } catch (cause) {
     if (strict) throw new EsmsLedgerUnavailableError(agentId, cause)
     reasons.push(
-      cause instanceof RangeError
-        ? `ledger row invalid: ${cause.message}`
-        : `ledger unavailable: ${describeFailure(cause)}`
+      cause instanceof CreatorWalletPrivateError
+        ? 'owner wallet is private'
+        : cause instanceof EsmsValueError
+          ? 'ledger row invalid'
+          : 'ledger unavailable'
     )
+    note('ledger', cause)
   }
 
   // 3. The deterministic baseline.
@@ -445,7 +474,8 @@ export async function resolveAgentEsmsBalances(
     return resultOf(agentId, await baselineEsmsHoldings(agentId), 'fallback', reasons)
   } catch (error) {
     if (strict) throw error
-    reasons.push(`baseline unavailable: ${describeFailure(error)}`)
+    reasons.push('baseline unavailable')
+    note('baseline', error)
     return resultOf(agentId, zeroHoldings(), 'fallback', reasons)
   }
 }
@@ -504,9 +534,12 @@ export async function resolveRosterEsmsBalances(
       return await resolveAgentEsmsBalances(agentId, { ...rest, spacetime: live })
     } catch (error) {
       if (rest.strict === true) throw error
-      return resultOf(agentId, zeroHoldings(), 'fallback', [
-        `resolution failed: ${describeFailure(error)}`,
-      ])
+      try {
+        rest.onDegraded?.('ledger', describeFailure(error))
+      } catch {
+        // see resolveAgentEsmsBalances
+      }
+      return resultOf(agentId, zeroHoldings(), 'fallback', ['resolution failed'])
     }
   })
 }

@@ -21,6 +21,7 @@
  */
 import type { CraftedAgent } from '@/lib/agent-types'
 import { deriveSacredStats } from '@/lib/agents/persona/derive-sacred-stats'
+import { ZODIAC_SIGNS } from '@/lib/staking/elements'
 import type { ResolvedEsmsBalances } from './esms-balance-resolver'
 import type { LiveSky } from './live-sky'
 import {
@@ -40,9 +41,9 @@ import {
   type ResonanceSurgeState,
 } from './seals-surge'
 import {
-  VESSEL_APPEARANCE_REGISTRY,
   appearanceFromSeed,
   deriveVesselAppearance,
+  getVesselAppearance,
   type VesselAppearanceProfile,
 } from './vessel-appearance'
 
@@ -53,6 +54,14 @@ import {
  */
 export const VESSEL_ALIASES: Readonly<Record<string, string>> = {
   'user-avatar-neo': 'greg-castro-1991',
+}
+
+/**
+ * The roster agent an alias stands for, or `undefined`. An own-property lookup: a request id
+ * such as `constructor` or `toString` reaches `Object.prototype` through a bare index.
+ */
+export function resolveVesselAlias(agentId: string): string | undefined {
+  return Object.hasOwn(VESSEL_ALIASES, agentId) ? VESSEL_ALIASES[agentId] : undefined
 }
 
 /** Something that can be rated: stats, an optional natal chart, a look. */
@@ -73,7 +82,7 @@ function pickCoreStats(stats: Record<string, number>): CoreStats {
 
 /** A roster agent under `agentId` (which may be an alias such as `user-avatar-neo`). */
 export function ratableFromRoster(agent: CraftedAgent, agentId = agent.id): RatableVessel {
-  const appearance = VESSEL_APPEARANCE_REGISTRY[agentId] ?? deriveVesselAppearance(agent)
+  const appearance = getVesselAppearance(agentId) ?? deriveVesselAppearance(agent)
   return {
     agentId,
     name: agent.name,
@@ -100,18 +109,67 @@ export interface ForgedAgentRow {
   vitalityScore?: number | null
 }
 
-function asPlanets(natalChart: unknown): Record<string, { sign: string; degree: number }> | null {
-  if (!natalChart || typeof natalChart !== 'object') return null
-  const planets = (natalChart as { planets?: unknown }).planets
-  if (!planets || typeof planets !== 'object') return null
-  const out: Record<string, { sign: string; degree: number }> = {}
-  for (const [body, value] of Object.entries(planets as Record<string, unknown>)) {
-    const sign = (value as { sign?: unknown } | null)?.sign
-    const degree = (value as { degree?: unknown } | null)?.degree
-    if (typeof sign === 'string')
-      out[body] = { sign, degree: typeof degree === 'number' ? degree : 0 }
+type StoredPlanets = Record<string, { sign: string; degree: number }>
+
+const isRecord = (value: unknown): value is Record<string, unknown> =>
+  typeof value === 'object' && value !== null
+
+/**
+ * The bodies of a stored natal chart, in either shape the app writes:
+ *
+ *   • `{ planets: { Sun: { sign, degree } } }` — the roster / seeded shape;
+ *   • `{ tropical: { CelestialBodies: { all: [{ label, Sign: { label }, degrees }] } } }` — what
+ *     `generateAccurateHoroscope` returns and the forge persists (`app/api/create-agent`).
+ *
+ * `null` when neither yields a body, so a chart that says nothing is never rated.
+ */
+function asPlanets(natalChart: unknown): StoredPlanets | null {
+  if (!isRecord(natalChart)) return null
+  const out: StoredPlanets = {}
+
+  if (isRecord(natalChart.planets)) {
+    for (const [body, value] of Object.entries(natalChart.planets)) {
+      const sign = isRecord(value) ? value.sign : undefined
+      const degree = isRecord(value) ? value.degree : undefined
+      if (typeof sign === 'string')
+        out[body] = { sign, degree: typeof degree === 'number' ? degree : 0 }
+    }
+  } else if (isRecord(natalChart.tropical)) {
+    const bodies = isRecord(natalChart.tropical.CelestialBodies)
+      ? natalChart.tropical.CelestialBodies.all
+      : undefined
+    if (Array.isArray(bodies)) {
+      for (const entry of bodies) {
+        if (!isRecord(entry) || typeof entry.label !== 'string') continue
+        const sign = isRecord(entry.Sign) ? entry.Sign.label : undefined
+        if (typeof sign === 'string')
+          out[entry.label] = {
+            sign,
+            degree: typeof entry.degrees === 'number' ? entry.degrees : 0,
+          }
+      }
+    }
   }
   return Object.keys(out).length > 0 ? out : null
+}
+
+/**
+ * The ascendant as an ecliptic longitude, in the form `deriveSacredStats` reads: a bare finite
+ * number, or the forge's `tropical.Ascendant` (`{ Sign: { label }, degrees }`, degrees within
+ * the sign). `undefined` when the chart carries none.
+ */
+function asAscendant(natalChart: unknown): number | undefined {
+  if (!isRecord(natalChart)) return undefined
+  if (typeof natalChart.ascendant === 'number' && Number.isFinite(natalChart.ascendant)) {
+    return natalChart.ascendant
+  }
+  const stored = isRecord(natalChart.tropical) ? natalChart.tropical.Ascendant : undefined
+  if (!isRecord(stored) || !isRecord(stored.Sign) || typeof stored.Sign.label !== 'string') {
+    return undefined
+  }
+  const index = (ZODIAC_SIGNS as readonly string[]).indexOf(stored.Sign.label)
+  const degrees = typeof stored.degrees === 'number' ? stored.degrees : Number.NaN
+  return index >= 0 && Number.isFinite(degrees) ? index * 30 + degrees : undefined
 }
 
 /**
@@ -146,9 +204,10 @@ export function ratableFromForgedRow(row: ForgedAgentRow): RatableVessel | null 
       persisted as number[]
     stats = { power, resonance, wisdom, charisma, intuition, adaptability, vitality }
   } else if (planets) {
+    const ascendant = asAscendant(row.natalChart)
     const minimal = {
       consciousness: {
-        natalChart: { planets },
+        natalChart: { planets, ...(ascendant === undefined ? {} : { ascendant }) },
         monicaConstant: Number.isFinite(row.monicaConstant) ? (row.monicaConstant as number) : 0,
       },
     } as unknown as CraftedAgent
@@ -165,7 +224,7 @@ export function ratableFromForgedRow(row: ForgedAgentRow): RatableVessel | null 
     stats,
     natalChart,
     appearance:
-      VESSEL_APPEARANCE_REGISTRY[row.agentId] ??
+      getVesselAppearance(row.agentId) ??
       appearanceFromSeed(row.agentId, archetype.primary, 'astral'),
   }
 }

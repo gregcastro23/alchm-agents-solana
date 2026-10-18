@@ -184,10 +184,20 @@ export interface AlchemicalSeal {
   stat: SacredStatKey
   /** Highest tier cleared, or `null` if not even Copper. */
   tier: SealTier | null
-  /** The tier above `tier` (Copper if none yet), or `null` at the top. */
+  /**
+   * The tier above `tier` (Copper if none yet), or `null` at the top — the top being `maxTier`,
+   * which is below Celestial for a stat whose aligned ceiling cannot reach that gate.
+   */
   nextTier: SealTier | null
-  /** What currently stops `nextTier`; empty at the top. */
+  /** What currently stops `nextTier`; empty when `nextTier` is `null`. */
   blockedBy: Array<'stat' | 'esms' | 'natal'>
+  /**
+   * The highest tier this Seal's stat can ever reach: the rating gates are compared with the
+   * mean-aligned rating, and a perfect stat (rating 99) aligns to a different ceiling per stat.
+   * A perfect `power` aligns to 93.5, short of the Celestial gate (96), so Crucible Finisher
+   * tops out at Aether; every other Seal can reach Celestial.
+   */
+  maxTier: SealTier
   /** The raw 25–99 rating — what the radar shows. */
   statRating: number
   /** The rating after mean alignment — what the gates were compared against (2 dp). */
@@ -258,7 +268,12 @@ export function evaluateSeals({ stats, esmsBalances, natalChart }: SealInputs): 
       }
     }
 
-    const nextTier = SEAL_TIERS[tierIndex + 1] ?? null
+    const ceiling = computeMeanAlignedRating(seal.stat, RATING_CEILING)
+    let maxTierIndex = 0
+    for (let i = 0; i < SEAL_TIERS.length; i++) {
+      if (SEAL_TIER_REQUIREMENTS[SEAL_TIERS[i]].minRating <= ceiling) maxTierIndex = i
+    }
+    const nextTier = tierIndex + 1 <= maxTierIndex ? SEAL_TIERS[tierIndex + 1] : null
     const blockedBy: AlchemicalSeal['blockedBy'] = []
     if (nextTier) {
       const need = SEAL_TIER_REQUIREMENTS[nextTier]
@@ -280,6 +295,7 @@ export function evaluateSeals({ stats, esmsBalances, natalChart }: SealInputs): 
       tier: tierIndex >= 0 ? SEAL_TIERS[tierIndex] : null,
       nextTier,
       blockedBy,
+      maxTier: SEAL_TIERS[maxTierIndex],
       statRating,
       alignedRating: Math.round(alignedRating * 100) / 100,
       balance,

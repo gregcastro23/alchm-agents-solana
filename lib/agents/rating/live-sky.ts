@@ -188,9 +188,15 @@ export interface ResolveLiveSkyOptions {
   timeoutMs?: number
 }
 
+/**
+ * The planetary-agents backend (`agentRequest`), not `backend.planetary.current()`: that one is
+ * the WTEN culinary host, whose `/planetary/current` answers `source: "pyswisseph"` — a stamp
+ * `longitudesFromBackend` correctly refuses — and the agents host is public, so no secret is
+ * sent. The import stays dynamic so this module remains safe to import from a client module.
+ */
 async function defaultFetchBackend(): Promise<unknown> {
-  const { backend } = await import('@/lib/backend')
-  return backend.planetary.current()
+  const { agentRequest } = await import('@/lib/backend')
+  return agentRequest('/planetary/current', { method: 'GET', auth: false })
 }
 
 /** Race a promise against a timer that is always cleared. */
