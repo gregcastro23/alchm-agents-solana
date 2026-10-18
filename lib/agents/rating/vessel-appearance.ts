@@ -815,7 +815,8 @@ export function paletteFamilyOf(agent: CraftedAgent): PaletteFamily {
 const AVATAR_PATH = /^\/avatars\/[a-z0-9][a-z0-9._-]*\.(?:png|jpe?g|webp|svg)$/
 
 function portraitUrlOf(agent: CraftedAgent): string | undefined {
-  const avatar: unknown = agent.appearance?.avatar
+  // `appearance` is the legacy `Appearance` or the ratified manifest profile; only the former has one.
+  const avatar: unknown = (agent.appearance as { avatar?: unknown } | undefined)?.avatar
   return typeof avatar === 'string' && AVATAR_PATH.test(avatar) ? avatar : undefined
 }
 
