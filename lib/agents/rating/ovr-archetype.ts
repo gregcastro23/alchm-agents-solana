@@ -1,11 +1,11 @@
 /**
- * OVR + Archetype rating for the Sacred 7.
+ * Pentacle Vessel Rating Scale: OVR + Archetype for the Sacred 7.
  *
  * Distils an agent's seven core stats (0–100, from `deriveStatsFromChart` and
  * optionally folded with ESMS/thermodynamics by `enhanceWithAlchemy`) into the
  * things a game board needs to show at a glance:
  *
- *   • a per-stat rating on a 25–99 scale (what the radar draws),
+ *   • a per-stat rating on the Pentacle Vessel Rating Scale, 25–99 (what the radar draws),
  *   • one Overall (OVR) number,
  *   • each stat's advantage over the league average (`relativeAdvantage`),
  *   • a named build archetype ("Hermetic Vanguard").
@@ -34,7 +34,7 @@
  * otherwise adding one agent would rename every other. They are calibrated to
  * the *natal* stats from `deriveSacredStats`; `test/agents/ovr-archetype.spec.ts`
  * re-measures the roster and fails when they drift, so they cannot go stale
- * silently. Stats boosted by `enhanceWithAlchemy` or a Takeover sit above the
+ * silently. Stats boosted by `enhanceWithAlchemy` or a Resonance Surge sit above the
  * natal baseline, so pass natal stats when you want a stable title.
  *
  * ## How OVR is weighted
@@ -69,11 +69,20 @@ export const CORE_STAT_KEYS = [
 ] as const
 
 export type CoreStatKey = (typeof CORE_STAT_KEYS)[number]
+/** The name the Pentacles contract uses for the same seven keys. */
+export type SacredStatKey = CoreStatKey
 export type CoreStats = Pick<Sacred7Stats, CoreStatKey>
 
 /** A stat of 0 rates as the floor and a stat of 100 as the ceiling. */
 export const RATING_FLOOR = 25
 export const RATING_CEILING = 99
+
+/** The scale's public name and bounds, for payloads and UI copy. */
+export const VESSEL_RATING_SCALE = {
+  name: 'Pentacle Vessel Rating Scale',
+  floor: RATING_FLOOR,
+  ceiling: RATING_CEILING,
+} as const
 
 /** Weights for the 1st- and 2nd-highest stat; every other stat weighs 1. */
 export const OVR_RANK_WEIGHTS = [1.6, 1.3] as const
@@ -119,13 +128,16 @@ const ARCHETYPE_WORDS: Record<CoreStatKey, { adjective: string; noun: string }> 
   vitality: { adjective: 'Verdant', noun: 'Vitalist' },
 }
 
-export interface Archetype {
-  /** `balanced` when the radar is flat; `primary`/`secondary` are still the two largest relative advantages. */
-  kind: 'specialist' | 'balanced'
-  /** Stat furthest above its league average. Not necessarily the tallest bar. */
-  primary: CoreStatKey
-  secondary: CoreStatKey
+export interface VesselArchetype {
   title: string
+  /** Stat furthest above its league average. Not necessarily the tallest bar. */
+  primary: SacredStatKey
+  secondary: SacredStatKey
+  /**
+   * `balanced` when the radar is flat (`primary`/`secondary` are still the two largest
+   * relative advantages). An addition to the contract's `{ title, primary, secondary }`.
+   */
+  kind: 'specialist' | 'balanced'
 }
 
 export interface AgentRating {
@@ -140,7 +152,7 @@ export interface AgentRating {
    * 2 dp. This — not the raw rating — is what picks the archetype.
    */
   relativeAdvantage: Record<CoreStatKey, number>
-  archetype: Archetype
+  archetype: VesselArchetype
 }
 
 /** Validate and clamp a 0–100 stat. Non-finite input throws; finite out-of-range is clamped. */
