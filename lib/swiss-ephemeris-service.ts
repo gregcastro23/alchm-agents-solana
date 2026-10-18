@@ -21,23 +21,22 @@
  *
  * WHICH BACKEND, AND WHY IT MATTERS
  * ---------------------------------
- * Swiss Ephemeris lives on the NODE backend, mounted at `/api/planets`
- * (`backend/src/index.ts`). It is NOT on the Python FastAPI backend: a grep of
- * `backend/*.py` for `swisseph` returns nothing, and that backend's
- * `/api/planetary/positions` serves `_planetary_positions_for`
- * (`backend/main.py`), which is a circular-orbit approximation —
- * `(offset + elapsed_days / period * 360) % 360`, with `isRetrograde` hardcoded
- * to False. Real motion is neither circular nor never-retrograde.
+ * This client talks to the NODE backend, mounted at `/api/planets`
+ * (`backend/src/index.ts`), through `NEXT_PUBLIC_EPHEMERIS_BACKEND_URL`.
  *
- * This client therefore talks to `NEXT_PUBLIC_EPHEMERIS_BACKEND_URL` directly
- * and NOT through `lib/planetary-api-client.ts`, which is bound to
- * `NEXT_PUBLIC_BACKEND_URL` (the Python backend). Routing this module through
- * that client stamped `source: 'swiss-ephemeris'` on circular-orbit output —
- * a false provenance claim, which is worse than an unlabelled number because it
- * asserts an authority the value does not have. The two backends do not even
+ * History: until 2026-10 the Python FastAPI backend's `/api/planetary/positions`
+ * served `_planetary_positions_for` (`backend/main.py`), a circular-orbit model —
+ * `(offset + elapsed_days / period * 360) % 360`, with `isRetrograde` hardcoded to
+ * False and arbitrary phase offsets (it put the Sun at 11° Aquarius on a day it
+ * stood at 22° Libra). Routing this module through `lib/planetary-api-client.ts`
+ * (bound to `NEXT_PUBLIC_BACKEND_URL`, the Python backend) therefore stamped
+ * `source: 'swiss-ephemeris'` on circular-orbit output — a false provenance
+ * claim, which is worse than an unlabelled number because it asserts an
+ * authority the value does not have. The Python endpoints now use Swiss
+ * Ephemeris too and stamp their own `source`, but the two backends still do not
  * agree on field names (`longitude`/`speed` here versus
- * `exactLongitude`/`longitudeSpeed` there), so the mismatch also produced
- * silent NaNs.
+ * `exactLongitude`/`longitudeSpeed` there), so this client keeps its own route:
+ * the mismatch produced silent NaNs.
  *
  * WHAT THIS CLIENT WILL NOT DO
  * ----------------------------

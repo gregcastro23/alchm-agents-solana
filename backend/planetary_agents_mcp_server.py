@@ -137,6 +137,49 @@ RESOURCES: List[Dict[str, Any]] = [
 ]
 
 
+# Canonical Jing Arena counter graph: the move that BEATS each opening. Mirrors
+# lib/agents/duel/jing-rules.ts (WINNING_COUNTER, MOVE_ELEMENT) and the Pentacles
+# server's JingMove::countered_by. Kept as a literal here rather than imported:
+# this module ships standalone (pyproject.toml py-modules), without duel_brain.
+# backend/tests/test_mcp_server.py pins it against duel_brain.WINNING_COUNTER.
+JING_WINNING_COUNTER: Dict[str, str] = {
+    "Meltdown": "Vacuum",
+    "Freeze": "Meltdown",
+    "TectonicRoot": "Erode",
+    "Vacuum": "Freeze",
+    "Erode": "Vacuum",
+}
+# Erode is the Water·Earth compound ("silt"); the other four are the ESMS elements.
+JING_MOVE_ELEMENT: Dict[str, str] = {
+    "Meltdown": "Fire",
+    "Freeze": "Water",
+    "TectonicRoot": "Earth",
+    "Vacuum": "Air",
+    "Erode": "Silt",
+}
+
+
+def _jing_counter_matrix() -> Dict[str, Any]:
+    """The resource://game/jing-counters payload, derived from the canonical graph."""
+    return {
+        "elements": ["Fire", "Water", "Earth", "Air", "Silt"],
+        "moves": {
+            move: {
+                "element": JING_MOVE_ELEMENT[move],
+                # The openings this move beats (a move can beat several, or none).
+                "counters": [opening for opening, winner in JING_WINNING_COUNTER.items() if winner == move],
+                # The single move that beats this one.
+                "counteredBy": JING_WINNING_COUNTER[move],
+            }
+            for move in JING_WINNING_COUNTER
+        },
+        "rules": (
+            "Every move is beaten by exactly one counter (counteredBy) and may beat several openings "
+            "(counters). Two moves where neither counters the other draw. Erode is the Water·Earth compound."
+        ),
+    }
+
+
 PROMPTS: List[Dict[str, Any]] = [
     {
         "name": "culinary-debate",
@@ -1064,17 +1107,7 @@ async def handle_request(message: Dict[str, Any]) -> Optional[Dict[str, Any]]:
                     ]
                 }
             elif uri == "resource://game/jing-counters":
-                jing_counters = {
-                    "elements": ["Fire", "Water", "Earth", "Air", "Aether"],
-                    "moves": {
-                        "Meltdown": {"element": "Fire", "counters": "TectonicRoot", "counteredBy": "Freeze"},
-                        "Freeze": {"element": "Water", "counters": "Meltdown", "counteredBy": "Vacuum"},
-                        "Vacuum": {"element": "Air", "counters": "Freeze", "counteredBy": "Erode"},
-                        "Erode": {"element": "Aether", "counters": "Vacuum", "counteredBy": "TectonicRoot"},
-                        "TectonicRoot": {"element": "Earth", "counters": "Erode", "counteredBy": "Meltdown"}
-                    },
-                    "rules": "Each Jing move commands an elemental vector that counters one adjacent element and is subdued by another."
-                }
+                jing_counters = _jing_counter_matrix()
                 result = {
                     "contents": [
                         {

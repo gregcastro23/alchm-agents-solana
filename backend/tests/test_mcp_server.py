@@ -472,7 +472,26 @@ async def test_mcp_resources_protocol(monkeypatch):
     jing_text = res_read_jing["result"]["contents"][0]["text"]
     jing_json = json.loads(jing_text)
     assert "Meltdown" in jing_json["moves"]
-    assert jing_json["moves"]["Meltdown"]["counters"] == "TectonicRoot"
+    # The wrong table (Meltdown "counters" TectonicRoot, "counteredBy" Freeze) was pinned here once.
+    assert jing_json["moves"]["Meltdown"]["counteredBy"] == "Vacuum"
+    assert jing_json["moves"]["Meltdown"]["counters"] == ["Freeze"]
+
+
+def test_jing_counter_resource_matches_the_canonical_graph():
+    import duel_brain
+
+    matrix = planetary_agents_mcp_server._jing_counter_matrix()
+
+    assert planetary_agents_mcp_server.JING_WINNING_COUNTER == duel_brain.WINNING_COUNTER
+    assert {m: v["counteredBy"] for m, v in matrix["moves"].items()} == duel_brain.WINNING_COUNTER
+    # Each move beats exactly the openings whose winning counter it is: Vacuum beats two, TectonicRoot none.
+    assert matrix["moves"]["Vacuum"]["counters"] == ["Meltdown", "Erode"]
+    assert matrix["moves"]["TectonicRoot"]["counters"] == []
+    # Every move is counteredBy exactly one other, and never itself.
+    assert all(v["counteredBy"] != m for m, v in matrix["moves"].items())
+    assert sum(len(v["counters"]) for v in matrix["moves"].values()) == 5
+    assert matrix["moves"]["Erode"]["element"] == "Silt"
+    assert set(matrix["elements"]) == {v["element"] for v in matrix["moves"].values()}
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,337 @@
+{
+  "_comment": "Independent reference positions for backend/tests/test_planetary_positions.py. Generated 2026-10-15 with PyEphem 4.2.1 (libastro: VSOP87 planets, ELP2000/82 Moon, Meeus-series Pluto), geocentric APPARENT ecliptic longitude of date (tropical), UTC instants, true obliquity. Swiss Ephemeris (Moshier) agrees with it to within 0.0025 deg (Pluto) / 0.0005 deg (every other body). Retrograde = longitude speed below -0.005 deg/day; cells with |speed| < 0.005 deg/day are flagged retro_boundary (a planet at its station) and their retrograde flag is not an oracle.",
+  "reference": "PyEphem 4.2.1",
+  "convention": "geocentric APPARENT ecliptic longitude, degrees, true equinox of date (tropical), UTC instants",
+  "instants": [
+    {
+      "utc": "2026-10-15T05:43:00",
+      "bodies": {
+        "Sun": {
+          "longitude": 201.893,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Moon": {
+          "longitude": 254.488,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Mercury": {
+          "longitude": 226.6762,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Venus": {
+          "longitude": 215.71,
+          "retrograde": true,
+          "retro_boundary": false
+        },
+        "Mars": {
+          "longitude": 129.7684,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Jupiter": {
+          "longitude": 141.9852,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Saturn": {
+          "longitude": 10.4673,
+          "retrograde": true,
+          "retro_boundary": false
+        },
+        "Uranus": {
+          "longitude": 65.2121,
+          "retrograde": true,
+          "retro_boundary": false
+        },
+        "Neptune": {
+          "longitude": 2.4796,
+          "retrograde": true,
+          "retro_boundary": false
+        },
+        "Pluto": {
+          "longitude": 303.0663,
+          "retrograde": true,
+          "retro_boundary": true
+        }
+      }
+    },
+    {
+      "utc": "2000-01-01T12:00:00",
+      "bodies": {
+        "Sun": {
+          "longitude": 280.369,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Moon": {
+          "longitude": 223.3238,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Mercury": {
+          "longitude": 271.8894,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Venus": {
+          "longitude": 241.5659,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Mars": {
+          "longitude": 327.9634,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Jupiter": {
+          "longitude": 25.2531,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Saturn": {
+          "longitude": 40.3956,
+          "retrograde": true,
+          "retro_boundary": false
+        },
+        "Uranus": {
+          "longitude": 314.8093,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Neptune": {
+          "longitude": 303.1933,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Pluto": {
+          "longitude": 251.4539,
+          "retrograde": false,
+          "retro_boundary": false
+        }
+      }
+    },
+    {
+      "utc": "2024-03-20T03:06:00",
+      "bodies": {
+        "Sun": {
+          "longitude": 359.9998,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Moon": {
+          "longitude": 123.8152,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Mercury": {
+          "longitude": 17.441,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Venus": {
+          "longitude": 340.1713,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Mars": {
+          "longitude": 327.7734,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Jupiter": {
+          "longitude": 44.8858,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Saturn": {
+          "longitude": 342.2255,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Uranus": {
+          "longitude": 50.2536,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Neptune": {
+          "longitude": 357.4607,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Pluto": {
+          "longitude": 301.6583,
+          "retrograde": false,
+          "retro_boundary": false
+        }
+      }
+    },
+    {
+      "utc": "2026-01-01T00:00:00",
+      "bodies": {
+        "Sun": {
+          "longitude": 280.5687,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Moon": {
+          "longitude": 66.7156,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Mercury": {
+          "longitude": 268.6517,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Venus": {
+          "longitude": 279.2066,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Mars": {
+          "longitude": 282.6883,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Jupiter": {
+          "longitude": 111.3576,
+          "retrograde": true,
+          "retro_boundary": false
+        },
+        "Saturn": {
+          "longitude": 356.1673,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Uranus": {
+          "longitude": 57.9489,
+          "retrograde": true,
+          "retro_boundary": false
+        },
+        "Neptune": {
+          "longitude": 359.5072,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Pluto": {
+          "longitude": 302.7164,
+          "retrograde": false,
+          "retro_boundary": false
+        }
+      }
+    },
+    {
+      "utc": "1990-06-15T12:00:00",
+      "bodies": {
+        "Sun": {
+          "longitude": 84.1295,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Moon": {
+          "longitude": 345.358,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Mercury": {
+          "longitude": 65.6906,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Venus": {
+          "longitude": 48.7775,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Mars": {
+          "longitude": 11.0412,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Jupiter": {
+          "longitude": 105.8894,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Saturn": {
+          "longitude": 294.032,
+          "retrograde": true,
+          "retro_boundary": false
+        },
+        "Uranus": {
+          "longitude": 278.1654,
+          "retrograde": true,
+          "retro_boundary": false
+        },
+        "Neptune": {
+          "longitude": 283.7173,
+          "retrograde": true,
+          "retro_boundary": false
+        },
+        "Pluto": {
+          "longitude": 225.4011,
+          "retrograde": true,
+          "retro_boundary": false
+        }
+      }
+    },
+    {
+      "utc": "2030-12-21T18:00:00",
+      "bodies": {
+        "Sun": {
+          "longitude": 269.9084,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Moon": {
+          "longitude": 228.0831,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Mercury": {
+          "longitude": 257.0258,
+          "retrograde": true,
+          "retro_boundary": false
+        },
+        "Venus": {
+          "longitude": 285.2122,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Mars": {
+          "longitude": 197.0675,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Jupiter": {
+          "longitude": 253.1468,
+          "retrograde": false,
+          "retro_boundary": false
+        },
+        "Saturn": {
+          "longitude": 63.5746,
+          "retrograde": true,
+          "retro_boundary": false
+        },
+        "Uranus": {
+          "longitude": 80.4824,
+          "retrograde": true,
+          "retro_boundary": false
+        },
+        "Neptune": {
+          "longitude": 10.5738,
+          "retrograde": true,
+          "retro_boundary": true
+        },
+        "Pluto": {
+          "longitude": 310.4538,
+          "retrograde": false,
+          "retro_boundary": false
+        }
+      }
+    }
+  ]
+}
