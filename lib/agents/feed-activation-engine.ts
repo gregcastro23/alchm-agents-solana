@@ -12,6 +12,7 @@ import { prisma } from '../db'
 import { deliverToWten } from '../wten/delivery'
 import type { RenderBirthInfo, RenderImageMode } from './render-post-image'
 import { CATALOG_DISH_FALLBACKS } from './historical-recipe-review'
+import { type VesselAppearanceProfile, resolveAgentAppearance } from './vessel-appearance-manifest'
 
 export type WTENEventType =
   | 'recipe_generation'
@@ -97,6 +98,9 @@ export interface FeedActionPayload {
       birthDate?: string
       birthTime?: string | null
       birthLocation?: string
+      appearance?: VesselAppearanceProfile
+      avatarModelUrl?: string
+      headMeshUrl?: string
     }
     // Internal routing/confidence
     internalConfidence?: number
@@ -579,6 +583,7 @@ export class FeedActivationEngine {
     momentum: number,
     recipeCtx?: { id: string; name: string }
   ): Promise<FeedActionPayload['metadataPayload']> {
+    const appearance = resolveAgentAppearance(agent.agentId)
     const baseMetadata = {
       internalConfidence: Math.min(1.0, (velocity + momentum) / 2),
       internalTrigger: trigger.reason,
@@ -597,6 +602,9 @@ export class FeedActivationEngine {
             ? agent.birthLocation
             : JSON.stringify(agent.birthLocation)
           : undefined,
+        appearance,
+        avatarModelUrl: appearance.avatarModelUrl,
+        headMeshUrl: appearance.headMeshUrl,
       },
     }
 

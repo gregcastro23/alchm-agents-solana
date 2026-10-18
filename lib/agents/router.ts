@@ -179,7 +179,7 @@ async function handleKineticsTask(
       output: {
         agentId,
         currentPower,
-        evolutionLevel: kineticState?.evolutionLevel || 'bronze',
+        evolutionLevel: kineticState?.evolutionLevel || 'copper',
         powerMultiplier: kineticState?.powerMultiplier || 1.0,
         alignmentBonus: kineticState?.alignmentBonus || 0,
         nextThreshold: kineticState?.nextThreshold || 100,

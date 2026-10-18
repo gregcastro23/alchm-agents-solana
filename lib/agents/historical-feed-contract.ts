@@ -19,6 +19,40 @@ export type HistoricalAgentKind = 'historical' | 'planetary'
 export type ElementName = 'Fire' | 'Water' | 'Earth' | 'Air'
 export type EsmsTag = 'Spirit' | 'Essence' | 'Matter' | 'Substance'
 
+export {
+  type VesselEra,
+  type VesselCrownStyle,
+  type VesselMantleStyle,
+  type VesselCollarStyle,
+  type VesselSignatureRelic,
+  type VesselAppearanceProfile,
+  resolveAgentAppearance,
+  createVesselPortraitSvg,
+} from './vessel-appearance-manifest'
+
+export {
+  type RatedAgentPayload,
+  type SacredStatKey,
+  type SacredStat,
+  type SealTier,
+  type SurgeType,
+  type MonicaState,
+  type ResonanceSurgeState,
+  type EsmsBalances,
+  type VesselArchetype,
+  type AlchemicalSeal,
+  SACRED_STAT_KEYS,
+  SEAL_TIERS,
+  computeOvr,
+  computeRelativeAdvantage,
+  resolveArchetype,
+  evaluateSurgeState,
+  evaluateSealTier,
+  clampStat,
+} from './rating-contract'
+
+import { type VesselAppearanceProfile, resolveAgentAppearance } from './vessel-appearance-manifest'
+
 /** Compact birthchart summary surfaced to the consumer (all optional). */
 export interface BirthchartSummary {
   sun?: string
@@ -38,6 +72,9 @@ export interface RecipePostItem {
     birthchart?: BirthchartSummary
     /** PA chat slug — powers the consumer's "Chat ✦" link. Equals `agentId`. */
     slug?: string
+    appearance?: VesselAppearanceProfile
+    avatarModelUrl?: string
+    headMeshUrl?: string
   }
   recipe: {
     name: string
@@ -195,6 +232,8 @@ export function serializeRecipePost(
     metadata.planetarySignature?.planetaryHour || metadata.planetaryHour || 'Sun'
   const recipeId = metadata.recipeId || metadata.recipe_id
 
+  const agentKey = row.agentId || agent?.slug || agent?.name || 'user-avatar-neo'
+  const appearance = resolveAgentAppearance(agentKey)
   const item: RecipePostItem = {
     id: String(row.id || row.idempotencyKey),
     type: 'recipe_post',
@@ -204,6 +243,9 @@ export function serializeRecipePost(
       kind: 'historical',
       hasBirthchart: true,
       slug: row.agentId,
+      appearance,
+      avatarModelUrl: appearance.avatarModelUrl,
+      headMeshUrl: appearance.headMeshUrl,
     },
     recipe: {
       name: metadata.recipeName || metadata.dishName || 'Cosmic Recipe',

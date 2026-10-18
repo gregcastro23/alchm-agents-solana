@@ -9,6 +9,7 @@ import { alchemize } from '../alchemizer'
 import { generateAccurateHoroscope } from '../monica/horoscope-generator'
 import { AlchemicalKineticsClient } from '../kinetics-client'
 import { calculateThermodynamics as calculateCanonicalThermodynamics } from '../thermodynamics/kalchm'
+import { clampStat, computeOvr } from './rating-contract'
 
 export interface LiveStats {
   // The Seven Sacred Stats - Living Vital Signs of Consciousness
@@ -252,6 +253,16 @@ function enhanceStatsWithAlchemical(
     100,
     enhanced.vitality + alchemical.matter * 0.7 + thermodynamics.heat * 5
   )
+
+  const sacredKeys: Array<
+    'power' | 'resonance' | 'wisdom' | 'charisma' | 'intuition' | 'adaptability' | 'vitality'
+  > = ['power', 'resonance', 'wisdom', 'charisma', 'intuition', 'adaptability', 'vitality']
+
+  sacredKeys.forEach(key => {
+    enhanced[key] = clampStat(enhanced[key])
+  })
+
+  enhanced.overall = computeOvr(enhanced as any)
 
   return enhanced
 }
@@ -671,24 +682,17 @@ function calculateModifiedStats(params: {
     }
   })
 
-  // Clamp all stats to 0-100 range
-  Object.keys(stats).forEach(key => {
-    if (key !== 'overall') {
-      const statKey = key as keyof typeof stats
-      stats[statKey] = Math.max(0, Math.min(100, stats[statKey]))
-    }
+  // Clamp all Sacred 7 stats to [25, 99] canonical vessel scale
+  const sacredKeys: Array<
+    'power' | 'resonance' | 'wisdom' | 'charisma' | 'intuition' | 'adaptability' | 'vitality'
+  > = ['power', 'resonance', 'wisdom', 'charisma', 'intuition', 'adaptability', 'vitality']
+
+  sacredKeys.forEach(key => {
+    stats[key] = clampStat(stats[key])
   })
 
-  // Calculate overall as weighted composite
-  stats.overall = Math.round(
-    0.25 * stats.power +
-      0.2 * stats.wisdom +
-      0.15 * stats.charisma +
-      0.15 * stats.intuition +
-      0.1 * stats.adaptability +
-      0.1 * stats.vitality +
-      0.05 * stats.resonance
-  )
+  // Calculate overall via Ordered Weighted Averaging (OWA: 1.6 top, 1.3 second, 1.0 rest)
+  stats.overall = computeOvr(stats)
 
   return stats
 }
