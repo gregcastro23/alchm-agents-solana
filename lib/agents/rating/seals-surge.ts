@@ -314,7 +314,7 @@ const EQUILIBRIUM_BOOSTED_STATS: readonly SacredStatKey[] = [
   ...SURGE_BOOSTED_STATS.tempest,
 ]
 
-/** Meter value (0–100) at which a surge is active. ≈6% of sky samples. */
+/** Meter value (0–100) at which a surge is active. ≈8% of sky samples. */
 export const SURGE_ACTIVE_AT = 70
 
 /** Stat points added on the 0–100 scale at a full meter; scales linearly with the meter. */
@@ -337,14 +337,20 @@ export interface SurgeCalibration {
 }
 
 /**
- * The 5th and 95th percentile of live-sky heat and reactivity (600 dates,
- * 2020–2035; heat 0.016–0.075, reactivity 0.54–3.4). The two differ by ~50×, so
- * each is ramped on its own scale. Calibrated to the *shared sky*: for a
- * per-agent payload (natal + transit) pass a `SurgeCalibration` measured on that.
+ * The 5th and 95th percentile of live-sky heat and reactivity (600 dates, 2020–2035;
+ * heat 0.018–0.115, reactivity 0.56–3.59). The two differ by ~30×, so each is ramped on its
+ * own scale. Calibrated to the *shared sky*: for a per-agent payload (natal + transit) pass a
+ * `SurgeCalibration` measured on that.
+ *
+ * Re-pinned from the first version (heat 0.016–0.075): that measurement fed
+ * `deriveLiveEphemeris` right ascensions in degrees, and the function reads any value up to 24
+ * as hours, so bodies near 0°–24° of RA were multiplied by 15 and placed in the wrong sign. The
+ * board's feed carries RA in hours; `eclipticLongitudeToEphemerisRow` (live-sky.ts) now emits
+ * hours, and this is the distribution it produces.
  */
 export const DEFAULT_SURGE_CALIBRATION: SurgeCalibration = {
-  heat: { low: 0.016, high: 0.075 },
-  reactivity: { low: 0.54, high: 3.4 },
+  heat: { low: 0.0184, high: 0.1154 },
+  reactivity: { low: 0.561, high: 3.586 },
 }
 
 /** The live sky's body → sign map (a subset of a chart's `planets` is enough). */

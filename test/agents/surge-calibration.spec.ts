@@ -2,7 +2,7 @@
 import { describe, expect, it } from 'vitest'
 import { DEFAULT_SURGE_CALIBRATION, calculateResonanceSurge } from '@/lib/agents/rating/seals-surge'
 import { calculateAllPlanets } from '@/lib/enhanced-astronomical-calculator'
-import type { Ephemeris } from '@/lib/spacetime/generated/types'
+import { eclipticLongitudeToEphemerisRow, type SkyBodyName } from '@/lib/agents/rating/live-sky'
 import { deriveLiveEphemeris } from '@/lib/spacetime/hooks/useLiveEphemeris'
 import { ZODIAC_SIGNS } from '@/lib/staking/elements'
 
@@ -28,16 +28,6 @@ const BODIES = [
 const SAMPLES = 600
 const START = Date.UTC(2020, 0, 1)
 const SPAN = 15 * 365.25 * 86_400_000
-const OBLIQUITY = (23.43928 * Math.PI) / 180
-
-/** Inverse of `raDecToEclipticLongitude` at dec = 0: tan λ = tan α · cos ε. */
-function rowFor(planet: string, longitudeDeg: number, retrograde: boolean): Ephemeris {
-  const lambda = (longitudeDeg * Math.PI) / 180
-  const alpha = Math.atan2(Math.sin(lambda), Math.cos(lambda) * Math.cos(OBLIQUITY))
-  const ra = ((((alpha * 180) / Math.PI) % 360) + 360) % 360
-  return { body: { tag: planet }, ra, dec: 0, retrograde } as unknown as Ephemeris
-}
-
 function sampleSky() {
   const heat: number[] = []
   const reactivity: number[] = []
@@ -56,8 +46,8 @@ function sampleSky() {
     const rows = Object.entries(chart.planets)
       .filter(([name]) => BODIES.includes(name))
       .map(([name, p]) =>
-        rowFor(
-          name,
+        eclipticLongitudeToEphemerisRow(
+          name as SkyBodyName,
           ZODIAC_SIGNS.indexOf(p.sign as (typeof ZODIAC_SIGNS)[number]) * 30 + p.signDegree,
           Boolean(p.retrograde)
         )
@@ -95,9 +85,9 @@ describe('surge calibration against the live sky', () => {
     )
     const activeShare = states.filter(s => s.active).length / states.length
     const infernoShare = states.filter(s => s.surgeType === 'inferno').length / states.length
-    // Measured when written: 6.2% active, 45% heat-led.
-    expect(activeShare).toBeGreaterThan(0.02)
-    expect(activeShare).toBeLessThan(0.12)
+    // Measured when written: 8.3% active, 43% heat-led.
+    expect(activeShare).toBeGreaterThan(0.04)
+    expect(activeShare).toBeLessThan(0.14)
     expect(infernoShare).toBeGreaterThan(0.25)
     expect(infernoShare).toBeLessThan(0.75)
   })
