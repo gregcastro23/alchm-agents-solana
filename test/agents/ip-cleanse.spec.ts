@@ -5,8 +5,10 @@ import { describe, expect, it } from 'vitest'
 
 /**
  * The Pentacle Vessel Rating system speaks Alchm / Pentacles vocabulary only: Alchemical
- * Seals (Copper, Silver, Gold, Aether, Celestial) and Resonance Surge. No third-party sports
- * terminology may live in the rating modules, their API route, or the agent specs.
+ * Seals (Copper, Silver, Gold, Astral, Celestial, the tiers of the rating contract in
+ * `lib/agents/rating-contract.ts`) and Resonance Surge. No third-party sports terminology, and
+ * no word the contract retired (the tier that Astral replaced), may live in the rating modules,
+ * their API route, or the agent specs.
  *
  * The words are assembled from fragments so this file does not contain them itself.
  */
@@ -16,6 +18,8 @@ const BANNED = [
   ['hall of ', 'fame'],
   ['bron', 'ze'],
   ['take', 'over'],
+  // The tier the rating contract retired in favour of Astral.
+  ['ae', 'ther'],
 ].map(parts => parts.join(''))
 const PATTERN = new RegExp(`\\b(${BANNED.join('|')})\\b`, 'i')
 
@@ -58,6 +62,12 @@ describe('rating vocabulary', () => {
       if (PATTERN.test(relative(ROOT, file))) hits.push(`${relative(ROOT, file)} (file name)`)
     }
     expect(hits).toEqual([])
+  })
+
+  it('bans the retired tier word, and not the tier that replaced it', () => {
+    expect(BANNED).toContain(['ae', 'ther'].join(''))
+    expect(PATTERN.test(`${['Ae', 'ther'].join('')} Seal`)).toBe(true)
+    expect(PATTERN.test('an Astral Seal')).toBe(false)
   })
 
   it('catches the words it is meant to catch', () => {

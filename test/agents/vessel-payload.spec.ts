@@ -1,23 +1,36 @@
 /** @vitest-environment node */
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { CraftedAgent } from '@/lib/agent-types'
 import { HISTORICAL_AGENTS, getHistoricalAgent } from '@/lib/agents/historical'
 import { deriveSacredStats } from '@/lib/agents/persona/derive-sacred-stats'
 import {
+  CANONICAL_SEAL_CATALOG,
+  FIXTURE_AGENTS,
+  SACRED_STAT_KEYS,
+  SEAL_TIERS,
+  buildCanonicalSeal,
+  clampStat,
+  computeOvr,
+  computeRelativeAdvantage,
+  resolveArchetype,
+  type RatedAgentPayload,
+  type SacredStatKey,
+} from '@/lib/agents/rating-contract'
+import {
   CORE_STAT_KEYS,
+  FACTION_NAMES,
   SKY_BODIES,
   VESSEL_ALIASES,
   VESSEL_RATING_SCALE,
+  asContractPayload,
   bestZoneId,
+  buildRatedAgentPayload,
   calculateResonanceSurge,
   computeZoneSynergies,
+  deriveLiveSky,
+  earnedSeals,
   evaluateSeals,
   holdingsFromAlchemicalElements,
-  buildRatedAgentPayload,
-  appearanceFromSeed,
-  deriveLiveSky,
-  deriveVesselAppearance,
-  getVesselAppearance,
   rateStats,
   ratableFromForgedRow,
   ratableFromRoster,
@@ -27,10 +40,37 @@ import {
   type ForgedAgentRow,
   type LiveSky,
   type RatableVessel,
+  type ResolvedEsmsBalances,
+  type SkyBodies,
   type SkyLongitudes,
 } from '@/lib/agents/rating'
 import { generateAccurateHoroscope } from '@/lib/monica/horoscope-generator'
 import { deriveStatsFromChart, type Sacred7Stats } from '@/lib/sacred-7-stats'
+import {
+  CANONICAL_ROSTER_71,
+  PLANET_COLORS,
+  resolveAgentAppearance,
+} from '@/lib/agents/vessel-appearance-manifest'
+
+// The manifest is the real one, except that the id 'mesh-vessel' is given a 3D model and a head
+// mesh: no roster look carries either today, and without one the paths that carry a look's model
+// URLs onto the vessel could not be told apart from "never carried at all".
+vi.mock('@/lib/agents/vessel-appearance-manifest', async importOriginal => {
+  const actual = await importOriginal<typeof import('@/lib/agents/vessel-appearance-manifest')>()
+  return {
+    ...actual,
+    resolveAgentAppearance: (...args: Parameters<typeof actual.resolveAgentAppearance>) => {
+      const look = actual.resolveAgentAppearance(...args)
+      return args[0] === 'mesh-vessel'
+        ? {
+            ...look,
+            avatarModelUrl: '/models/mesh-vessel.glb',
+            headMeshUrl: '/models/mesh-vessel-head.glb',
+          }
+        : look
+    },
+  }
+})
 
 const NOW = new Date('2026-10-15T05:43:00Z')
 const LONGITUDES: Record<string, [number, boolean]> = {
@@ -54,13 +94,14 @@ const sky: LiveSky = deriveLiveSky(
 )
 const newton = getHistoricalAgent('isaac-newton')!
 /** The agent's own off-chain baseline, as the resolver would fall back to it. */
-const balances = (agentId: string) => ({
+const balances = (agentId: string): ResolvedEsmsBalances => ({
   agentId,
   balances: holdingsFromAlchemicalElements(
     getHistoricalAgent(agentId)?.consciousness.alchemicalElements
   ),
   esmsSource: 'fallback' as const,
 })
+const RICH = { spirit: 1000, essence: 1000, matter: 1000, substance: 1000 }
 
 describe('ratableFromRoster', () => {
   it('rates a roster agent from its derived Sacred 7 stats and natal chart', () => {
@@ -72,8 +113,19 @@ describe('ratableFromRoster', () => {
       origin: 'roster',
     })
     for (const key of CORE_STAT_KEYS) expect(vessel.stats[key]).toBe(stats[key])
+    // …and only those seven: the vessel carries the contract's stats, not the whole Sacred 7 record.
+    expect(Object.keys(vessel.stats)).toEqual([...SACRED_STAT_KEYS])
     expect(vessel.natalChart).toBe(newton.consciousness.natalChart)
-    expect(vessel.appearance.agentId).toBe('isaac-newton')
+  })
+
+  it('looks a roster agent up in the contract’s manifest, and keeps the hand-authored pilot look', () => {
+    const vessel = ratableFromRoster(newton)
+    expect(vessel.appearance).toEqual(resolveAgentAppearance('isaac-newton'))
+    expect(vessel.appearance.headSilhouette.crownStyle).toBe('newton-curls')
+    expect(vessel.appearance.era).toBe('enlightenment')
+    const plato = ratableFromRoster(getHistoricalAgent('plato')!)
+    expect(plato.appearance).toEqual(resolveAgentAppearance('plato'))
+    expect(plato.appearance.era).toBe('ancient')
   })
 
   it('keeps an alias as the vessel id and uses the avatar’s hand-authored look', () => {
@@ -81,8 +133,26 @@ describe('ratableFromRoster', () => {
     const vessel = ratableFromRoster(greg, 'user-avatar-neo')
     expect(vessel.agentId).toBe('user-avatar-neo')
     expect(vessel.name).toBe(greg.name)
+    expect(vessel.appearance).toEqual(resolveAgentAppearance('user-avatar-neo'))
     expect(vessel.appearance.era).toBe('astral')
+    expect(vessel.appearance.headSilhouette.crownStyle).toBe('sovereign-crest')
     expect(vessel.stats).toEqual(ratableFromRoster(greg).stats)
+    expect(vessel.natalChart).toBe(greg.consciousness.natalChart)
+  })
+
+  it('carries the six vessel fields the contract adds, and nothing it was not given', () => {
+    const vessel = ratableFromRoster(newton)
+    expect(Object.keys(vessel).sort()).toEqual([
+      'agentId',
+      'appearance',
+      'faction',
+      'isPlaceholder',
+      'name',
+      'natalChart',
+      'origin',
+      'provenance',
+      'stats',
+    ])
   })
 })
 
@@ -114,6 +184,14 @@ describe('ratableFromForgedRow', () => {
     expect(vessel.origin).toBe('forged')
     expect(vessel.natalChart?.planets.Sun.sign).toBe('Aries')
     expect(vessel.appearance.era).toBe('astral')
+  })
+
+  it('is a user vessel with a real chart: provenance "user", never a placeholder', () => {
+    const vessel = ratableFromForgedRow(row())!
+    expect(vessel.provenance).toBe('user')
+    expect(vessel.isPlaceholder).toBe(false)
+    expect(vessel.agentId).toBe('agent-moonwalker-ab12')
+    expect(vessel.name).toBe('Moonwalker')
   })
 
   it('derives the stats from the natal chart when the columns are unset (all zero)', () => {
@@ -148,9 +226,12 @@ describe('buildRatedAgentPayload', () => {
   const payload = buildRatedAgentPayload({ vessel, balances: balances(vessel.agentId), sky })
 
   it('assembles every section from one vessel and one sky', () => {
-    expect(payload.agentId).toBe('isaac-newton')
+    expect(payload.key).toBe('isaac-newton')
+    expect(payload.handle).toBe('Isaac Newton')
+    expect(payload.faction).toBe(6)
+    expect(payload.factionName).toBe('Saturn')
     expect(payload.scale.name).toBe('Pentacle Vessel Rating Scale')
-    expect(payload.seals).toHaveLength(7)
+    expect(payload.sealProgress).toHaveLength(7)
     expect(payload.zoneSynergies).toHaveLength(11)
     expect(payload.surge).not.toBeNull()
     expect(payload.sky).toMatchObject({ source: 'swiss-ephemeris', monica: sky.monica })
@@ -185,6 +266,7 @@ describe('buildRatedAgentPayload', () => {
     expect(degraded.degraded).toEqual({ sky: 'The sky is incomplete (Pluto)' })
     expect(degraded.ovr).toBe(payload.ovr)
     expect(degraded.seals).toEqual(payload.seals)
+    expect(degraded.sealProgress).toEqual(payload.sealProgress)
   })
 
   it('carries a degraded ledger read through, beside a healthy sky', () => {
@@ -198,23 +280,22 @@ describe('buildRatedAgentPayload', () => {
   })
 
   it('gives richer holdings richer Seals, never the reverse', () => {
-    const poor = buildRatedAgentPayload({
-      vessel,
-      balances: { agentId: 'x', balances: { spirit: 0, essence: 0, matter: 0, substance: 0 }, esmsSource: 'database' },
-      sky,
-    }) // prettier-ignore
-    const rich = buildRatedAgentPayload({
-      vessel,
-      balances: { agentId: 'x', balances: { spirit: 500, essence: 500, matter: 500, substance: 500 }, esmsSource: 'database' },
-      sky,
-    }) // prettier-ignore
-    const rank = (tier: string | null) =>
-      tier === null ? -1 : ['Copper', 'Silver', 'Gold', 'Aether', 'Celestial'].indexOf(tier)
-    poor.seals.forEach((s, i) =>
-      expect(rank(rich.seals[i].tier)).toBeGreaterThanOrEqual(rank(s.tier))
+    const at = (holdings: typeof RICH): ReturnType<typeof buildRatedAgentPayload> =>
+      buildRatedAgentPayload({
+        vessel,
+        balances: { agentId: 'x', balances: holdings, esmsSource: 'database' },
+        sky,
+      })
+    const poor = at({ spirit: 0, essence: 0, matter: 0, substance: 0 })
+    const rich = at({ spirit: 500, essence: 500, matter: 500, substance: 500 })
+    const rank = (tier: string | null) => (tier === null ? -1 : SEAL_TIERS.indexOf(tier as never))
+    poor.sealProgress.forEach((p, i) =>
+      expect(rank(rich.sealProgress[i].tier)).toBeGreaterThanOrEqual(rank(p.tier))
     )
-    expect(poor.seals.every(s => s.tier === null)).toBe(true)
-    expect(rich.seals.some(s => s.tier !== null)).toBe(true)
+    expect(poor.sealProgress.every(p => p.tier === null)).toBe(true)
+    expect(poor.seals).toEqual([])
+    expect(rich.sealProgress.some(p => p.tier !== null)).toBe(true)
+    expect(rich.seals.length).toBeGreaterThan(0)
   })
 })
 
@@ -226,17 +307,27 @@ describe('the whole roster', () => {
 
   it('builds a complete, finite payload for every historical agent', () => {
     expect(payloads).toHaveLength(HISTORICAL_AGENTS.length)
-    expect(new Set(payloads.map(p => p.agentId)).size).toBe(payloads.length)
+    expect(new Set(payloads.map(p => p.key)).size).toBe(payloads.length)
     for (const p of payloads) {
-      expect(p.ovr, p.agentId).toBeGreaterThanOrEqual(25)
-      expect(p.ovr, p.agentId).toBeLessThanOrEqual(99)
-      expect(p.seals, p.agentId).toHaveLength(7)
+      expect(p.ovr, p.key).toBeGreaterThanOrEqual(25)
+      expect(p.ovr, p.key).toBeLessThanOrEqual(99)
+      expect(Number.isInteger(p.ovr), p.key).toBe(true)
+      for (const stat of SACRED_STAT_KEYS) {
+        expect(Number.isInteger(p.ratings[stat]), `${p.key} ${stat}`).toBe(true)
+        expect(p.ratings[stat], `${p.key} ${stat}`).toBeGreaterThanOrEqual(25)
+        expect(p.ratings[stat], `${p.key} ${stat}`).toBeLessThanOrEqual(99)
+      }
+      expect(p.sealProgress, p.key).toHaveLength(7)
+      expect(p.zoneSynergies, p.key).toHaveLength(11)
       expect(
         p.zoneSynergies.every(z => Number.isFinite(z.synergy)),
-        p.agentId
+        p.key
       ).toBe(true)
-      expect(p.appearance.portraitSvgDataUri.startsWith('data:image/svg+xml'), p.agentId).toBe(true)
-      expect(p.surge?.monicaState, p.agentId).toMatch(/^(absent|equilibrium|convergent|divergent)$/)
+      expect(p.appearance.portraitSvgDataUri?.startsWith('data:image/svg+xml'), p.key).toBe(true)
+      expect(p.surge?.monicaState, p.key).toMatch(/^(absent|equilibrium|convergent|divergent)$/)
+      expect(p.faction, p.key).toBeGreaterThanOrEqual(0)
+      expect(p.faction, p.key).toBeLessThanOrEqual(9)
+      expect(p.factionName, p.key).toBe(FACTION_NAMES[p.faction])
     }
   })
 
@@ -248,38 +339,40 @@ describe('the whole roster', () => {
     for (const offset of offsets) expect(Math.abs(offset)).toBeLessThanOrEqual(12)
   })
 
-  it('does not hand any single Seal to a runaway share of the roster at the same balances', () => {
+  it('earns only Seals the contract would build for the stat and tier, in the contract’s order', () => {
     const rich = HISTORICAL_AGENTS.map(agent => {
       const vessel = ratableFromRoster(agent)
       return buildRatedAgentPayload({
         vessel,
-        balances: { agentId: vessel.agentId, balances: { spirit: 1000, essence: 1000, matter: 1000, substance: 1000 }, esmsSource: 'database' },
+        balances: { agentId: vessel.agentId, balances: RICH, esmsSource: 'database' },
         sky,
-      }) // prettier-ignore
+      })
     })
-    const share = (id: string) =>
-      rich.filter(p => p.seals.find(s => s.id === id)!.tier !== null).length / rich.length
-    const shares = [
-      'crucible-finisher',
-      'astral-vision',
-      'immovable-foundation',
-      'harmonic-sovereign',
-      'tidal-chorus',
-      'quicksilver-pivot',
-      'philosophers-stone',
-    ].map(share)
-    expect(Math.max(...shares) / Math.min(...shares)).toBeLessThan(1.5)
+    let earned = 0
+    for (const p of rich) {
+      const expected = p.sealProgress
+        .filter(progress => progress.tier !== null)
+        .map(progress => buildCanonicalSeal(progress.stat, progress.tier!))
+      expect(p.seals, p.key).toEqual(expected)
+      const order = p.seals.map(s => SACRED_STAT_KEYS.indexOf(s.statKey!))
+      expect(order, p.key).toEqual([...order].sort((a, b) => a - b))
+      earned += p.seals.length
+    }
+    expect(earned).toBeGreaterThan(0) // the roster does earn Seals at these balances
   })
 
   it('summarises a vessel in one light row', () => {
     const row = summarizeVessel(ratableFromRoster(newton))
     expect(row).toMatchObject({
-      agentId: 'isaac-newton',
+      key: 'isaac-newton',
+      handle: 'Isaac Newton',
+      faction: 6,
+      factionName: 'Saturn',
       era: 'enlightenment',
       crownStyle: 'newton-curls',
       signatureRelic: 'prism-octahedron',
     })
-    expect(row.ovr).toBe(payloads.find(p => p.agentId === 'isaac-newton')!.ovr)
+    expect(row.ovr).toBe(payloads.find(p => p.key === 'isaac-newton')!.ovr)
   })
 })
 
@@ -1593,7 +1686,431 @@ describe('a chart rates identically as a forged row and as a roster agent', () =
   })
 })
 
-// ─── Vessel ids that name Object.prototype members; the pilots' own looks ────
+// ─── Faction: the planet a vessel flies under ────────────────────────────────
+
+describe('FACTION_NAMES', () => {
+  it('is the ten classical bodies in the contract’s planet order, one per manifest colour', () => {
+    expect([...FACTION_NAMES]).toEqual([
+      'Sun',
+      'Moon',
+      'Mercury',
+      'Venus',
+      'Mars',
+      'Jupiter',
+      'Saturn',
+      'Uranus',
+      'Neptune',
+      'Pluto',
+    ])
+    expect([...FACTION_NAMES]).toEqual([...SKY_BODIES])
+    expect(FACTION_NAMES).toHaveLength(PLANET_COLORS.length)
+  })
+})
+
+describe('the faction of a vessel', () => {
+  /** A persisted-column row, so only the id and the chart decide the faction. */
+  const factionOf = (agentId: string, ...chart: unknown[]): number =>
+    ratableFromForgedRow(
+      persistedRow({ agentId, natalChart: chart.length > 0 ? chart[0] : rosterShape(HAND) })
+    )!.faction
+  const sunIn = (sign: string) => rosterShape({ Sun: { sign, degree: 10 } })
+  /** The manifest keys a trailing birth year off, as the vessel code does. */
+  const rosterFaction = new Map(
+    CANONICAL_ROSTER_71.map(entry => [entry.key.replace(/-\d+$/, ''), entry.faction])
+  )
+
+  it('takes a contract pilot’s own faction first, for a roster agent and for a forged row alike', () => {
+    for (const fixture of FIXTURE_AGENTS) {
+      const forged = ratableFromForgedRow(
+        persistedRow({ agentId: fixture.key, natalChart: sunIn('Aries') })
+      )!
+      expect(forged.faction, fixture.key).toBe(fixture.faction)
+      const payload = buildRatedAgentPayload({
+        vessel: forged,
+        balances: { agentId: fixture.key, balances: RICH, esmsSource: 'database' },
+        sky: null,
+      })
+      expect(payload.faction, fixture.key).toBe(fixture.faction)
+      expect(payload.factionName, fixture.key).toBe(fixture.factionName)
+    }
+    expect(ratableFromRoster(newton).faction).toBe(6)
+    expect(ratableFromRoster(getHistoricalAgent('emily-dickinson')!).faction).toBe(3)
+    expect(ratableFromRoster(getHistoricalAgent('leonardo-da-vinci')!).faction).toBe(9)
+  })
+
+  it('puts user-avatar-neo under the Sun, whatever its chart or its stats say', () => {
+    expect(factionOf('user-avatar-neo', sunIn('Aries'))).toBe(0) // Aries would be Mars, 4
+    expect(factionOf('user-avatar-neo', sunIn('Pisces'))).toBe(0)
+    const greg = getHistoricalAgent(VESSEL_ALIASES['user-avatar-neo'])!
+    const aliased = ratableFromRoster(greg, 'user-avatar-neo')
+    expect(aliased.faction).toBe(0)
+    const payload = buildRatedAgentPayload({
+      vessel: aliased,
+      balances: balances('greg-castro-1991'),
+      sky: null,
+    })
+    expect(payload.faction).toBe(0)
+    expect(payload.factionName).toBe('Sun')
+    // …while the same agent under its own id is not a pilot: its Cancer Sun is ruled by the Moon.
+    expect(ratableFromRoster(greg).faction).toBe(1)
+    expect(ratableFromRoster(greg).faction).not.toBe(aliased.faction)
+  })
+
+  it('ranks a pilot above the roster: the contract says Saturn for Newton, the roster says Moon', () => {
+    const roster = CANONICAL_ROSTER_71.find(entry => entry.key === 'isaac-newton')!
+    expect(roster.faction).toBe(1)
+    expect(factionOf('isaac-newton', sunIn('Aries'))).toBe(6)
+    expect(factionOf('isaac-newton')).toBe(6)
+  })
+
+  it('gives each roster agent the roster’s canonical faction, pilots aside', () => {
+    const pilots = new Set(FIXTURE_AGENTS.map(fixture => fixture.key))
+    const wrong: string[] = []
+    let checked = 0
+    for (const agent of HISTORICAL_AGENTS) {
+      const expected = rosterFaction.get(agent.id.replace(/-\d+$/, ''))
+      if (pilots.has(agent.id) || expected === undefined) continue
+      checked += 1
+      if (ratableFromRoster(agent).faction !== expected) wrong.push(agent.id)
+    }
+    expect(wrong).toEqual([])
+    expect(checked).toBeGreaterThan(60)
+  })
+
+  it.each([
+    ['plato', 0, 'Sun'],
+    ['aristotle', 4, 'Mars'],
+    ['alexander-the-great', 6, 'Saturn'],
+    ['michelangelo', 1, 'Moon'],
+    ['wolfgang-mozart', 2, 'Mercury'],
+    ['thomas-aquinas', 7, 'Uranus'],
+    ['galileo-galilei', 7, 'Uranus'],
+    ['tecumseh', 8, 'Neptune'],
+    ['mahatma-gandhi', 9, 'Pluto'],
+    ['rachel-carson', 5, 'Jupiter'],
+  ])('puts the roster agent %s under faction %i (%s)', (id, faction, name) => {
+    const agent = getHistoricalAgent(id)!
+    const vessel = ratableFromRoster(agent)
+    expect(vessel.faction).toBe(faction)
+    const payload = buildRatedAgentPayload({ vessel, balances: balances(id), sky: null })
+    expect(payload.factionName).toBe(name)
+    // A roster id outranks the chart: the same id as a forged row, under a different Sun.
+    expect(factionOf(id, sunIn(id === 'aristotle' ? 'Taurus' : 'Aries'))).toBe(faction)
+  })
+
+  it('finds a roster agent whose key carries a birth year, with or without the year', () => {
+    expect(rosterFaction.get('nikola-tesla')).toBe(3)
+    expect(CANONICAL_ROSTER_71.some(entry => entry.key === 'nikola-tesla-1856')).toBe(true)
+    expect(getHistoricalAgent('nikola-tesla-1856')).toBeDefined()
+    const tesla = ratableFromRoster(getHistoricalAgent('nikola-tesla-1856')!)
+    expect(tesla.faction).toBe(3)
+    expect(tesla.provenance).not.toBe('user')
+    for (const id of ['nikola-tesla-1856', 'nikola-tesla', 'nikola-tesla-1900']) {
+      expect(factionOf(id, sunIn('Aries')), id).toBe(3) // Aries alone would be Mars
+    }
+    expect(factionOf('voltaire-1694', sunIn('Aries'))).toBe(9)
+    expect(factionOf('voltaire', sunIn('Aries'))).toBe(9)
+    expect(factionOf('rene-descartes-1596', sunIn('Aries'))).toBe(3)
+    expect(factionOf('mark-twain-1835', sunIn('Aries'))).toBe(5)
+  })
+
+  it('reads an id without regard to its case or surrounding space', () => {
+    expect(factionOf(' ISAAC-Newton ', sunIn('Aries'))).toBe(6)
+    expect(factionOf('Plato', sunIn('Aries'))).toBe(0)
+    expect(factionOf(' Nikola-Tesla-1856', sunIn('Aries'))).toBe(3)
+  })
+
+  it('does not strip anything but a trailing run of digits from an id', () => {
+    // 'plato-x' and 'xplato' are not Plato; only a trailing -<digits> is a birth year.
+    expect(factionOf('plato-x', sunIn('Aries'))).toBe(4)
+    expect(factionOf('xplato', sunIn('Aries'))).toBe(4)
+    expect(factionOf('1991-plato', sunIn('Aries'))).toBe(4)
+    // …and only at the end: a digit run in the middle of an id is left where it is,
+    // as is a bare trailing hyphen.
+    expect(factionOf('pl-1ato', sunIn('Aries'))).toBe(4)
+    expect(factionOf('plato-', sunIn('Aries'))).toBe(4)
+    expect(factionOf('plato-1-x', sunIn('Aries'))).toBe(4)
+  })
+
+  it.each([
+    ['Aries', 4, 'Mars'],
+    ['Taurus', 3, 'Venus'],
+    ['Gemini', 2, 'Mercury'],
+    ['Cancer', 1, 'Moon'],
+    ['Leo', 0, 'Sun'],
+    ['Virgo', 2, 'Mercury'],
+    ['Libra', 3, 'Venus'],
+    ['Scorpio', 9, 'Pluto'],
+    ['Sagittarius', 5, 'Jupiter'],
+    ['Capricorn', 6, 'Saturn'],
+    ['Aquarius', 7, 'Uranus'],
+    ['Pisces', 8, 'Neptune'],
+  ])(
+    'puts a vessel outside the roster whose Sun is in %s under faction %i (%s)',
+    (sign, faction, name) => {
+      const roster = factionOf('agent-outside-ab12', sunIn(sign))
+      expect(roster).toBe(faction)
+      const forge = factionOf('agent-outside-ab12', forgeShape({ Sun: { sign, degree: 10 } }))
+      expect(forge).toBe(faction)
+      const vessel = ratableFromForgedRow(
+        persistedRow({ agentId: 'agent-outside-ab12', natalChart: sunIn(sign) })
+      )!
+      const payload = buildRatedAgentPayload({
+        vessel,
+        balances: { agentId: vessel.agentId, balances: RICH, esmsSource: 'database' },
+        sky: null,
+      })
+      expect(payload.faction).toBe(faction)
+      expect(payload.factionName).toBe(name)
+    }
+  )
+
+  it('reads the Sun from the Sun alone: another body in another sign does not move the faction', () => {
+    const chart = rosterShape({
+      Sun: { sign: 'Gemini', degree: 3 },
+      Moon: { sign: 'Pisces', degree: 3 },
+      Mars: { sign: 'Capricorn', degree: 3 },
+    })
+    expect(factionOf('agent-outside-ab12', chart)).toBe(2)
+  })
+
+  it('falls back to faction 0 (Sun) when there is no chart, or no Sun, or no sign to read', () => {
+    expect(factionOf('agent-outside-ab12', null)).toBe(0)
+    expect(factionOf('agent-outside-ab12', undefined)).toBe(0)
+    expect(factionOf('agent-outside-ab12', {})).toBe(0)
+    expect(
+      factionOf('agent-outside-ab12', rosterShape({ Moon: { sign: 'Pisces', degree: 3 } }))
+    ).toBe(0)
+    expect(factionOf('agent-outside-ab12', { planets: { Sun: { sign: '', degree: 3 } } })).toBe(0)
+  })
+
+  it('treats the chart as absent for a roster agent with none, and gives it faction 0 too', () => {
+    const chartless = {
+      ...getHistoricalAgent('greg-castro-1991')!,
+      consciousness: {
+        ...getHistoricalAgent('greg-castro-1991')!.consciousness,
+        natalChart: undefined,
+      },
+    } as unknown as CraftedAgent
+    const vessel = ratableFromRoster(chartless)
+    expect(vessel.natalChart).toBeNull()
+    expect(vessel.faction).toBe(0)
+  })
+
+  it('keeps the faction an integer 0–9 and its name one of the ten, for ids that name prototype members', () => {
+    for (const id of ['constructor', 'toString', 'valueOf', 'hasOwnProperty', '__proto__']) {
+      for (const chart of [sunIn('Taurus'), null]) {
+        const faction = factionOf(id, chart)
+        expect(faction, id).toBe(chart === null ? 0 : 3)
+        expect(Number.isInteger(faction), id).toBe(true)
+      }
+      expect(ratableFromRoster(newton, id).faction, id).toBe(6) // newton's Capricorn Sun: Saturn
+    }
+  })
+
+  it('names every faction from FACTION_NAMES, and falls back to the Sun’s name for an index outside it', () => {
+    const vessel = ratableFromForgedRow(persistedRow())!
+    FACTION_NAMES.forEach((name, index) => {
+      const payload = buildRatedAgentPayload({
+        vessel: { ...vessel, faction: index },
+        balances: { agentId: 'x', balances: RICH, esmsSource: 'database' },
+        sky: null,
+      })
+      expect(payload.faction).toBe(index)
+      expect(payload.factionName).toBe(name)
+      expect(summarizeVessel({ ...vessel, faction: index }).factionName).toBe(name)
+    })
+    for (const faction of [10, 99, -1]) {
+      const payload = buildRatedAgentPayload({
+        vessel: { ...vessel, faction },
+        balances: { agentId: 'x', balances: RICH, esmsSource: 'database' },
+        sky: null,
+      })
+      expect(payload.factionName).toBe('Sun')
+      expect(summarizeVessel({ ...vessel, faction }).factionName).toBe('Sun')
+    }
+  })
+
+  it('reads the same faction for a roster chart fed back as a forged row, unless a pilot outranks it', () => {
+    const differing = HISTORICAL_AGENTS.filter(agent => {
+      const forged = ratableFromForgedRow(
+        zeroRow(agent.consciousness.natalChart, { agentId: agent.id, name: agent.name })
+      )!
+      return forged.faction !== ratableFromRoster(agent).faction
+    })
+    expect(differing.map(agent => agent.id)).toEqual([])
+  })
+})
+
+// ─── Provenance and the placeholder flag ─────────────────────────────────────
+
+describe('provenance and isPlaceholder', () => {
+  const withProvenance = (provenance: unknown): CraftedAgent =>
+    ({
+      ...newton,
+      consciousness: {
+        ...newton.consciousness,
+        natalChart: { ...newton.consciousness.natalChart, provenance },
+      },
+    }) as unknown as CraftedAgent
+
+  it('marks a roster agent with a placeholder chart as a placeholder vessel', () => {
+    const vessel = ratableFromRoster(withProvenance('placeholder'))
+    expect(vessel.isPlaceholder).toBe(true)
+    expect(vessel.provenance).toBe('placeholder')
+  })
+
+  it.each(['computed', 'authored', 'unattributed', undefined, 'anything-else'])(
+    'marks a roster agent whose chart provenance is %s as historical, not a placeholder',
+    provenance => {
+      const vessel = ratableFromRoster(withProvenance(provenance))
+      expect(vessel.isPlaceholder).toBe(false)
+      expect(vessel.provenance).toBe('historical')
+    }
+  )
+
+  it('marks a roster agent without a chart as historical', () => {
+    const chartless = {
+      ...newton,
+      consciousness: { ...newton.consciousness, natalChart: undefined },
+    } as unknown as CraftedAgent
+    const vessel = ratableFromRoster(chartless)
+    expect(vessel.isPlaceholder).toBe(false)
+    expect(vessel.provenance).toBe('historical')
+    expect(vessel.natalChart).toBeNull()
+  })
+
+  it('follows the chart for the real roster: placeholder charts and only they are placeholders', () => {
+    const placeholders = HISTORICAL_AGENTS.filter(
+      agent => agent.consciousness.natalChart?.provenance === 'placeholder'
+    )
+    expect(placeholders.length).toBeGreaterThan(0)
+    expect(placeholders.length).toBeLessThan(HISTORICAL_AGENTS.length)
+    for (const agent of HISTORICAL_AGENTS) {
+      const vessel = ratableFromRoster(agent)
+      const isPlaceholder = placeholders.includes(agent)
+      expect(vessel.isPlaceholder, agent.id).toBe(isPlaceholder)
+      expect(vessel.provenance, agent.id).toBe(isPlaceholder ? 'placeholder' : 'historical')
+    }
+  })
+
+  it('never lets a placeholder chart earn Celestial, at balances that would otherwise allow it', () => {
+    for (const agent of HISTORICAL_AGENTS) {
+      const vessel = ratableFromRoster(agent)
+      if (!vessel.isPlaceholder) continue
+      const payload = buildRatedAgentPayload({
+        vessel,
+        balances: { agentId: agent.id, balances: RICH, esmsSource: 'database' },
+        sky,
+      })
+      expect(
+        payload.seals.filter(seal => seal.tier === 'Celestial'),
+        agent.id
+      ).toEqual([])
+      expect(
+        payload.sealProgress.every(progress => progress.natalAffinity === null),
+        agent.id
+      ).toBe(true)
+    }
+  })
+
+  it('marks every forged vessel a user vessel, even when its stored chart claims to be a placeholder', () => {
+    for (const natalChart of [
+      rosterShape(HAND),
+      { ...rosterShape(HAND), provenance: 'placeholder' },
+      forgeShape(HAND, LIBRA_12_5),
+    ]) {
+      for (const row of [persistedRow({ natalChart }), zeroRow(natalChart)]) {
+        const vessel = ratableFromForgedRow(row)!
+        expect(vessel.isPlaceholder).toBe(false)
+        expect(vessel.provenance).toBe('user')
+        expect(vessel.natalChart).toEqual({ planets: HAND }) // the stored provenance is not carried
+      }
+    }
+  })
+
+  it('serves the vessel’s two flags in the payload as they are', () => {
+    const base = ratableFromForgedRow(persistedRow())!
+    const at = (over: Partial<RatableVessel>) =>
+      buildRatedAgentPayload({
+        vessel: { ...base, ...over },
+        balances: { agentId: 'x', balances: RICH, esmsSource: 'database' },
+        sky: null,
+      })
+    expect(at({})).toMatchObject({ isPlaceholder: false, provenance: 'user' })
+    expect(at({ isPlaceholder: true, provenance: 'placeholder' })).toMatchObject({
+      isPlaceholder: true,
+      provenance: 'placeholder',
+    })
+    expect(at({ provenance: 'historical' })).toMatchObject({
+      isPlaceholder: false,
+      provenance: 'historical',
+    })
+  })
+
+  describe('a placeholder chart against the same chart with a source', () => {
+    // Every stat at its ceiling and all ten bodies in Fire signs: the Spirit Seals (intuition,
+    // adaptability) clear Celestial on stats, on balance and on the chart's element. Only the
+    // chart's provenance differs between the two vessels.
+    const FIRE_CHART = {
+      planets: Object.fromEntries(
+        SKY_BODIES.map((body, i) => [body, { sign: ['Aries', 'Leo', 'Sagittarius'][i % 3] }])
+      ),
+    }
+    const MAXED: CoreStats = {
+      power: 100,
+      resonance: 100,
+      wisdom: 100,
+      charisma: 100,
+      intuition: 100,
+      adaptability: 100,
+      vitality: 100,
+    }
+    const build = (provenance: 'placeholder' | 'computed' | 'authored' | 'unattributed') => {
+      const isPlaceholder = provenance === 'placeholder'
+      const vessel: RatableVessel = {
+        ...ratableFromForgedRow(persistedRow())!,
+        stats: MAXED,
+        natalChart: { ...FIRE_CHART, provenance },
+        isPlaceholder,
+        provenance: isPlaceholder ? 'placeholder' : 'historical',
+      }
+      return buildRatedAgentPayload({
+        vessel,
+        balances: { agentId: 'x', balances: RICH, esmsSource: 'database' },
+        sky: null,
+      })
+    }
+    const celestial = (p: ReturnType<typeof build>) =>
+      p.seals.filter(s => s.tier === 'Celestial').map(s => s.statKey)
+
+    it('has teeth: a sourced chart earns both Spirit Seals at Celestial', () => {
+      expect(celestial(build('computed'))).toEqual(['intuition', 'adaptability'])
+      expect(celestial(build('authored'))).toEqual(['intuition', 'adaptability'])
+    })
+
+    it('stops at Astral for the placeholder, and reports no natal affinity for it', () => {
+      const placeholder = build('placeholder')
+      expect(celestial(placeholder)).toEqual([])
+      const intuition = placeholder.seals.find(s => s.statKey === 'intuition')!
+      expect(intuition.tier).toBe('Astral')
+      expect(placeholder.sealProgress.find(p => p.stat === 'intuition')).toMatchObject({
+        tier: 'Astral',
+        nextTier: 'Celestial',
+        blockedBy: ['natal'],
+        natalAffinity: null,
+      })
+    })
+
+    it('treats an unattributed chart like a placeholder: it earns nothing from the chart', () => {
+      const unattributed = build('unattributed')
+      expect(celestial(unattributed)).toEqual([])
+      expect(unattributed.sealProgress.every(p => p.natalAffinity === null)).toBe(true)
+    })
+  })
+})
+
+// ─── Looks: the contract's manifest, and ids that name Object.prototype members ──
 
 describe('vessel ids and the look a vessel gets', () => {
   const PROTOTYPE_IDS = [
@@ -1609,6 +2126,28 @@ describe('vessel ids and the look a vessel gets', () => {
     ['leonardo-da-vinci', 'da-vinci-beret-beard'],
     ['emily-dickinson', 'dickinson-parted-bun'],
   ]
+  /** The ratings of PERSISTED_STATS on the contract's scale, and the archetype they make. */
+  const PERSISTED_RATINGS: Record<SacredStatKey, number> = {
+    power: 69,
+    resonance: 77,
+    wisdom: 73,
+    charisma: 78,
+    intuition: 75,
+    adaptability: 66,
+    vitality: 70,
+  }
+  const PERSISTED_ARCHETYPE = {
+    title: 'Resonant Herald',
+    primary: 'charisma',
+    secondary: 'resonance',
+  }
+
+  it('has teeth: the persisted stats rate as worked out on paper to the Resonant Herald', () => {
+    expect(resolveArchetype(computeRelativeAdvantage(PERSISTED_RATINGS))).toEqual(
+      PERSISTED_ARCHETYPE
+    )
+    expect(rateStats(PERSISTED_STATS).ratings).toEqual(PERSISTED_RATINGS)
+  })
 
   it.each(PROTOTYPE_IDS)('gives a forged vessel called %s a real, serialisable look', id => {
     const vessel = ratableFromForgedRow(persistedRow({ agentId: id }))!
@@ -1618,35 +2157,43 @@ describe('vessel ids and the look a vessel gets', () => {
     expect(Object.keys(vessel.appearance)).toEqual(
       expect.arrayContaining(['era', 'portraitSvgDataUri'])
     )
-    expect(vessel.appearance.agentId).toBe(id)
     expect(vessel.appearance.era).toBe('astral')
-    expect(vessel.appearance.portraitSvgDataUri.startsWith('data:image/svg+xml')).toBe(true)
-    // …the look of an unregistered id seeded from it, with the relic of the vessel’s primary stat.
-    expect(vessel.appearance).toEqual(appearanceFromSeed(id, 'charisma', 'astral'))
+    expect(vessel.appearance.portraitSvgDataUri!.startsWith('data:image/svg+xml')).toBe(true)
+    // …the look of an unregistered id, seeded from its faction (Venus) and its archetype.
+    expect(vessel.appearance).toEqual(resolveAgentAppearance(id, 3, PERSISTED_ARCHETYPE))
     const wire = JSON.parse(JSON.stringify(vessel))
     expect(wire.appearance).toEqual(vessel.appearance)
     expect(Object.keys(wire)).toContain('appearance')
   })
 
   it.each(PROTOTYPE_IDS)(
-    'gives a roster agent served under the id %s the derived look, not a prototype member',
+    'gives a roster agent served under the id %s the manifest’s derived look, not a prototype member',
     id => {
       const vessel = ratableFromRoster(newton, id)
       expect(vessel.agentId).toBe(id)
       expect(typeof vessel.appearance).toBe('object')
-      expect(vessel.appearance).toEqual(deriveVesselAppearance(newton))
-      expect(vessel.appearance.era).toBe('enlightenment')
+      expect(vessel.appearance).toEqual(resolveAgentAppearance(id))
+      expect(vessel.appearance.era).toBe('astral') // not on the roster, so not Newton's era
       expect(vessel.appearance.headSilhouette.crownStyle).not.toBe('newton-curls') // never the pilot
       expect(Object.keys(JSON.parse(JSON.stringify(vessel)))).toContain('appearance')
     }
   )
+
+  it('serves a roster vessel exactly the look resolveAgentAppearance gives its id, for the whole roster', () => {
+    const wrong = HISTORICAL_AGENTS.filter(
+      agent =>
+        JSON.stringify(ratableFromRoster(agent).appearance) !==
+        JSON.stringify(resolveAgentAppearance(agent.id))
+    )
+    expect(wrong.map(agent => agent.id)).toEqual([])
+  })
 
   it.each(PILOTS)(
     'keeps the hand-authored look of %s (crown %s) for the roster agent',
     (id, crown) => {
       const vessel = ratableFromRoster(getHistoricalAgent(id)!)
       expect(vessel.appearance.headSilhouette.crownStyle).toBe(crown)
-      expect(vessel.appearance).toBe(getVesselAppearance(id))
+      expect(vessel.appearance).toEqual(resolveAgentAppearance(id))
     }
   )
 
@@ -1655,37 +2202,87 @@ describe('vessel ids and the look a vessel gets', () => {
     (id, crown) => {
       const vessel = ratableFromForgedRow(persistedRow({ agentId: id }))!
       expect(vessel.appearance.headSilhouette.crownStyle).toBe(crown)
-      expect(vessel.appearance).toBe(getVesselAppearance(id))
+      expect(vessel.appearance).toEqual(resolveAgentAppearance(id))
     }
   )
+
+  it('gives every contract pilot the look the contract itself carries', () => {
+    for (const fixture of FIXTURE_AGENTS) {
+      const forged = ratableFromForgedRow(persistedRow({ agentId: fixture.key }))!
+      expect(forged.appearance, fixture.key).toEqual(fixture.appearance)
+    }
+  })
 
   it('keeps the avatar’s hand-authored look under the alias, for the roster agent and for a forged row', () => {
     const greg = getHistoricalAgent('greg-castro-1991')!
     const aliased = ratableFromRoster(greg, 'user-avatar-neo')
-    expect(aliased.appearance.headSilhouette.crownStyle).toBe('astral-helm')
+    expect(aliased.appearance.headSilhouette.crownStyle).toBe('sovereign-crest')
     expect(aliased.appearance.signatureRelic).toBe('solar-astrolabe')
-    expect(aliased.appearance).toBe(getVesselAppearance('user-avatar-neo'))
-    // …while the same agent under its own id gets its own derived look.
-    expect(ratableFromRoster(greg).appearance.headSilhouette.crownStyle).not.toBe('astral-helm')
-    expect(ratableFromRoster(greg).appearance).toBe(getVesselAppearance('greg-castro-1991'))
+    expect(aliased.appearance.era).toBe('astral')
+    expect(aliased.appearance).toEqual(resolveAgentAppearance('user-avatar-neo'))
+    // The alias carries the roster agent's stats and chart, not the pilot's.
+    expect(aliased.stats).toEqual(ratableFromRoster(greg).stats)
+    expect(aliased.natalChart).toBe(greg.consciousness.natalChart)
+    // …while the same agent under its own id gets the look of that id.
+    expect(ratableFromRoster(greg).appearance).toEqual(resolveAgentAppearance('greg-castro-1991'))
+    expect(ratableFromRoster(greg).appearance.headSilhouette.crownStyle).not.toBe('sovereign-crest')
 
     const forged = ratableFromForgedRow(persistedRow({ agentId: 'user-avatar-neo' }))!
-    expect(forged.appearance.headSilhouette.crownStyle).toBe('astral-helm')
+    expect(forged.appearance.headSilhouette.crownStyle).toBe('sovereign-crest')
+    expect(forged.appearance).toEqual(aliased.appearance)
   })
 
-  it('serves a roster agent that is not a pilot the registry’s look for its id', () => {
-    const plain = HISTORICAL_AGENTS.find(a => !PILOTS.some(([id]) => id === a.id))!
-    expect(ratableFromRoster(plain).appearance).toBe(getVesselAppearance(plain.id))
+  it('keeps a year-suffixed pilot look for the roster agent and for a forged row', () => {
+    const tesla = getHistoricalAgent('nikola-tesla-1856')!
+    const roster = ratableFromRoster(tesla)
+    const forged = ratableFromForgedRow(persistedRow({ agentId: 'nikola-tesla-1856' }))!
+    for (const vessel of [roster, forged]) {
+      expect(vessel.appearance.headSilhouette.crownStyle).toBe('tesla-parted-mustache')
+      expect(vessel.appearance.signatureRelic).toBe('tesla-induction-coil')
+      expect(vessel.appearance).toEqual(resolveAgentAppearance('nikola-tesla-1856'))
+    }
   })
 
-  it('seeds an unregistered forged id from the id and the primary stat of its rating', () => {
+  it('seeds an unregistered forged id from the id, the faction and the archetype of its rating', () => {
     const vessel = ratableFromForgedRow(persistedRow({ agentId: 'agent-seeded-0007' }))!
-    expect(getVesselAppearance('agent-seeded-0007')).toBeUndefined()
-    // Persisted stats 60/70/65/72/68/55/61 have charisma the furthest above its league mean.
-    expect(rateStats(vessel.stats).archetype.primary).toBe('charisma')
-    expect(vessel.appearance).toEqual(appearanceFromSeed('agent-seeded-0007', 'charisma', 'astral'))
-    expect(vessel.appearance.signatureRelic).not.toBe(
-      appearanceFromSeed('agent-seeded-0007', 'resonance', 'astral').signatureRelic
+    expect(vessel.appearance).toEqual(
+      resolveAgentAppearance('agent-seeded-0007', 3, PERSISTED_ARCHETYPE)
+    )
+    expect(vessel.appearance.era).toBe('astral')
+    // The faction decides the trim: Venus here (a Taurus Sun), Mars under an Aries Sun.
+    expect(vessel.appearance.paletteOverrides.secondaryTrimHex).toBe(PLANET_COLORS[3])
+    expect(vessel.appearance.paletteOverrides.secondaryTrimHex).toBe('#f6cf83')
+    const mars = ratableFromForgedRow(
+      persistedRow({
+        agentId: 'agent-seeded-0007',
+        natalChart: rosterShape({ Sun: { sign: 'Aries', degree: 10 } }),
+      })
+    )!
+    expect(mars.faction).toBe(4)
+    expect(mars.appearance.paletteOverrides.secondaryTrimHex).toBe('#f44336')
+    expect(mars.appearance).toEqual(
+      resolveAgentAppearance('agent-seeded-0007', 4, PERSISTED_ARCHETYPE)
+    )
+    expect(mars.appearance).not.toEqual(vessel.appearance)
+  })
+
+  it('lets the archetype shape the look: the same id and chart, rated differently, look different', () => {
+    const power = ratableFromForgedRow(
+      persistedRow({
+        agentId: 'agent-seeded-0007',
+        powerScore: 95,
+        charismaScore: 40,
+        resonanceScore7: 40,
+        vitalityScore: 85,
+      })
+    )!
+    expect(rateStats(power.stats).archetype.title).toBe('Juggernaut Anchor')
+    expect(power.faction).toBe(3) // same chart, same faction
+    expect(power.appearance).toEqual(
+      resolveAgentAppearance('agent-seeded-0007', 3, 'Juggernaut Anchor')
+    )
+    expect(power.appearance).not.toEqual(
+      ratableFromForgedRow(persistedRow({ agentId: 'agent-seeded-0007' }))!.appearance
     )
   })
 
@@ -1698,7 +2295,117 @@ describe('vessel ids and the look a vessel gets', () => {
   })
 })
 
+// ─── 3D model URLs: carried when there are some, absent (not undefined) otherwise ──
+
+describe('avatarModelUrl and headMeshUrl', () => {
+  const withUrls = (urls: { avatarModelUrl?: string; headMeshUrl?: string }): CraftedAgent =>
+    ({ ...newton, ...urls }) as unknown as CraftedAgent
+  const OWN = { avatarModelUrl: '/models/own.glb', headMeshUrl: '/models/own-head.glb' }
+  const hasKey = (value: object, key: string) => Object.hasOwn(value, key)
+
+  it('has no such keys on a roster vessel whose agent and look name none, rather than undefined ones', () => {
+    const vessel = ratableFromRoster(newton)
+    expect(hasKey(vessel, 'avatarModelUrl')).toBe(false)
+    expect(hasKey(vessel, 'headMeshUrl')).toBe(false)
+    expect(Object.keys(JSON.parse(JSON.stringify(vessel)))).not.toContain('avatarModelUrl')
+  })
+
+  it('carries the agent’s own model and head mesh onto the vessel, each independently', () => {
+    expect(ratableFromRoster(withUrls(OWN))).toMatchObject(OWN)
+    const modelOnly = ratableFromRoster(withUrls({ avatarModelUrl: '/models/own.glb' }))
+    expect(modelOnly.avatarModelUrl).toBe('/models/own.glb')
+    expect(hasKey(modelOnly, 'headMeshUrl')).toBe(false)
+    const meshOnly = ratableFromRoster(withUrls({ headMeshUrl: '/models/own-head.glb' }))
+    expect(meshOnly.headMeshUrl).toBe('/models/own-head.glb')
+    expect(hasKey(meshOnly, 'avatarModelUrl')).toBe(false)
+  })
+
+  it('takes both from the look when the agent names none, and prefers the agent’s own when it does', () => {
+    const fromLook = ratableFromRoster(newton, 'mesh-vessel')
+    expect(fromLook.avatarModelUrl).toBe('/models/mesh-vessel.glb')
+    expect(fromLook.headMeshUrl).toBe('/models/mesh-vessel-head.glb')
+    expect(ratableFromRoster(withUrls(OWN), 'mesh-vessel')).toMatchObject(OWN)
+    const mixed = ratableFromRoster(withUrls({ avatarModelUrl: '/models/own.glb' }), 'mesh-vessel')
+    expect(mixed.avatarModelUrl).toBe('/models/own.glb')
+    expect(mixed.headMeshUrl).toBe('/models/mesh-vessel-head.glb')
+  })
+
+  it('carries a forged vessel’s look URLs onto the vessel, and none when the look has none', () => {
+    const plain = ratableFromForgedRow(persistedRow({ agentId: 'agent-plain-0001' }))!
+    expect(hasKey(plain, 'avatarModelUrl')).toBe(false)
+    expect(hasKey(plain, 'headMeshUrl')).toBe(false)
+    const meshed = ratableFromForgedRow(persistedRow({ agentId: 'mesh-vessel' }))!
+    expect(meshed.avatarModelUrl).toBe('/models/mesh-vessel.glb')
+    expect(meshed.headMeshUrl).toBe('/models/mesh-vessel-head.glb')
+  })
+
+  it('passes both through to the payload when the vessel has them, and keeps the keys absent when not', () => {
+    const base = ratableFromForgedRow(persistedRow())!
+    const at = (urls: { avatarModelUrl?: string; headMeshUrl?: string }) =>
+      buildRatedAgentPayload({
+        vessel: { ...base, ...urls },
+        balances: { agentId: 'x', balances: RICH, esmsSource: 'database' },
+        sky: null,
+      })
+    const both = at(OWN)
+    expect(both.avatarModelUrl).toBe('/models/own.glb')
+    expect(both.headMeshUrl).toBe('/models/own-head.glb')
+    const modelOnly = at({ avatarModelUrl: '/models/own.glb' })
+    expect(modelOnly.avatarModelUrl).toBe('/models/own.glb')
+    expect(hasKey(modelOnly, 'headMeshUrl')).toBe(false)
+    const meshOnly = at({ headMeshUrl: '/models/own-head.glb' })
+    expect(meshOnly.headMeshUrl).toBe('/models/own-head.glb')
+    expect(hasKey(meshOnly, 'avatarModelUrl')).toBe(false)
+    for (const none of [at({}), at({ avatarModelUrl: undefined, headMeshUrl: undefined })]) {
+      expect(hasKey(none, 'avatarModelUrl')).toBe(false)
+      expect(hasKey(none, 'headMeshUrl')).toBe(false)
+      expect(Object.keys(JSON.parse(JSON.stringify(none)))).not.toContain('headMeshUrl')
+    }
+    // An empty string names no model: it is not carried either.
+    const empty = at({ avatarModelUrl: '', headMeshUrl: '' })
+    expect(hasKey(empty, 'avatarModelUrl')).toBe(false)
+    expect(hasKey(empty, 'headMeshUrl')).toBe(false)
+  })
+
+  it('goes from a look with a model, through the vessel, to the payload', () => {
+    const vessel = ratableFromForgedRow(persistedRow({ agentId: 'mesh-vessel' }))!
+    const payload = buildRatedAgentPayload({
+      vessel,
+      balances: { agentId: 'mesh-vessel', balances: RICH, esmsSource: 'database' },
+      sky: null,
+    })
+    expect(payload.avatarModelUrl).toBe('/models/mesh-vessel.glb')
+    expect(payload.headMeshUrl).toBe('/models/mesh-vessel-head.glb')
+    expect(payload.appearance.avatarModelUrl).toBe('/models/mesh-vessel.glb')
+  })
+})
+
 // ─── The payload, value by value ─────────────────────────────────────────────
+
+/** The Sacred 7 ratings of stats on the contract's 25–99 scale, from the contract's own clamp. */
+const ratingsOf = (stats: CoreStats): Record<SacredStatKey, number> =>
+  Object.fromEntries(
+    SACRED_STAT_KEYS.map(key => [key, clampStat(25 + (stats[key] / 100) * 74)])
+  ) as Record<SacredStatKey, number>
+
+/** The chart's ten bodies in `SKY_BODIES` order, as signs. */
+const signsOf = (signs: string[]): SkyBodies =>
+  Object.fromEntries(SKY_BODIES.map((body, i) => [body, { sign: signs[i] }]))
+
+/** A live sky with chosen thermodynamics, Monica and signs. */
+const makeSky = (
+  heat: number,
+  reactivity: number,
+  monica: number | null,
+  signs: string[]
+): LiveSky => ({
+  source: 'swiss-ephemeris',
+  at: '2026-10-15T05:43:00.000Z',
+  thermodynamics: { heat, entropy: 0.31, reactivity, gregsEnergy: -0.98 },
+  kalchm: 1767.88,
+  monica,
+  bodies: signsOf(signs),
+})
 
 describe('buildRatedAgentPayload, value by value', () => {
   const STATS: CoreStats = {
@@ -1710,350 +2417,820 @@ describe('buildRatedAgentPayload, value by value', () => {
     adaptability: 30,
     vitality: 70,
   }
-  const CHART = {
-    planets: {
-      Sun: { sign: 'Aries' },
-      Moon: { sign: 'Leo' },
-      Mercury: { sign: 'Gemini' },
-      Venus: { sign: 'Taurus' },
-      Mars: { sign: 'Sagittarius' },
-      Jupiter: { sign: 'Cancer' },
-      Saturn: { sign: 'Capricorn' },
-      Uranus: { sign: 'Aquarius' },
-      Neptune: { sign: 'Pisces' },
-      Pluto: { sign: 'Scorpio' },
-    },
-  }
+  /** Natal signs in `SKY_BODIES` order: Fire, Fire, Air, Earth, Fire, Water, Earth, Air, Water, Water. */
+  const NATAL = [
+    'Aries',
+    'Leo',
+    'Gemini',
+    'Taurus',
+    'Sagittarius',
+    'Cancer',
+    'Capricorn',
+    'Aquarius',
+    'Pisces',
+    'Scorpio',
+  ]
+  const CHART = { planets: signsOf(NATAL) }
+  /** Every body in the element that is neither kin nor foe: Fire↔Earth, Air↔Water. */
+  const NEUTRAL = ['Taurus', 'Capricorn', 'Cancer', 'Leo', 'Virgo', 'Libra', 'Aries', 'Scorpio', 'Gemini', 'Aquarius'] // prettier-ignore
+  /** Every body in the opposing element: Fire↔Water, Air↔Earth. */
+  const OPPOSED = ['Cancer', 'Scorpio', 'Capricorn', 'Aquarius', 'Pisces', 'Aries', 'Gemini', 'Taurus', 'Leo', 'Sagittarius'] // prettier-ignore
+  /** Heat at the top of its ramp (share 1), reactivity 60% up its own (share 0.6): a meter of 80. */
+  const HOT: [number, number] = [0.12, 2.376]
   const HOLDINGS = { spirit: 60, essence: 3, matter: 12, substance: 30 }
+  const ZERO_HOLDINGS = { spirit: 0, essence: 0, matter: 0, substance: 0 }
+  /** A look that is deliberately not the one 'fixed-vessel' would be given. */
+  const look = resolveAgentAppearance('plato')
   const vessel: RatableVessel = {
     agentId: 'fixed-vessel',
     name: 'Fixed Vessel',
     origin: 'forged',
     stats: STATS,
     natalChart: CHART,
-    appearance: appearanceFromSeed('fixed-vessel', 'intuition', 'modern'),
+    faction: 4,
+    isPlaceholder: false,
+    provenance: 'user',
+    appearance: look,
   }
-  const resolved = (
-    over: Partial<Parameters<typeof buildRatedAgentPayload>[0]['balances']> = {}
-  ): Parameters<typeof buildRatedAgentPayload>[0]['balances'] => ({
+  const resolved = (over: Partial<ResolvedEsmsBalances> = {}): ResolvedEsmsBalances => ({
     agentId: 'fixed-vessel',
     balances: HOLDINGS,
     esmsSource: 'database',
     ...over,
   })
-  const surgeFor = (liveSky: LiveSky) =>
-    calculateResonanceSurge({
-      thermodynamics: liveSky.thermodynamics,
-      monica: liveSky.monica,
-      natalChart: CHART,
-      sky: liveSky.bodies,
-    })
-  /** A sky hot enough for the meter to be full, with a Monica that is neither absent nor 1.618. */
-  const hotSky: LiveSky = {
-    ...sky,
-    thermodynamics: { ...sky.thermodynamics, heat: 0.2, reactivity: 4 },
-    monica: 2.5,
-  }
-  const payload = buildRatedAgentPayload({ vessel, balances: resolved(), sky })
+  const build = (
+    liveSky: LiveSky | null,
+    over: Partial<Parameters<typeof buildRatedAgentPayload>[0]> = {}
+  ) => buildRatedAgentPayload({ vessel, balances: resolved(), sky: liveSky, ...over })
 
-  it('names the vessel and the scale it is rated on', () => {
-    expect(payload.agentId).toBe('fixed-vessel')
-    expect(payload.name).toBe('Fixed Vessel')
+  const neutralHot = makeSky(...HOT, 0.5, NEUTRAL)
+  const payload = build(neutralHot)
+  const calm = build(null)
+  /** The ratings above, on the contract's scale. */
+  const RATINGS: Record<SacredStatKey, number> = {
+    power: 84,
+    resonance: 55,
+    wisdom: 73,
+    charisma: 66,
+    intuition: 92,
+    adaptability: 47,
+    vitality: 77,
+  }
+
+  it('names the vessel under the contract’s keys, with its faction, provenance and look', () => {
+    expect(payload).toMatchObject({
+      key: 'fixed-vessel',
+      handle: 'Fixed Vessel',
+      faction: 4,
+      factionName: 'Mars',
+      isPlaceholder: false,
+      provenance: 'user',
+    })
+    // The look is the vessel's own, not one re-resolved from its id.
+    expect(payload.appearance).toEqual(look)
+    expect(payload.appearance).not.toEqual(resolveAgentAppearance('fixed-vessel', 4, 'x'))
+  })
+
+  it('serves the id and the name exactly as the vessel holds them: no trimming, no case folding', () => {
+    // Only the faction lookup normalises an id; the key the game reads back is the id it sent.
+    const odd = { ...vessel, agentId: '  Odd-ID-1856 ', name: '  Odd  Name ' }
+    const built = build(null, { vessel: odd })
+    expect(built.key).toBe('  Odd-ID-1856 ')
+    expect(built.handle).toBe('  Odd  Name ')
+    const row = summarizeVessel(odd)
+    expect(row.key).toBe('  Odd-ID-1856 ')
+    expect(row.handle).toBe('  Odd  Name ')
+    const forged = ratableFromForgedRow(persistedRow({ agentId: ' Plato ', name: ' Plato  ' }))!
+    expect(forged.agentId).toBe(' Plato ')
+    expect(forged.name).toBe(' Plato  ')
+    expect(forged.faction).toBe(0) // …while the faction lookup does fold it: Plato is the Sun's
+  })
+
+  it('serves none of the keys the contract retired', () => {
+    for (const retired of ['agentId', 'name', 'esmsBalances', 'spread']) {
+      expect(Object.hasOwn(payload, retired), retired).toBe(false)
+    }
+    const text = JSON.stringify(payload).toLowerCase()
+    expect(text).not.toContain(['ae', 'ther'].join(''))
+  })
+
+  it('names the scale the ratings are on', () => {
     expect(payload.scale).toEqual(VESSEL_RATING_SCALE)
     expect(payload.scale).toEqual({ name: 'Pentacle Vessel Rating Scale', floor: 25, ceiling: 99 })
   })
 
-  it('serves the rating of the vessel’s stats, field for field', () => {
-    const rating = rateStats(STATS)
-    expect(payload.ovr).toBe(rating.ovr)
-    expect(payload.ratings).toEqual(rating.ratings)
-    expect(payload.spread).toBe(rating.spread)
-    expect(payload.relativeAdvantage).toEqual(rating.relativeAdvantage)
-    expect(payload.archetype).toEqual(rating.archetype)
+  it('pins the rating of one fixed vessel, worked out on paper', () => {
+    // rating = round(25 + 0.74·stat), on 25–99.
+    expect(payload.ratings).toEqual(RATINGS)
+    // OVR = (92·1.6 + 84·1.3 + mean(77, 73, 66, 55, 47)=63.6) / 3.9 = 320 / 3.9 = 82.05
+    expect(payload.ovr).toBe(82)
+    // rating minus the contract's baseline 63 / 62 / 64 / 61 / 62 / 63 / 62
+    expect(payload.relativeAdvantage).toEqual({
+      power: 21,
+      resonance: -7,
+      wisdom: 9,
+      charisma: 5,
+      intuition: 30,
+      adaptability: -16,
+      vitality: 15,
+    })
+    expect(payload.archetype).toEqual({
+      title: 'Prescient Ingressor',
+      primary: 'intuition',
+      secondary: 'power',
+    })
   })
 
-  it('pins the numbers for one fixed vessel, worked out on paper', () => {
-    // rating = round(25 + 0.74·stat); OVR weights the best two ratings 1.6 and 1.3.
-    expect(payload.ratings).toEqual({
-      power: 84,
+  it('pins a second vessel, led by power and vitality', () => {
+    const stats: CoreStats = {
+      power: 95,
+      resonance: 40,
+      wisdom: 40,
+      charisma: 40,
+      intuition: 40,
+      adaptability: 40,
+      vitality: 85,
+    }
+    const built = build(null, { vessel: { ...vessel, stats } })
+    // power 95, vitality 88, the other five 55: (95·1.6 + 88·1.3 + 55) / 3.9 = 321.4 / 3.9 = 82.4
+    expect(built.ratings).toEqual({
+      power: 95,
       resonance: 55,
-      wisdom: 73,
-      charisma: 66,
-      intuition: 92,
-      adaptability: 47,
-      vitality: 77,
+      wisdom: 55,
+      charisma: 55,
+      intuition: 55,
+      adaptability: 55,
+      vitality: 88,
     })
-    expect(payload.ovr).toBe(73) // (92·1.6 + 84·1.3 + 77 + 73 + 66 + 55 + 47) / 7.9 = 72.7
-    expect(payload.spread).toBe(45) // 92 − 47
-    expect(payload.relativeAdvantage.intuition).toBe(2.64) // (90 − 70.2) / 7.5
-    expect(payload.relativeAdvantage.power).toBe(0.4) // (80 − 76.5) / 8.8
-    expect(payload.archetype).toEqual({
-      kind: 'specialist',
-      primary: 'intuition',
+    expect(built.ovr).toBe(82)
+    expect(built.relativeAdvantage.power).toBe(32)
+    expect(built.relativeAdvantage.wisdom).toBe(-9)
+    expect(built.archetype).toEqual({
+      title: 'Juggernaut Anchor',
+      primary: 'power',
       secondary: 'vitality',
-      title: 'Verdant Seer',
     })
+  })
+
+  it('serves the contract’s own figures for the same ratings, over a spread of stat vectors', () => {
+    // A fixed linear-congruential stream: the same 300 vectors on every run and every machine.
+    let state = 20261019
+    const next = () => {
+      state = (state * 1664525 + 1013904223) % 4294967296
+      return state / 4294967296
+    }
+    const vectors: CoreStats[] = [
+      { power: 0, resonance: 0, wisdom: 0, charisma: 0, intuition: 0, adaptability: 0, vitality: 0 },
+      { power: 100, resonance: 100, wisdom: 100, charisma: 100, intuition: 100, adaptability: 100, vitality: 100 },
+      { power: 50, resonance: 50, wisdom: 50, charisma: 50, intuition: 50, adaptability: 50, vitality: 50 },
+    ] // prettier-ignore
+    for (let i = 0; i < 300; i += 1) {
+      vectors.push(
+        Object.fromEntries(
+          SACRED_STAT_KEYS.map(key => [key, Math.round(next() * 10_000) / 100])
+        ) as CoreStats
+      )
+    }
+    const wrong: string[] = []
+    for (const [i, stats] of vectors.entries()) {
+      const built = build(null, { vessel: { ...vessel, stats } })
+      const ratings = ratingsOf(stats)
+      const relativeAdvantage = computeRelativeAdvantage(ratings)
+      const ok =
+        JSON.stringify(built.ratings) === JSON.stringify(ratings) &&
+        built.ovr === computeOvr(ratings) &&
+        JSON.stringify(built.relativeAdvantage) === JSON.stringify(relativeAdvantage) &&
+        JSON.stringify(built.archetype) === JSON.stringify(resolveArchetype(relativeAdvantage))
+      if (!ok) wrong.push(`#${i} ${JSON.stringify(stats)}`)
+    }
+    expect(wrong).toEqual([])
   })
 
   it('passes the resolved holdings and their source through untouched', () => {
-    expect(payload.esmsBalances).toEqual(HOLDINGS)
+    expect(payload.esms).toEqual(HOLDINGS)
     expect(payload.esmsSource).toBe('database')
     for (const esmsSource of ['spacetimedb', 'database', 'fallback'] as const) {
-      const again = buildRatedAgentPayload({ vessel, balances: resolved({ esmsSource }), sky })
+      const again = build(neutralHot, { balances: resolved({ esmsSource }) })
       expect(again.esmsSource).toBe(esmsSource)
     }
+    const other = { spirit: 1.5, essence: 2.5, matter: 3.5, substance: 4.5 }
+    expect(build(neutralHot, { balances: resolved({ balances: other }) }).esms).toEqual(other)
   })
 
-  it('serves the Seals evaluateSeals gives these stats, holdings and chart, maxTier included', () => {
-    const expected = evaluateSeals({ stats: STATS, esmsBalances: HOLDINGS, natalChart: CHART })
-    expect(payload.seals).toEqual(expected)
-    expect(payload.seals.map(s => s.maxTier)).toEqual([
-      'Aether', // Crucible Finisher: a perfect power aligns to 93.5, short of Celestial’s 96
-      'Celestial',
-      'Celestial',
-      'Celestial',
-      'Celestial',
-      'Celestial',
-      'Celestial',
-    ])
-    // The chart reaches the Seals: with none, no Seal reports a natal affinity.
-    const chartless = buildRatedAgentPayload({
-      vessel: { ...vessel, natalChart: null },
-      balances: resolved(),
-      sky,
-    })
-    expect(payload.seals.every(s => s.natalAffinity !== null)).toBe(true)
-    expect(chartless.seals.every(s => s.natalAffinity === null)).toBe(true)
-  })
-
-  it('pins a handful of Seal figures for the fixed vessel', () => {
-    const seal = (id: string) => payload.seals.find(s => s.id === id)!
-    // intuition 90 → rating 92 → aligned 92 − 76.948 + 76.113 = 91.16: clears Aether with 60 spirit.
-    expect(seal('astral-vision')).toMatchObject({
-      tier: 'Aether',
-      nextTier: 'Celestial',
-      blockedBy: ['stat', 'esms', 'natal'],
-      maxTier: 'Celestial',
-      statRating: 92,
-      alignedRating: 91.16,
-      balance: 60,
-      natalAffinity: 3,
-    })
-    // power 80 → rating 84 → aligned 78.5: Copper with 30 substance; Silver needs 80.
-    expect(seal('crucible-finisher')).toMatchObject({
-      tier: 'Copper',
-      nextTier: 'Silver',
-      blockedBy: ['stat'],
-      maxTier: 'Aether',
-      statRating: 84,
-      alignedRating: 78.5,
-      balance: 30,
-    })
-    expect(seal('tidal-chorus').tier).toBeNull()
-  })
-
-  it('stops advertising a tier above what a Seal’s stat can reach', () => {
-    const peak = buildRatedAgentPayload({
-      vessel: { ...vessel, stats: { ...STATS, power: 100 } },
-      balances: resolved({ balances: { spirit: 0, essence: 0, matter: 0, substance: 1000 } }),
-      sky,
-    })
-    const crucible = peak.seals.find(s => s.id === 'crucible-finisher')!
-    expect(crucible).toMatchObject({
-      tier: 'Aether',
-      nextTier: null,
-      blockedBy: [],
-      maxTier: 'Aether',
-    })
-  })
-
-  it('reads the surge from the live sky, the vessel’s chart against it, and the sky’s Monica', () => {
-    expect(payload.surge).toEqual(surgeFor(sky))
-    expect(payload.surge!.harmonyOffset).toBe(2.4) // mean elemental relation 0.2 of ±12
-
-    const hot = buildRatedAgentPayload({ vessel, balances: resolved(), sky: hotSky })
-    expect(hot.surge).toEqual(surgeFor(hotSky))
-    expect(hot.surge).toMatchObject({
-      active: true,
-      meter: 100,
-      monicaState: 'convergent',
-      statBoosts: { resonance: 10, charisma: 10 },
+  describe('seals', () => {
+    it('earns, from these stats and holdings, exactly the three Seals the contract builds', () => {
+      expect(payload.seals).toEqual([
+        buildCanonicalSeal('power', 'Copper'),
+        buildCanonicalSeal('intuition', 'Astral'),
+        buildCanonicalSeal('vitality', 'Copper'),
+      ])
+      expect(payload.seals.map(s => [s.id, s.tier, s.category, s.multiplier])).toEqual([
+        ['seal-power', 'Copper', 'substance', 1.05],
+        ['seal-intuition', 'Astral', 'spirit', 1.28],
+        ['seal-vitality', 'Copper', 'matter', 1.05],
+      ])
+      expect(payload.seals.map(s => s.name)).toEqual([
+        CANONICAL_SEAL_CATALOG.power.name,
+        'Astral Vision',
+        'Immovable Foundation',
+      ])
     })
 
-    const absentMonica = buildRatedAgentPayload({
-      vessel,
-      balances: resolved(),
-      sky: { ...hotSky, monica: null },
+    it('gives every earned Seal the full contract shape, and nothing else', () => {
+      for (const seal of payload.seals) {
+        expect(Object.keys(seal).sort()).toEqual([
+          'category',
+          'description',
+          'id',
+          'multiplier',
+          'name',
+          'statKey',
+          'tier',
+        ])
+      }
     })
-    expect(absentMonica.surge!.monicaState).toBe('absent')
-    expect(absentMonica.sky!.monica).toBeNull()
-  })
 
-  it('echoes the sky the surge was read from, field for field', () => {
-    expect(payload.sky).toStrictEqual({
-      source: 'swiss-ephemeris',
-      at: '2026-10-15T05:43:00.000Z',
-      heat: sky.thermodynamics.heat,
-      reactivity: sky.thermodynamics.reactivity,
-      monica: sky.monica,
+    it('is the earned subset of sealProgress, built by the contract per stat and tier', () => {
+      expect(payload.seals).toEqual(earnedSeals(payload.sealProgress))
+      const expected = payload.sealProgress
+        .filter(progress => progress.tier !== null)
+        .map(progress => buildCanonicalSeal(progress.stat, progress.tier!))
+      expect(payload.seals).toEqual(expected)
+      expect(payload.seals.length).toBeLessThan(payload.sealProgress.length)
     })
-    expect(sky.thermodynamics.heat).not.toBe(sky.thermodynamics.reactivity)
 
-    const hot = buildRatedAgentPayload({ vessel, balances: resolved(), sky: hotSky })
-    expect(hot.sky).toStrictEqual({
-      source: 'swiss-ephemeris',
-      at: '2026-10-15T05:43:00.000Z',
-      heat: 0.2,
-      reactivity: 4,
-      monica: 2.5,
+    it('reports every catalog Seal in the contract’s stat order, earned or not', () => {
+      expect(payload.sealProgress.map(p => p.id)).toEqual(SACRED_STAT_KEYS.map(k => `seal-${k}`))
+      expect(payload.sealProgress.map(p => p.stat)).toEqual([...SACRED_STAT_KEYS])
+      expect(payload.sealProgress.map(p => p.tier)).toEqual([
+        'Copper',
+        null,
+        null,
+        null,
+        'Astral',
+        null,
+        'Copper',
+      ])
+      expect(payload.sealProgress.map(p => p.token)).toEqual([
+        'substance',
+        'essence',
+        'matter',
+        'essence',
+        'spirit',
+        'spirit',
+        'matter',
+      ])
     })
-    const approximated = buildRatedAgentPayload({
-      vessel,
-      balances: resolved(),
-      sky: { ...sky, source: 'vsop87-approximation' },
-    })
-    expect(approximated.sky!.source).toBe('vsop87-approximation')
-  })
 
-  it('scores every zone with the Seals, the stats and the surge together', () => {
-    const vessels: [string, CoreStats][] = [
-      [
-        'power-led',
-        {
-          power: 95,
-          resonance: 40,
-          wisdom: 40,
-          charisma: 40,
-          intuition: 40,
-          adaptability: 40,
-          vitality: 85,
-        },
-      ],
-      [
-        'intuition-led',
-        {
-          power: 40,
-          resonance: 40,
-          wisdom: 85,
-          charisma: 40,
-          intuition: 95,
-          adaptability: 40,
-          vitality: 40,
-        },
-      ],
-      [
-        'adaptability-led',
-        {
-          power: 40,
-          resonance: 40,
-          wisdom: 60,
-          charisma: 40,
-          intuition: 70,
-          adaptability: 95,
-          vitality: 40,
-        },
-      ],
-    ]
-    const best = new Set<number>()
-    for (const [label, stats] of vessels) {
-      const rich = { spirit: 300, essence: 300, matter: 300, substance: 300 }
-      const built = buildRatedAgentPayload({
-        vessel: { ...vessel, stats },
-        balances: resolved({ balances: rich }),
-        sky: hotSky,
+    it('says which Seals can never reach Celestial: power tops out at Gold, the rest can reach it', () => {
+      expect(payload.sealProgress.map(p => p.maxTier)).toEqual([
+        'Gold', // Crucible Finisher: a perfect power aligns to 90.5, short of Astral's 91
+        'Celestial',
+        'Celestial',
+        'Celestial',
+        'Celestial',
+        'Celestial',
+        'Celestial',
+      ])
+    })
+
+    it('pins the standing of the intuition and power Seals', () => {
+      const progress = (stat: string) => payload.sealProgress.find(p => p.stat === stat)!
+      // intuition 90 → rating 92 → aligned 92 − 66 + 68 = 94: Astral (91) with 60 spirit (50),
+      // short of Celestial on stat (96), balance (250) and the chart (3 Fire bodies of 4).
+      expect(progress('intuition')).toMatchObject({
+        id: 'seal-intuition',
+        name: 'Astral Vision',
+        token: 'spirit',
+        tier: 'Astral',
+        nextTier: 'Celestial',
+        blockedBy: ['stat', 'esms', 'natal'],
+        maxTier: 'Celestial',
+        statRating: 92,
+        alignedRating: 94,
+        balance: 60,
+        natalAffinity: 3,
       })
-      const seals = evaluateSeals({ stats, esmsBalances: rich, natalChart: CHART })
-      const surge = surgeFor(hotSky)
-      const contestant = { stats, seals, surge }
-
-      expect(built.zoneSynergies, label).toEqual(computeZoneSynergies(contestant))
-      expect(built.bestZoneId, label).toBe(bestZoneId(contestant))
-      expect(built.zoneSynergies[built.bestZoneId].synergy, label).toBe(
-        Math.max(...built.zoneSynergies.map(z => z.synergy))
-      )
-      // Each ingredient matters: leaving any one out gives different zones.
-      expect(built.zoneSynergies, label).not.toEqual(
-        computeZoneSynergies({ stats, seals, surge: null })
-      )
-      expect(built.zoneSynergies, label).not.toEqual(
-        computeZoneSynergies({ stats, seals: [], surge })
-      )
-      expect(built.zoneSynergies, label).not.toEqual(
-        computeZoneSynergies({ stats: vessel.stats, seals, surge })
-      )
-      best.add(built.bestZoneId)
-    }
-    expect(best.size).toBeGreaterThan(1) // not one zone for every build
-  })
-
-  it('has no degraded key when the sky and the holdings were both read cleanly', () => {
-    expect(Object.hasOwn(payload, 'degraded')).toBe(false)
-    expect('degraded' in JSON.parse(JSON.stringify(payload))).toBe(false)
-    const ignored = buildRatedAgentPayload({
-      vessel,
-      balances: resolved(),
-      sky,
-      skyError: 'ignored',
+      // power 80 → rating 84 → aligned 84 − 76.5 + 68 = 75.5: Copper (74) with 30 substance;
+      // Silver needs 80 on stat.
+      expect(progress('power')).toMatchObject({
+        id: 'seal-power',
+        name: 'Crucible Finisher',
+        token: 'substance',
+        tier: 'Copper',
+        nextTier: 'Silver',
+        blockedBy: ['stat'],
+        maxTier: 'Gold',
+        statRating: 84,
+        alignedRating: 75.5,
+        balance: 30,
+        natalAffinity: 2,
+      })
+      expect(progress('resonance')).toMatchObject({
+        tier: null,
+        nextTier: 'Copper',
+        alignedRating: 56,
+      })
     })
-    expect(Object.hasOwn(ignored, 'degraded')).toBe(false)
-  })
 
-  it('reports an unreadable ledger as degraded.esms alone, with the resolver’s own words', () => {
-    const built = buildRatedAgentPayload({
-      vessel,
-      balances: resolved({
-        esmsSource: 'fallback',
-        degraded: { reason: 'owner wallet is private' },
-      }),
-      sky,
+    it('stops advertising a tier above what a Seal’s stat can reach', () => {
+      const peak = build(null, {
+        vessel: { ...vessel, stats: { ...STATS, power: 100 } },
+        balances: resolved({ balances: { spirit: 0, essence: 0, matter: 0, substance: 1000 } }),
+      })
+      expect(peak.sealProgress.find(p => p.stat === 'power')).toMatchObject({
+        tier: 'Gold',
+        nextTier: null,
+        blockedBy: [],
+        maxTier: 'Gold',
+      })
     })
-    expect(built.degraded).toStrictEqual({ esms: 'owner wallet is private' })
-    expect(built.esmsSource).toBe('fallback')
-    expect(built.surge).not.toBeNull()
-  })
 
-  it('reports a missing sky as degraded.sky alone, with a default or the caller’s reason', () => {
-    const plain = buildRatedAgentPayload({ vessel, balances: resolved(), sky: null })
-    expect(plain.degraded).toStrictEqual({ sky: 'live sky unavailable' })
-    expect(plain.surge).toBeNull()
-    expect(plain.sky).toBeNull()
-
-    const explained = buildRatedAgentPayload({
-      vessel,
-      balances: resolved(),
-      sky: null,
-      skyError: 'The sky is incomplete (Pluto)',
+    it('reads the stats, the holdings and the chart from the vessel and the resolved balances', () => {
+      // Poorer holdings: no spirit or substance, so neither the Astral nor the power Copper Seal.
+      const poor = build(null, {
+        balances: resolved({ balances: { ...HOLDINGS, spirit: 0, substance: 0 } }),
+      })
+      expect(poor.seals.map(s => s.id)).toEqual(['seal-vitality'])
+      const none = build(null, { balances: resolved({ balances: ZERO_HOLDINGS }) })
+      expect(none.seals).toEqual([])
+      expect(none.sealProgress).toHaveLength(7)
+      // Weaker stats: intuition falls from Astral.
+      const weak = build(null, { vessel: { ...vessel, stats: { ...STATS, intuition: 70 } } })
+      expect(weak.sealProgress.find(p => p.stat === 'intuition')!.tier).not.toBe('Astral')
+      // No chart: no Seal reports a natal affinity.
+      const chartless = build(null, { vessel: { ...vessel, natalChart: null } })
+      expect(payload.sealProgress.every(p => p.natalAffinity !== null)).toBe(true)
+      expect(chartless.sealProgress.every(p => p.natalAffinity === null)).toBe(true)
+      expect(chartless.seals).toEqual(payload.seals) // …and no tier below Celestial depends on it
     })
-    expect(explained.degraded).toStrictEqual({ sky: 'The sky is incomplete (Pluto)' })
-  })
 
-  it('reports both when both reads were degraded', () => {
-    const both = buildRatedAgentPayload({
-      vessel,
-      balances: resolved({ esmsSource: 'fallback', degraded: { reason: 'no ledger row' } }),
-      sky: null,
-      skyError: 'sky offline',
+    it('lets the chart open Celestial where the stat and the balance already clear it', () => {
+      const maxed: CoreStats = { ...STATS, intuition: 100, adaptability: 100 }
+      const rich = resolved({ balances: { ...HOLDINGS, spirit: 300 } })
+      const fire = { planets: signsOf(['Aries', 'Leo', 'Sagittarius', 'Aries', 'Leo', 'Sagittarius', 'Aries', 'Leo', 'Sagittarius', 'Aries']) } // prettier-ignore
+      const opened = build(null, {
+        vessel: { ...vessel, stats: maxed, natalChart: fire },
+        balances: rich,
+      })
+      const closed = build(null, { vessel: { ...vessel, stats: maxed }, balances: rich })
+      expect(opened.seals.find(s => s.statKey === 'intuition')!.tier).toBe('Celestial')
+      expect(closed.seals.find(s => s.statKey === 'intuition')!.tier).toBe('Astral') // 3 Fire bodies
     })
-    expect(both.degraded).toStrictEqual({ esms: 'no ledger row', sky: 'sky offline' })
-    // Everything not read from the sky or the ledger is unchanged by either failure.
-    expect(both.ovr).toBe(payload.ovr)
-    expect(both.ratings).toEqual(payload.ratings)
-    expect(both.archetype).toEqual(payload.archetype)
-    expect(both.appearance).toBe(vessel.appearance)
   })
 
-  it('drops the surge’s lift, and only the surge’s, from the zones when the sky is gone', () => {
-    const calm = buildRatedAgentPayload({ vessel, balances: resolved(), sky: null })
-    const seals = evaluateSeals({ stats: STATS, esmsBalances: HOLDINGS, natalChart: CHART })
-    expect(calm.zoneSynergies).toEqual(computeZoneSynergies({ stats: STATS, seals, surge: null }))
-    expect(calm.bestZoneId).toBe(bestZoneId({ stats: STATS, seals, surge: null }))
-    expect(calm.seals).toEqual(seals)
+  describe('surge', () => {
+    const surgeOf = (liveSky: LiveSky) => build(liveSky).surge!
+    const BASE_BOOST = { power: 8, resonance: 4, wisdom: 4, charisma: 4, intuition: 12, adaptability: 4, vitality: 4 } // prettier-ignore
+
+    it('is built from the live sky, the vessel’s chart against it, the sky’s Monica and the vessel’s archetype', () => {
+      const surge = surgeOf(neutralHot)
+      expect(surge).toEqual(
+        calculateResonanceSurge({
+          thermodynamics: neutralHot.thermodynamics,
+          monica: neutralHot.monica,
+          archetype: { primary: 'intuition', secondary: 'power' },
+          natalChart: CHART,
+          sky: neutralHot.bodies,
+        })
+      )
+    })
+
+    it('pins a neutral hot sky: meter 80, active, an inferno, boosts led by the vessel’s primary and secondary', () => {
+      const surge = surgeOf(neutralHot)
+      expect(surge).toMatchObject({
+        meter: 80,
+        active: true,
+        surgeType: 'inferno',
+        monica: 0.5,
+        monicaState: 'convergent',
+        heat: 1,
+        harmonyOffset: 0,
+        statBoosts: BASE_BOOST,
+      })
+      expect(surge.skyMeter).toBeCloseTo(80, 9)
+      expect(surge.reactivity).toBeCloseTo(0.6, 9) // a ramp position, not the raw 2.376
+    })
+
+    it('boosts the primary by 12 and the secondary by 8 for whichever archetype the vessel has', () => {
+      const power = build(neutralHot, {
+        vessel: { ...vessel, stats: { ...STATS, power: 95, vitality: 85, intuition: 40 } },
+      })
+      expect(power.archetype.primary).toBe('power')
+      expect(power.archetype.secondary).toBe('vitality')
+      expect(power.surge!.statBoosts).toEqual({
+        power: 12,
+        resonance: 4,
+        wisdom: 4,
+        charisma: 4,
+        intuition: 4,
+        adaptability: 4,
+        vitality: 8,
+      })
+    })
+
+    it('moves the meter by the chart’s harmony with the sky: kin +12, foe −12, neutral 0', () => {
+      const aligned = surgeOf(makeSky(...HOT, 0.5, NATAL))
+      expect(aligned.harmonyOffset).toBe(12)
+      expect(aligned.meter).toBe(92)
+      expect(aligned.active).toBe(true)
+      const opposed = surgeOf(makeSky(...HOT, 0.5, OPPOSED))
+      expect(opposed.harmonyOffset).toBe(-12)
+      expect(opposed.meter).toBe(68)
+      expect(opposed.skyMeter).toBeCloseTo(80, 9) // the shared sky is the same; only the chart differs
+    })
+
+    it('does not ignite when the chart’s harmony pulls the meter under 70, and boosts nothing', () => {
+      const opposed = surgeOf(makeSky(...HOT, 0.5, OPPOSED))
+      expect(opposed.active).toBe(false)
+      expect(opposed.statBoosts).toEqual({})
+      expect(opposed.surgeType).toBe('inferno')
+    })
+
+    it('reads a chartless vessel and a placeholder chart as a neutral one, offset 0', () => {
+      const chartless = build(makeSky(...HOT, 0.5, NATAL), {
+        vessel: { ...vessel, natalChart: null },
+      })
+      expect(chartless.surge!.harmonyOffset).toBe(0)
+      expect(chartless.surge!.meter).toBe(80)
+      const placeholder = build(makeSky(...HOT, 0.5, NATAL), {
+        vessel: { ...vessel, natalChart: { ...CHART, provenance: 'placeholder' } },
+      })
+      expect(placeholder.surge!.harmonyOffset).toBe(0)
+    })
+
+    it('makes a tempest when the reactivity ramp leads the heat ramp', () => {
+      const tempest = surgeOf(makeSky(0.04, 3.6, null, NATAL))
+      // heat share (0.04 − 0.0184)/0.097 ≈ 0.223, reactivity share 1: a sky meter of ≈ 61.1, +12.
+      expect(tempest.meter).toBe(73)
+      expect(tempest.active).toBe(true)
+      expect(tempest.surgeType).toBe('tempest')
+      expect(tempest.statBoosts).toEqual(BASE_BOOST)
+      expect(tempest.heat).toBeLessThan(tempest.reactivity)
+    })
+
+    it('upgrades an active surge at Monica equilibrium, with the larger boosts', () => {
+      const equilibrium = surgeOf(makeSky(...HOT, 1.618, NEUTRAL))
+      expect(equilibrium).toMatchObject({
+        active: true,
+        surgeType: 'equilibrium',
+        monica: 1.618,
+        monicaState: 'equilibrium',
+        statBoosts: {
+          power: 12,
+          resonance: 8,
+          wisdom: 8,
+          charisma: 8,
+          intuition: 16,
+          adaptability: 8,
+          vitality: 8,
+        },
+      })
+      // An inactive surge does not upgrade, whatever the Monica.
+      const inactive = surgeOf(makeSky(...HOT, 1.618, OPPOSED))
+      expect(inactive).toMatchObject({
+        active: false,
+        surgeType: 'inferno',
+        monicaState: 'equilibrium',
+      })
+      expect(inactive.statBoosts).toEqual({})
+    })
+
+    it('classifies the sky’s Monica: absent when null, convergent when positive', () => {
+      expect(surgeOf(makeSky(...HOT, 0.5, NEUTRAL)).monicaState).toBe('convergent')
+      const absent = surgeOf(makeSky(...HOT, null, NEUTRAL))
+      expect(absent.monicaState).toBe('absent')
+      expect(absent.monica).toBeNull()
+      expect(absent.active).toBe(true) // an absent Monica never quiets a surge
+      expect(build(makeSky(...HOT, null, NEUTRAL)).sky!.monica).toBeNull()
+    })
+
+    it('refuses a broken sky instead of reporting a calm surge', () => {
+      expect(() => build(makeSky(Number.NaN, 2, 0.5, NEUTRAL))).toThrow(RangeError)
+      expect(() => build(makeSky(0.1, Number.POSITIVE_INFINITY, 0.5, NEUTRAL))).toThrow(RangeError)
+      expect(() => build(makeSky(0.1, 2, Number.NaN, NEUTRAL))).toThrow(RangeError)
+    })
+
+    it('echoes the sky the surge was read from, field for field', () => {
+      expect(payload.sky).toStrictEqual({
+        source: 'swiss-ephemeris',
+        at: '2026-10-15T05:43:00.000Z',
+        heat: 0.12,
+        reactivity: 2.376,
+        monica: 0.5,
+      })
+      const approximated = build({ ...neutralHot, source: 'vsop87-approximation' })
+      expect(approximated.sky!.source).toBe('vsop87-approximation')
+      // The echo carries the engine's raw figures, the surge their ramp positions.
+      expect(payload.sky!.heat).not.toBe(payload.surge!.heat)
+      expect(payload.sky!.reactivity).not.toBe(payload.surge!.reactivity)
+    })
   })
 
-  it('serves the vessel’s own look', () => {
-    expect(payload.appearance).toBe(vessel.appearance)
+  describe('zones', () => {
+    // Worked on paper from the ratings above and the zone weights: zone 3 has weights
+    // 25 / 20 / 5 / 5 / 5 / 5 / 35 and no Essence Seal, so calm it is
+    // .25·84 + .20·55 + .05·(73 + 66 + 92 + 47) + .35·77 = 72.85. Zone 2 (Fire) takes the Astral
+    // Spirit Seal's ×1.28 on 75.2 → 96.26. An active inferno adds +8 / +4 / +4 / +4 / +12 / +4 / +4
+    // (intuition clamped at 99), which makes zone 3 .25·92 + .20·59 + .05·(77 + 70 + 99 + 51) +
+    // .35·81 = 78.
+    const CALM = [79.33, 75.97, 96.26, 72.85, 82.69, 75.29, 70.77, 96.58, 88.19, 71.2, 69.4]
+    const ACTIVE = [84.74, 81.8, 103.36, 78, 88.78, 80.33, 76.02, 103.55, 94.34, 76.3, 74.27]
+
+    it('pins every zone’s synergy for the calm vessel and for the vessel under an active surge', () => {
+      expect(calm.zoneSynergies.map(z => z.synergy)).toEqual(CALM)
+      expect(payload.zoneSynergies.map(z => z.synergy)).toEqual(ACTIVE)
+      expect(calm.bestZoneId).toBe(7)
+      expect(payload.bestZoneId).toBe(7)
+      expect(calm.zoneSynergies.map(z => z.zoneId)).toEqual([0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10])
+    })
+
+    it('does not light the surge when it did not ignite: the zones are the calm ones', () => {
+      const inactive = build(makeSky(...HOT, 0.5, OPPOSED))
+      expect(inactive.surge!.active).toBe(false)
+      expect(inactive.zoneSynergies.map(z => z.synergy)).toEqual(CALM)
+    })
+
+    it('lets the surge change which zone is best, not only the scores', () => {
+      // Found by searching stat vectors: calm, these stats put zone 10 first; under the active
+      // inferno (resonance leads, so it takes +12, power +8, the rest +4) zone 3 takes the lead.
+      const stats: CoreStats = {
+        power: 78,
+        resonance: 85,
+        wisdom: 18,
+        charisma: 47,
+        intuition: 34,
+        adaptability: 71,
+        vitality: 18,
+      }
+      const lit = build(neutralHot, { vessel: { ...vessel, stats } })
+      const quiet = build(null, { vessel: { ...vessel, stats } })
+      expect(lit.surge!.active).toBe(true)
+      expect(lit.archetype.primary).toBe('resonance')
+      expect(quiet.bestZoneId).toBe(10)
+      expect(lit.bestZoneId).toBe(3)
+      expect(lit.bestZoneId).toBe(
+        bestZoneId({ ratings: lit.ratings, seals: lit.seals, surge: lit.surge })
+      )
+      expect(lit.bestZoneId).not.toBe(
+        bestZoneId({ ratings: lit.ratings, seals: lit.seals, surge: null })
+      )
+      expect(lit.zoneSynergies[lit.bestZoneId].synergy).toBe(
+        Math.max(...lit.zoneSynergies.map(z => z.synergy))
+      )
+    })
+
+    it('equals the contest engine on the rated vessel, its earned Seals and its surge', () => {
+      const contestant = { ratings: RATINGS, seals: payload.seals, surge: payload.surge }
+      expect(payload.zoneSynergies).toEqual(computeZoneSynergies(contestant))
+      expect(payload.bestZoneId).toBe(bestZoneId(contestant))
+      expect(calm.zoneSynergies).toEqual(
+        computeZoneSynergies({ ratings: RATINGS, seals: calm.seals, surge: null })
+      )
+    })
+
+    it('scores every build with its Seals, ratings and surge together, and each ingredient matters', () => {
+      const builds: [string, CoreStats][] = [
+        ['power-led', { power: 95, resonance: 40, wisdom: 40, charisma: 40, intuition: 40, adaptability: 40, vitality: 85 }], // prettier-ignore
+        ['intuition-led', { power: 40, resonance: 40, wisdom: 85, charisma: 40, intuition: 95, adaptability: 40, vitality: 40 }], // prettier-ignore
+        ['adaptability-led', { power: 40, resonance: 40, wisdom: 60, charisma: 40, intuition: 70, adaptability: 95, vitality: 40 }], // prettier-ignore
+      ]
+      const best = new Set<number>()
+      const rich = { spirit: 300, essence: 300, matter: 300, substance: 300 }
+      for (const [label, stats] of builds) {
+        const built = build(neutralHot, {
+          vessel: { ...vessel, stats },
+          balances: resolved({ balances: rich }),
+        })
+        const ratings = ratingsOf(stats)
+        const seals = earnedSeals(evaluateSeals({ stats, esmsBalances: rich, natalChart: CHART }))
+        const surge = built.surge!
+        const contestant = { ratings, seals, surge }
+        expect(built.seals, label).toEqual(seals)
+        expect(built.zoneSynergies, label).toEqual(computeZoneSynergies(contestant))
+        expect(built.bestZoneId, label).toBe(bestZoneId(contestant))
+        expect(built.zoneSynergies[built.bestZoneId].synergy, label).toBe(
+          Math.max(...built.zoneSynergies.map(z => z.synergy))
+        )
+        // Leaving any ingredient out gives different zones.
+        expect(built.zoneSynergies, label).not.toEqual(
+          computeZoneSynergies({ ratings, seals, surge: null })
+        )
+        expect(built.zoneSynergies, label).not.toEqual(
+          computeZoneSynergies({ ratings, seals: [], surge })
+        )
+        expect(built.zoneSynergies, label).not.toEqual(
+          computeZoneSynergies({ ratings: RATINGS, seals, surge })
+        )
+        best.add(built.bestZoneId)
+      }
+      expect(best.size).toBeGreaterThan(1) // not one zone for every build
+    })
+
+    it('drops the surge’s lift, and only the surge’s, from the zones when the sky is gone', () => {
+      const seals = [
+        buildCanonicalSeal('power', 'Copper'),
+        buildCanonicalSeal('intuition', 'Astral'),
+        buildCanonicalSeal('vitality', 'Copper'),
+      ]
+      expect(calm.zoneSynergies).toEqual(
+        computeZoneSynergies({ ratings: RATINGS, seals, surge: null })
+      )
+      expect(calm.bestZoneId).toBe(bestZoneId({ ratings: RATINGS, seals, surge: null }))
+      expect(calm.seals).toEqual(seals)
+    })
+  })
+
+  describe('degraded reads', () => {
+    it('has no degraded key when the sky and the holdings were both read cleanly', () => {
+      expect(Object.hasOwn(payload, 'degraded')).toBe(false)
+      expect('degraded' in JSON.parse(JSON.stringify(payload))).toBe(false)
+      const ignored = build(neutralHot, { skyError: 'ignored' })
+      expect(Object.hasOwn(ignored, 'degraded')).toBe(false)
+    })
+
+    it('reports an unreadable ledger as degraded.esms alone, with the resolver’s own words', () => {
+      const built = build(neutralHot, {
+        balances: resolved({
+          esmsSource: 'fallback',
+          degraded: { reason: 'owner wallet is private' },
+        }),
+      })
+      expect(built.degraded).toStrictEqual({ esms: 'owner wallet is private' })
+      expect(built.esmsSource).toBe('fallback')
+      expect(built.surge).not.toBeNull()
+    })
+
+    it('reports a missing sky as degraded.sky alone, with a default or the caller’s reason', () => {
+      expect(calm.degraded).toStrictEqual({ sky: 'live sky unavailable' })
+      expect(calm.surge).toBeNull()
+      expect(calm.sky).toBeNull()
+      const explained = build(null, { skyError: 'The sky is incomplete (Pluto)' })
+      expect(explained.degraded).toStrictEqual({ sky: 'The sky is incomplete (Pluto)' })
+    })
+
+    it('reports both when both reads were degraded, and leaves the rest of the payload alone', () => {
+      const both = build(null, {
+        balances: resolved({ esmsSource: 'fallback', degraded: { reason: 'no ledger row' } }),
+        skyError: 'sky offline',
+      })
+      expect(both.degraded).toStrictEqual({ esms: 'no ledger row', sky: 'sky offline' })
+      expect(both.ovr).toBe(payload.ovr)
+      expect(both.ratings).toEqual(payload.ratings)
+      expect(both.archetype).toEqual(payload.archetype)
+      expect(both.appearance).toEqual(look)
+      expect(both.surge).toBeNull()
+      expect(both.sky).toBeNull()
+    })
+  })
+
+  describe('the payload’s keys', () => {
+    /** The keys of the contract's `RatedAgentPayload` that a healthy rating always carries. */
+    const CONTRACT_KEYS = [
+      'key',
+      'handle',
+      'faction',
+      'factionName',
+      'isPlaceholder',
+      'provenance',
+      'appearance',
+      'ratings',
+      'relativeAdvantage',
+      'ovr',
+      'archetype',
+      'esms',
+      'seals',
+      'surge',
+    ]
+    /** What only a live, server-side rating adds on top of the contract. */
+    const EXTENSION_KEYS = [
+      'scale',
+      'sealProgress',
+      'esmsSource',
+      'zoneSynergies',
+      'bestZoneId',
+      'sky',
+    ]
+
+    it('has every key the contract’s own fixtures carry', () => {
+      for (const fixture of FIXTURE_AGENTS) {
+        expect(Object.keys(fixture), fixture.key).toEqual(expect.arrayContaining(CONTRACT_KEYS))
+      }
+    })
+
+    it('is exactly the contract’s keys and the extensions for a healthy vessel without models', () => {
+      expect(Object.keys(payload).sort()).toEqual([...CONTRACT_KEYS, ...EXTENSION_KEYS].sort())
+    })
+
+    it('adds degraded, and only degraded, for a degraded one; and the model URLs only when present', () => {
+      expect(Object.keys(calm).sort()).toEqual(
+        [...CONTRACT_KEYS, ...EXTENSION_KEYS, 'degraded'].sort()
+      )
+      const meshed = build(neutralHot, {
+        vessel: { ...vessel, avatarModelUrl: '/m.glb', headMeshUrl: '/h.glb' },
+      })
+      expect(Object.keys(meshed).sort()).toEqual(
+        [...CONTRACT_KEYS, ...EXTENSION_KEYS, 'avatarModelUrl', 'headMeshUrl'].sort()
+      )
+    })
+
+    it('shapes the surge as the contract’s state plus how its meter was reached', () => {
+      expect(Object.keys(payload.surge!).sort()).toEqual([
+        'active',
+        'harmonyOffset',
+        'heat',
+        'meter',
+        'monica',
+        'monicaState',
+        'reactivity',
+        'skyMeter',
+        'statBoosts',
+        'surgeType',
+      ])
+      for (const fixture of FIXTURE_AGENTS) {
+        expect(Object.keys(payload.surge!), fixture.key).toEqual(
+          expect.arrayContaining(Object.keys(fixture.surge))
+        )
+      }
+    })
+
+    it('shapes the Seals, the rating and the esms as the contract’s fixtures do', () => {
+      for (const fixture of FIXTURE_AGENTS) {
+        expect(Object.keys(payload.ratings).sort(), fixture.key).toEqual(
+          Object.keys(fixture.ratings).sort()
+        )
+        expect(Object.keys(payload.relativeAdvantage).sort(), fixture.key).toEqual(
+          Object.keys(fixture.relativeAdvantage).sort()
+        )
+        expect(Object.keys(payload.esms).sort(), fixture.key).toEqual(
+          Object.keys(fixture.esms).sort()
+        )
+        expect(Object.keys(payload.archetype).sort(), fixture.key).toEqual(
+          Object.keys(fixture.archetype).sort()
+        )
+        for (const seal of fixture.seals) {
+          expect(Object.keys(payload.seals[0]).sort(), fixture.key).toEqual(
+            Object.keys(seal).sort()
+          )
+        }
+      }
+    })
+
+    it('names no tier but the contract’s, and none of the retired one', () => {
+      const rich = build(neutralHot, { balances: resolved({ balances: RICH }) })
+      const tiers = new Set<string>([
+        ...rich.seals.map(s => s.tier),
+        ...rich.sealProgress.flatMap(p => [p.tier, p.nextTier, p.maxTier]).filter(t => t !== null),
+      ])
+      expect(tiers.size).toBeGreaterThan(1)
+      for (const tier of tiers) expect(SEAL_TIERS as readonly string[]).toContain(tier)
+    })
   })
 })
+
+// ─── asContractPayload ───────────────────────────────────────────────────────
+
+describe('asContractPayload', () => {
+  const vessel = ratableFromRoster(newton)
+  const at = (liveSky: LiveSky | null) =>
+    buildRatedAgentPayload({ vessel, balances: balances(vessel.agentId), sky: liveSky })
+
+  it('is null for a payload without a surge: the contract has no calm-looking stand-in', () => {
+    expect(asContractPayload(at(null))).toBeNull()
+  })
+
+  it('is a payload with every key the contract’s fixtures carry, and the surge in it', () => {
+    const payload = at(sky)
+    const contract: RatedAgentPayload = asContractPayload(payload)!
+    expect(contract).not.toBeNull()
+    for (const fixture of FIXTURE_AGENTS) {
+      for (const key of Object.keys(fixture).filter(k => k !== 'portraitUrl')) {
+        expect(Object.hasOwn(contract, key), `${fixture.key}.${key}`).toBe(true)
+      }
+    }
+    expect(contract.surge).toBe(payload.surge)
+    expect(contract.key).toBe('isaac-newton')
+    expect(contract.handle).toBe('Isaac Newton')
+    expect(contract.faction).toBe(6)
+    expect(contract.factionName).toBe('Saturn')
+    expect(contract.ratings).toEqual(payload.ratings)
+    expect(contract.seals).toEqual(payload.seals)
+    expect(contract.esms).toEqual(payload.esms)
+    expect(contract.appearance).toEqual(payload.appearance)
+    expect(contract.provenance).toBe('historical')
+    expect(contract.isPlaceholder).toBe(false)
+  })
+
+  it('carries the whole payload, and the extensions ride along unchanged', () => {
+    const payload = at(sky)
+    const contract = asContractPayload(payload)!
+    expect(contract).toEqual(payload)
+    expect(contract).toHaveProperty('sealProgress', payload.sealProgress)
+    expect(contract).toHaveProperty('zoneSynergies', payload.zoneSynergies)
+  })
+})
+
+// ─── summarizeVessel ─────────────────────────────────────────────────────────
 
 describe('summarizeVessel, field by field', () => {
   const vessel: RatableVessel = {
@@ -2070,35 +3247,54 @@ describe('summarizeVessel, field by field', () => {
       vitality: 70,
     },
     natalChart: null,
-    appearance: getVesselAppearance('isaac-newton')!,
+    faction: 5,
+    isPlaceholder: false,
+    provenance: 'user',
+    appearance: resolveAgentAppearance('isaac-newton'),
   }
 
-  it('is one light row of the vessel’s id, name, overall, archetype and three look fields', () => {
+  it('is one light row of the vessel’s key, handle, faction, overall, archetype and three look fields', () => {
     const row = summarizeVessel(vessel)
     expect(row).toStrictEqual({
-      agentId: 'row-vessel',
-      name: 'Row Vessel',
-      ovr: 73,
-      archetype: {
-        kind: 'specialist',
-        primary: 'intuition',
-        secondary: 'vitality',
-        title: 'Verdant Seer',
-      },
+      key: 'row-vessel',
+      handle: 'Row Vessel',
+      faction: 5,
+      factionName: 'Jupiter',
+      ovr: 82,
+      archetype: { title: 'Prescient Ingressor', primary: 'intuition', secondary: 'power' },
       era: 'enlightenment',
       crownStyle: 'newton-curls',
       signatureRelic: 'prism-octahedron',
     })
-    expect(row.ovr).toBe(rateStats(vessel.stats).ovr)
-    expect(row.archetype).toEqual(rateStats(vessel.stats).archetype)
+    const ratings = ratingsOf(vessel.stats)
+    expect(row.ovr).toBe(computeOvr(ratings))
+    expect(row.archetype).toEqual(resolveArchetype(computeRelativeAdvantage(ratings)))
   })
 
   it('takes the look from the vessel and the rating from its stats, not the other way round', () => {
-    const other = appearanceFromSeed('another-vessel', 'power', 'romantic')
+    const other = resolveAgentAppearance('albert-einstein')
     const row = summarizeVessel({ ...vessel, appearance: other })
-    expect(row.era).toBe('romantic')
+    expect(row.era).toBe('modern')
     expect(row.crownStyle).toBe(other.headSilhouette.crownStyle)
     expect(row.signatureRelic).toBe(other.signatureRelic)
-    expect(row.ovr).toBe(73)
+    expect(row.ovr).toBe(82)
+  })
+
+  it('agrees with the full payload on the overall, the archetype and the faction', () => {
+    for (const agent of HISTORICAL_AGENTS.slice(0, 20)) {
+      const rosterVessel = ratableFromRoster(agent)
+      const row = summarizeVessel(rosterVessel)
+      const payload = buildRatedAgentPayload({
+        vessel: rosterVessel,
+        balances: balances(agent.id),
+        sky: null,
+      })
+      expect(row.key, agent.id).toBe(payload.key)
+      expect(row.handle, agent.id).toBe(payload.handle)
+      expect(row.ovr, agent.id).toBe(payload.ovr)
+      expect(row.archetype, agent.id).toEqual(payload.archetype)
+      expect(row.faction, agent.id).toBe(payload.faction)
+      expect(row.factionName, agent.id).toBe(payload.factionName)
+    }
   })
 })

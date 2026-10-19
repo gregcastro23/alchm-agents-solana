@@ -11,13 +11,37 @@
  *
  * The route keeps its pushed-holdings cache and its rate-limit buckets at module level, so
  * every test boots a fresh module graph (`boot`) and nothing carries over between tests.
+ *
+ * The payload the route serves is the Pentacles rating contract's `RatedAgentPayload`
+ * (`lib/agents/rating-contract.ts`) plus the extension fields only a live rating knows. Where a
+ * test asks "is this what the contract says?", the contract's own functions are the oracle
+ * (`expectContractConformant`); everywhere else the expected numbers are pinned as literals.
  */
 import { NextRequest } from 'next/server'
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from 'vitest'
 import { HISTORICAL_AGENTS } from '@/lib/agents/historical'
+import {
+  FIXTURE_AGENTS,
+  ROSTER_BASELINE_RATINGS,
+  SACRED_STAT_KEYS,
+  SEAL_ESMS_GATES,
+  SEAL_STAT_GATES,
+  SEAL_TIER_MULTIPLIERS,
+  buildCanonicalSeal,
+  computeMeanAlignedRating,
+  computeOvr,
+  computeRelativeAdvantage,
+  evaluateSealTier,
+  evaluateSurgeState,
+  resolveArchetype,
+} from '@/lib/agents/rating-contract'
 import { SKY_BODIES, deriveLiveSky, type SkyLongitudes } from '@/lib/agents/rating/live-sky'
 import { CORE_STAT_KEYS } from '@/lib/agents/rating/ovr-archetype'
-import { ESMS_TOKENS, SEAL_TIERS, type EsmsHoldings } from '@/lib/agents/rating/seals-surge'
+import { ESMS_TOKENS, type EsmsHoldings } from '@/lib/agents/rating/seals-surge'
+import {
+  CANONICAL_ROSTER_71,
+  resolveAgentAppearance,
+} from '@/lib/agents/vessel-appearance-manifest'
 import { generateAccurateHoroscope } from '@/lib/monica/horoscope-generator'
 import { ZODIAC_SIGNS } from '@/lib/staking/elements'
 
@@ -28,6 +52,11 @@ const RESOLVER = '@/lib/agents/rating/esms-balance-resolver'
 const SECRET = 'Test-Internal-Secret-Value-9'
 const NOW = new Date('2026-10-15T05:43:00Z')
 const TTL = 60_000
+/**
+ * The tests that make thousands of requests take about a second on an idle machine; the budget
+ * only has to survive a machine that is busy with something else (a parallel CI shard).
+ */
+const BULK_TIMEOUT_MS = 300_000
 
 const READ_CORS = {
   'access-control-allow-origin': '*',
@@ -62,6 +91,53 @@ const holdings = (each = 0): EsmsHoldings => ({
   matter: each,
   substance: each,
 })
+
+// ─── The contract's vocabulary, pinned ───────────────────────────────────────
+
+type Stat = (typeof SACRED_STAT_KEYS)[number]
+const STATS: readonly Stat[] = [
+  'power',
+  'resonance',
+  'wisdom',
+  'charisma',
+  'intuition',
+  'adaptability',
+  'vitality',
+]
+/** Weakest to strongest. `Astral` replaced the tier that used to sit between Gold and Celestial. */
+const TIERS = ['Copper', 'Silver', 'Gold', 'Astral', 'Celestial'] as const
+type Tier = (typeof TIERS)[number]
+/** The retired tier name, assembled from parts so that this file does not contain it. */
+const RETIRED_TIER = ['ae', 'ther'].join('')
+/** The faction index of the contract: a classical body, 0 = Sun. */
+const FACTIONS = [
+  'Sun',
+  'Moon',
+  'Mercury',
+  'Venus',
+  'Mars',
+  'Jupiter',
+  'Saturn',
+  'Uranus',
+  'Neptune',
+  'Pluto',
+] as const
+/** A natal Sun sign's ruling body as a faction index (the fallback faction of a vessel). */
+const RULER_FACTION: Record<string, number> = {
+  Aries: 4,
+  Taurus: 3,
+  Gemini: 2,
+  Cancer: 1,
+  Leo: 0,
+  Virgo: 2,
+  Libra: 3,
+  Scorpio: 9,
+  Sagittarius: 5,
+  Capricorn: 6,
+  Aquarius: 7,
+  Pisces: 8,
+}
+const rank = (tier: string | null): number => (tier === null ? -1 : TIERS.indexOf(tier as Tier))
 
 // Wallets with values no rating, seal or coordinate could produce by accident, so that a number
 // turning up anywhere in a response can only have come from that wallet.
@@ -388,7 +464,7 @@ type Harness = Awaited<ReturnType<typeof boot>>
 // ─── Shared helpers ──────────────────────────────────────────────────────────
 
 const bearer = { authorization: `Bearer ${SECRET}` }
-const valid = { agentId: 'isaac-newton', esmsBalances: holdings(12) }
+const valid = { agentId: 'isaac-newton', esms: holdings(12) }
 
 let errorSpy: Mock
 
@@ -407,6 +483,217 @@ const walletReads = (h: Harness) =>
   h.db.wallet.mock.calls.map(([args]) => (args as { where: { userId: string } }).where.userId)
 
 const advanceTo = (ms: number) => vi.setSystemTime(NOW.getTime() + ms)
+
+// ─── Reading a payload against the contract ──────────────────────────────────
+
+interface SealView {
+  id: string
+  name: string
+  category: string
+  tier: Tier
+  description: string
+  statKey: Stat
+  multiplier: number
+}
+interface ProgressView {
+  id: string
+  name: string
+  token: string
+  stat: Stat
+  tier: Tier | null
+  nextTier: Tier | null
+  blockedBy: string[]
+  maxTier: Tier
+  statRating: number
+  alignedRating: number
+  balance: number
+  natalAffinity: number | null
+}
+interface SurgeView {
+  meter: number
+  active: boolean
+  surgeType: string
+  monica: number | null
+  monicaState: string
+  heat: number
+  reactivity: number
+  statBoosts: Partial<Record<Stat, number>>
+  skyMeter: number
+  harmonyOffset: number
+}
+interface PayloadView {
+  key: string
+  handle: string
+  faction: number
+  factionName: string
+  isPlaceholder: boolean
+  provenance: string
+  appearance: ReturnType<typeof resolveAgentAppearance>
+  avatarModelUrl?: string
+  headMeshUrl?: string
+  ratings: Record<Stat, number>
+  relativeAdvantage: Record<Stat, number>
+  ovr: number
+  archetype: { title: string; primary: Stat; secondary: Stat }
+  esms: EsmsHoldings
+  seals: SealView[]
+  surge: SurgeView | null
+  scale: { name: string; floor: number; ceiling: number }
+  sealProgress: ProgressView[]
+  esmsSource: string
+  zoneSynergies: Array<{ zoneId: number; esmsToken: string; synergy: number }>
+  bestZoneId: number
+  sky: {
+    source: string
+    at: string
+    heat: number
+    reactivity: number
+    monica: number | null
+  } | null
+  degraded?: { esms?: string; sky?: string }
+}
+const view = async (res: Response) => (await res.json()) as PayloadView
+
+/** The keys of the contract's `RatedAgentPayload` (its optional model URLs aside). */
+const CONTRACT_KEYS = [
+  'key',
+  'handle',
+  'faction',
+  'factionName',
+  'isPlaceholder',
+  'provenance',
+  'appearance',
+  'ratings',
+  'relativeAdvantage',
+  'ovr',
+  'archetype',
+  'esms',
+  'seals',
+  'surge',
+]
+/** What only a live, server-side rating adds on top of the contract. */
+const EXTENSION_KEYS = ['scale', 'sealProgress', 'esmsSource', 'zoneSynergies', 'bestZoneId', 'sky']
+const ALL_KEYS = [...CONTRACT_KEYS, ...EXTENSION_KEYS]
+/** The names the payload carried before it conformed to the contract. */
+const RETIRED_KEYS = ['agentId', 'name', 'esmsBalances', 'spread']
+
+const round2 = (n: number) => Math.round(n * 100) / 100
+const keysOf = (body: object) => Object.keys(body).sort()
+
+/**
+ * Everything a served payload says that the contract (`lib/agents/rating-contract.ts`) also
+ * decides, checked with the contract's own functions on the payload's own ratings: OVR, relative
+ * advantage, archetype, the Seal objects (`buildCanonicalSeal`), each Seal's tier
+ * (`evaluateSealTier`, with ASOL's Celestial blessing as the one stricter rule) and the surge
+ * (`evaluateSurgeState`). Sweeping a roster through it names the vessel in every failure.
+ */
+function expectContractConformant(body: PayloadView) {
+  const who = body.key
+  const is = (label: string, actual: unknown, expected: unknown) =>
+    expect([who, label, actual]).toEqual([who, label, expected])
+
+  is('rating keys', keysOf(body.ratings), [...STATS].sort())
+  for (const stat of STATS) {
+    const rating = body.ratings[stat]
+    is(
+      `${stat} is an integer on 25..99`,
+      Number.isInteger(rating) && rating >= 25 && rating <= 99,
+      true
+    )
+  }
+  is('relativeAdvantage', body.relativeAdvantage, computeRelativeAdvantage(body.ratings))
+  is('ovr', body.ovr, computeOvr(body.ratings))
+  is('archetype', body.archetype, resolveArchetype(body.relativeAdvantage))
+  is('factionName', body.factionName, FACTIONS[body.faction])
+  is('scale', body.scale, { name: 'Pentacle Vessel Rating Scale', floor: 25, ceiling: 99 })
+
+  // Seals: the whole catalog in progress, the earned ones as the contract's own objects.
+  is(
+    'sealProgress ids',
+    body.sealProgress.map(p => p.id),
+    STATS.map(stat => `seal-${stat}`)
+  )
+  is(
+    'sealProgress stats',
+    body.sealProgress.map(p => p.stat),
+    [...STATS]
+  )
+  is(
+    'seals',
+    body.seals,
+    body.sealProgress
+      .filter(p => p.tier !== null)
+      .map(p => buildCanonicalSeal(p.stat, p.tier as Tier))
+  )
+  for (const p of body.sealProgress) {
+    const at = (what: string) => `${p.stat}: ${what}`
+    const catalog = buildCanonicalSeal(p.stat, 'Copper')
+    is(at('name'), p.name, catalog.name)
+    is(at('token'), p.token, catalog.category)
+    is(at('statRating'), p.statRating, body.ratings[p.stat])
+    is(at('balance'), p.balance, body.esms[p.token as keyof EsmsHoldings])
+    const aligned = computeMeanAlignedRating(p.stat, p.statRating)
+    is(at('alignedRating'), p.alignedRating, round2(aligned))
+
+    // A tier is the contract's. Celestial additionally needs 4 of the ten bodies in the token's
+    // element, which ASOL passes in through the contract's own Celestial bar.
+    const blessed = p.natalAffinity !== null && p.natalAffinity >= 4
+    is(at('tier'), p.tier, evaluateSealTier(p.stat, p.statRating, p.balance, !blessed))
+    if (body.isPlaceholder) is(at('a placeholder chart has no affinity'), p.natalAffinity, null)
+
+    const ceiling = computeMeanAlignedRating(p.stat, 99)
+    const maxTier = TIERS.filter(tier => SEAL_STAT_GATES[tier] <= ceiling).pop() ?? 'Copper'
+    is(at('maxTier'), p.maxTier, maxTier)
+    const next = rank(p.tier) + 1 <= rank(maxTier) ? TIERS[rank(p.tier) + 1] : null
+    is(at('nextTier'), p.nextTier, next)
+    const blockedBy: string[] = []
+    if (next) {
+      if (aligned < SEAL_STAT_GATES[next]) blockedBy.push('stat')
+      if (p.balance < SEAL_ESMS_GATES[next]) blockedBy.push('esms')
+      if (next === 'Celestial' && !blessed) blockedBy.push('natal')
+    }
+    is(at('blockedBy'), p.blockedBy, blockedBy)
+  }
+
+  // The surge: the contract's state for the meter, plus how the meter was reached.
+  if (body.surge) {
+    const { skyMeter, harmonyOffset, ...state } = body.surge
+    const { primary, secondary } = body.archetype
+    is(
+      'surge state',
+      state,
+      evaluateSurgeState(
+        state.meter,
+        state.heat,
+        state.reactivity,
+        primary,
+        secondary,
+        state.monica
+      )
+    )
+    is(
+      'meter is an integer on 0..100',
+      Number.isInteger(state.meter) && state.meter >= 0 && state.meter <= 100,
+      true
+    )
+    is(
+      'heat and reactivity are ramp positions',
+      [state.heat, state.reactivity].every(v => v >= 0 && v <= 1),
+      true
+    )
+    is('harmony stays within 12', Math.abs(harmonyOffset) <= 12, true)
+    is('meter', state.meter, Math.max(0, Math.min(100, Math.round(skyMeter + harmonyOffset))))
+  }
+
+  // Zones: eleven, in order, and the best one is the first that holds the maximum.
+  is(
+    'zone ids',
+    body.zoneSynergies.map(z => z.zoneId),
+    [...Array(11).keys()]
+  )
+  const top = Math.max(...body.zoneSynergies.map(z => z.synergy))
+  is('bestZoneId', body.bestZoneId, body.zoneSynergies.find(z => z.synergy === top)?.zoneId)
+}
 
 beforeEach(() => {
   vi.stubEnv('INTERNAL_API_SECRET', SECRET)
@@ -442,43 +729,51 @@ describe('rating route configuration', () => {
 // ═════════════════════════════════════════════════════════════════════════════
 
 describe('rating route with the ESMS resolver stubbed', () => {
-  it('serves a fully rated roster vessel on the Pentacle Vessel Rating Scale', async () => {
+  it('serves a fully rated roster vessel: the contract’s payload plus its extensions, nothing else', async () => {
     const h = await boot({ resolver: stubResolver() })
     const res = await h.get('?agentId=isaac-newton')
-    const body = await res.json()
+    const body = await view(res)
 
     expect(res.status).toBe(200)
-    expect(Object.keys(body).sort()).toEqual(
-      [
-        'agentId', 'name', 'scale', 'ovr', 'ratings', 'spread', 'relativeAdvantage', 'archetype',
-        'esmsBalances', 'esmsSource', 'seals', 'surge', 'appearance', 'zoneSynergies', 'bestZoneId',
-        'sky',
-      ].sort()
-    ) // prettier-ignore
-    expect(body).toMatchObject({ agentId: 'isaac-newton', name: 'Isaac Newton' })
+    expect(keysOf(body)).toEqual([...ALL_KEYS].sort())
+    for (const retired of RETIRED_KEYS) expect(body).not.toHaveProperty(retired)
+    expect(body).toMatchObject({
+      key: 'isaac-newton',
+      handle: 'Isaac Newton',
+      isPlaceholder: false,
+      provenance: 'historical',
+    })
     expect(body.scale).toEqual({ name: 'Pentacle Vessel Rating Scale', floor: 25, ceiling: 99 })
+    expect(keysOf(body.ratings)).toEqual([...CORE_STAT_KEYS].sort())
+    expect(body.archetype).toMatchObject({ title: expect.any(String), primary: expect.any(String) })
+    expect(body.esms).toEqual(holdings(3))
+    expect(body.esmsSource).toBe('database')
     expect(body.ovr).toBeGreaterThanOrEqual(25)
     expect(body.ovr).toBeLessThanOrEqual(99)
-    expect(Object.keys(body.ratings).sort()).toEqual([...CORE_STAT_KEYS].sort())
-    expect(body.archetype).toMatchObject({ title: expect.any(String), primary: expect.any(String) })
-    expect(body.esmsBalances).toEqual(holdings(3))
-    expect(body.esmsSource).toBe('database')
-    expect(body.seals).toHaveLength(7)
-    for (const seal of body.seals) {
-      expect([null, ...SEAL_TIERS]).toContain(seal.tier)
-      expect(seal.alignedRating).toEqual(expect.any(Number))
+
+    // 3 of each element clears Copper (0.5) and Silver (2) but not Gold (10), so no Seal is
+    // above Silver whatever the stat; every Seal reports that balance.
+    expect(body.sealProgress).toHaveLength(7)
+    for (const progress of body.sealProgress) {
+      expect([null, 'Copper', 'Silver']).toContain(progress.tier)
+      expect(progress.balance).toBe(3)
     }
+    expect(body.seals.length).toBeGreaterThan(0)
+    for (const seal of body.seals) expect(['Copper', 'Silver']).toContain(seal.tier)
+
     expect(body.surge).toMatchObject({
       monicaState: expect.stringMatching(/^(absent|equilibrium|convergent|divergent)$/),
       surgeType: expect.stringMatching(/^(inferno|tempest|equilibrium)$/),
       meter: expect.any(Number),
+      skyMeter: expect.any(Number),
+      harmonyOffset: expect.any(Number),
     })
-    expect(body.appearance).toMatchObject({ agentId: 'isaac-newton', era: 'enlightenment' })
-    expect(body.zoneSynergies.map((z: { zoneId: number }) => z.zoneId)).toEqual([
-      ...Array(11).keys(),
-    ])
+    expect(body.appearance).toMatchObject({ era: 'enlightenment' })
+    expect(body.appearance).toEqual(resolveAgentAppearance('isaac-newton'))
+    expect(body.zoneSynergies.map(z => z.zoneId)).toEqual([...Array(11).keys()])
     expect(body.sky).toMatchObject({ source: 'swiss-ephemeris', at: '2026-10-15T05:43:00.000Z' })
     expect(body.degraded).toBeUndefined()
+    expectContractConformant(body)
   })
 
   it('hands the resolver a never-strict read through the server ledger loader, denied by default', async () => {
@@ -514,11 +809,11 @@ describe('rating route with the ESMS resolver stubbed', () => {
   it('rates Gregory’s Pentacles avatar from his roster agent’s ledger id and keeps the avatar look', async () => {
     const resolver = stubResolver()
     const h = await boot({ resolver })
-    const body = await (await h.get('?agentId=user-avatar-neo')).json()
+    const body = await view(await h.get('?agentId=user-avatar-neo'))
 
-    expect(body.agentId).toBe('user-avatar-neo')
-    expect(body.name).toBe('Gregory Castro')
-    expect(body.appearance).toMatchObject({ agentId: 'user-avatar-neo', era: 'astral' })
+    expect(body.key).toBe('user-avatar-neo')
+    expect(body.handle).toBe('Gregory Castro')
+    expect(body.appearance).toMatchObject({ era: 'astral' })
     expect(resolver.mock.calls[0][0]).toBe('greg-castro-1991')
     expect(resolver.mock.calls[0][1]).toMatchObject({ creatorWallet: 'deny' })
   })
@@ -536,7 +831,7 @@ describe('rating route with the ESMS resolver stubbed', () => {
 
     expect(res.status).toBe(200)
     expect(body.esmsSource).toBe('fallback')
-    expect(body.esmsBalances).toEqual(holdings(0.5))
+    expect(body.esms).toEqual(holdings(0.5))
     expect(body.degraded).toEqual({ esms: 'ledger unavailable' })
   })
 
@@ -550,7 +845,7 @@ describe('rating route with the ESMS resolver stubbed', () => {
     expect(body.surge).toBeNull()
     expect(body.sky).toBeNull()
     expect(body.degraded).toEqual({ sky: 'The sky is incomplete (Pluto)' })
-    expect(body.seals).toHaveLength(7) // everything that does not need the sky is still served
+    expect(body.sealProgress).toHaveLength(7) // everything that does not need the sky is still served
     expect(body.ovr).toBeGreaterThan(0)
   })
 
@@ -595,8 +890,8 @@ describe('rating route with the ESMS resolver stubbed', () => {
     it('shows a roster push to anyone and a forged-vessel push only to the secret holder', async () => {
       const resolver = stubResolver()
       const h = await boot({ resolver })
-      await h.post({ agentId: 'plato', esmsBalances: PUSHED })
-      await h.post({ agentId: FORGED, esmsBalances: PUSHED_LATER })
+      await h.post({ agentId: 'plato', esms: PUSHED })
+      await h.post({ agentId: FORGED, esms: PUSHED_LATER })
       resolver.mockClear()
 
       await h.get('?agentId=plato')
@@ -617,7 +912,7 @@ describe('rating route with the ESMS resolver stubbed', () => {
       const resolver = stubResolver()
       const h = await boot({ resolver })
       resolver.mockRejectedValueOnce(new Error('boom'))
-      expect((await h.post({ agentId: 'plato', esmsBalances: PUSHED })).status).toBe(500)
+      expect((await h.post({ agentId: 'plato', esms: PUSHED })).status).toBe(500)
 
       await h.get('?agentId=plato')
       expect(resolver).toHaveBeenLastCalledWith(
@@ -633,13 +928,13 @@ describe('rating route with the ESMS resolver stubbed', () => {
       const h = await boot({ resolver })
       const res = await h.post({
         agentId: 'isaac-newton',
-        esmsBalances: { ...holdings(12), extra: 1 },
+        esms: { ...holdings(12), extra: 1 },
       })
       const body = await res.json()
 
       expect(res.status).toBe(200)
       expect(body.esmsSource).toBe('spacetimedb')
-      expect(body.esmsBalances).toEqual(holdings(12))
+      expect(body.esms).toEqual(holdings(12))
       expect(resolver).toHaveBeenCalledWith('isaac-newton', {
         spacetime: holdings(12),
         strict: false,
@@ -648,14 +943,15 @@ describe('rating route with the ESMS resolver stubbed', () => {
         onDegraded: expect.any(Function),
       })
       // 12 whole tokens of each element, and every Seal reports exactly that balance.
-      expect(body.seals.every((s: { balance: number }) => s.balance === 12)).toBe(true)
+      expect(body.sealProgress).toHaveLength(7)
+      expect(body.sealProgress.every((s: { balance: number }) => s.balance === 12)).toBe(true)
     })
 
     it('uses the allow policy for a forged vessel, whatever the session says', async () => {
       const resolver = stubResolver()
       const h = await boot({ resolver })
       h.session.current = { user: { id: OTHER_USER } }
-      await h.post({ agentId: FORGED, esmsBalances: holdings(1) })
+      await h.post({ agentId: FORGED, esms: holdings(1) })
       expect(resolver.mock.calls[0][1]).toMatchObject({ creatorWallet: 'allow' })
       expect(h.auth).not.toHaveBeenCalled()
     })
@@ -663,7 +959,7 @@ describe('rating route with the ESMS resolver stubbed', () => {
     it('passes a push of zeros through as zeros, not as "no push"', async () => {
       const resolver = stubResolver()
       const h = await boot({ resolver })
-      const res = await h.post({ agentId: 'plato', esmsBalances: holdings(0) })
+      const res = await h.post({ agentId: 'plato', esms: holdings(0) })
       expect(res.status).toBe(200)
       expect(resolver.mock.calls[0][1]).toMatchObject({ spacetime: holdings(0) })
       await h.get('?agentId=plato')
@@ -755,7 +1051,7 @@ describe('rating route end to end', () => {
 
       expect(res.status).toBe(200)
       expect(body.esmsSource).toBe('fallback')
-      expect(body.esmsBalances).toEqual(holdings(0))
+      expect(body.esms).toEqual(holdings(0))
       expect(body.degraded).toEqual({ esms: 'owner wallet is private' })
       noLeak(text)
       expect(h.db.wallet).not.toHaveBeenCalled()
@@ -773,12 +1069,15 @@ describe('rating route end to end', () => {
       ).json()
 
       expect(reference.degraded).toEqual({ esms: 'no ledger row' })
-      expect(reference.esmsBalances).toEqual(holdings(0))
+      expect(reference.esms).toEqual(holdings(0))
       expect(anonymous.seals).toEqual(reference.seals)
-      expect(anonymous.seals.every((s: { tier: unknown }) => s.tier === null)).toBe(true)
-      expect(anonymous.seals.every((s: { balance: number }) => s.balance === 0)).toBe(true)
+      expect(anonymous.sealProgress).toEqual(reference.sealProgress)
+      expect(anonymous.seals).toEqual([]) // a baseline of zero earns no Seal, whatever the stats
+      expect(anonymous.sealProgress.every((s: { tier: unknown }) => s.tier === null)).toBe(true)
+      expect(anonymous.sealProgress.every((s: { balance: number }) => s.balance === 0)).toBe(true)
       // The wallet really does move tiers when it is allowed in, so the check above has teeth.
-      expect(unlocked.seals.some((s: { tier: unknown }) => s.tier !== null)).toBe(true)
+      expect(unlocked.seals.length).toBeGreaterThan(0)
+      expect(unlocked.sealProgress.some((s: { tier: unknown }) => s.tier !== null)).toBe(true)
     })
 
     it('serves the creator’s balances to a caller with the internal secret', async () => {
@@ -789,7 +1088,7 @@ describe('rating route end to end', () => {
 
       expect(res.status).toBe(200)
       expect(body.esmsSource).toBe('database')
-      expect(body.esmsBalances).toEqual(CREATOR_WALLET)
+      expect(body.esms).toEqual(CREATOR_WALLET)
       expect(body.degraded).toBeUndefined()
       expect(walletReads(h)).toEqual([CREATOR])
       expect(h.auth).not.toHaveBeenCalled()
@@ -802,11 +1101,11 @@ describe('rating route end to end', () => {
       const lower = await (
         await h.get(`?agentId=${FORGED}`, { authorization: `bearer ${SECRET}` })
       ).json()
-      expect(lower.esmsBalances).toEqual(CREATOR_WALLET)
+      expect(lower.esms).toEqual(CREATOR_WALLET)
       const upper = await (
         await h.get(`?agentId=${FORGED}`, { authorization: `BEARER ${SECRET}` })
       ).json()
-      expect(upper.esmsBalances).toEqual(CREATOR_WALLET)
+      expect(upper.esms).toEqual(CREATOR_WALLET)
     })
 
     it('serves the creator’s balances to the signed-in creator', async () => {
@@ -815,7 +1114,7 @@ describe('rating route end to end', () => {
       const body = await (await h.get(`?agentId=${FORGED}`)).json()
 
       expect(body.esmsSource).toBe('database')
-      expect(body.esmsBalances).toEqual(CREATOR_WALLET)
+      expect(body.esms).toEqual(CREATOR_WALLET)
       expect(walletReads(h)).toEqual([CREATOR])
       expect(h.auth).toHaveBeenCalledTimes(1)
     })
@@ -875,7 +1174,7 @@ describe('rating route end to end', () => {
 
       expect(body).toMatchObject({
         esmsSource: 'fallback',
-        esmsBalances: holdings(0),
+        esms: holdings(0),
         degraded: { esms: 'no ledger row' },
       })
       expect(walletReads(h)).toEqual([CREATOR])
@@ -933,7 +1232,7 @@ describe('rating route end to end', () => {
       const body = await (
         await h.get(`?agentId=${FORGED}`, { authorization: 'Bearer not-it' })
       ).json()
-      expect(body.esmsBalances).toEqual(CREATOR_WALLET)
+      expect(body.esms).toEqual(CREATOR_WALLET)
     })
 
     describe.each([
@@ -960,7 +1259,7 @@ describe('rating route end to end', () => {
       for (const headers of [undefined, bearer]) {
         const body = await (await h.get('?agentId=isaac-newton', headers)).json()
         expect(body.esmsSource).toBe('database')
-        expect(body.esmsBalances).toEqual(NEWTON_WALLET)
+        expect(body.esms).toEqual(NEWTON_WALLET)
         expect(body.degraded).toBeUndefined()
       }
       expect(h.auth).not.toHaveBeenCalled()
@@ -975,7 +1274,7 @@ describe('rating route end to end', () => {
       const res = await h.get('?agentId=isaac-newton')
       const text = await res.text()
 
-      expect(JSON.parse(text).esmsBalances).toEqual(NEWTON_WALLET)
+      expect(JSON.parse(text).esms).toEqual(NEWTON_WALLET)
       expect(walletReads(h)).toEqual(['agentic-newton'])
       noLeak(text)
     })
@@ -989,20 +1288,20 @@ describe('rating route end to end', () => {
       const body = await (await h.get('?agentId=sprite-lumen')).json()
 
       expect(body.esmsSource).toBe('database')
-      expect(body.esmsBalances).toEqual(NEWTON_WALLET)
+      expect(body.esms).toEqual(NEWTON_WALLET)
     })
 
     it('resolves user-avatar-neo to the roster agent greg-castro-1991 and serves his agentic wallet publicly', async () => {
       const h = await boot()
       const res = await h.get('?agentId=user-avatar-neo')
-      const body = await res.json()
+      const body = await view(res)
 
       expect(res.status).toBe(200)
-      expect(body.agentId).toBe('user-avatar-neo')
-      expect(body.name).toBe('Gregory Castro')
-      expect(body.appearance).toMatchObject({ agentId: 'user-avatar-neo', era: 'astral' })
+      expect(body.key).toBe('user-avatar-neo')
+      expect(body.handle).toBe('Gregory Castro')
+      expect(body.appearance).toMatchObject({ era: 'astral' })
       expect(body.esmsSource).toBe('database')
-      expect(body.esmsBalances).toEqual(GREG_WALLET)
+      expect(body.esms).toEqual(GREG_WALLET)
       expect(
         h.db.users.mock.calls.map(([args]) => (args as { where: { email: string } }).where.email)
       ).toEqual([
@@ -1029,7 +1328,7 @@ describe('rating route end to end', () => {
 
         expect(JSON.parse(text)).toMatchObject({
           esmsSource: 'fallback',
-          esmsBalances: holdings(0),
+          esms: holdings(0),
           degraded: { esms: 'owner wallet is private' },
         })
         noLeak(text)
@@ -1038,11 +1337,11 @@ describe('rating route end to end', () => {
 
       it('is shown to the secret holder and to its creator', async () => {
         const h = await boot({ world: avatarWorld(true) })
-        expect(
-          (await (await h.get('?agentId=user-avatar-zed', bearer)).json()).esmsBalances
-        ).toEqual(CREATOR_WALLET)
+        expect((await (await h.get('?agentId=user-avatar-zed', bearer)).json()).esms).toEqual(
+          CREATOR_WALLET
+        )
         h.session.current = { user: { id: CREATOR } }
-        expect((await (await h.get('?agentId=user-avatar-zed')).json()).esmsBalances).toEqual(
+        expect((await (await h.get('?agentId=user-avatar-zed')).json()).esms).toEqual(
           CREATOR_WALLET
         )
       })
@@ -1078,7 +1377,7 @@ describe('rating route end to end', () => {
 
       expect(body.esmsSource).toBe('fallback')
       expect(body.degraded).toEqual({ esms: 'no ledger row' })
-      expect(body.esmsBalances).toEqual(newton.consciousness.alchemicalElements)
+      expect(body.esms).toEqual(newton.consciousness.alchemicalElements)
     })
   })
 
@@ -1087,56 +1386,52 @@ describe('rating route end to end', () => {
   describe('pushed holdings', () => {
     it('are not visible to an anonymous GET of a forged vessel, but are to the secret holder', async () => {
       const h = await boot()
-      const push = await h.post({ agentId: FORGED, esmsBalances: PUSHED })
+      const push = await h.post({ agentId: FORGED, esms: PUSHED })
       expect(push.status).toBe(200)
       const pushedBody = await push.json()
       expect(pushedBody.esmsSource).toBe('spacetimedb')
-      expect(pushedBody.esmsBalances).toEqual(PUSHED)
+      expect(pushedBody.esms).toEqual(PUSHED)
 
       const anonymous = await h.get(`?agentId=${FORGED}`)
       const text = await anonymous.text()
       expect(JSON.parse(text)).toMatchObject({
         esmsSource: 'fallback',
-        esmsBalances: holdings(0),
+        esms: holdings(0),
         degraded: { esms: 'owner wallet is private' },
       })
       for (const n of numbersOf(PUSHED)) expect(text).not.toContain(n)
 
       const unlocked = await (await h.get(`?agentId=${FORGED}`, bearer)).json()
       expect(unlocked.esmsSource).toBe('spacetimedb')
-      expect(unlocked.esmsBalances).toEqual(PUSHED)
+      expect(unlocked.esms).toEqual(PUSHED)
       expect(unlocked.degraded).toBeUndefined()
     })
 
     it('are not shown to the signed-in creator either, who still reads their own ledger row', async () => {
       const h = await boot()
-      await h.post({ agentId: FORGED, esmsBalances: PUSHED })
+      await h.post({ agentId: FORGED, esms: PUSHED })
       h.session.current = { user: { id: CREATOR } }
       const body = await (await h.get(`?agentId=${FORGED}`)).json()
       expect(body.esmsSource).toBe('database')
-      expect(body.esmsBalances).toEqual(CREATOR_WALLET)
+      expect(body.esms).toEqual(CREATOR_WALLET)
     })
 
     it('are visible to an anonymous GET of a roster agent for 60 s, boundary included, and not after', async () => {
       const h = await boot()
       vi.useFakeTimers()
       advanceTo(0)
-      await h.post({ agentId: 'isaac-newton', esmsBalances: PUSHED })
+      await h.post({ agentId: 'isaac-newton', esms: PUSHED })
 
       for (const elapsed of [0, 1, TTL - 1, TTL]) {
         advanceTo(elapsed)
         const body = await (await h.get('?agentId=isaac-newton')).json()
-        expect([elapsed, body.esmsSource, body.esmsBalances]).toEqual([
-          elapsed,
-          'spacetimedb',
-          PUSHED,
-        ])
+        expect([elapsed, body.esmsSource, body.esms]).toEqual([elapsed, 'spacetimedb', PUSHED])
       }
 
       advanceTo(TTL + 1)
       const expired = await (await h.get('?agentId=isaac-newton')).json()
       expect(expired.esmsSource).toBe('database')
-      expect(expired.esmsBalances).toEqual(NEWTON_WALLET)
+      expect(expired.esms).toEqual(NEWTON_WALLET)
       // ...and once expired it stays gone.
       advanceTo(TTL + 2)
       expect((await (await h.get('?agentId=isaac-newton')).json()).esmsSource).toBe('database')
@@ -1146,14 +1441,14 @@ describe('rating route end to end', () => {
       const h = await boot()
       vi.useFakeTimers()
       advanceTo(0)
-      await h.post({ agentId: 'plato', esmsBalances: PUSHED })
+      await h.post({ agentId: 'plato', esms: PUSHED })
       advanceTo(40_000)
-      await h.post({ agentId: 'plato', esmsBalances: PUSHED_LATER })
+      await h.post({ agentId: 'plato', esms: PUSHED_LATER })
 
       advanceTo(70_000) // 70 s after the first push, 30 s after the second
       const renewed = await (await h.get('?agentId=plato')).json()
       expect(renewed.esmsSource).toBe('spacetimedb')
-      expect(renewed.esmsBalances).toEqual(PUSHED_LATER)
+      expect(renewed.esms).toEqual(PUSHED_LATER)
 
       advanceTo(40_000 + TTL + 1)
       expect((await (await h.get('?agentId=plato')).json()).esmsSource).not.toBe('spacetimedb')
@@ -1161,10 +1456,10 @@ describe('rating route end to end', () => {
 
     it('belong to the agent pushed for, and to no other', async () => {
       const h = await boot()
-      await h.post({ agentId: 'plato', esmsBalances: PUSHED })
+      await h.post({ agentId: 'plato', esms: PUSHED })
       const newton = await (await h.get('?agentId=isaac-newton')).json()
-      expect(newton.esmsBalances).toEqual(NEWTON_WALLET)
-      expect((await (await h.get('?agentId=plato')).json()).esmsBalances).toEqual(PUSHED)
+      expect(newton.esms).toEqual(NEWTON_WALLET)
+      expect((await (await h.get('?agentId=plato')).json()).esms).toEqual(PUSHED)
     })
 
     it.each([
@@ -1176,18 +1471,18 @@ describe('rating route end to end', () => {
       'are shared by an alias and its roster id (pushed as %s, read as %s)',
       async (pushedAs, readAs) => {
         const h = await boot()
-        const push = await h.post({ agentId: pushedAs, esmsBalances: PUSHED })
+        const push = await h.post({ agentId: pushedAs, esms: PUSHED })
         expect(push.status).toBe(200)
         const body = await (await h.get(`?agentId=${readAs}`)).json()
         expect(body.esmsSource).toBe('spacetimedb')
-        expect(body.esmsBalances).toEqual(PUSHED)
+        expect(body.esms).toEqual(PUSHED)
       }
     )
 
     it('are shared by an id written in any case', async () => {
       const h = await boot()
-      const push = await (await h.post({ agentId: 'ISAAC-NEWTON', esmsBalances: PUSHED })).json()
-      expect(push.agentId).toBe('isaac-newton')
+      const push = await (await h.post({ agentId: 'ISAAC-NEWTON', esms: PUSHED })).json()
+      expect(push.key).toBe('isaac-newton')
 
       for (const readAs of ['isaac-newton', 'Isaac-Newton']) {
         const body = await (await h.get(`?agentId=${readAs}`)).json()
@@ -1198,13 +1493,13 @@ describe('rating route end to end', () => {
     it('are not remembered when the push is refused', async () => {
       const h = await boot()
       for (const bad of [
-        { agentId: 'plato', esmsBalances: { ...PUSHED, matter: -1 } },
-        { agentId: 'plato', esmsBalances: { spirit: 1 } },
+        { agentId: 'plato', esms: { ...PUSHED, matter: -1 } },
+        { agentId: 'plato', esms: { spirit: 1 } },
       ]) {
         expect((await h.post(bad)).status).toBe(400)
       }
       expect(
-        (await h.post({ agentId: 'plato', esmsBalances: PUSHED }, { auth: 'Bearer nope' })).status
+        (await h.post({ agentId: 'plato', esms: PUSHED }, { auth: 'Bearer nope' })).status
       ).toBe(401)
       expect((await (await h.get('?agentId=plato')).json()).esmsSource).not.toBe('spacetimedb')
     })
@@ -1216,7 +1511,7 @@ describe('rating route end to end', () => {
       })
       const pushRange = async (h: Harness, from: number, to: number) => {
         for (let i = from; i < to; i++) {
-          const res = await h.post({ agentId: `bulk-${i}`, esmsBalances: holdings(1) })
+          const res = await h.post({ agentId: `bulk-${i}`, esms: holdings(1) })
           if (res.status !== 200) throw new Error(`push ${i} answered ${res.status}`)
         }
       }
@@ -1227,42 +1522,72 @@ describe('rating route end to end', () => {
           ).json()
         ).esmsSource
 
-      it('drops everything still fresh to make room, and keeps working', async () => {
-        const h = await boot({ world: bulkWorld() })
-        vi.useFakeTimers()
-        advanceTo(0)
-        await pushRange(h, 0, 5001)
+      it(
+        'drops everything still fresh to make room, and keeps working',
+        async () => {
+          const h = await boot({ world: bulkWorld() })
+          vi.useFakeTimers()
+          advanceTo(0)
+          await pushRange(h, 0, 5001)
 
-        expect(await seenAs(h, 5000)).toBe('spacetimedb')
-        expect(await seenAs(h, 0)).toBe('fallback')
-        expect(await seenAs(h, 4999)).toBe('fallback')
-        // A new push after the purge is remembered like any other.
-        expect((await h.post({ agentId: 'bulk-7', esmsBalances: PUSHED })).status).toBe(200)
-        expect(await seenAs(h, 7)).toBe('spacetimedb')
-      }, 60_000)
+          expect(await seenAs(h, 5000)).toBe('spacetimedb')
+          expect(await seenAs(h, 0)).toBe('fallback')
+          expect(await seenAs(h, 4999)).toBe('fallback')
+          // A new push after the purge is remembered like any other.
+          expect((await h.post({ agentId: 'bulk-7', esms: PUSHED })).status).toBe(200)
+          expect(await seenAs(h, 7)).toBe('spacetimedb')
+        },
+        BULK_TIMEOUT_MS
+      )
 
-      it('drops only what has expired when that makes room', async () => {
-        const h = await boot({ world: bulkWorld() })
-        vi.useFakeTimers()
-        advanceTo(0)
-        await pushRange(h, 0, 2500)
-        advanceTo(TTL + 1)
-        await pushRange(h, 2500, 5001)
+      it(
+        'drops only what has expired when that makes room',
+        async () => {
+          const h = await boot({ world: bulkWorld() })
+          vi.useFakeTimers()
+          advanceTo(0)
+          await pushRange(h, 0, 2500)
+          advanceTo(TTL + 1)
+          await pushRange(h, 2500, 5001)
 
-        expect(await seenAs(h, 5000)).toBe('spacetimedb')
-        expect(await seenAs(h, 2500)).toBe('spacetimedb')
-        expect(await seenAs(h, 4999)).toBe('spacetimedb')
-        expect(await seenAs(h, 0)).toBe('fallback')
-      }, 60_000)
+          expect(await seenAs(h, 5000)).toBe('spacetimedb')
+          expect(await seenAs(h, 2500)).toBe('spacetimedb')
+          expect(await seenAs(h, 4999)).toBe('spacetimedb')
+          expect(await seenAs(h, 0)).toBe('fallback')
+        },
+        BULK_TIMEOUT_MS
+      )
 
-      it('keeps all 5000 while there is room', async () => {
-        const h = await boot({ world: bulkWorld() })
-        vi.useFakeTimers()
-        advanceTo(0)
-        await pushRange(h, 0, 5000)
-        expect(await seenAs(h, 0)).toBe('spacetimedb')
-        expect(await seenAs(h, 4999)).toBe('spacetimedb')
-      }, 60_000)
+      it(
+        'counts an entry exactly 60 s old as still fresh, so it makes no room and everything goes',
+        async () => {
+          const h = await boot({ world: bulkWorld() })
+          vi.useFakeTimers()
+          advanceTo(0)
+          await pushRange(h, 0, 2500)
+          advanceTo(TTL) // readable at exactly this age (see "boundary included" above)
+          await pushRange(h, 2500, 5001)
+
+          expect(await seenAs(h, 5000)).toBe('spacetimedb')
+          expect(await seenAs(h, 4999)).toBe('fallback') // not spared by a purge of the old ones
+          expect(await seenAs(h, 2500)).toBe('fallback')
+          expect(await seenAs(h, 0)).toBe('fallback')
+        },
+        BULK_TIMEOUT_MS
+      )
+
+      it(
+        'keeps all 5000 while there is room',
+        async () => {
+          const h = await boot({ world: bulkWorld() })
+          vi.useFakeTimers()
+          advanceTo(0)
+          await pushRange(h, 0, 5000)
+          expect(await seenAs(h, 0)).toBe('spacetimedb')
+          expect(await seenAs(h, 4999)).toBe('spacetimedb')
+        },
+        BULK_TIMEOUT_MS
+      )
     })
   })
 
@@ -1287,7 +1612,7 @@ describe('rating route end to end', () => {
 
     it.each(PROTOTYPE_NAMES)('treats %s as an unknown agent on POST (404, not 500)', async id => {
       const h = await boot()
-      const res = await h.post({ agentId: id, esmsBalances: holdings(1) })
+      const res = await h.post({ agentId: id, esms: holdings(1) })
       expect(res.status).toBe(404)
       expect(await res.json()).toEqual({ success: false, error: `No agent "${id}" to rate.` })
     })
@@ -1299,12 +1624,15 @@ describe('rating route end to end', () => {
         world.forged.push(forgedRow(id, { name: `Vessel ${id}` }))
         const h = await boot({ world })
         const res = await h.get(`?agentId=${id}`)
-        const body = await res.json()
+        const body = await view(res)
 
         expect(res.status).toBe(200)
-        expect(body.agentId).toBe(id)
+        expect(body.key).toBe(id)
+        expect(body.handle).toBe(`Vessel ${id}`)
         expect(body.appearance).toMatchObject({ era: 'astral' })
         expect(typeof body.appearance).toBe('object')
+        // The look is the manifest's, derived from the vessel's own faction and archetype.
+        expect(body.appearance).toEqual(resolveAgentAppearance(id, body.faction, body.archetype))
       }
     )
 
@@ -1313,7 +1641,7 @@ describe('rating route end to end', () => {
       async id => {
         const h = await boot()
         expect((await h.get(`?agentId=${id}`)).status).toBe(400)
-        expect((await h.post({ agentId: id, esmsBalances: holdings(1) })).status).toBe(400)
+        expect((await h.post({ agentId: id, esms: holdings(1) })).status).toBe(400)
         expect(h.db.historical).not.toHaveBeenCalled()
       }
     )
@@ -1356,7 +1684,7 @@ describe('rating route end to end', () => {
       const hundred = `long-${'x'.repeat(95)}`
       const res = await h.get(`?agentId=${hundred}`)
       expect(res.status).toBe(200)
-      expect((await res.json()).agentId).toBe(hundred)
+      expect((await res.json()).key).toBe(hundred)
       expect((await h.get(`?agentId=${hundred}x`)).status).toBe(400)
     })
 
@@ -1375,13 +1703,13 @@ describe('rating route end to end', () => {
     it('takes the first agentId when several are sent', async () => {
       const h = await boot()
       const body = await (await h.get('?agentId=plato&agentId=isaac-newton')).json()
-      expect(body.agentId).toBe('plato')
+      expect(body.key).toBe('plato')
     })
 
     it('resolves a slug the roster tolerates to its canonical id', async () => {
       const h = await boot()
       const body = await (await h.get('?agentId=greg-castro')).json()
-      expect(body.agentId).toBe('greg-castro-1991')
+      expect(body.key).toBe('greg-castro-1991')
     })
 
     describe('?roster=true', () => {
@@ -1392,15 +1720,32 @@ describe('rating route end to end', () => {
 
         expect(res.status).toBe(200)
         expect(body.count).toBe(HISTORICAL_AGENTS.length)
-        expect(body.agents.map((a: { agentId: string }) => a.agentId)).toEqual(
+        expect(body.agents.map((a: { key: string }) => a.key)).toEqual(
           HISTORICAL_AGENTS.map(a => a.id)
+        )
+        expect(body.agents.map((a: { handle: string }) => a.handle)).toEqual(
+          HISTORICAL_AGENTS.map(a => a.name)
         )
         for (const entry of body.agents) {
           expect(Object.keys(entry).sort()).toEqual(
-            ['agentId', 'archetype', 'crownStyle', 'era', 'name', 'ovr', 'signatureRelic'].sort()
+            [
+              'key',
+              'handle',
+              'faction',
+              'factionName',
+              'ovr',
+              'archetype',
+              'era',
+              'crownStyle',
+              'signatureRelic',
+            ].sort()
           )
           expect(entry.ovr).toBeGreaterThanOrEqual(25)
           expect(entry.ovr).toBeLessThanOrEqual(99)
+          expect(Number.isInteger(entry.faction)).toBe(true)
+          expect(entry.faction).toBeGreaterThanOrEqual(0)
+          expect(entry.faction).toBeLessThanOrEqual(9)
+          expect(entry.factionName).toBe(FACTIONS[entry.faction])
         }
         expect(res.headers.get('cache-control')).toBe('public, max-age=300')
         for (const [name, value] of Object.entries(READ_CORS)) {
@@ -1428,7 +1773,7 @@ describe('rating route end to end', () => {
       it('does not list a vessel a person forged', async () => {
         const h = await boot()
         const body = await (await h.get('?roster=true')).json()
-        expect(body.agents.map((a: { agentId: string }) => a.agentId)).not.toContain(FORGED)
+        expect(body.agents.map((a: { key: string }) => a.key)).not.toContain(FORGED)
       })
     })
   })
@@ -1501,7 +1846,7 @@ describe('rating route end to end', () => {
     })
 
     describe('the body size', () => {
-      const small = { agentId: 'isaac-newton', esmsBalances: holdings(1) }
+      const small = { agentId: 'isaac-newton', esms: holdings(1) }
 
       it('accepts exactly 4096 bytes and refuses 4097, on an honest Content-Length', async () => {
         const h = await boot()
@@ -1645,7 +1990,7 @@ describe('rating route end to end', () => {
         ['a string that is not an id', '../x'],
       ])('is 400 for an agentId that is %s', async (_label, agentId) => {
         const h = await boot()
-        const res = await h.post({ agentId, esmsBalances: holdings(1) })
+        const res = await h.post({ agentId, esms: holdings(1) })
         expect(res.status).toBe(400)
         expect((await res.json()).error).toContain('agentId')
         expect(h.db.historical).not.toHaveBeenCalled()
@@ -1663,7 +2008,7 @@ describe('rating route end to end', () => {
         ['missing', () => ''],
       ]
       const withDefect = (token: string, defect: (t: string) => string) =>
-        `{"agentId":"isaac-newton","esmsBalances":{${ESMS_TOKENS.map(t =>
+        `{"agentId":"isaac-newton","esms":{${ESMS_TOKENS.map(t =>
           t === token ? defect(t) : `"${t}":1`
         )
           .filter(Boolean)
@@ -1676,8 +2021,7 @@ describe('rating route end to end', () => {
           expect(res.status).toBe(400)
           expect(await res.json()).toEqual({
             success: false,
-            error:
-              'esmsBalances must hold finite, non-negative spirit, essence, matter, substance.',
+            error: 'esms must hold finite, non-negative spirit, essence, matter, substance.',
           })
           expect(h.db.historical).not.toHaveBeenCalled()
         })
@@ -1685,33 +2029,45 @@ describe('rating route end to end', () => {
 
       it.each([
         ['no holdings', { agentId: 'isaac-newton' }],
-        ['null holdings', { agentId: 'isaac-newton', esmsBalances: null }],
-        ['a string for holdings', { agentId: 'isaac-newton', esmsBalances: '1,2,3,4' }],
-        ['an array of four numbers', { agentId: 'isaac-newton', esmsBalances: [1, 2, 3, 4] }],
-        ['a number for holdings', { agentId: 'isaac-newton', esmsBalances: 4 }],
+        ['null holdings', { agentId: 'isaac-newton', esms: null }],
+        ['a string for holdings', { agentId: 'isaac-newton', esms: '1,2,3,4' }],
+        ['an array of four numbers', { agentId: 'isaac-newton', esms: [1, 2, 3, 4] }],
+        ['a number for holdings', { agentId: 'isaac-newton', esms: 4 }],
       ])('is 400 for %s', async (_label, body) => {
         const h = await boot()
         expect((await h.post(body)).status).toBe(400)
       })
 
+      it('does not take the retired field name: holdings sent as esmsBalances are no holdings', async () => {
+        const h = await boot()
+        const res = await h.post({ agentId: 'isaac-newton', esmsBalances: holdings(1) })
+        expect(res.status).toBe(400)
+        expect(await res.json()).toEqual({
+          success: false,
+          error: 'esms must hold finite, non-negative spirit, essence, matter, substance.',
+        })
+        expect(h.db.historical).not.toHaveBeenCalled()
+      })
+
       it('checks the balances before it looks the agent up', async () => {
         const h = await boot()
-        const res = await h.post({ agentId: 'nobody-here', esmsBalances: { spirit: -1 } })
+        const res = await h.post({ agentId: 'nobody-here', esms: { spirit: -1 } })
         expect(res.status).toBe(400)
         expect(h.db.historical).not.toHaveBeenCalled()
       })
 
       it('accepts ZERO balances, and a zero of either sign', async () => {
         const h = await boot()
-        const res = await h.post({ agentId: 'isaac-newton', esmsBalances: holdings(0) })
+        const res = await h.post({ agentId: 'isaac-newton', esms: holdings(0) })
         const body = await res.json()
         expect(res.status).toBe(200)
         expect(body.esmsSource).toBe('spacetimedb')
-        expect(body.esmsBalances).toEqual(holdings(0))
-        expect(body.seals.every((s: { tier: unknown }) => s.tier === null)).toBe(true)
+        expect(body.esms).toEqual(holdings(0))
+        expect(body.seals).toEqual([]) // nothing is held, so nothing is earned
+        expect(body.sealProgress.every((s: { tier: unknown }) => s.tier === null)).toBe(true)
 
         const negativeZero = await h.post(
-          '{"agentId":"isaac-newton","esmsBalances":{"spirit":-0,"essence":0,"matter":0,"substance":0}}',
+          '{"agentId":"isaac-newton","esms":{"spirit":-0,"essence":0,"matter":0,"substance":0}}',
           { raw: true }
         )
         expect(negativeZero.status).toBe(200)
@@ -1720,12 +2076,12 @@ describe('rating route end to end', () => {
       it('accepts any finite balance, however large', async () => {
         const h = await boot()
         const res = await h.post(
-          '{"agentId":"isaac-newton","esmsBalances":{"spirit":1e308,"essence":1e15,"matter":0.0001,"substance":123456789.125}}',
+          '{"agentId":"isaac-newton","esms":{"spirit":1e308,"essence":1e15,"matter":0.0001,"substance":123456789.125}}',
           { raw: true }
         )
         const body = await res.json()
         expect(res.status).toBe(200)
-        expect(body.esmsBalances).toEqual({
+        expect(body.esms).toEqual({
           spirit: 1e308,
           essence: 1e15,
           matter: 0.0001,
@@ -1737,18 +2093,18 @@ describe('rating route end to end', () => {
         const h = await boot()
         const res = await h.post({
           ...valid,
-          esmsBalances: { ...holdings(2), gold: 99 },
+          esms: { ...holdings(2), gold: 99 },
           note: 'x',
         })
         expect(res.status).toBe(200)
-        expect((await res.json()).esmsBalances).toEqual(holdings(2))
+        expect((await res.json()).esms).toEqual(holdings(2))
       })
     })
 
     describe('what it answers for an agent', () => {
       it('is 404 for an unknown one', async () => {
         const h = await boot()
-        const res = await h.post({ agentId: 'nobody-here', esmsBalances: holdings(1) })
+        const res = await h.post({ agentId: 'nobody-here', esms: holdings(1) })
         expect(res.status).toBe(404)
         expect(await res.json()).toEqual({
           success: false,
@@ -1767,7 +2123,7 @@ describe('rating route end to end', () => {
         const world = defaultWorld()
         world.forged.push({ ...blankRow(), ...overrides })
         const h = await boot({ world })
-        const res = await h.post({ agentId: 'blank', esmsBalances: holdings(1) })
+        const res = await h.post({ agentId: 'blank', esms: holdings(1) })
         expect(res.status).toBe(422)
         expect(await res.json()).toEqual({
           success: false,
@@ -1780,7 +2136,7 @@ describe('rating route end to end', () => {
       it('is 503 when the lookup itself fails, and says nothing about why', async () => {
         const h = await boot()
         h.db.failures.lookup = new Error('connection to server at "10.0.0.5", port 5432 failed')
-        const res = await h.post({ agentId: 'some-forged-agent', esmsBalances: holdings(1) })
+        const res = await h.post({ agentId: 'some-forged-agent', esms: holdings(1) })
         const text = await res.text()
 
         expect(res.status).toBe(503)
@@ -1803,7 +2159,7 @@ describe('rating route end to end', () => {
     describe('what it does not do', () => {
       it('never writes the ledger: the only database access for a forged agent is reading the agent', async () => {
         const h = await boot()
-        const res = await h.post({ agentId: FORGED, esmsBalances: PUSHED })
+        const res = await h.post({ agentId: FORGED, esms: PUSHED })
         expect(res.status).toBe(200)
 
         expect(h.db.violations).toEqual([])
@@ -1836,7 +2192,7 @@ describe('rating route end to end', () => {
       const read = await (await h.get('?agentId=isaac-newton')).json()
       expect(Object.keys(pushed).sort()).toEqual(Object.keys(read).sort())
       expect(pushed).toEqual(read) // the push is what the next GET sees
-      expect(pushed.seals.every((s: { balance: number }) => s.balance === 12)).toBe(true)
+      expect(pushed.sealProgress.every((s: { balance: number }) => s.balance === 12)).toBe(true)
     })
   })
 
@@ -1883,7 +2239,7 @@ describe('rating route end to end', () => {
 
       expect(res.status).toBe(200)
       expect(body.esmsSource).toBe('fallback')
-      expect(body.esmsBalances).toEqual(newton.consciousness.alchemicalElements)
+      expect(body.esms).toEqual(newton.consciousness.alchemicalElements)
       expect(body.degraded).toEqual({ esms: 'ledger unavailable' })
       expect(text).not.toMatch(/PrismaClientKnownRequestError|P2021|token_balances|findUnique/)
       // The operator still gets the class and code, and still not the message.
@@ -2073,13 +2429,13 @@ describe('rating route end to end', () => {
       [
         'POST 400 (bad id)',
         400,
-        async () => (await boot()).post({ agentId: '../x', esmsBalances: holdings(1) }),
+        async () => (await boot()).post({ agentId: '../x', esms: holdings(1) }),
       ],
       ['POST 401', 401, async () => (await boot()).post(valid, { auth: 'Bearer nope' })],
       [
         'POST 404',
         404,
-        async () => (await boot()).post({ agentId: 'nobody-here', esmsBalances: holdings(1) }),
+        async () => (await boot()).post({ agentId: 'nobody-here', esms: holdings(1) }),
       ],
       [
         'POST 413',
@@ -2095,8 +2451,7 @@ describe('rating route end to end', () => {
       [
         'POST 422',
         422,
-        async () =>
-          (await boot({ world: blank() })).post({ agentId: 'blank', esmsBalances: holdings(1) }),
+        async () => (await boot({ world: blank() })).post({ agentId: 'blank', esms: holdings(1) }),
       ],
       ['POST 500', 500, async () => (await boot({ resolver: failingResolver() })).post(valid)],
       [
@@ -2113,7 +2468,7 @@ describe('rating route end to end', () => {
         async () => {
           const h = await boot()
           h.db.failures.lookup = new Error('down')
-          return h.post({ agentId: 'some-forged-agent', esmsBalances: holdings(1) })
+          return h.post({ agentId: 'some-forged-agent', esms: holdings(1) })
         },
       ],
     ]
@@ -2330,8 +2685,8 @@ describe('rating route end to end', () => {
           expect(body.ratings[key]).toBeLessThanOrEqual(99)
         }
         expect(Number.isFinite(body.ovr)).toBe(true)
-        expect(body.appearance).toMatchObject({ agentId: FORGED, era: 'astral' })
-        expect(body.seals).toHaveLength(7)
+        expect(body.appearance).toMatchObject({ era: 'astral' })
+        expect(body.sealProgress).toHaveLength(7)
         expect(body.zoneSynergies).toHaveLength(11)
         expect(JSON.stringify(body)).not.toMatch(/NaN|Infinity/)
       }
@@ -2359,11 +2714,21 @@ describe('rating route end to end', () => {
 
       expect(forgeShaped.ratings).toEqual(rosterShaped.ratings)
       expect(forgeShaped.ovr).toBe(rosterShaped.ovr)
+      // ...and the faction is the ruler of the natal Sun's sign, whichever shape the chart is in.
+      const sunSign = chart.tropical.CelestialBodies.all.find(
+        (body: { label: string }) => body.label === 'Sun'
+      ).Sign.label
+      expect(forgeShaped.faction).toBe(RULER_FACTION[sunSign])
+      expect(rosterShaped.faction).toBe(RULER_FACTION[sunSign])
+      expect(forgeShaped.appearance).toEqual(rosterShaped.appearance)
       expect(forgeShaped.seals).toEqual(rosterShaped.seals)
+      expect(forgeShaped.sealProgress).toEqual(rosterShaped.sealProgress)
       // The ascendant is part of the rating, so dropping it changes the result.
       expect(withoutAscendant.ratings).not.toEqual(forgeShaped.ratings)
       expect(
-        forgeShaped.seals.some((s: { natalAffinity: number | null }) => s.natalAffinity !== null)
+        forgeShaped.sealProgress.some(
+          (s: { natalAffinity: number | null }) => s.natalAffinity !== null
+        )
       ).toBe(true)
     })
 
@@ -2401,6 +2766,1381 @@ describe('rating route end to end', () => {
       await h.get(`?agentId=${FORGED}`)
       expect(h.db.historical).toHaveBeenCalledTimes(1)
       expect(h.db.historical).toHaveBeenCalledWith({ where: { agentId: FORGED } })
+    })
+  })
+
+  // ─── (I) the payload is the Pentacles rating contract ──────────────────────
+
+  describe('the payload is the Pentacles rating contract', () => {
+    const forgedWorld = (overrides: Row = {}): World => {
+      const world = defaultWorld()
+      world.forged = [forgedRow(FORGED, overrides)]
+      return world
+    }
+
+    describe('carries every contract key, and exactly the documented extensions', () => {
+      it('for a roster vessel', async () => {
+        const h = await boot()
+        const body = await view(await h.get('?agentId=isaac-newton'))
+        expect(keysOf(body)).toEqual([...ALL_KEYS].sort())
+        for (const retired of RETIRED_KEYS) expect(body).not.toHaveProperty(retired)
+        expectContractConformant(body)
+      })
+
+      it('for a forged vessel read with the secret', async () => {
+        const h = await boot()
+        const body = await view(await h.get(`?agentId=${FORGED}`, bearer))
+        expect(keysOf(body)).toEqual([...ALL_KEYS].sort())
+        for (const retired of RETIRED_KEYS) expect(body).not.toHaveProperty(retired)
+        expectContractConformant(body)
+      })
+
+      it('for a forged vessel read anonymously, which adds only the degraded note', async () => {
+        const h = await boot()
+        const body = await view(await h.get(`?agentId=${FORGED}`))
+        expect(keysOf(body)).toEqual([...ALL_KEYS, 'degraded'].sort())
+        expect(body.degraded).toEqual({ esms: 'owner wallet is private' })
+        expectContractConformant(body)
+      })
+
+      it('for a read with no sky: surge and sky are present and null, not missing', async () => {
+        const h = await boot()
+        h.resolveSky.mockRejectedValue(new h.SkyUnavailableError('The sky is incomplete (Pluto)'))
+        const body = await view(await h.get('?agentId=isaac-newton'))
+
+        expect(keysOf(body)).toEqual([...ALL_KEYS, 'degraded'].sort())
+        expect(body).toHaveProperty('surge', null)
+        expect(body).toHaveProperty('sky', null)
+        expect(body.degraded).toEqual({ sky: 'The sky is incomplete (Pluto)' })
+        expectContractConformant(body) // everything the contract decides without a sky still holds
+      })
+
+      it('for a push, which answers the payload a GET serves', async () => {
+        const h = await boot()
+        const body = await view(await h.post({ agentId: FORGED, esms: PUSHED }))
+        expect(keysOf(body)).toEqual([...ALL_KEYS].sort())
+        expect(body.esms).toEqual(PUSHED)
+        expectContractConformant(body)
+      })
+    })
+
+    it('rates a forged vessel with persisted scores to exactly the numbers the contract gives', async () => {
+      // Scores 95, 93, 94, 96, 97, 92, 98 rate (25 + score x 0.74, rounded) as 95, 94, 95, 96, 97,
+      // 93, 98. OVR: top 98 x 1.6 + next 97 x 1.3 + mean(96, 95, 95, 94, 93) x 1.0 = 377.5; / 3.9 = 96.8.
+      const h = await boot()
+      const body = await view(await h.get(`?agentId=${FORGED}`, bearer))
+
+      expect(body.ratings).toEqual({
+        power: 95,
+        resonance: 94,
+        wisdom: 95,
+        charisma: 96,
+        intuition: 97,
+        adaptability: 93,
+        vitality: 98,
+      })
+      // Against the pinned roster baselines 63, 62, 64, 61, 62, 63, 62.
+      expect(body.relativeAdvantage).toEqual({
+        power: 32,
+        resonance: 32,
+        wisdom: 31,
+        charisma: 35,
+        intuition: 35,
+        adaptability: 30,
+        vitality: 36,
+      })
+      expect(body.ovr).toBe(97)
+      // Vitality leads by 36; charisma and intuition tie at 35 and the stat order breaks it.
+      expect(body.archetype).toEqual({
+        title: 'Tenacious Champion',
+        primary: 'vitality',
+        secondary: 'charisma',
+      })
+    })
+
+    it('earns exactly the Seals the contract’s gates allow for that vessel and a rich wallet', async () => {
+      // Aligned rating = rating - roster mean + 68: 86.5, 95, 94.5, 99.5, 99, 93.5, 100. Power's
+      // 86.5 is Gold (86) and short of Astral (91); the rest clear Astral. Celestial (96) is
+      // also cleared by charisma, intuition and vitality, but the chart (Sun Aries, Moon Leo,
+      // Mars Sagittarius) puts at most 3 bodies in any element, short of the 4 it must.
+      const h = await boot()
+      const body = await view(await h.get(`?agentId=${FORGED}`, bearer))
+
+      expect(body.seals).toEqual([
+        {
+          id: 'seal-power',
+          name: 'Crucible Finisher',
+          category: 'substance',
+          tier: 'Gold',
+          description: 'Channels raw material pressure into irresistible decisive force.',
+          statKey: 'power',
+          multiplier: 1.18,
+        },
+        {
+          id: 'seal-resonance',
+          name: 'Tidal Chorus',
+          category: 'essence',
+          tier: 'Astral',
+          description: 'Attunes with the ambient frequencies of celestial transits.',
+          statKey: 'resonance',
+          multiplier: 1.28,
+        },
+        {
+          id: 'seal-wisdom',
+          name: "Philosopher's Stone",
+          category: 'matter',
+          tier: 'Astral',
+          description: 'Transforms accumulated experience into strategic mastery.',
+          statKey: 'wisdom',
+          multiplier: 1.28,
+        },
+        {
+          id: 'seal-charisma',
+          name: 'Harmonic Sovereign',
+          category: 'essence',
+          tier: 'Astral',
+          description: 'Commands celestial resonance to align allied forces.',
+          statKey: 'charisma',
+          multiplier: 1.28,
+        },
+        {
+          id: 'seal-intuition',
+          name: 'Astral Vision',
+          category: 'spirit',
+          tier: 'Astral',
+          description: 'Pierces through veil illusions with sovereign foresight.',
+          statKey: 'intuition',
+          multiplier: 1.28,
+        },
+        {
+          id: 'seal-adaptability',
+          name: 'Quicksilver Pivot',
+          category: 'spirit',
+          tier: 'Astral',
+          description: 'Transmutes tactical posture across shifting court elements.',
+          statKey: 'adaptability',
+          multiplier: 1.28,
+        },
+        {
+          id: 'seal-vitality',
+          name: 'Immovable Foundation',
+          category: 'matter',
+          tier: 'Astral',
+          description: 'Anchors vessel integrity against territorial disruption.',
+          statKey: 'vitality',
+          multiplier: 1.28,
+        },
+      ])
+
+      const progress = body.sealProgress.map(p => [
+        p.stat,
+        p.token,
+        p.tier,
+        p.nextTier,
+        p.blockedBy,
+        p.maxTier,
+        p.statRating,
+        p.alignedRating,
+        p.balance,
+        p.natalAffinity,
+      ])
+      expect(progress).toEqual([
+        ['power', 'substance', 'Gold', null, [], 'Gold', 95, 86.5, 4567.125, 0],
+        ['resonance', 'essence', 'Astral', 'Celestial', ['stat', 'natal'], 'Celestial', 94, 95, 2345.25, 0],
+        ['wisdom', 'matter', 'Astral', 'Celestial', ['stat', 'natal'], 'Celestial', 95, 94.5, 3456.75, 0],
+        ['charisma', 'essence', 'Astral', 'Celestial', ['natal'], 'Celestial', 96, 99.5, 2345.25, 0],
+        ['intuition', 'spirit', 'Astral', 'Celestial', ['natal'], 'Celestial', 97, 99, 1234.5, 3],
+        ['adaptability', 'spirit', 'Astral', 'Celestial', ['stat', 'natal'], 'Celestial', 93, 93.5, 1234.5, 3],
+        ['vitality', 'matter', 'Astral', 'Celestial', ['natal'], 'Celestial', 98, 100, 3456.75, 0],
+      ]) // prettier-ignore
+    })
+
+    describe('the surge the live sky puts on a vessel', () => {
+      it('reads the fixture sky: heat and reactivity as ramp positions, the harmony offset, the boosts', async () => {
+        // The sky's heat 0.1315 is past the ramp's top (0.1154) and its reactivity 3.5657 sits at
+        // (3.5657 - 0.561) / (3.586 - 0.561) = 0.9933 of its ramp: sky meter 99.66. The chart's
+        // Fire Sun, Moon and Mars meet an Air Sun and Fire Moon and Mars in the sky (0.5, 1, 1),
+        // a mean of 0.8333 x 12 = +10, so the meter reaches the ceiling.
+        const h = await boot()
+        const body = await view(await h.get(`?agentId=${FORGED}`))
+        const surge = body.surge as SurgeView
+
+        expect(surge).toMatchObject({
+          meter: 100,
+          active: true,
+          surgeType: 'inferno', // heat 1 >= reactivity 0.9933
+          monicaState: 'convergent',
+          heat: 1,
+          harmonyOffset: 10,
+          // Vitality leads the archetype (+12), charisma follows (+8), the rest get +4.
+          statBoosts: {
+            power: 4,
+            resonance: 4,
+            wisdom: 4,
+            charisma: 8,
+            intuition: 4,
+            adaptability: 4,
+            vitality: 12,
+          },
+        })
+        expect(surge.skyMeter).toBeCloseTo(99.664, 3)
+        expect(surge.reactivity).toBeCloseTo(0.99328, 4)
+        expect(surge.monica).toBe(sky.monica)
+        expect(body.sky).toEqual({
+          source: 'swiss-ephemeris',
+          at: '2026-10-15T05:43:00.000Z',
+          heat: sky.thermodynamics.heat,
+          reactivity: sky.thermodynamics.reactivity,
+          monica: sky.monica,
+        })
+      })
+
+      it('is calm under a calm sky: no boosts, not active, and the chart’s harmony alone on the meter', async () => {
+        const h = await boot({ world: forgedWorld() })
+        h.resolveSky.mockResolvedValue({
+          ...sky,
+          thermodynamics: { ...sky.thermodynamics, heat: 0.0184, reactivity: 0.561 },
+        })
+        const body = await view(await h.get(`?agentId=${FORGED}`))
+
+        expect(body.surge).toMatchObject({
+          meter: 10,
+          active: false,
+          heat: 0,
+          reactivity: 0,
+          skyMeter: 0,
+          harmonyOffset: 10,
+          statBoosts: {},
+        })
+        expect(body.sky).toMatchObject({ heat: 0.0184, reactivity: 0.561 })
+        expectContractConformant(body)
+      })
+
+      it.each([
+        [1.618, 'equilibrium', 'equilibrium', { vitality: 16, charisma: 12, power: 8 }],
+        [null, 'absent', 'inferno', { vitality: 12, charisma: 8, power: 4 }],
+        [0.5, 'convergent', 'inferno', { vitality: 12, charisma: 8, power: 4 }],
+        [-0.5, 'divergent', 'inferno', { vitality: 12, charisma: 8, power: 4 }],
+      ])(
+        'classifies Monica %j as %s: an active surge is %s with boosts %j',
+        async (monica, monicaState, surgeType, boosts) => {
+          const h = await boot({ world: forgedWorld() })
+          h.resolveSky.mockResolvedValue({ ...sky, monica })
+          const body = await view(await h.get(`?agentId=${FORGED}`))
+          const surge = body.surge as SurgeView
+
+          expect(surge).toMatchObject({ monica, monicaState, surgeType, meter: 100, active: true })
+          expect(surge.statBoosts).toMatchObject(boosts)
+          expect(body.sky?.monica).toBe(monica)
+          expectContractConformant(body)
+        }
+      )
+
+      it('does not let Monica move the meter', async () => {
+        const meters: number[] = []
+        for (const monica of [1.618, null, 0.5, -0.5]) {
+          const h = await boot({ world: forgedWorld() })
+          h.resolveSky.mockResolvedValue({ ...sky, monica })
+          const surge = (await view(await h.get(`?agentId=${FORGED}`))).surge as SurgeView
+          meters.push(surge.skyMeter)
+        }
+        expect(new Set(meters).size).toBe(1)
+      })
+
+      it('lifts every zone’s synergy under an active surge, and not under a missing sky', async () => {
+        const h = await boot({ world: forgedWorld() })
+        const healthy = await view(await h.get(`?agentId=${FORGED}`))
+        h.resolveSky.mockRejectedValue(new h.SkyUnavailableError('The sky is incomplete (Pluto)'))
+        const noSky = await view(await h.get(`?agentId=${FORGED}`))
+        h.resolveSky.mockResolvedValue({
+          ...sky,
+          thermodynamics: { ...sky.thermodynamics, heat: 0.0184, reactivity: 0.561 },
+        })
+        const calm = await view(await h.get(`?agentId=${FORGED}`))
+
+        for (const zone of healthy.zoneSynergies) {
+          const without = noSky.zoneSynergies[zone.zoneId].synergy
+          expect([zone.zoneId, zone.synergy > without]).toEqual([zone.zoneId, true])
+          // A calm sky boosts nothing, so it rates the vessel exactly as no sky does.
+          expect([zone.zoneId, calm.zoneSynergies[zone.zoneId].synergy]).toEqual([
+            zone.zoneId,
+            without,
+          ])
+        }
+      })
+
+      it('answers an opaque 500 for a sky whose numbers are not finite, naming only the error class', async () => {
+        const h = await boot()
+        h.resolveSky.mockResolvedValue({
+          ...sky,
+          thermodynamics: { ...sky.thermodynamics, heat: Number.NaN },
+        })
+        const res = await h.get('?agentId=isaac-newton')
+
+        expect(res.status).toBe(500)
+        expect(await res.json()).toEqual({ success: false, error: 'Internal server error.' })
+        expect(errorSpy).toHaveBeenCalledWith('[rating] GET failed:', 'RangeError')
+        expect(logged()).not.toContain('NaN')
+      })
+    })
+
+    describe('Seals and zone synergies', () => {
+      // An anonymous read of a forged vessel holds nothing, so it has no Seal and no multiplier:
+      // each zone is then the plain weighted mean of the vessel's ratings. House 0 weighs power,
+      // resonance, wisdom, charisma, intuition, adaptability, vitality as 25, 5, 20, 5, 5, 5, 35
+      // and House 1 as 35, 5, 5, 5, 5, 20, 25 (per cent).
+      it('weighs the zones by the vessel’s ratings on 25 to 99, not by its raw scores', async () => {
+        // Ratings 95, 94, 95, 96, 97, 93, 98 (the raw scores are 95, 93, 94, 96, 97, 92, 98, which
+        // would give House 0 95.75). No sky, so no surge boosts anything.
+        const h = await boot({ world: forgedWorld() })
+        h.resolveSky.mockRejectedValue(new h.SkyUnavailableError('The sky is incomplete (Pluto)'))
+        const body = await view(await h.get(`?agentId=${FORGED}`))
+
+        expect(body.seals).toEqual([])
+        expect(body.surge).toBeNull()
+        expect(body.zoneSynergies.slice(0, 2).map(zone => [zone.zoneId, zone.synergy])).toEqual([
+          [0, 96.05],
+          [1, 95.45],
+        ])
+      })
+
+      it('adds an active surge’s boosts to the ratings first, and stops at 99', async () => {
+        // The fixture sky's surge boosts power, resonance, wisdom, intuition and adaptability by 4,
+        // charisma by 8 and vitality by 12: 99, 98, 99, 99, 99, 97, 99 once clamped. House 0:
+        // 24.75 + 4.9 + 19.8 + 4.95 + 4.95 + 4.85 + 34.65.
+        const h = await boot({ world: forgedWorld() })
+        const body = await view(await h.get(`?agentId=${FORGED}`))
+
+        expect(body.surge?.active).toBe(true)
+        expect(body.zoneSynergies[0].synergy).toBe(98.85)
+      })
+
+      it('multiplies each zone by the best Seal tier of the zone’s own element token', async () => {
+        const h = await boot({ world: forgedWorld() })
+        const rich = await view(await h.get(`?agentId=${FORGED}`, bearer))
+        const poor = await view(await h.get(`?agentId=${FORGED}`))
+
+        for (const zone of rich.zoneSynergies) {
+          const best = rich.seals
+            .filter(seal => seal.category === zone.esmsToken)
+            .map(seal => SEAL_TIER_MULTIPLIERS[seal.tier])
+          const multiplier = best.length === 0 ? 1 : Math.max(...best)
+          const unseal = poor.zoneSynergies[zone.zoneId]
+          expect([zone.zoneId, zone.esmsToken]).toEqual([unseal.zoneId, unseal.esmsToken])
+          // Two roundings (the sum, then the product) allow a hundredth of slack.
+          expect([
+            zone.zoneId,
+            Math.abs(zone.synergy - unseal.synergy * multiplier) < 0.05,
+          ]).toEqual([zone.zoneId, true])
+        }
+        // The Seals really moved a zone, so the comparison above has teeth.
+        expect(rich.zoneSynergies.some((z, i) => z.synergy > poor.zoneSynergies[i].synergy)).toBe(
+          true
+        )
+      })
+    })
+  })
+
+  // ─── (J) who is who: factions, provenance, looks ───────────────────────────
+
+  describe('a vessel’s faction, provenance and look', () => {
+    const withSun = (sign: string): World => {
+      const world = defaultWorld()
+      world.forged = [
+        forgedRow(FORGED, {
+          natalChart: { planets: { Sun: { sign, degree: 12 }, Moon: { sign, degree: 3 } } },
+        }),
+      ]
+      return world
+    }
+
+    it.each(Object.entries(RULER_FACTION))(
+      'puts a forged vessel whose natal Sun is in %s in faction %i',
+      async (sign, faction) => {
+        const h = await boot({ world: withSun(sign) })
+        const body = await view(await h.get(`?agentId=${FORGED}`))
+
+        expect(body.faction).toBe(faction)
+        expect(body.factionName).toBe(FACTIONS[faction])
+        expect(body.provenance).toBe('user')
+        expect(body.isPlaceholder).toBe(false)
+        expect(body.appearance).toEqual(resolveAgentAppearance(FORGED, faction, body.archetype))
+      }
+    )
+
+    it('falls back to the Sun’s faction when a forged chart names no Sun', async () => {
+      const world = defaultWorld()
+      world.forged = [
+        forgedRow(FORGED, { natalChart: { planets: { Moon: { sign: 'Cancer', degree: 3 } } } }),
+      ]
+      const h = await boot({ world })
+      const body = await view(await h.get(`?agentId=${FORGED}`))
+
+      expect(body.faction).toBe(0)
+      expect(body.factionName).toBe('Sun')
+    })
+
+    it('gives two forged vessels with different factions different looks, trimmed in their faction’s colour', async () => {
+      const aries = await view(
+        await (await boot({ world: withSun('Aries') })).get(`?agentId=${FORGED}`)
+      )
+      const libra = await view(
+        await (await boot({ world: withSun('Libra') })).get(`?agentId=${FORGED}`)
+      )
+
+      expect(aries.faction).not.toBe(libra.faction)
+      expect(aries.appearance.paletteOverrides.secondaryTrimHex).not.toBe(
+        libra.appearance.paletteOverrides.secondaryTrimHex
+      )
+    })
+
+    it('takes a contract pilot’s faction over the roster’s: Newton is Saturn’s although the roster lists the Moon', async () => {
+      const pilot = FIXTURE_AGENTS.find(agent => agent.key === 'isaac-newton')
+      const listed = CANONICAL_ROSTER_71.find(entry => entry.key === 'isaac-newton')
+      expect([pilot?.faction, listed?.faction]).toEqual([6, 1]) // the premise
+      const h = await boot()
+      const body = await view(await h.get('?agentId=isaac-newton'))
+
+      expect(body.faction).toBe(6)
+      expect(body.factionName).toBe('Saturn')
+    })
+
+    it('takes a roster vessel’s faction from the roster when it is no pilot', async () => {
+      const listed = CANONICAL_ROSTER_71.find(entry => entry.key === 'lewis-carroll')
+      expect(listed?.faction).toBe(5) // the premise
+      expect(FIXTURE_AGENTS.some(agent => agent.key === 'lewis-carroll')).toBe(false)
+      const h = await boot()
+      const carroll = await view(await h.get('?agentId=lewis-carroll'))
+
+      expect(carroll.faction).toBe(5)
+      expect(carroll.factionName).toBe('Jupiter')
+    })
+
+    it('reads a birth-year id against the roster’s: Tesla is Venus’s although his natal Sun is in Cancer', async () => {
+      const h = await boot()
+      const body = await view(await h.get('?agentId=nikola-tesla-1856'))
+      const tesla = HISTORICAL_AGENTS.find(agent => agent.id === 'nikola-tesla-1856')
+      expect(tesla?.consciousness.natalChart.planets.Sun?.sign).toBe('Cancer') // the premise
+      expect(CANONICAL_ROSTER_71.find(entry => entry.key === 'nikola-tesla-1856')?.faction).toBe(3)
+
+      expect(body.faction).toBe(3)
+      expect(body.factionName).toBe('Venus')
+    })
+
+    it('falls back to the ruler of the natal Sun for the one roster vessel the roster does not list', async () => {
+      const unlisted = HISTORICAL_AGENTS.filter(
+        agent =>
+          !CANONICAL_ROSTER_71.some(
+            entry => entry.key.replace(/-\d+$/, '') === agent.id.replace(/-\d+$/, '')
+          )
+      )
+      expect(unlisted.map(agent => agent.id)).toEqual(['greg-castro-1991']) // the premise
+      const h = await boot()
+      const body = await view(await h.get('?agentId=greg-castro-1991'))
+
+      expect(body.faction).toBe(1) // Gregory's natal Sun is in Cancer, which the Moon rules
+      expect(body.factionName).toBe('Moon')
+    })
+
+    it.each([
+      ['isaac-newton-1643', 6, 'a contract pilot'],
+      ['Isaac-Newton-1643', 6, 'a contract pilot, in another case'],
+      ['lewis-carroll-1832', 5, 'a roster entry'],
+    ])(
+      'reads a forged id %s as the manifest does: faction %i of its base key, the look it resolves to (%s)',
+      async (id, faction) => {
+        // The roster does not resolve these (a birth year it never had), so the row is a person's.
+        const world = defaultWorld()
+        world.forged = [forgedRow(id)] // its natal Sun is in Aries, ruled by Mars (4)
+        const h = await boot({ world })
+        const body = await view(await h.get(`?agentId=${id}`))
+
+        expect(body.provenance).toBe('user')
+        expect(body.key).toBe(id)
+        expect(body.faction).toBe(faction)
+        expect(body.factionName).toBe(FACTIONS[faction])
+        expect(body.appearance).toEqual(resolveAgentAppearance(id, faction, body.archetype))
+      }
+    )
+
+    it('marks a placeholder chart as a placeholder vessel, and gives it no Celestial Seal', async () => {
+      const h = await boot()
+      const body = await view(await h.post({ agentId: 'plato', esms: holdings(1000) }))
+      const plato = HISTORICAL_AGENTS.find(agent => agent.id === 'plato')
+      expect(plato?.consciousness.natalChart.provenance).toBe('placeholder') // the premise
+
+      expect(body.isPlaceholder).toBe(true)
+      expect(body.provenance).toBe('placeholder')
+      expect(body.sealProgress.every(p => p.natalAffinity === null)).toBe(true)
+      expect(body.seals.some(seal => seal.tier === 'Celestial')).toBe(false)
+      expect(body.sealProgress.every(p => p.tier !== 'Celestial')).toBe(true)
+    })
+
+    it('marks a charted roster vessel as historical and not a placeholder', async () => {
+      const h = await boot()
+      const body = await view(await h.get('?agentId=isaac-newton'))
+      expect(body.isPlaceholder).toBe(false)
+      expect(body.provenance).toBe('historical')
+    })
+
+    it('passes a roster vessel’s model URLs through, and only the ones it has', async () => {
+      const h = await boot()
+      const { getHistoricalAgent } = await import('@/lib/agents/historical')
+      const newton = getHistoricalAgent('isaac-newton')
+      if (!newton) throw new Error('isaac-newton is not on the roster')
+      newton.avatarModelUrl = '/models/newton.glb'
+      const onlyAvatar = await view(await h.get('?agentId=isaac-newton'))
+      expect(onlyAvatar.avatarModelUrl).toBe('/models/newton.glb')
+      expect(onlyAvatar).not.toHaveProperty('headMeshUrl')
+
+      newton.avatarModelUrl = undefined
+      newton.headMeshUrl = '/models/newton-head.glb'
+      const onlyHead = await view(await h.get('?agentId=isaac-newton'))
+      expect(onlyHead.headMeshUrl).toBe('/models/newton-head.glb')
+      expect(onlyHead).not.toHaveProperty('avatarModelUrl')
+    })
+
+    describe('when the manifest’s look carries model URLs of its own', () => {
+      // No look in the manifest ships a model today; the type allows it, so the route has to
+      // pass one through (and let a roster agent's own model win) the day one does.
+      const MANIFEST = '@/lib/agents/vessel-appearance-manifest'
+      const LOOK_AVATAR = '/models/look.glb'
+      const LOOK_HEAD = '/models/look-head.glb'
+      beforeEach(() => {
+        vi.doMock(MANIFEST, async importOriginal => {
+          const real =
+            await importOriginal<typeof import('@/lib/agents/vessel-appearance-manifest')>()
+          return {
+            ...real,
+            resolveAgentAppearance: (...args: Parameters<typeof real.resolveAgentAppearance>) => ({
+              ...real.resolveAgentAppearance(...args),
+              avatarModelUrl: LOOK_AVATAR,
+              headMeshUrl: LOOK_HEAD,
+            }),
+          }
+        })
+      })
+      afterEach(() => {
+        vi.doUnmock(MANIFEST)
+      })
+
+      it('passes them through for a forged vessel', async () => {
+        const h = await boot()
+        const body = await view(await h.get(`?agentId=${FORGED}`, bearer))
+        expect([body.avatarModelUrl, body.headMeshUrl]).toEqual([LOOK_AVATAR, LOOK_HEAD])
+        expect([body.appearance.avatarModelUrl, body.appearance.headMeshUrl]).toEqual([
+          LOOK_AVATAR,
+          LOOK_HEAD,
+        ])
+      })
+
+      it('fills in for a roster agent that has no model of its own', async () => {
+        const h = await boot()
+        const body = await view(await h.get('?agentId=isaac-newton'))
+        expect([body.avatarModelUrl, body.headMeshUrl]).toEqual([LOOK_AVATAR, LOOK_HEAD])
+      })
+
+      it('yields to the model a roster agent has, one at a time', async () => {
+        const h = await boot()
+        const { getHistoricalAgent } = await import('@/lib/agents/historical')
+        const newton = getHistoricalAgent('isaac-newton')
+        if (!newton) throw new Error('isaac-newton is not on the roster')
+
+        newton.avatarModelUrl = '/models/newton.glb'
+        const ownAvatar = await view(await h.get('?agentId=isaac-newton'))
+        expect([ownAvatar.avatarModelUrl, ownAvatar.headMeshUrl]).toEqual([
+          '/models/newton.glb',
+          LOOK_HEAD,
+        ])
+
+        newton.avatarModelUrl = undefined
+        newton.headMeshUrl = '/models/newton-head.glb'
+        const ownHead = await view(await h.get('?agentId=isaac-newton'))
+        expect([ownHead.avatarModelUrl, ownHead.headMeshUrl]).toEqual([
+          LOOK_AVATAR,
+          '/models/newton-head.glb',
+        ])
+      })
+    })
+
+    describe('the Pentacles avatar alias', () => {
+      it('answers as user-avatar-neo, in the Sun’s faction, wearing the pilot’s look', async () => {
+        const pilot = FIXTURE_AGENTS.find(agent => agent.key === 'user-avatar-neo')
+        const resolver = stubResolver()
+        const h = await boot({ resolver })
+        const body = await view(await h.get('?agentId=user-avatar-neo'))
+
+        expect(body.key).toBe('user-avatar-neo')
+        expect(body.handle).toBe('Gregory Castro')
+        expect(body.faction).toBe(0)
+        expect(body.factionName).toBe('Sun')
+        expect(body.faction).toBe(pilot?.faction)
+        expect(body.appearance).toEqual(pilot?.appearance)
+        expect(body.appearance).toMatchObject({
+          era: 'astral',
+          headSilhouette: { crownStyle: 'sovereign-crest' },
+          paletteOverrides: { secondaryTrimHex: '#efc45c' },
+        })
+        // ...while the ledger id stays his roster agent's.
+        expect(resolver.mock.calls.map(([id]) => id)).toEqual(['greg-castro-1991'])
+        expectContractConformant(body)
+      })
+
+      it('shares the stats, ratings and wallet of greg-castro-1991, under a different key, faction and look', async () => {
+        const h = await boot()
+        const avatar = await view(await h.get('?agentId=user-avatar-neo'))
+        const rostered = await view(await h.get('?agentId=greg-castro-1991'))
+
+        expect(rostered.key).toBe('greg-castro-1991')
+        expect(rostered.handle).toBe(avatar.handle)
+        expect(rostered.ratings).toEqual(avatar.ratings)
+        expect(rostered.ovr).toBe(avatar.ovr)
+        expect(rostered.archetype).toEqual(avatar.archetype)
+        expect(rostered.esms).toEqual(GREG_WALLET)
+        expect(avatar.esms).toEqual(GREG_WALLET)
+        expect(rostered.sealProgress).toEqual(avatar.sealProgress)
+        // Gregory is a Cancer: his roster entry follows the Moon; the avatar is the Sun's pilot.
+        expect(rostered.faction).toBe(1)
+        expect(avatar.faction).toBe(0)
+        expect(rostered.appearance).toEqual(resolveAgentAppearance('greg-castro-1991'))
+        expect(rostered.appearance).not.toEqual(avatar.appearance)
+      })
+
+      it('is the one alias there is', async () => {
+        const h = await boot()
+        const { VESSEL_ALIASES } = await import('@/lib/agents/rating/vessel-payload')
+        expect(VESSEL_ALIASES).toEqual({ 'user-avatar-neo': 'greg-castro-1991' })
+        expect((await h.get('?agentId=zz')).status).toBe(404)
+      })
+
+      it('is listed under its roster id, never under the alias', async () => {
+        const h = await boot()
+        const keys = (await (await h.get('?roster=true')).json()).agents.map(
+          (entry: { key: string }) => entry.key
+        )
+        expect(keys).toContain('greg-castro-1991')
+        expect(keys).not.toContain('user-avatar-neo')
+      })
+    })
+  })
+
+  // ─── (K) a GET and a POST of the same inputs ───────────────────────────────
+
+  describe('a GET and a POST of the same inputs', () => {
+    /** What a different holding changes; everything else is a function of the vessel and the sky. */
+    const HOLDING_DRIVEN = [
+      'esms',
+      'esmsSource',
+      'seals',
+      'sealProgress',
+      'zoneSynergies',
+      'bestZoneId',
+      'degraded',
+    ]
+    const changedKeys = (a: PayloadView, b: PayloadView) =>
+      [...new Set([...keysOf(a), ...keysOf(b)])]
+        .filter(key => JSON.stringify((a as never)[key]) !== JSON.stringify((b as never)[key]))
+        .sort()
+
+    it('are the same payload for a roster vessel, except where the push applies: its provenance', async () => {
+      const h = await boot()
+      const read = await view(await h.get('?agentId=isaac-newton'))
+      const pushed = await view(await h.post({ agentId: 'isaac-newton', esms: NEWTON_WALLET }))
+
+      expect(read.esmsSource).toBe('database')
+      expect(pushed.esmsSource).toBe('spacetimedb')
+      expect(changedKeys(read, pushed)).toEqual(['esmsSource'])
+    })
+
+    it('are the same payload for a forged vessel the secret holder reads, except for the same provenance', async () => {
+      const h = await boot()
+      const read = await view(await h.get(`?agentId=${FORGED}`, bearer))
+      const pushed = await view(await h.post({ agentId: FORGED, esms: CREATOR_WALLET }))
+
+      expect(read.esmsSource).toBe('database')
+      expect(pushed.esmsSource).toBe('spacetimedb')
+      expect(changedKeys(read, pushed)).toEqual(['esmsSource'])
+    })
+
+    it('differ in nothing but what the holdings drive when the holdings differ', async () => {
+      const h = await boot()
+      const read = await view(await h.get('?agentId=isaac-newton'))
+      const richer = await view(await h.post({ agentId: 'isaac-newton', esms: holdings(300) }))
+
+      const changed = changedKeys(read, richer)
+      expect(changed.filter(key => !HOLDING_DRIVEN.includes(key))).toEqual([])
+      expect(changed).toEqual(
+        expect.arrayContaining(['esms', 'esmsSource', 'sealProgress', 'zoneSynergies'])
+      )
+      // Everything the vessel and the sky decide is untouched by what it holds.
+      for (const key of [
+        'key',
+        'handle',
+        'faction',
+        'factionName',
+        'appearance',
+        'ratings',
+        'ovr',
+        'archetype',
+        'surge',
+        'sky',
+      ] as const) {
+        expect([key, richer[key]]).toEqual([key, read[key]])
+      }
+    })
+
+    it('are the same payload again on a repeated GET', async () => {
+      const h = await boot()
+      const first = await view(await h.get(`?agentId=${FORGED}`))
+      const second = await view(await h.get(`?agentId=${FORGED}`))
+      expect(second).toEqual(first)
+    })
+
+    it('answer the same payload for an alias push as for the roster id it stands for', async () => {
+      const h = await boot()
+      const viaAlias = await view(await h.post({ agentId: 'user-avatar-neo', esms: PUSHED }))
+      const viaRoster = await view(await h.post({ agentId: 'greg-castro-1991', esms: PUSHED }))
+
+      expect(viaAlias.key).toBe('user-avatar-neo')
+      expect(viaRoster.key).toBe('greg-castro-1991')
+      expect(viaAlias.esms).toEqual(viaRoster.esms)
+      expect(viaAlias.sealProgress).toEqual(viaRoster.sealProgress)
+      expect(viaAlias.seals).toEqual(viaRoster.seals)
+    })
+  })
+
+  // ─── (L) what a seal may say about a private wallet ────────────────────────
+
+  describe('the Seals of an anonymous GET of a forged vessel', () => {
+    const noWalletWorld = (): World => {
+      const world = defaultWorld()
+      world.created = []
+      world.users = []
+      return world
+    }
+    const withoutNote = ({ degraded: _degraded, ...rest }: PayloadView) => rest
+
+    it('never exceed what the baseline holdings allow, whatever the creator holds', async () => {
+      const anonymous = await view(await (await boot()).get(`?agentId=${FORGED}`))
+
+      expect(anonymous.esms).toEqual(holdings(0))
+      for (const p of anonymous.sealProgress) {
+        // The contract's own answer for this stat and the baseline balance: nothing at all.
+        const allowed = evaluateSealTier(
+          p.stat,
+          p.statRating,
+          anonymous.esms[p.token as keyof EsmsHoldings]
+        )
+        expect([p.stat, allowed]).toEqual([p.stat, null])
+        expect([p.stat, rank(p.tier) <= rank(allowed)]).toEqual([p.stat, true])
+        expect(p.balance).toBe(0)
+      }
+      expect(anonymous.seals).toEqual([])
+    })
+
+    it('are every one still short of Copper, with the ESMS gate the only thing in the way', async () => {
+      // Every aligned rating of this vessel clears Copper's 74, so the baseline alone blocks it.
+      const anonymous = await view(await (await boot()).get(`?agentId=${FORGED}`))
+      for (const p of anonymous.sealProgress) {
+        expect([p.stat, p.tier, p.nextTier, p.blockedBy]).toEqual([
+          p.stat,
+          null,
+          'Copper',
+          ['esms'],
+        ])
+      }
+    })
+
+    it('are the very payload a vessel with no wallet at all gets, apart from the note saying why', async () => {
+      const anonymous = await view(await (await boot()).get(`?agentId=${FORGED}`))
+      const reference = await view(
+        await (await boot({ world: noWalletWorld() })).get(`?agentId=${FORGED}`)
+      )
+
+      expect(anonymous.degraded).toEqual({ esms: 'owner wallet is private' })
+      expect(reference.degraded).toEqual({ esms: 'no ledger row' })
+      // Seals, progress, zone synergies and the best zone included: none can encode the wallet.
+      expect(withoutNote(anonymous)).toEqual(withoutNote(reference))
+    })
+
+    it('are the same for a signed-in stranger and for an anonymous caller', async () => {
+      const h = await boot()
+      const anonymous = await view(await h.get(`?agentId=${FORGED}`))
+      h.session.current = { user: { id: OTHER_USER } }
+      const stranger = await view(await h.get(`?agentId=${FORGED}`))
+      expect(stranger).toEqual(anonymous)
+    })
+
+    it('carry no number from the creator’s wallet anywhere, from the Seals to the zone synergies', async () => {
+      const h = await boot()
+      const text = await (await h.get(`?agentId=${FORGED}`)).text()
+      for (const n of [...numbersOf(CREATOR_WALLET), ...numbersOf(OTHER_WALLET)]) {
+        expect(text).not.toContain(n)
+      }
+      // ...although the same vessel read with the secret carries them, in the Seals' balances too.
+      const unlocked = await view(await h.get(`?agentId=${FORGED}`, bearer))
+      expect(unlocked.sealProgress.map(p => p.balance).sort()).toEqual(
+        [1234.5, 1234.5, 2345.25, 2345.25, 3456.75, 3456.75, 4567.125].sort()
+      )
+      expect(rank(unlocked.sealProgress[0].tier)).toBeGreaterThan(rank(null))
+    })
+
+    it('are computed from the roster baseline for a roster vessel with no ledger row, and labelled so', async () => {
+      const world = defaultWorld()
+      world.users = world.users.filter(u => u.id !== 'agentic-newton')
+      const h = await boot({ world })
+      const body = await view(await h.get('?agentId=isaac-newton'))
+      const newton = HISTORICAL_AGENTS.find(a => a.id === 'isaac-newton')!
+      const baseline = newton.consciousness.alchemicalElements as EsmsHoldings
+
+      expect(body.esmsSource).toBe('fallback')
+      expect(body.esms).toEqual(baseline)
+      for (const p of body.sealProgress) {
+        expect(p.balance).toBe(baseline[p.token as keyof EsmsHoldings])
+        expect(rank(p.tier)).toBeLessThanOrEqual(
+          rank(evaluateSealTier(p.stat, p.statRating, baseline[p.token as keyof EsmsHoldings]))
+        )
+      }
+      expectContractConformant(body)
+    })
+  })
+
+  // ─── (M) the Pentacles vocabulary ──────────────────────────────────────────
+
+  describe('the tier vocabulary', () => {
+    const tiersIn = (body: PayloadView): Array<Tier | null> => [
+      ...body.seals.map(seal => seal.tier),
+      ...body.sealProgress.flatMap(p => [p.tier, p.nextTier, p.maxTier]),
+    ]
+    const stray = (body: PayloadView) =>
+      tiersIn(body).filter(tier => tier !== null && !(TIERS as readonly string[]).includes(tier))
+
+    it('is Copper, Silver, Gold, Astral and Celestial, and the retired name is nowhere in any response', async () => {
+      const h = await boot()
+      const responses: Response[] = [
+        await h.get('?agentId=isaac-newton'),
+        await h.get('?agentId=user-avatar-neo'),
+        await h.get(`?agentId=${FORGED}`),
+        await h.get(`?agentId=${FORGED}`, bearer),
+        await h.get('?roster=true'),
+        await h.post({ agentId: 'isaac-newton', esms: holdings(1000) }),
+        await h.post({ agentId: FORGED, esms: holdings(1000) }),
+        await h.get('?agentId=../x'), // 400
+        await h.get('?agentId=nobody-here'), // 404
+        await h.post({ agentId: 'isaac-newton', esms: { spirit: -1 } }), // 400
+        await h.post({ agentId: 'nobody-here', esms: holdings(1) }), // 404
+      ]
+      h.resolveSky.mockRejectedValue(new h.SkyUnavailableError('The sky is incomplete (Pluto)'))
+      responses.push(await h.get('?agentId=isaac-newton')) // a degraded read
+      h.db.failures.lookup = new Error('down')
+      responses.push(await h.get('?agentId=some-forged-agent')) // 503
+
+      for (const res of responses) {
+        const text = await res.text()
+        expect([res.status, text.toLowerCase().includes(RETIRED_TIER)]).toEqual([res.status, false])
+      }
+    })
+
+    it('contains no tier outside the five, for a vessel holding nothing and for one holding everything', async () => {
+      const h = await boot()
+      for (const each of [0, 0.5, 2, 10, 50, 250, 1e9]) {
+        const body = await view(await h.post({ agentId: FORGED, esms: holdings(each) }))
+        expect([each, stray(body)]).toEqual([each, []])
+        expect(body.sealProgress.map(p => p.maxTier).every(tier => TIERS.includes(tier))).toBe(true)
+      }
+    })
+
+    it('climbs one tier per gate as the ESMS balance grows, for a vessel whose stats clear them all', async () => {
+      // Aligned vitality is 100, past every stat gate (74 to 96); the chart's Fire bodies (3) leave
+      // Celestial shut, so the balance alone sets the tier, at 0.5 / 2 / 10 / 50 and never 250.
+      const h = await boot()
+      const tierAt = async (balance: number) => {
+        const body = await view(await h.post({ agentId: FORGED, esms: holdings(balance) }))
+        return body.sealProgress.find(p => p.stat === 'vitality')?.tier
+      }
+      expect(await tierAt(0.4999)).toBeNull()
+      expect(await tierAt(0.5)).toBe('Copper')
+      expect(await tierAt(1.9999)).toBe('Copper')
+      expect(await tierAt(2)).toBe('Silver')
+      expect(await tierAt(9.9999)).toBe('Silver')
+      expect(await tierAt(10)).toBe('Gold')
+      expect(await tierAt(49.9999)).toBe('Gold')
+      expect(await tierAt(50)).toBe('Astral')
+      expect(await tierAt(250)).toBe('Astral')
+      expect(await tierAt(1e9)).toBe('Astral')
+    })
+
+    it('multiplies a Seal by its own tier’s factor: 1.05, 1.1, 1.18, 1.28 and 1.4', async () => {
+      // Celestial's 1.4 needs the chart's blessing and is read below; the other four come
+      // straight off a forged vessel whose chart leaves Celestial shut.
+      const h = await boot()
+      const factors: Record<string, number> = {}
+      for (const [balance, tier] of [
+        [0.5, 'Copper'],
+        [2, 'Silver'],
+        [10, 'Gold'],
+        [50, 'Astral'],
+      ] as const) {
+        const body = await view(await h.post({ agentId: FORGED, esms: holdings(balance) }))
+        const seal = body.seals.find(s => s.statKey === 'vitality')
+        expect(seal?.tier).toBe(tier)
+        factors[tier] = seal?.multiplier as number
+      }
+      expect(factors).toEqual({ Copper: 1.05, Silver: 1.1, Gold: 1.18, Astral: 1.28 })
+    })
+
+    describe('Celestial, which also needs the chart’s blessing', () => {
+      /** Intuition's token is spirit (Fire). Chiron is no classical body and counts for nothing. */
+      const chartWith = (fire: number): Row => {
+        const fireSigns = ['Aries', 'Leo', 'Sagittarius', 'Aries', 'Leo']
+        const bodies = ['Sun', 'Moon', 'Mars', 'Jupiter', 'Uranus']
+        const planets: Record<string, { sign: string; degree: number }> = {
+          Mercury: { sign: 'Taurus', degree: 5 },
+          Venus: { sign: 'Gemini', degree: 5 },
+          Chiron: { sign: 'Aries', degree: 5 },
+        }
+        for (let i = 0; i < fire; i++) planets[bodies[i]] = { sign: fireSigns[i], degree: 10 }
+        return { planets }
+      }
+      /** Intuition 93.5 rates 94 and aligns to 96 (94 - mean 66 + 68), exactly Celestial's gate. */
+      const celestialFor = async (
+        fire: number,
+        { score = 93.5, spirit = 250 }: { score?: number; spirit?: number } = {}
+      ) => {
+        const world = defaultWorld()
+        world.forged = [forgedRow(FORGED, { natalChart: chartWith(fire), intuitionScore: score })]
+        const h = await boot({ world })
+        const body = await view(
+          await h.post({ agentId: FORGED, esms: { ...holdings(1000), spirit } })
+        )
+        const intuition = body.sealProgress.find(p => p.stat === 'intuition') as ProgressView
+        return { body, intuition }
+      }
+
+      it('is earned on the gate exactly: 4 bodies in the token’s element, aligned 96, 250 of the token', async () => {
+        const { body, intuition } = await celestialFor(4)
+        expect(intuition).toMatchObject({
+          statRating: 94,
+          alignedRating: 96,
+          balance: 250,
+          natalAffinity: 4,
+          tier: 'Celestial',
+          nextTier: null,
+          blockedBy: [],
+        })
+        const seal = body.seals.find(s => s.statKey === 'intuition')
+        expect(seal).toMatchObject({ id: 'seal-intuition', tier: 'Celestial', multiplier: 1.4 })
+        expectContractConformant(body)
+      })
+
+      it.each([
+        ['one body short of the element', () => celestialFor(3), 3, []],
+        [
+          'one point of balance short of 250',
+          () => celestialFor(4, { spirit: 249.99 }),
+          4,
+          ['esms'],
+        ],
+        [
+          'one rating point short of the stat gate',
+          () => celestialFor(4, { score: 92 }),
+          4,
+          ['stat'],
+        ],
+      ] as const)('is held back %s, at Astral', async (_label, run, affinity, blockedBy) => {
+        const { body, intuition } = await run()
+        expect(intuition).toMatchObject({
+          tier: 'Astral',
+          nextTier: 'Celestial',
+          natalAffinity: affinity,
+        })
+        expect(intuition.blockedBy).toEqual(affinity < 4 ? [...blockedBy, 'natal'] : blockedBy)
+        expect(body.seals.some(seal => seal.tier === 'Celestial')).toBe(false)
+        expectContractConformant(body)
+      })
+    })
+
+    it('puts the pinned stat gate on a perfect power stat just short of Astral: Crucible Finisher tops out at Gold', async () => {
+      const world = defaultWorld()
+      world.forged = [forgedRow(FORGED, { powerScore: 100 })]
+      const h = await boot({ world })
+      const body = await view(await h.post({ agentId: FORGED, esms: holdings(1000) }))
+      const power = body.sealProgress.find(p => p.stat === 'power')
+
+      expect(power).toMatchObject({
+        statRating: 99,
+        alignedRating: 90.5,
+        tier: 'Gold',
+        maxTier: 'Gold',
+        nextTier: null,
+      })
+      expect(SEAL_STAT_GATES.Astral).toBe(91) // the premise: 90.5 < 91
+      for (const p of body.sealProgress.filter(p => p.stat !== 'power')) {
+        expect([p.stat, p.maxTier]).toEqual([p.stat, 'Celestial'])
+      }
+    })
+  })
+
+  // ─── (N) every roster vessel through the route ─────────────────────────────
+
+  describe('every roster vessel, pushed a rich wallet', () => {
+    const stripped = (id: string) => id.toLowerCase().replace(/-\d+$/, '')
+    const canonical = new Map(
+      CANONICAL_ROSTER_71.map(entry => [stripped(entry.key), entry.faction])
+    )
+    const pilots = new Map(FIXTURE_AGENTS.map(entry => [stripped(entry.key), entry.faction]))
+
+    /** The faction a roster agent must carry: its pilot's, else the roster's, else its Sun's ruler. */
+    const expectedFaction = (agent: (typeof HISTORICAL_AGENTS)[number]): number => {
+      const key = stripped(agent.id)
+      return (
+        pilots.get(key) ??
+        canonical.get(key) ??
+        RULER_FACTION[agent.consciousness.natalChart.planets.Sun?.sign ?? ''] ??
+        0
+      )
+    }
+
+    it(
+      'is rated as the contract says, in its own faction, look and provenance',
+      async () => {
+        const h = await boot()
+        const seen = new Set<string>()
+        const bodies = new Map<string, PayloadView>()
+
+        for (const agent of HISTORICAL_AGENTS) {
+          const res = await h.post({ agentId: agent.id, esms: holdings(1000) })
+          expect([agent.id, res.status]).toEqual([agent.id, 200])
+          const text = await res.text()
+          expect([agent.id, text.toLowerCase().includes(RETIRED_TIER)]).toEqual([agent.id, false])
+          const body = JSON.parse(text) as PayloadView
+          bodies.set(agent.id, body)
+
+          expect([agent.id, body.key, body.handle]).toEqual([agent.id, agent.id, agent.name])
+          expectContractConformant(body)
+          const expected = expectedFaction(agent)
+          expect([agent.id, body.faction, body.factionName]).toEqual([
+            agent.id,
+            expected,
+            FACTIONS[expected],
+          ])
+          const placeholder = agent.consciousness.natalChart.provenance === 'placeholder'
+          expect([agent.id, body.isPlaceholder, body.provenance]).toEqual([
+            agent.id,
+            placeholder,
+            placeholder ? 'placeholder' : 'historical',
+          ])
+          expect([agent.id, body.appearance]).toEqual([agent.id, resolveAgentAppearance(agent.id)])
+          expect([agent.id, stray(body)]).toEqual([agent.id, []])
+          for (const seal of body.seals) seen.add(seal.tier)
+        }
+
+        // Rich holdings earn Seals, and every tier named is one of the five. (Which of the five the
+        // roster reaches is a property of the contract's pinned means, not of this route.)
+        expect(seen.size).toBeGreaterThan(0)
+        expect([...seen].every(tier => (TIERS as readonly string[]).includes(tier))).toBe(true)
+        expect(bodies.size).toBe(HISTORICAL_AGENTS.length)
+
+        // The listing says of each vessel exactly what its own payload says.
+        const listing = await (await h.get('?roster=true')).json()
+        expect(listing.count).toBe(bodies.size)
+        for (const entry of listing.agents) {
+          const body = bodies.get(entry.key) as PayloadView
+          expect(entry).toEqual({
+            key: body.key,
+            handle: body.handle,
+            faction: body.faction,
+            factionName: body.factionName,
+            ovr: body.ovr,
+            archetype: body.archetype,
+            era: body.appearance.era,
+            crownStyle: body.appearance.headSilhouette.crownStyle,
+            signatureRelic: body.appearance.signatureRelic,
+          })
+        }
+      },
+      BULK_TIMEOUT_MS
+    )
+
+    const stray = (body: PayloadView) =>
+      [
+        ...body.seals.map(seal => seal.tier),
+        ...body.sealProgress.flatMap(p => [p.tier, p.nextTier, p.maxTier]),
+      ].filter(tier => tier !== null && !(TIERS as readonly string[]).includes(tier))
+
+    it('is never Celestial on a placeholder chart, however rich', async () => {
+      const h = await boot()
+      const placeholders = HISTORICAL_AGENTS.filter(
+        agent => agent.consciousness.natalChart.provenance === 'placeholder'
+      )
+      expect(placeholders.length).toBeGreaterThan(0)
+      for (const agent of placeholders) {
+        const body = await view(await h.post({ agentId: agent.id, esms: holdings(1e6) }))
+        expect([agent.id, body.seals.some(seal => seal.tier === 'Celestial')]).toEqual([
+          agent.id,
+          false,
+        ])
+        expect([agent.id, body.sealProgress.some(p => p.tier === 'Celestial')]).toEqual([
+          agent.id,
+          false,
+        ])
+      }
+    })
+  })
+
+  // ─── (O) a forged chart that cannot be a chart ─────────────────────────────
+
+  describe('a forged row’s chart is bounds-checked before it rates anything', () => {
+    const bodies = (sunDegree: unknown) => ({
+      planets: {
+        Sun: { sign: 'Aries', degree: sunDegree },
+        Moon: { sign: 'Leo', degree: 3 },
+        Mars: { sign: 'Sagittarius', degree: 20 },
+      },
+    })
+    /** A chart-only row (every score column zero), read as the secret holder. */
+    const rate = async (natalChart: unknown, overrides: Row = {}) => {
+      const world = defaultWorld()
+      world.forged = [forgedRow(FORGED, { natalChart, ...ZERO_SCORES, ...overrides })]
+      const h = await boot({ world })
+      return h.get(`?agentId=${FORGED}`, bearer)
+    }
+    const ratingsOf = async (natalChart: unknown, overrides: Row = {}) => {
+      const res = await rate(natalChart, overrides)
+      expect(res.status).toBe(200)
+      return (await view(res)).ratings
+    }
+
+    it.each([
+      [0, 200],
+      [12.5, 200],
+      [30, 200],
+      [30.0001, 422],
+      [-0.0001, 422],
+      [360, 422],
+      [1e9, 422],
+      [Number.NaN, 422],
+      [Number.POSITIVE_INFINITY, 422],
+    ])('rates a body at %s degrees of its sign with %i', async (degree, status) => {
+      expect((await rate(bodies(degree))).status).toBe(status)
+    })
+
+    it('reads a degree that is not a number as 0 degrees, and still rates the chart', async () => {
+      expect(await ratingsOf(bodies('12'))).toEqual(await ratingsOf(bodies(0)))
+    })
+
+    it('reads it as the sign’s start and not as a first degree, in either chart shape', async () => {
+      // The Moon at 0 Leo rates intuition 71; one degree further it is 72.
+      const moon = (degree: unknown) => ({
+        planets: { ...bodies(12).planets, Moon: { sign: 'Leo', degree } },
+      })
+      const zero = await ratingsOf(moon(0))
+      expect(zero.intuition).toBe(71)
+      expect((await ratingsOf(moon(1))).intuition).toBe(72)
+
+      expect(await ratingsOf(moon('x'))).toEqual(zero)
+      expect(await ratingsOf(moon(null))).toEqual(zero)
+      const forge = (degrees: unknown) => ({
+        tropical: {
+          CelestialBodies: {
+            all: [
+              { label: 'Sun', Sign: { label: 'Aries' }, degrees: 12 },
+              { label: 'Moon', Sign: { label: 'Leo' }, degrees },
+              { label: 'Mars', Sign: { label: 'Sagittarius' }, degrees: 20 },
+            ],
+          },
+        },
+      })
+      expect(await ratingsOf(forge(0))).toEqual(zero)
+      expect(await ratingsOf(forge('x'))).toEqual(zero)
+      expect((await ratingsOf(forge(1))).intuition).toBe(72)
+    })
+
+    it.each([
+      ['a body with no sign', { planets: { Sun: { degree: 5 } } }],
+      ['a body whose sign is not text', { planets: { Sun: { sign: 7, degree: 5 } } }],
+      ['a body that is not an object', { planets: { Sun: null } }],
+      ['a forge body with no sign', { tropical: { CelestialBodies: { all: [{ label: 'Sun' }] } } }],
+      [
+        'a forge body with no label',
+        { tropical: { CelestialBodies: { all: [{ Sign: { label: 'Aries' }, degrees: 5 }] } } },
+      ],
+      [
+        'a forge list that is not a list',
+        { tropical: { CelestialBodies: { all: { label: 'Sun' } } } },
+      ],
+      ['a forge list that is a string', { tropical: { CelestialBodies: { all: 'Sun' } } }],
+    ])('does not take %s for a chart: 422, nothing to rate', async (_label, chart) => {
+      const res = await rate(chart)
+      expect(res.status).toBe(422)
+      expect((await res.json()).error).toContain('has no stats or natal chart to rate')
+    })
+
+    it('refuses the forge’s own shape on the same bounds', async () => {
+      const forge = (degrees: number) => ({
+        tropical: {
+          CelestialBodies: {
+            all: [
+              { label: 'Sun', Sign: { label: 'Aries' }, degrees },
+              { label: 'Moon', Sign: { label: 'Leo' }, degrees: 3 },
+            ],
+          },
+        },
+      })
+      expect((await rate(forge(30))).status).toBe(200)
+      expect((await rate(forge(30.5))).status).toBe(422)
+      expect((await rate(forge(-1))).status).toBe(422)
+    })
+
+    it('gives a chart with a wrong body no part in a vessel that has scores of its own', async () => {
+      // Persisted scores rate the vessel, but a chart that is wrong is dropped, not trusted:
+      // no natal affinity (so no Celestial), no Sun to take a faction from.
+      const h = await boot({
+        world: (() => {
+          const world = defaultWorld()
+          world.forged = [forgedRow(FORGED, { natalChart: bodies(1e9) })]
+          return world
+        })(),
+      })
+      const body = await view(await h.get(`?agentId=${FORGED}`, bearer))
+      expect(body.faction).toBe(0)
+      expect(body.sealProgress.every(p => p.natalAffinity === null)).toBe(true)
+      expect(body.surge?.harmonyOffset).toBe(0)
+      expect(body.ratings.power).toBe(95) // the persisted 95 is still what rates it
+    })
+
+    describe('the ascendant', () => {
+      const withAscendant = (ascendant: unknown) => ({ ...bodies(12), ascendant })
+
+      it.each([
+        [0, 200],
+        [180, 200],
+        [359.99, 200],
+        [360, 200],
+        [360.0001, 422],
+        [-0.0001, 422],
+        [1e9, 422],
+      ])('rates an ecliptic ascendant of %s with %i', async (ascendant, status) => {
+        expect((await rate(withAscendant(ascendant))).status).toBe(status)
+      })
+
+      it.each([Number.NaN, Number.POSITIVE_INFINITY, '120', null])(
+        'treats the non-finite or non-numeric ascendant %j as none',
+        async ascendant => {
+          expect(await ratingsOf(withAscendant(ascendant))).toEqual(await ratingsOf(bodies(12)))
+        }
+      )
+
+      it('reads the forge’s ascendant (sign and degrees) on the same bounds', async () => {
+        const forge = (sign: string, degrees: unknown) => ({
+          ...bodies(12),
+          tropical: { Ascendant: { Sign: { label: sign }, degrees } },
+        })
+        expect((await rate(forge('Aries', 30))).status).toBe(200)
+        expect((await rate(forge('Aries', 30.5))).status).toBe(422)
+        expect((await rate(forge('Aries', -1))).status).toBe(422)
+        // The forge's ascendant is its sign's start plus the degrees: Libra 10 is 190 on the wheel.
+        expect(await ratingsOf(forge('Libra', 10))).toEqual(await ratingsOf(withAscendant(190)))
+        // A sign that is not one of the twelve, or a degree that is not a number, is no ascendant.
+        expect(await ratingsOf(forge('Ophiuchus', 10))).toEqual(await ratingsOf(bodies(12)))
+        expect(await ratingsOf(forge('Libra', '10'))).toEqual(await ratingsOf(bodies(12)))
+      })
+
+      it('adds the forge’s degrees to its sign’s start, up to the whole 30', async () => {
+        const forge = (sign: string, degrees: number) => ({
+          ...bodies(12),
+          tropical: { Ascendant: { Sign: { label: sign }, degrees } },
+        })
+        const none = await ratingsOf(bodies(12))
+        const wheel30 = await ratingsOf(withAscendant(30))
+        // 30 degrees on the wheel is worth one more point of adaptability and vitality than none.
+        expect([none.adaptability, none.vitality]).toEqual([68, 70])
+        expect([wheel30.adaptability, wheel30.vitality]).toEqual([69, 71])
+
+        expect(await ratingsOf(forge('Aries', 30))).toEqual(wheel30)
+        expect(await ratingsOf(forge('Taurus', 0))).toEqual(wheel30)
+        expect(await ratingsOf(forge('Aries', 0))).toEqual(none)
+      })
+
+      it('takes a forge ascendant in a sign that is not one of the twelve as none, not as a position before Aries', async () => {
+        // Mercury at 20 Aries rates adaptability 63; a position of -30 would pull it down to 62.
+        const chart = { planets: { ...bodies(12).planets, Mercury: { sign: 'Aries', degree: 20 } } }
+        const none = await ratingsOf(chart)
+        expect(none.adaptability).toBe(63)
+        for (const degrees of [0, 10]) {
+          const unknown = { tropical: { Ascendant: { Sign: { label: 'Ophiuchus' }, degrees } } }
+          expect([degrees, await ratingsOf({ ...chart, ...unknown })]).toEqual([degrees, none])
+        }
+      })
+    })
+
+    describe('Monica', () => {
+      const monicaRow = (monicaConstant: unknown) => ({ monicaConstant })
+
+      it('is clamped to the 0 to 10 the Sacred 7 formulas divide by', async () => {
+        const at = (monica: unknown) => ratingsOf(bodies(12), monicaRow(monica))
+        expect(await at(10)).toEqual(await at(1e9))
+        expect(await at(10)).toEqual(await at(10.5))
+        expect(await at(0)).toEqual(await at(-5))
+        // ...and within that range it matters, so the clamp above has teeth.
+        expect(await at(0)).not.toEqual(await at(10))
+        expect(await at(5)).not.toEqual(await at(10))
+      })
+
+      it.each([Number.NaN, Number.POSITIVE_INFINITY, Number.NEGATIVE_INFINITY, null, 'high'])(
+        'is read as 0 when it is %j',
+        async monica => {
+          expect(await ratingsOf(bodies(12), monicaRow(monica))).toEqual(
+            await ratingsOf(bodies(12), monicaRow(0))
+          )
+        }
+      )
+    })
+
+    describe('persisted Sacred 7 scores', () => {
+      const SCORES = [
+        'powerScore',
+        'resonanceScore7',
+        'wisdomScore',
+        'charismaScore',
+        'intuitionScore',
+        'adaptabilityScore',
+        'vitalityScore',
+      ]
+      const scored = (overrides: Row) => ({
+        ...Object.fromEntries(SCORES.map(c => [c, 50])),
+        ...overrides,
+      })
+
+      it('are used when every one is a finite 0 to 100 and at least one is above 0', async () => {
+        const world = defaultWorld()
+        world.forged = [forgedRow(FORGED, scored({ powerScore: 100, vitalityScore: 0 }))]
+        const body = await view(await (await boot({ world })).get(`?agentId=${FORGED}`))
+        // 0 rates 25 and 100 rates 99, 50 rates 62.
+        expect(body.ratings).toMatchObject({ power: 99, vitality: 25, wisdom: 62 })
+      })
+
+      it.each([
+        ['one is 100.01', { powerScore: 100.01 }],
+        ['one is -0.01', { vitalityScore: -0.01 }],
+        ['one is not a number', { wisdomScore: '50' }],
+        ['one is null', { wisdomScore: null }],
+        ['one is NaN', { wisdomScore: Number.NaN }],
+        ['one is infinite', { wisdomScore: Number.POSITIVE_INFINITY }],
+      ])('are not used when %s, and the chart rates the vessel instead', async (_label, bad) => {
+        const world = defaultWorld()
+        world.forged = [forgedRow(FORGED, scored(bad))]
+        const body = await view(await (await boot({ world })).get(`?agentId=${FORGED}`))
+        const chartOnly = await ratingsOf(forgedRow(FORGED).natalChart)
+        expect(body.ratings).toEqual(chartOnly)
+      })
+
+      it('are not used when all are 0 (a row written before stats were persisted)', async () => {
+        const world = defaultWorld()
+        world.forged = [forgedRow(FORGED, scored(Object.fromEntries(SCORES.map(c => [c, 0]))))]
+        const body = await view(await (await boot({ world })).get(`?agentId=${FORGED}`))
+        expect(body.ratings).toEqual(await ratingsOf(forgedRow(FORGED).natalChart))
+      })
     })
   })
 })

@@ -621,12 +621,50 @@ describe('the walk can see what it must', () => {
       'ovr-archetype',
       'seals-surge',
       'pentacle-contest',
-      'vessel-appearance',
       'esms-balance-resolver',
       'live-sky',
       'vessel-payload',
     ]) {
       expect(files.has(`lib/agents/rating/${member}.ts`)).toBe(true)
+    }
+    // The look is the contract's manifest now; ASOL's own appearance registry is gone.
+    expect(files.has('lib/agents/rating/vessel-appearance.ts')).toBe(false)
+  })
+
+  it('reaches the rating contract and the appearance manifest it feeds', () => {
+    const { files, edges } = realWalk(INDEX)
+    expect(files.has('lib/agents/rating-contract.ts')).toBe(true)
+    expect(files.has('lib/agents/vessel-appearance-manifest.ts')).toBe(true)
+    // ...by a direct value import from each module that calls them, not merely transitively: a
+    // module that stopped importing the contract would still reach it through its neighbours.
+    const direct = (from: string, to: string): boolean =>
+      edges.some(edge => edge.from === from && edge.to === to)
+    for (const member of ['ovr-archetype', 'seals-surge', 'pentacle-contest', 'vessel-payload']) {
+      expect(
+        direct(`lib/agents/rating/${member}.ts`, 'lib/agents/rating-contract.ts'),
+        member
+      ).toBe(true)
+    }
+    expect(
+      direct('lib/agents/rating/vessel-payload.ts', 'lib/agents/vessel-appearance-manifest.ts')
+    ).toBe(true)
+    // The contract feeds on the manifest, and nothing reaches back the other way.
+    expect(
+      direct('lib/agents/rating-contract.ts', 'lib/agents/vessel-appearance-manifest.ts')
+    ).toBe(true)
+    expect(
+      direct('lib/agents/vessel-appearance-manifest.ts', 'lib/agents/rating-contract.ts')
+    ).toBe(false)
+  })
+
+  it('keeps the contract and the manifest free of the server-only edges', () => {
+    for (const file of [
+      'lib/agents/rating-contract.ts',
+      'lib/agents/vessel-appearance-manifest.ts',
+    ]) {
+      const walk = realWalk(join(ROOT, file))
+      expect(walk.violations.map(describeViolation), file).toEqual([])
+      expect(walk.unresolved, file).toEqual([])
     }
   })
 
