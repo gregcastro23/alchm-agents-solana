@@ -35,7 +35,8 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
   const appearance = resolveAgentAppearance(agent.id)
   const enrichedAgent = {
     ...agent,
-    appearance,
+    // The legacy fields the UI reads (avatar, color, symbol, aura) plus the likeness manifest's.
+    appearance: { ...agent.appearance, ...appearance },
     avatarModelUrl: agent.avatarModelUrl ?? appearance.avatarModelUrl,
     headMeshUrl: agent.headMeshUrl ?? appearance.headMeshUrl,
   }
