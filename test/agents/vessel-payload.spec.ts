@@ -3,6 +3,7 @@ import { describe, expect, it, vi } from 'vitest'
 import type { CraftedAgent } from '@/lib/agent-types'
 import { HISTORICAL_AGENTS, getHistoricalAgent } from '@/lib/agents/historical'
 import { deriveSacredStats } from '@/lib/agents/persona/derive-sacred-stats'
+import { getRulingPlanet } from '@/lib/astrological-data'
 import {
   CANONICAL_SEAL_CATALOG,
   FIXTURE_AGENTS,
@@ -107,9 +108,12 @@ describe('ratableFromRoster', () => {
   it('rates a roster agent from its derived Sacred 7 stats and natal chart', () => {
     const vessel = ratableFromRoster(newton)
     const stats = deriveSacredStats(newton)
+    // Newton is a contract pilot, so the vessel is named as the contract names him, not as the
+    // roster does (see 'a contract pilot’s name and provenance' below).
+    expect(newton.name).toBe('Isaac Newton')
     expect(vessel).toMatchObject({
       agentId: 'isaac-newton',
-      name: 'Isaac Newton',
+      name: 'Sir Isaac Newton',
       origin: 'roster',
     })
     for (const key of CORE_STAT_KEYS) expect(vessel.stats[key]).toBe(stats[key])
@@ -132,7 +136,11 @@ describe('ratableFromRoster', () => {
     const greg = getHistoricalAgent(VESSEL_ALIASES['user-avatar-neo'])!
     const vessel = ratableFromRoster(greg, 'user-avatar-neo')
     expect(vessel.agentId).toBe('user-avatar-neo')
-    expect(vessel.name).toBe(greg.name)
+    // The alias is rated from Gregory's stats and chart, but it is the avatar: named by the
+    // contract's handle, a user vessel, not the person's name and `historical`.
+    expect(greg.name).toBe('Gregory Castro')
+    expect(vessel.name).toBe('Adept Neo')
+    expect(vessel.provenance).toBe('user')
     expect(vessel.appearance).toEqual(resolveAgentAppearance('user-avatar-neo'))
     expect(vessel.appearance.era).toBe('astral')
     expect(vessel.appearance.headSilhouette.crownStyle).toBe('sovereign-crest')
@@ -227,7 +235,7 @@ describe('buildRatedAgentPayload', () => {
 
   it('assembles every section from one vessel and one sky', () => {
     expect(payload.key).toBe('isaac-newton')
-    expect(payload.handle).toBe('Isaac Newton')
+    expect(payload.handle).toBe('Sir Isaac Newton')
     expect(payload.faction).toBe(6)
     expect(payload.factionName).toBe('Saturn')
     expect(payload.scale.name).toBe('Pentacle Vessel Rating Scale')
@@ -365,7 +373,7 @@ describe('the whole roster', () => {
     const row = summarizeVessel(ratableFromRoster(newton))
     expect(row).toMatchObject({
       key: 'isaac-newton',
-      handle: 'Isaac Newton',
+      handle: 'Sir Isaac Newton',
       faction: 6,
       factionName: 'Saturn',
       era: 'enlightenment',
@@ -1865,6 +1873,100 @@ describe('the faction of a vessel', () => {
     }
   )
 
+  describe('which strings name a Sun sign that rules a faction', () => {
+    // `getRulingPlanet` alone reads any string it does not know as Aries, and so as Mars (4): a
+    // chart whose Sun sign is not one of the twelve must not fly under Mars, it falls to the Sun's
+    // faction 0 as a chart with no sign does. Case and surrounding space are not part of a sign.
+    const REAL_SIGNS: [string, number][] = [
+      ['aries', 4],
+      ['  aries ', 4],
+      ['ARIES', 4],
+      ['\tcapricorn\n', 6],
+      ['SCORPIO', 9],
+      ['cAnCeR', 1],
+      ['PISCES', 8],
+      [' Sagittarius ', 5],
+      ['AqUaRiUs', 7],
+      ['LEO', 0],
+      ['leo ', 0],
+    ]
+    const NOT_SIGNS = [
+      'Banana',
+      'Ophiuchus',
+      'constructor',
+      'toString',
+      '__proto__',
+      '',
+      '   ',
+      'Ari es',
+      'Arie',
+      'Ariess',
+      'Aries1',
+      'Aries.',
+      'Aries Taurus',
+      'Sun',
+      'Mars',
+      'Aries\u0000',
+    ]
+    const gregWithSun = (sign: string): CraftedAgent => {
+      const greg = getHistoricalAgent('greg-castro-1991')!
+      const chart = greg.consciousness.natalChart!
+      return {
+        ...greg,
+        consciousness: {
+          ...greg.consciousness,
+          natalChart: {
+            ...chart,
+            planets: { ...chart.planets, Sun: { ...chart.planets.Sun, sign } },
+          },
+        },
+      } as unknown as CraftedAgent
+    }
+
+    it('has teeth: the ruling-planet lookup alone reads the strings below as Mars', () => {
+      for (const sign of ['Banana', 'Ophiuchus', 'constructor', '', 'Arie']) {
+        expect((FACTION_NAMES as readonly string[]).indexOf(getRulingPlanet(sign)), sign).toBe(4)
+      }
+    })
+
+    it.each(REAL_SIGNS)(
+      'rules the Sun sign %j with faction %i, in every chart shape',
+      (sign, faction) => {
+        expect(factionOf('agent-outside-ab12', sunIn(sign))).toBe(faction)
+        expect(factionOf('agent-outside-ab12', forgeShape({ Sun: { sign, degree: 10 } }))).toBe(
+          faction
+        )
+        expect(ratableFromRoster(gregWithSun(sign)).faction).toBe(faction)
+      }
+    )
+
+    it.each(NOT_SIGNS)('gives the Sun sign %j no ruler: faction 0, never Mars (4)', sign => {
+      expect(factionOf('agent-outside-ab12', sunIn(sign))).toBe(0)
+      expect(factionOf('agent-outside-ab12', forgeShape({ Sun: { sign, degree: 10 } }))).toBe(0)
+      expect(ratableFromRoster(gregWithSun(sign)).faction).toBe(0)
+    })
+
+    it('names that faction the Sun in the payload, and draws the look in its colour', () => {
+      for (const sign of ['Banana', 'Ophiuchus', '']) {
+        const vessel = ratableFromRoster(gregWithSun(sign))
+        const payload = buildRatedAgentPayload({
+          vessel,
+          balances: balances('greg-castro-1991'),
+          sky: null,
+        })
+        expect(payload.faction, sign).toBe(0)
+        expect(payload.factionName, sign).toBe('Sun')
+        expect(payload.appearance.paletteOverrides.secondaryTrimHex, sign).toBe(PLANET_COLORS[0])
+      }
+    })
+
+    it('does not let an unreadable sign outrank a readable one: a roster id or pilot still wins', () => {
+      expect(factionOf('isaac-newton', sunIn('Banana'))).toBe(6)
+      expect(factionOf('plato', sunIn('Banana'))).toBe(0)
+      expect(factionOf('aristotle', sunIn('Banana'))).toBe(4) // Mars by the roster, not by default
+    })
+  })
+
   it('reads the Sun from the Sun alone: another body in another sign does not move the faction', () => {
     const chart = rosterShape({
       Sun: { sign: 'Gemini', degree: 3 },
@@ -2110,6 +2212,188 @@ describe('provenance and isPlaceholder', () => {
   })
 })
 
+// ─── The contract's pilots: their name and provenance, as well as their faction and look ──
+
+describe('a contract pilot’s name and provenance', () => {
+  const greg = getHistoricalAgent('greg-castro-1991')!
+  /** [key, the contract's handle, the contract's provenance, what the roster calls the agent]. */
+  const PILOT_IDENTITIES: ['isaac-newton' | 'leonardo-da-vinci' | 'emily-dickinson' | 'user-avatar-neo', string, 'historical' | 'user', string][] = [
+    ['isaac-newton', 'Sir Isaac Newton', 'historical', 'Isaac Newton'],
+    ['leonardo-da-vinci', 'Leonardo da Vinci', 'historical', 'Leonardo da Vinci'],
+    ['emily-dickinson', 'Emily Dickinson', 'historical', 'Emily Dickinson'],
+    ['user-avatar-neo', 'Adept Neo', 'user', 'Gregory Castro'],
+  ] // prettier-ignore
+  /** The roster agent a pilot key is rated from (the avatar is rated from Gregory's agent). */
+  const agentFor = (key: string): CraftedAgent =>
+    key === 'user-avatar-neo' ? greg : getHistoricalAgent(key)!
+  const withChartProvenance = (agent: CraftedAgent, provenance: unknown): CraftedAgent =>
+    ({
+      ...agent,
+      consciousness: {
+        ...agent.consciousness,
+        natalChart: { ...agent.consciousness.natalChart, provenance },
+      },
+    }) as unknown as CraftedAgent
+  const payloadOf = (vessel: RatableVessel) =>
+    buildRatedAgentPayload({
+      vessel,
+      balances: { agentId: vessel.agentId, balances: RICH, esmsSource: 'database' },
+      sky: null,
+    })
+
+  it('has teeth: the table below is the contract’s own, and the roster names two of them differently', () => {
+    expect(FIXTURE_AGENTS.map(f => [f.key, f.handle, f.provenance])).toEqual(
+      PILOT_IDENTITIES.map(([key, handle, provenance]) => [key, handle, provenance])
+    )
+    for (const [key, handle, , rosterName] of PILOT_IDENTITIES) {
+      expect(agentFor(key).name, key).toBe(rosterName)
+      expect(rosterName === handle, key).toBe(key !== 'isaac-newton' && key !== 'user-avatar-neo')
+    }
+  })
+
+  it.each(PILOT_IDENTITIES)(
+    'names %s “%s” with provenance %s, in the vessel, the payload and the roster row',
+    (key, handle, provenance) => {
+      const vessel = ratableFromRoster(agentFor(key), key)
+      expect(vessel.agentId).toBe(key)
+      expect(vessel.name).toBe(handle)
+      expect(vessel.provenance).toBe(provenance)
+      expect(vessel.isPlaceholder).toBe(false)
+      const payload = payloadOf(vessel)
+      expect(payload.key).toBe(key)
+      expect(payload.handle).toBe(handle)
+      expect(payload.provenance).toBe(provenance)
+      expect(payload.isPlaceholder).toBe(false)
+      expect(summarizeVessel(vessel).handle).toBe(handle)
+      expect(summarizeVessel(vessel).key).toBe(key)
+    }
+  )
+
+  it('reads every identity field of a pilot as the contract carries it', () => {
+    for (const fixture of FIXTURE_AGENTS) {
+      const payload = payloadOf(ratableFromRoster(agentFor(fixture.key), fixture.key))
+      expect(payload.key, fixture.key).toBe(fixture.key)
+      expect(payload.handle, fixture.key).toBe(fixture.handle)
+      expect(payload.faction, fixture.key).toBe(fixture.faction)
+      expect(payload.factionName, fixture.key).toBe(fixture.factionName)
+      expect(payload.provenance, fixture.key).toBe(fixture.provenance)
+      expect(payload.isPlaceholder, fixture.key).toBe(fixture.isPlaceholder)
+      expect(payload.appearance, fixture.key).toEqual(fixture.appearance)
+    }
+  })
+
+  it('leaves the stats, the chart and the wallet of the avatar to the roster agent behind the alias', () => {
+    const vessel = ratableFromRoster(greg, 'user-avatar-neo')
+    expect(vessel.name).toBe('Adept Neo')
+    expect(vessel.stats).toEqual(ratableFromRoster(greg).stats)
+    expect(vessel.natalChart).toBe(greg.consciousness.natalChart)
+    expect(resolveVesselAlias(vessel.agentId)).toBe(greg.id)
+    // …and under its own id the same agent is the person, not the avatar.
+    const own = ratableFromRoster(greg)
+    expect(own.name).toBe('Gregory Castro')
+    expect(own.provenance).toBe('historical')
+  })
+
+  it.each([
+    ['isaac-newton-1643', 'isaac-newton', 'Sir Isaac Newton'],
+    ['  ISAAC-Newton ', 'isaac-newton', 'Sir Isaac Newton'],
+    ['Leonardo-Da-Vinci-1452', 'leonardo-da-vinci', 'Leonardo da Vinci'],
+    ['user-avatar-neo-1991', 'user-avatar-neo', 'Adept Neo'],
+    [' USER-AVATAR-NEO', 'user-avatar-neo', 'Adept Neo'],
+  ])(
+    'finds the pilot for the served id %j, as the manifest does (case, space, birth year)',
+    (id, key, handle) => {
+      const vessel = ratableFromRoster(agentFor(key), id)
+      expect(vessel.agentId).toBe(id) // the id is served as given
+      expect(vessel.name).toBe(handle)
+      expect(vessel.provenance).toBe(key === 'user-avatar-neo' ? 'user' : 'historical')
+    }
+  )
+
+  it('finds the pilot by the id a vessel is served under, never by the agent behind it', () => {
+    // Socrates has a sourced chart (not a placeholder), so only the served id decides the identity.
+    const socrates = getHistoricalAgent('socrates')!
+    expect(socrates.consciousness.natalChart?.provenance).toBe('authored')
+    const asNewton = ratableFromRoster(socrates, 'isaac-newton')
+    expect(asNewton.name).toBe('Sir Isaac Newton')
+    expect(asNewton.provenance).toBe('historical')
+    expect(asNewton.faction).toBe(6)
+    const asNeo = ratableFromRoster(socrates, 'user-avatar-neo')
+    expect(asNeo.name).toBe('Adept Neo')
+    expect(asNeo.provenance).toBe('user')
+    expect(asNeo.faction).toBe(0)
+    // Newton's own agent under another id is just the agent, and carries that id's faction.
+    const newtonAsSocrates = ratableFromRoster(newton, 'socrates')
+    expect(newtonAsSocrates.name).toBe('Isaac Newton')
+    expect(newtonAsSocrates.provenance).toBe('historical')
+    expect(newtonAsSocrates.faction).toBe(2) // Socrates', by the roster
+  })
+
+  it.each([
+    'isaac-newton-x',
+    'xisaac-newton',
+    'isaac-newtons',
+    'isaac-newton-1643-2',
+    'isaac',
+    'user-avatar',
+    'user-avatar-neo-x',
+    '',
+    'constructor',
+    '__proto__',
+  ])('does not take the id %j for a pilot: the agent keeps its own name and provenance', id => {
+    const vessel = ratableFromRoster(newton, id)
+    expect(vessel.name).toBe('Isaac Newton')
+    expect(vessel.provenance).toBe('historical')
+  })
+
+  it('keeps every other roster agent’s own name and provenance, and only Newton differs from his roster name', () => {
+    const renamed = HISTORICAL_AGENTS.filter(agent => ratableFromRoster(agent).name !== agent.name)
+    expect(renamed.map(agent => agent.id)).toEqual(['isaac-newton'])
+    for (const agent of HISTORICAL_AGENTS) {
+      const vessel = ratableFromRoster(agent)
+      expect(vessel.provenance, agent.id).toBe(vessel.isPlaceholder ? 'placeholder' : 'historical')
+    }
+    const socrates = ratableFromRoster(getHistoricalAgent('socrates')!)
+    expect([socrates.name, socrates.provenance]).toEqual(['Socrates', 'historical'])
+    const plato = ratableFromRoster(getHistoricalAgent('plato')!) // a placeholder chart
+    expect([plato.name, plato.provenance]).toEqual(['Plato', 'placeholder'])
+  })
+
+  it.each(PILOT_IDENTITIES)(
+    'lets a placeholder chart outrank the contract’s provenance for %s, and keeps its handle',
+    (key, handle) => {
+      const vessel = ratableFromRoster(withChartProvenance(agentFor(key), 'placeholder'), key)
+      expect(vessel.provenance).toBe('placeholder')
+      expect(vessel.isPlaceholder).toBe(true)
+      expect(vessel.name).toBe(handle)
+      const payload = payloadOf(vessel)
+      expect(payload.provenance).toBe('placeholder')
+      expect(payload.isPlaceholder).toBe(true)
+      expect(payload.handle).toBe(handle)
+    }
+  )
+
+  it.each(['computed', 'authored', 'unattributed', undefined, 'anything-else'])(
+    'keeps the contract’s provenance for a pilot whose chart provenance is %s',
+    chartProvenance => {
+      for (const [key, , provenance] of PILOT_IDENTITIES) {
+        const vessel = ratableFromRoster(withChartProvenance(agentFor(key), chartProvenance), key)
+        expect(vessel.provenance, key).toBe(provenance)
+        expect(vessel.isPlaceholder, key).toBe(false)
+      }
+    }
+  )
+
+  it('leaves a forged row its own name and its user provenance, whatever its id', () => {
+    for (const [key] of PILOT_IDENTITIES) {
+      const vessel = ratableFromForgedRow(persistedRow({ agentId: key, name: 'Not The Pilot' }))!
+      expect(vessel.name, key).toBe('Not The Pilot')
+      expect(vessel.provenance, key).toBe('user')
+      expect(vessel.origin, key).toBe('forged')
+    }
+  })
+})
+
 // ─── Looks: the contract's manifest, and ids that name Object.prototype members ──
 
 describe('vessel ids and the look a vessel gets', () => {
@@ -2167,25 +2451,54 @@ describe('vessel ids and the look a vessel gets', () => {
   })
 
   it.each(PROTOTYPE_IDS)(
-    'gives a roster agent served under the id %s the manifest’s derived look, not a prototype member',
+    'gives a roster agent served under the id %s a look derived from the id in its faction’s colour, not a prototype member',
     id => {
       const vessel = ratableFromRoster(newton, id)
       expect(vessel.agentId).toBe(id)
+      // Neither a pilot nor on the roster: the manifest has no look for the id, so the look is
+      // derived from the id and the faction the vessel flies under (Newton's Capricorn Sun: Saturn).
+      expect(vessel.faction).toBe(6)
       expect(typeof vessel.appearance).toBe('object')
-      expect(vessel.appearance).toEqual(resolveAgentAppearance(id))
+      expect(vessel.appearance).toEqual(resolveAgentAppearance(id, 6))
+      expect(vessel.appearance.paletteOverrides.secondaryTrimHex).toBe(PLANET_COLORS[6])
+      expect(vessel.appearance).not.toEqual(resolveAgentAppearance(id)) // the faction-less look is the Sun's
       expect(vessel.appearance.era).toBe('astral') // not on the roster, so not Newton's era
       expect(vessel.appearance.headSilhouette.crownStyle).not.toBe('newton-curls') // never the pilot
       expect(Object.keys(JSON.parse(JSON.stringify(vessel)))).toContain('appearance')
     }
   )
 
-  it('serves a roster vessel exactly the look resolveAgentAppearance gives its id, for the whole roster', () => {
+  it('serves a roster vessel exactly the look resolveAgentAppearance gives its id, for the whole roster the manifest lists', () => {
+    // What the manifest knows: the contract's pilots and the 71 roster entries, by base key.
+    const stripYear = (id: string): string => id.trim().toLowerCase().replace(/-\d+$/, '')
+    const listed = new Set([...FIXTURE_AGENTS, ...CANONICAL_ROSTER_71].map(e => stripYear(e.key)))
+    // In practice that is every roster agent but one, which the manifest has no entry for…
+    expect(
+      HISTORICAL_AGENTS.filter(agent => !listed.has(stripYear(agent.id))).map(a => a.id)
+    ).toEqual(['greg-castro-1991'])
+    // …and for all the others the vessel's look is the manifest's, byte for byte.
     const wrong = HISTORICAL_AGENTS.filter(
       agent =>
+        listed.has(stripYear(agent.id)) &&
         JSON.stringify(ratableFromRoster(agent).appearance) !==
-        JSON.stringify(resolveAgentAppearance(agent.id))
+          JSON.stringify(resolveAgentAppearance(agent.id))
     )
     expect(wrong.map(agent => agent.id)).toEqual([])
+    expect(HISTORICAL_AGENTS.filter(agent => listed.has(stripYear(agent.id))).length).toBe(71)
+  })
+
+  it('keeps the manifest’s own look for a listed id even when the served id differs from the roster’s key', () => {
+    // 'plato-1900' is not a key anywhere, but its base key 'plato' is listed: the manifest strips
+    // the suffix and answers with Plato's look. A look drawn from the id and the faction instead
+    // would be the astral one.
+    const plato = getHistoricalAgent('plato')!
+    const vessel = ratableFromRoster(plato, 'plato-1900')
+    expect(vessel.agentId).toBe('plato-1900')
+    expect(vessel.appearance).toEqual(resolveAgentAppearance('plato-1900'))
+    expect(vessel.appearance).toEqual(resolveAgentAppearance('plato'))
+    expect(vessel.appearance.era).toBe('ancient')
+    expect(vessel.appearance).not.toEqual(resolveAgentAppearance('plato-1900', vessel.faction))
+    expect(resolveAgentAppearance('plato-1900', vessel.faction).era).toBe('astral')
   })
 
   it.each(PILOTS)(
@@ -2223,13 +2536,99 @@ describe('vessel ids and the look a vessel gets', () => {
     // The alias carries the roster agent's stats and chart, not the pilot's.
     expect(aliased.stats).toEqual(ratableFromRoster(greg).stats)
     expect(aliased.natalChart).toBe(greg.consciousness.natalChart)
-    // …while the same agent under its own id gets the look of that id.
-    expect(ratableFromRoster(greg).appearance).toEqual(resolveAgentAppearance('greg-castro-1991'))
-    expect(ratableFromRoster(greg).appearance.headSilhouette.crownStyle).not.toBe('sovereign-crest')
+    // …and it keeps the pilot's own hand-authored trim, not the colour of the person's faction.
+    expect(aliased.appearance.paletteOverrides.secondaryTrimHex).toBe('#efc45c')
+    expect(aliased.appearance.paletteOverrides.secondaryTrimHex).not.toBe(PLANET_COLORS[1])
+    expect(aliased.faction).toBe(0)
+    // …while the same agent under its own id is not the avatar: the manifest lists no such id,
+    // so its look is drawn from the id in its faction's colour (a Cancer Sun: the Moon).
+    const own = ratableFromRoster(greg)
+    expect(own.faction).toBe(1)
+    expect(own.appearance).toEqual(resolveAgentAppearance('greg-castro-1991', 1))
+    expect(own.appearance.paletteOverrides.secondaryTrimHex).toBe(PLANET_COLORS[1])
+    expect(own.appearance.headSilhouette.crownStyle).not.toBe('sovereign-crest')
+    expect(own.appearance).not.toEqual(aliased.appearance)
 
     const forged = ratableFromForgedRow(persistedRow({ agentId: 'user-avatar-neo' }))!
     expect(forged.appearance.headSilhouette.crownStyle).toBe('sovereign-crest')
     expect(forged.appearance).toEqual(aliased.appearance)
+  })
+
+  describe('the one roster agent the manifest does not list, asked for under its own id', () => {
+    const greg = getHistoricalAgent('greg-castro-1991')!
+    const withSun = (sign: string | null): CraftedAgent => {
+      const chart = greg.consciousness.natalChart!
+      return {
+        ...greg,
+        consciousness: {
+          ...greg.consciousness,
+          natalChart:
+            sign === null
+              ? undefined
+              : { ...chart, planets: { ...chart.planets, Sun: { ...chart.planets.Sun, sign } } },
+        },
+      } as unknown as CraftedAgent
+    }
+
+    it('has teeth: neither the pilots nor the 71 roster entries list the id, so the manifest derives its look', () => {
+      const listed = [...FIXTURE_AGENTS, ...CANONICAL_ROSTER_71].map(entry => entry.key)
+      expect(listed.some(key => key.replace(/-\d+$/, '') === 'greg-castro')).toBe(false)
+      expect(listed).not.toContain('greg-castro-1991')
+      expect(resolveAgentAppearance('greg-castro-1991', 1)).not.toEqual(
+        resolveAgentAppearance('greg-castro-1991')
+      )
+    })
+
+    it('draws the look in the colour of the faction the natal Sun sign gives it', () => {
+      const vessel = ratableFromRoster(greg)
+      expect(vessel.faction).toBe(1) // a Cancer Sun: the Moon
+      expect(vessel.appearance).toEqual(resolveAgentAppearance('greg-castro-1991', vessel.faction))
+      expect(vessel.appearance.paletteOverrides.secondaryTrimHex).toBe(PLANET_COLORS[1])
+      expect(vessel.appearance).not.toEqual(resolveAgentAppearance('greg-castro-1991'))
+      expect(vessel.appearance.era).toBe('astral')
+    })
+
+    it.each(SIGN_NAMES.map((sign, index) => [sign, index] as const))(
+      'follows the Sun sign: with the Sun in %s the look is that sign’s ruler’s colour',
+      sign => {
+        const vessel = ratableFromRoster(withSun(sign))
+        const ruler = (FACTION_NAMES as readonly string[]).indexOf(getRulingPlanet(sign))
+        expect(vessel.faction).toBe(ruler)
+        expect(vessel.appearance).toEqual(resolveAgentAppearance('greg-castro-1991', ruler))
+        expect(vessel.appearance.paletteOverrides.secondaryTrimHex).toBe(PLANET_COLORS[ruler])
+        expect(
+          buildRatedAgentPayload({
+            vessel,
+            balances: balances('greg-castro-1991'),
+            sky: null,
+          }).appearance
+        ).toEqual(vessel.appearance)
+      }
+    )
+
+    it('is drawn in the Sun’s colour when there is no chart to read a faction from', () => {
+      const vessel = ratableFromRoster(withSun(null))
+      expect(vessel.natalChart).toBeNull()
+      expect(vessel.faction).toBe(0)
+      expect(vessel.appearance).toEqual(resolveAgentAppearance('greg-castro-1991', 0))
+      expect(vessel.appearance.paletteOverrides.secondaryTrimHex).toBe(PLANET_COLORS[0])
+    })
+
+    it('draws a look from the served id as given, so another spelling of it is another look', () => {
+      const shouted = ratableFromRoster(greg, 'GREG-CASTRO-1991')
+      expect(shouted.agentId).toBe('GREG-CASTRO-1991')
+      expect(shouted.faction).toBe(1)
+      expect(shouted.appearance).toEqual(resolveAgentAppearance('GREG-CASTRO-1991', 1))
+      expect(shouted.appearance.paletteOverrides.secondaryTrimHex).toBe(PLANET_COLORS[1])
+    })
+
+    it('does not give a pilot or a listed roster agent a faction-drawn look, whatever its chart says', () => {
+      for (const id of ['isaac-newton', 'plato', 'aristotle', 'voltaire-1694']) {
+        const agent = getHistoricalAgent(id)!
+        const vessel = ratableFromRoster(agent)
+        expect(vessel.appearance, id).toEqual(resolveAgentAppearance(id))
+      }
+    })
   })
 
   it('keeps a year-suffixed pilot look for the roster agent and for a forged row', () => {
@@ -2517,6 +2916,17 @@ describe('buildRatedAgentPayload, value by value', () => {
   it('names the scale the ratings are on', () => {
     expect(payload.scale).toEqual(VESSEL_RATING_SCALE)
     expect(payload.scale).toEqual({ name: 'Pentacle Vessel Rating Scale', floor: 25, ceiling: 99 })
+  })
+
+  it('serves the contract’s own bounds as the scale: what its clamp pins any stat to', () => {
+    // The contract states 25 and 99 only inside `clampStat`; the scale is read from it. (An
+    // infinity is not a stat to clamp but a non-number the contract floors, so use huge finite ones.)
+    expect(payload.scale.floor).toBe(clampStat(-1e9))
+    expect(payload.scale.ceiling).toBe(clampStat(1e9))
+    for (const rating of [...Object.values(payload.ratings), payload.ovr]) {
+      expect(rating).toBeGreaterThanOrEqual(payload.scale.floor)
+      expect(rating).toBeLessThanOrEqual(payload.scale.ceiling)
+    }
   })
 
   it('pins the rating of one fixed vessel, worked out on paper', () => {
@@ -3210,7 +3620,7 @@ describe('asContractPayload', () => {
     }
     expect(contract.surge).toBe(payload.surge)
     expect(contract.key).toBe('isaac-newton')
-    expect(contract.handle).toBe('Isaac Newton')
+    expect(contract.handle).toBe('Sir Isaac Newton')
     expect(contract.faction).toBe(6)
     expect(contract.factionName).toBe('Saturn')
     expect(contract.ratings).toEqual(payload.ratings)

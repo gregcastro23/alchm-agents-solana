@@ -135,7 +135,7 @@ walks the graph.
 
 `id` is 1–100 of letters, digits, `.` `_` `-`. Roster ids are slug-tolerant; `user-avatar-neo` is
 Pentacles' default avatar and resolves to the roster agent `greg-castro-1991` for its stats, chart
-and wallet (the look is the contract's hand-authored pilot, faction Sun). Other ids are looked up as a
+and wallet (it is named "Adept Neo", provenance `user`, faction Sun and wears the contract's hand-authored pilot look, as in the contract's fixtures; the four pilots take their `handle`, `provenance` and `faction` from `FIXTURE_AGENTS`). Other ids are looked up as a
 user-forged `historical_agents` row, in either natal-chart shape the app writes (the roster
 `{ planets }` shape and the forge's `tropical.CelestialBodies`), and rated from persisted Sacred 7
 columns when present, else from the chart (ascendant included, so the same chart rates the same). A
@@ -185,6 +185,14 @@ the contract's `clampStat`) and the contract's per-tier Seal multiplier for the 
   awards Gold on charisma and intuition to 9 and 12 agents against 2 and 1 under a roster-measured
   alignment. Re-measuring them is a one-file change in `rating-contract.ts`; the `it.fails`
   diagnostics in `test/agents/rating-contract-parity.spec.ts` go red the day it lands.
+- **`equilibrium` is not reachable on the live sky.** The contract requires Monica within 0.001 of 1.618
+  (exact Kalchm equilibrium); over 4000 epochs 2020–2035 the live sky's Monica spans −0.004…0.149
+  (median 0.013), so the +16 / +12 / +8 boosts never fire. When both ramps saturate (both positions 1,
+  meter 100) the contract's `heat >= reactivity` tie goes to `inferno`.
+- **A forged vessel's `faction` is the ruler of its natal Sun sign, and its look is drawn from that
+  faction**, so a person's Sun-sign bucket is public through `GET /api/agents/rating` (it is already
+  public through `GET /api/agents`, which lists forged vessels' birth data and natal chart, see below).
+- Seeded `planetary-*` / `moon-phase-*` rows rated through the forged path are labelled provenance `user`.
 - Rate limits and the pushed cache are per serverless instance (best effort), and
   `getClientIp` trusts the first `x-forwarded-for` token — a platform that does not overwrite it
   lets one client rotate its bucket.

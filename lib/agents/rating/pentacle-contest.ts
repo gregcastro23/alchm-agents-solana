@@ -20,8 +20,8 @@
  *   ECR(zone) = ( Σ_k  weight[zone][k] · rating′[k] ) × sealMultiplier(zone)
  *
  * rounded to 2 dp, where `rating′` is the vessel's rating plus the temporary boost its Resonance
- * Surge gives that stat **only while that surge is active**, clamped to the contract's 25–99
- * (`clampStat`). Every zone's weights sum to 1, so before Seals the ECR is a weighted average of
+ * Surge gives that stat **only while that surge is active**, clamped to the contract's 25–99 and
+ * rounded to an integer (`clampStat`). Every zone's weights sum to 1, so before Seals the ECR is a weighted average of
  * the ratings: it never leaves the range of the vessel's own ratings (plus boosts), and a flat
  * vessel scores the same everywhere. Seals are what tilt a vessel toward a particular zone
  * *beyond* its ratings: the multiplier (the contract's `SEAL_TIER_MULTIPLIERS`) is that of the
@@ -293,7 +293,7 @@ export { SEAL_TIER_MULTIPLIERS }
 // ─── Effective Contest Rating ────────────────────────────────────────────────
 
 export interface ContestVessel {
-  /** Natal or live ratings on the contract's 25–99 scale. Finite out-of-range values are clamped; non-finite throw. */
+  /** Natal or live ratings on the contract's 25–99 scale. Finite values are clamped to 25–99 and rounded to an integer (`clampStat`); non-finite throw. */
   ratings: Record<SacredStatKey, number>
   /** The vessel's earned Seals (the contract's `AlchemicalSeal[]`, as `earnedSeals` returns). */
   seals: readonly AlchemicalSeal[]

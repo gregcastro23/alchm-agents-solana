@@ -124,7 +124,7 @@ export const SEAL_TIER_REQUIREMENTS: Readonly<
  * Celestial additionally needs the chart's blessing — a rule ASOL adds on top of the contract
  * (which only bars a placeholder chart): at least this many of the ten classical bodies natally
  * placed in the Seal token's element (Fire→Spirit, Water→Essence, Earth→Matter, Air→Substance —
- * `lib/staking/elements.ts`). Across the roster ≥4 holds for 7–22% of agents depending on the
+ * `lib/staking/elements.ts`). Across the roster ≥4 holds for 7–17% of agents depending on the
  * element. It is passed to the contract's `evaluateSealTier` through its Celestial bar, so every
  * other tier is exactly the contract's.
  */

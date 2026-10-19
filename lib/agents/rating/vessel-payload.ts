@@ -113,9 +113,24 @@ const FIXTURE_FACTIONS: ReadonlyMap<string, number> = new Map(
   FIXTURE_AGENTS.map(fixture => [baseKey(fixture.key), fixture.faction])
 )
 
+/**
+ * The contract's pilots also carry their own display `handle` and `provenance` (the avatar is
+ * "Adept Neo", provenance `user`, not the roster agent's real name and `historical`); a pilot's
+ * identity fields come from the contract, so the same key reads the same on every endpoint.
+ */
+const FIXTURE_IDENTITY: ReadonlyMap<string, { handle: string; provenance?: Provenance }> = new Map(
+  FIXTURE_AGENTS.map(fixture => [
+    baseKey(fixture.key),
+    { handle: fixture.handle, provenance: fixture.provenance },
+  ])
+)
+
 /** The ruling planet of a sign as a faction index; `undefined` when the sign has none. */
 function factionOfSign(sign: string | undefined): number | undefined {
-  if (!sign) return undefined
+  // `getRulingPlanet` reads any unknown sign as Aries (Mars), so only a real sign gets a ruler.
+  if (sign === undefined) return undefined
+  const wanted = sign.trim().toLowerCase()
+  if (!ZODIAC_SIGNS.some(known => known.toLowerCase() === wanted)) return undefined
   const index = (FACTION_NAMES as readonly string[]).indexOf(getRulingPlanet(sign))
   return index >= 0 ? index : undefined
 }
@@ -138,16 +153,24 @@ function factionOf(agentId: string, natalChart: NatalChartInput | null): number 
 export function ratableFromRoster(agent: CraftedAgent, agentId = agent.id): RatableVessel {
   const natalChart = agent.consciousness?.natalChart ?? null
   const isPlaceholder = natalChart?.provenance === 'placeholder'
-  const appearance = resolveAgentAppearance(agentId)
+  const key = baseKey(agentId)
+  const faction = factionOf(agentId, natalChart)
+  const pilot = FIXTURE_IDENTITY.get(key)
+  // The manifest's own look for a vessel it knows; for the one roster agent it does not list
+  // (the faction then comes from the natal Sun sign), a look drawn in that faction's colours.
+  const known = FIXTURE_FACTIONS.has(key) || ROSTER_FACTIONS.has(key)
+  const appearance = known
+    ? resolveAgentAppearance(agentId)
+    : resolveAgentAppearance(agentId, faction)
   return {
     agentId,
-    name: agent.name,
+    name: pilot?.handle ?? agent.name,
     origin: 'roster',
     stats: pickCoreStats(deriveSacredStats(agent) as unknown as Record<string, number>),
     natalChart,
-    faction: factionOf(agentId, natalChart),
+    faction,
     isPlaceholder,
-    provenance: isPlaceholder ? 'placeholder' : 'historical',
+    provenance: isPlaceholder ? 'placeholder' : (pilot?.provenance ?? 'historical'),
     appearance,
     ...((agent.avatarModelUrl ?? appearance.avatarModelUrl)
       ? { avatarModelUrl: agent.avatarModelUrl ?? appearance.avatarModelUrl }
@@ -434,8 +457,10 @@ export function buildRatedAgentPayload({
 
 /**
  * The payload as the contract's own `RatedAgentPayload` (what `feedStreamBus.recordAgentRating`
- * takes), or `null` when there is no surge to put in it. Compiles only while the payload stays
- * assignable to the contract — extension fields ride along, nothing is renamed.
+ * takes), or `null` when there is no surge to put in it — a payload built from no sky is never
+ * published as if it had one. Extension fields ride along. Nothing in this repo calls it yet: the
+ * route does not publish to the feed (a public GET must not write to a live stream), and it is the
+ * adapter for delegating the contract's own `[slug]/ratings` route to `buildRatedAgentPayload`.
  */
 export function asContractPayload(payload: RatedVesselPayload): RatedAgentPayload | null {
   return payload.surge === null ? null : { ...payload, surge: payload.surge }

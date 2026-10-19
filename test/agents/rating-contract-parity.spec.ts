@@ -60,6 +60,7 @@ import type {
 } from '@/lib/agents/rating-contract'
 import {
   CANONICAL_ROSTER_71,
+  PLANET_COLORS,
   resolveAgentAppearance,
 } from '@/lib/agents/vessel-appearance-manifest'
 
@@ -71,14 +72,18 @@ import {
  * under `lib/agents/rating/` feed it live inputs. This file is the guard that keeps it that way:
  *
  *   1. vocabulary  - the modules re-export and import the contract's tiers, gates, catalog and
- *                    ESMS keys and carry no copy of them (identity, AST and source checks);
+ *                    ESMS keys and carry no copy of them (identity, AST and source checks); the
+ *                    25-99 rating bounds are what `clampStat` returns at its extremes, with no
+ *                    literal pair of them left in the rating modules;
  *   2. ratings     - `rateStats` is the contract's own functions on `round(25 + 0.74 * stat)`;
  *   3. seals       - `evaluateSeals` equals the contract's `evaluateSealTier`, differing only by
  *                    ASOL's Celestial rule, and `earnedSeals` is `buildCanonicalSeal`;
  *   4. surge       - `calculateResonanceSurge` is the contract's `evaluateSurgeState` plus a meter;
  *   5. payload     - the four contract pilots go through the real path and the result has the
  *                    contract's shape, is assignable to `RatedAgentPayload` and publishes on the
- *                    real feed bus;
+ *                    real feed bus, under the contract's own faction, handle, provenance and
+ *                    look; a roster vessel the manifest does not list is drawn in its faction's
+ *                    colours, and only a real zodiac sign gives a Sun-sign faction;
  *   6. diagnostics - what is known NOT to match (the contract's pinned roster numbers, and a few
  *                    inconsistencies inside the contract's own fixtures) as `it.fails`, so each
  *                    flips red the day it is fixed.
@@ -327,6 +332,38 @@ describe('vocabulary: the modules use the contract, they do not copy it', () => 
     })
     expect([RATING_FLOOR, RATING_CEILING]).toEqual([25, 99])
   })
+
+  describe('the rating bounds are what the contract clampStat returns at its extremes', () => {
+    it('reads the floor and the ceiling from clampStat, not from a literal pair', () => {
+      expect(RATING_FLOOR).toBe(contract.clampStat(-Number.MAX_VALUE))
+      expect(RATING_CEILING).toBe(contract.clampStat(Number.MAX_VALUE))
+      // Any finite extreme lands on the same ends, so the pair is the clamp's range.
+      expect(RATING_FLOOR).toBe(contract.clampStat(-1e9))
+      expect(RATING_CEILING).toBe(contract.clampStat(1e9))
+      expect([RATING_FLOOR, RATING_CEILING]).toEqual([25, 99])
+      expect(VESSEL_RATING_SCALE.floor).toBe(RATING_FLOOR)
+      expect(VESSEL_RATING_SCALE.ceiling).toBe(RATING_CEILING)
+    })
+
+    it('has the floor and ceiling as the real ends of the clamp: nothing below or above, all of it between', () => {
+      expect(contract.clampStat(RATING_FLOOR - 1)).toBe(RATING_FLOOR)
+      expect(contract.clampStat(RATING_CEILING + 1)).toBe(RATING_CEILING)
+      expect(contract.clampStat(RATING_FLOOR)).toBe(RATING_FLOOR)
+      expect(contract.clampStat(RATING_CEILING)).toBe(RATING_CEILING)
+      // Tight: one step inside each end is still inside, so neither bound is looser than the clamp.
+      expect(contract.clampStat(RATING_FLOOR + 1)).toBe(RATING_FLOOR + 1)
+      expect(contract.clampStat(RATING_CEILING - 1)).toBe(RATING_CEILING - 1)
+      expect(Number.isInteger(RATING_FLOOR)).toBe(true)
+      expect(Number.isInteger(RATING_CEILING)).toBe(true)
+    })
+
+    it('rates the extremes of a stat at the extremes of the clamp', () => {
+      expect(toRating(0)).toBe(contract.clampStat(-Number.MAX_VALUE))
+      expect(toRating(100)).toBe(contract.clampStat(Number.MAX_VALUE))
+      expect(toRating(-1e9)).toBe(RATING_FLOOR)
+      expect(toRating(1e9)).toBe(RATING_CEILING)
+    })
+  })
 })
 
 // ── Source checks: the rating modules import the contract and hold no copy of it ──
@@ -420,6 +457,66 @@ function findContractCopies(sf: ts.SourceFile): string[] {
   return hits
 }
 
+/** The two ends of the contract's rating scale. `clampStat` is the only place they are written. */
+const SCALE_BOUNDS = new Set([25, 99])
+/** Names a bound goes by: a variable or property with one of these holding 25 or 99 is a copy. */
+const BOUND_NAME = /floor|ceil|min|max|low|high|bound|limit/i
+
+/**
+ * Every way a source file can carry its own copy of the 25-99 ends: a bound-named variable or
+ * property initialised with one of them, or the pair declared anywhere in the file's code (the
+ * original `RATING_FLOOR = 25` / `RATING_CEILING = 99` are two statements, so a per-node rule
+ * would miss them). A lone 25 or 99 that is not bound-named (a zone weight) is not a copy.
+ */
+function findScaleBoundCopies(sf: ts.SourceFile): string[] {
+  const hits: string[] = []
+  const seen = new Set<number>()
+  const at = (node: ts.Node): number => sf.getLineAndCharacterOfPosition(node.getStart(sf)).line + 1
+  const nameOf = (name: ts.PropertyName | ts.BindingName): string =>
+    ts.isIdentifier(name) || ts.isStringLiteral(name) ? name.text : ''
+
+  const visit = (node: ts.Node): void => {
+    if (ts.isNumericLiteral(node) && SCALE_BOUNDS.has(Number(node.text))) {
+      seen.add(Number(node.text))
+      const parent = node.parent
+      const owner =
+        (ts.isVariableDeclaration(parent) || ts.isPropertyAssignment(parent)) &&
+        parent.initializer === node
+          ? nameOf(parent.name)
+          : ''
+      if (BOUND_NAME.test(owner)) hits.push(`${at(node)}: ${owner} = ${node.text}`)
+    }
+    ts.forEachChild(node, visit)
+  }
+  visit(sf)
+  if (seen.size === SCALE_BOUNDS.size) hits.push('declares both 25 and 99 as numeric literals')
+  return hits
+}
+
+/** The numeric literals of a file's code (comments and strings are not code). */
+function numericLiterals(sf: ts.SourceFile): number[] {
+  const out: number[] = []
+  const visit = (node: ts.Node): void => {
+    if (ts.isNumericLiteral(node)) out.push(Number(node.text))
+    ts.forEachChild(node, visit)
+  }
+  visit(sf)
+  return out
+}
+
+/** The initialiser of a module-level `const <name> = ...`, or `undefined`. */
+function topLevelInitializer(sf: ts.SourceFile, name: string): ts.Expression | undefined {
+  for (const statement of sf.statements) {
+    if (!ts.isVariableStatement(statement)) continue
+    for (const declaration of statement.declarationList.declarations) {
+      if (ts.isIdentifier(declaration.name) && declaration.name.text === name) {
+        return declaration.initializer
+      }
+    }
+  }
+  return undefined
+}
+
 /** Identifiers called as `name(...)`, and identifiers referenced outside import declarations. */
 function usage(sf: ts.SourceFile): { calls: Set<string>; refs: Set<string> } {
   const calls = new Set<string>()
@@ -497,6 +594,99 @@ describe('vocabulary: sources', () => {
       )
     )
     expect(copies).toEqual([])
+  })
+
+  it('declares no 25-99 pair of its own anywhere: the rating bounds are read from clampStat', () => {
+    const copies = RATING_SOURCES.flatMap(file =>
+      findScaleBoundCopies(parseSource(readFileSync(file, 'utf8'), file)).map(
+        hit => `${rel(file)}:${hit}`
+      )
+    )
+    expect(copies).toEqual([])
+  })
+
+  describe('ovr-archetype asks clampStat for its bounds', () => {
+    const source = parseSource(
+      readFileSync(join(RATING_DIR, 'ovr-archetype.ts'), 'utf8'),
+      'ovr-archetype.ts'
+    )
+
+    it('has neither a 25 nor a 99 anywhere in its code', () => {
+      const literals = numericLiterals(source)
+      expect(literals).not.toContain(25)
+      expect(literals).not.toContain(99)
+      // ...while still using the 0-100 stat domain, so the scan is reading real code.
+      expect(literals).toContain(100)
+    })
+
+    it.each(['RATING_FLOOR', 'RATING_CEILING'])(
+      '%s is initialised by a clampStat(...) call, not by a literal',
+      name => {
+        const init = topLevelInitializer(source, name)
+        expect(init, `${name} is declared at module level`).toBeDefined()
+        expect(init !== undefined && ts.isCallExpression(init)).toBe(true)
+        const call = init as ts.CallExpression
+        expect(ts.isIdentifier(call.expression) && call.expression.text).toBe('clampStat')
+        expect(call.arguments).toHaveLength(1)
+        expect(ts.isNumericLiteral(call.arguments[0])).toBe(false)
+      }
+    )
+
+    it('keeps the bounds out of the scale and the rating functions: they use the two constants', () => {
+      const { refs } = usage(source)
+      expect(refs).toContain('RATING_FLOOR')
+      expect(refs).toContain('RATING_CEILING')
+      const scale = topLevelInitializer(source, 'VESSEL_RATING_SCALE')
+      expect(scale).toBeDefined()
+      const text = (scale as ts.Expression).getText(source)
+      expect(text).toContain('floor: RATING_FLOOR')
+      expect(text).toContain('ceiling: RATING_CEILING')
+    })
+  })
+
+  describe('the 25-99 scanner is not blind', () => {
+    const flagged = (code: string): string[] => findScaleBoundCopies(parseSource(code))
+
+    it('finds the contract itself, where clampStat is the one place the pair is written', () => {
+      const contractFile = join(ROOT, 'lib/agents/rating-contract.ts')
+      expect(
+        findScaleBoundCopies(parseSource(readFileSync(contractFile, 'utf8'))).length
+      ).toBeGreaterThan(0)
+    })
+
+    it.each([
+      ['a literal floor', 'export const RATING_FLOOR = 25'],
+      ['a literal ceiling', 'const ceiling = 99'],
+      [
+        'the original pair, in two statements',
+        'export const RATING_FLOOR = 25\nexport const RATING_CEILING = 99',
+      ],
+      ['a clamp written out', 'const clamp = (v: number) => Math.max(25, Math.min(99, v))'],
+      ['a bounds array', 'const BOUNDS = [25, 99]'],
+      ['a scale object', 'const scale = { floor: 25, ceiling: 99 }'],
+      ['a property named for a bound', 'const s = { min: 25 }'],
+      ['a string-keyed bound', "const s = { 'max': 99 }"],
+    ])('flags %s', (_label, code) => {
+      expect(flagged(code).length).toBeGreaterThan(0)
+    })
+
+    it('leaves zone weights, comments, strings and a clampStat call alone', () => {
+      const clean = [
+        '// the contract scale is 25-99',
+        'const weights = { power: 25, vitality: 25 }',
+        'const FLOOR = clampStat(-Number.MAX_VALUE)',
+        'const CEILING = clampStat(Number.MAX_VALUE)',
+        "const label = '25-99'",
+        'const stat = Math.min(100, Math.max(0, input))',
+      ].join('\n')
+      expect(flagged(clean)).toEqual([])
+    })
+
+    it('reads numeric literals from code only', () => {
+      expect(numericLiterals(parseSource('// 25 and 99\nconst a = "25"\nconst b = 99'))).toEqual([
+        99,
+      ])
+    })
   })
 
   describe('the scanner is not blind', () => {
@@ -1745,16 +1935,23 @@ describe('the payload is the contract payload, for the four contract pilots', ()
     }
   })
 
-  it.each(PILOTS)('%s: takes its faction and look from the contract', key => {
-    const { payload } = pilotPayload(key)
+  it.each(PILOTS)('%s: takes its faction, handle, provenance and look from the contract', key => {
+    const { payload, vessel } = pilotPayload(key)
     const fixture = fixtureOf(key)
     expect(payload.key).toBe(key)
     expect(payload.faction).toBe(fixture.faction)
     expect(payload.factionName).toBe(fixture.factionName)
     expect(FACTION_NAMES[payload.faction]).toBe(payload.factionName)
+    // The display name and the provenance are the fixture's too - including for the Neo
+    // avatar, which is rated from a roster agent with another name and `historical`.
+    expect(payload.handle).toBe(fixture.handle)
+    expect(payload.provenance).toBe(fixture.provenance)
+    expect(vessel.name).toBe(fixture.handle)
+    expect(vessel.provenance).toBe(fixture.provenance)
     expect(payload.appearance).toEqual(resolveAgentAppearance(key))
     expect(payload.appearance).toEqual(fixture.appearance)
     expect(payload.isPlaceholder).toBe(false)
+    expect(payload.isPlaceholder).toBe(fixture.isPlaceholder)
   })
 
   it.each(PILOTS)(
@@ -2001,7 +2198,7 @@ describe('the payload is the contract payload, for the four contract pilots', ()
       const look = resolveAgentAppearance(key)
       expect(summarizeVessel(vessel)).toEqual({
         key,
-        handle: vessel.name,
+        handle: fixtureOf(key).handle,
         faction: fixtureOf(key).faction,
         factionName: fixtureOf(key).factionName,
         ovr: rating.ovr,
@@ -2020,13 +2217,24 @@ describe('where the ASOL payload legitimately differs from the contract fixtures
     expect(payload.ratings).not.toEqual(fixtureOf('isaac-newton').ratings)
   })
 
-  it('rates the Neo avatar as the roster agent it stands for, so its provenance is historical, not user', () => {
+  it('rates the Neo avatar from the roster agent it stands for: his stats and chart, not the fixture numbers', () => {
     expect(VESSEL_ALIASES).toEqual({ 'user-avatar-neo': 'greg-castro-1991' })
     expect(resolveVesselAlias('user-avatar-neo')).toBe('greg-castro-1991')
     expect(resolveVesselAlias('constructor')).toBeUndefined()
-    expect(fixtureOf('user-avatar-neo').provenance).toBe('user')
-    expect(pilotPayload('user-avatar-neo').payload.provenance).toBe('historical')
+    const greg = getHistoricalAgent('greg-castro-1991') as NonNullable<
+      ReturnType<typeof getHistoricalAgent>
+    >
+    const neo = pilotVessel('user-avatar-neo')
+    const derived = deriveSacredStats(greg)
+    for (const stat of STAT_ORDER) expect(neo.stats[stat], stat).toBe(derived[stat])
+    expect(neo.natalChart).toBe(greg.consciousness?.natalChart)
     expect(pilotPayload('user-avatar-neo').payload.key).toBe('user-avatar-neo')
+    expect(pilotPayload('user-avatar-neo').payload.ratings).not.toEqual(
+      fixtureOf('user-avatar-neo').ratings
+    )
+    // What the alias does NOT take from the roster agent is its name and provenance: those are
+    // the contract's (see 'a contract pilot takes its name and provenance from the contract').
+    expect(greg.name).not.toBe(fixtureOf('user-avatar-neo').handle)
   })
 
   it("prefers a contract pilot's own faction to the manifest roster's (Newton: Saturn, not the Moon)", () => {
@@ -2054,12 +2262,24 @@ describe('where the ASOL payload legitimately differs from the contract fixtures
   })
 
   it('gives every roster agent the manifest look, and its own model urls first', () => {
+    const unlisted: string[] = []
     for (const agent of HISTORICAL_AGENTS) {
       const vessel = ratableFromRoster(agent)
-      expect(vessel.appearance, agent.id).toEqual(resolveAgentAppearance(agent.id))
+      if (manifestKnows(agent.id)) {
+        // A vessel the manifest lists gets exactly what it answers for the bare id.
+        expect(vessel.appearance, agent.id).toEqual(resolveAgentAppearance(agent.id))
+      } else {
+        // The manifest does not list it, so its look is drawn in its own faction's colours.
+        unlisted.push(agent.id)
+        expect(vessel.appearance, agent.id).toEqual(
+          resolveAgentAppearance(agent.id, vessel.faction)
+        )
+      }
       expect(vessel.agentId).toBe(agent.id)
       expect(vessel.origin).toBe('roster')
     }
+    expect(unlisted).toContain('greg-castro-1991')
+    expect(unlisted.length).toBeLessThan(HISTORICAL_AGENTS.length / 10)
     // A roster agent whose id the manifest only derives (no pilot, no hand-authored entry) still
     // gets the manifest's roster look, not one re-derived from a faction of 0.
     const derived = HISTORICAL_AGENTS.filter(
@@ -2094,7 +2314,8 @@ describe('where the ASOL payload legitimately differs from the contract fixtures
       for (const stat of STAT_ORDER)
         expect(vessel.stats[stat], `${agent.id} ${stat}`).toBe(stats[stat])
       expect(vessel.natalChart, agent.id).toBe(agent.consciousness?.natalChart ?? null)
-      expect(vessel.name).toBe(agent.name)
+      // Named as the agent is, except a contract pilot, whose name is the contract's handle.
+      expect(vessel.name, agent.id).toBe(pilotHandle(agent.id) ?? agent.name)
     }
     const alias = ratableFromRoster(
       getHistoricalAgent('greg-castro-1991') as NonNullable<ReturnType<typeof getHistoricalAgent>>,
@@ -2406,6 +2627,22 @@ const ROSTER_FACTION: ReadonlyMap<string, number> = new Map(
   CANONICAL_ROSTER_71.map(entry => [entry.key, entry.faction])
 )
 
+/** An id with its trailing birth year (`-1642`) taken off, as the manifest and the modules read it. */
+const withoutYear = (id: string): string => id.trim().toLowerCase().replace(/-\d+$/, '')
+
+/** The manifest's roster keys as the modules read them: 18 of its 71 keys carry a birth year. */
+const ROSTER_BASE_KEYS: ReadonlySet<string> = new Set(
+  CANONICAL_ROSTER_71.map(entry => withoutYear(entry.key))
+)
+
+/** Whether the manifest lists a vessel: one of the contract's pilots, or its own 71-agent roster. */
+const manifestKnows = (id: string): boolean =>
+  (PILOTS as readonly string[]).includes(withoutYear(id)) || ROSTER_BASE_KEYS.has(withoutYear(id))
+
+/** A contract pilot's handle for an id, or `undefined` when the id is not a pilot's. */
+const pilotHandle = (id: string): string | undefined =>
+  contract.FIXTURE_AGENTS.find(fixture => fixture.key === withoutYear(id))?.handle
+
 function forgedRow(agentId: string, sunSign: string) {
   return {
     agentId,
@@ -2423,6 +2660,473 @@ function forgedRow(agentId: string, sunSign: string) {
     vitalityScore: 61,
   }
 }
+
+// ─── 5a. Who a roster vessel is: its name, provenance, look and faction ──────
+
+type RosterAgent = NonNullable<ReturnType<typeof getHistoricalAgent>>
+
+const rosterAgent = (id: string): RosterAgent => {
+  const agent = getHistoricalAgent(id)
+  if (!agent) throw new Error(`roster agent ${id} is missing`)
+  return agent
+}
+
+/** A copy of a roster agent whose natal chart carries `patch` over what it had. */
+function withNatalChart(agent: RosterAgent, patch: Record<string, unknown>): RosterAgent {
+  return {
+    ...agent,
+    consciousness: {
+      ...agent.consciousness,
+      natalChart: { ...agent.consciousness?.natalChart, ...patch },
+    },
+  } as unknown as RosterAgent
+}
+
+/** A copy of a roster agent whose natal Sun stands in `sign`, however odd that string is. */
+function withSunSign(agent: RosterAgent, sign: string): RosterAgent {
+  const planets = agent.consciousness?.natalChart?.planets
+  return withNatalChart(agent, { planets: { ...planets, Sun: { ...planets?.Sun, sign } } })
+}
+
+/** The four pilots as the contract spells them, written out so a change to the contract shows. */
+const PILOT_IDENTITY: Record<
+  (typeof PILOTS)[number],
+  { handle: string; provenance: 'historical' | 'user' }
+> = {
+  'isaac-newton': { handle: 'Sir Isaac Newton', provenance: 'historical' },
+  'leonardo-da-vinci': { handle: 'Leonardo da Vinci', provenance: 'historical' },
+  'emily-dickinson': { handle: 'Emily Dickinson', provenance: 'historical' },
+  'user-avatar-neo': { handle: 'Adept Neo', provenance: 'user' },
+}
+
+const isPlaceholderAgent = (agent: RosterAgent): boolean =>
+  agent.consciousness?.natalChart?.provenance === 'placeholder'
+
+describe('a contract pilot takes its name and provenance from the contract', () => {
+  it('pins the four pilots and the identity the contract gives them', () => {
+    expect(contract.FIXTURE_AGENTS.map(f => f.key)).toEqual([...PILOTS])
+    for (const key of PILOTS) {
+      expect({ handle: fixtureOf(key).handle, provenance: fixtureOf(key).provenance }, key).toEqual(
+        PILOT_IDENTITY[key]
+      )
+    }
+  })
+
+  it.each(PILOTS)('%s: is the contract handle with the contract provenance', key => {
+    const vessel = pilotVessel(key)
+    expect(vessel.name).toBe(PILOT_IDENTITY[key].handle)
+    expect(vessel.provenance).toBe(PILOT_IDENTITY[key].provenance)
+    expect(vessel.isPlaceholder).toBe(false)
+    expect(vessel.agentId).toBe(key)
+    expect(summarizeVessel(vessel).handle).toBe(PILOT_IDENTITY[key].handle)
+    const payload = buildRatedAgentPayload({
+      vessel,
+      balances: { agentId: key, balances: fixtureOf(key).esms, esmsSource: 'database' },
+      sky: SKY_ACTIVE,
+    })
+    expect(payload.handle).toBe(PILOT_IDENTITY[key].handle)
+    expect(payload.provenance).toBe(PILOT_IDENTITY[key].provenance)
+  })
+
+  it("replaces the roster agent's own name: Newton is Sir Isaac Newton, the avatar is Adept Neo", () => {
+    expect(rosterAgent('isaac-newton').name).toBe('Isaac Newton')
+    expect(ratableFromRoster(rosterAgent('isaac-newton')).name).toBe('Sir Isaac Newton')
+    expect(rosterAgent('greg-castro-1991').name).not.toBe('Adept Neo')
+    expect(ratableFromRoster(rosterAgent('greg-castro-1991'), 'user-avatar-neo').name).toBe(
+      'Adept Neo'
+    )
+  })
+
+  it('reads the pilot from the id it is rated under, not from the agent object', () => {
+    const plain = HISTORICAL_AGENTS.find(
+      agent =>
+        manifestKnows(agent.id) &&
+        !(PILOTS as readonly string[]).includes(withoutYear(agent.id)) &&
+        !isPlaceholderAgent(agent)
+    ) as RosterAgent
+    expect(plain).toBeDefined()
+    const derived = deriveSacredStats(plain) as unknown as CoreStats
+    const stats = statsFrom(stat => derived[stat])
+    for (const key of PILOTS) {
+      const vessel = ratableFromRoster(plain, key)
+      expect(vessel.name, key).toBe(PILOT_IDENTITY[key].handle)
+      expect(vessel.provenance, key).toBe(PILOT_IDENTITY[key].provenance)
+      expect(vessel.faction, key).toBe(fixtureOf(key).faction)
+      // ...while what is rated is the agent: its stats and its chart.
+      expect(vessel.stats, key).toEqual(stats)
+      expect(vessel.natalChart, key).toBe(plain.consciousness?.natalChart ?? null)
+    }
+  })
+
+  it('finds a pilot the way the manifest does: case, surrounding space and a birth-year suffix', () => {
+    const newton = rosterAgent('isaac-newton')
+    for (const id of ['ISAAC-NEWTON', ' isaac-newton ', 'isaac-newton-1642', 'Isaac-Newton-7']) {
+      const vessel = ratableFromRoster(newton, id)
+      expect(vessel.name, id).toBe('Sir Isaac Newton')
+      expect(vessel.provenance, id).toBe('historical')
+      expect(vessel.faction, id).toBe(6)
+      // The id the caller gave is kept verbatim as the vessel's key.
+      expect(vessel.agentId).toBe(id)
+    }
+    const greg = rosterAgent('greg-castro-1991')
+    for (const id of ['USER-AVATAR-NEO', '  user-avatar-neo  ', 'user-avatar-neo-2']) {
+      const vessel = ratableFromRoster(greg, id)
+      expect(vessel.name, id).toBe('Adept Neo')
+      expect(vessel.provenance, id).toBe('user')
+      expect(vessel.faction, id).toBe(0)
+    }
+  })
+
+  it('does not take a near miss for a pilot: another key keeps the agent name and historical', () => {
+    const newton = rosterAgent('isaac-newton')
+    for (const id of ['isaac-newtons', 'isaac-newton-x', 'xisaac-newton', 'newton', 'isaac', '']) {
+      const vessel = ratableFromRoster(newton, id)
+      expect(vessel.name, id).toBe('Isaac Newton')
+      expect(vessel.provenance, id).toBe('historical')
+    }
+    // An own-property question: an id such as `constructor` is no pilot either.
+    for (const id of ['constructor', 'toString', '__proto__', 'hasOwnProperty']) {
+      const vessel = ratableFromRoster(newton, id)
+      expect(vessel.name, id).toBe('Isaac Newton')
+      expect(vessel.provenance, id).toBe('historical')
+    }
+  })
+
+  it('lets a placeholder chart win over the pilot provenance, and still names the pilot', () => {
+    const placeholder = HISTORICAL_AGENTS.find(isPlaceholderAgent) as RosterAgent
+    expect(placeholder).toBeDefined()
+    for (const key of PILOTS) {
+      const vessel = ratableFromRoster(placeholder, key)
+      expect(vessel.provenance, key).toBe('placeholder')
+      expect(vessel.isPlaceholder, key).toBe(true)
+      expect(vessel.name, key).toBe(PILOT_IDENTITY[key].handle)
+    }
+    // The same when the pilot's own roster agent is the one with the placeholder chart,
+    // including the user pilot, whose own provenance would otherwise be `user`.
+    for (const key of PILOTS) {
+      const agent = withNatalChart(rosterAgent(resolveVesselAlias(key) ?? key), {
+        provenance: 'placeholder',
+      })
+      const vessel = ratableFromRoster(agent, key)
+      expect(vessel.provenance, key).toBe('placeholder')
+      expect(vessel.isPlaceholder, key).toBe(true)
+      const payload = buildRatedAgentPayload({
+        vessel,
+        balances: {
+          agentId: key,
+          balances: { spirit: 9999, essence: 9999, matter: 9999, substance: 9999 },
+          esmsSource: 'database',
+        },
+        sky: SKY_ACTIVE,
+      })
+      expect(payload.provenance, key).toBe('placeholder')
+      expect(payload.isPlaceholder, key).toBe(true)
+      expect(payload.handle, key).toBe(PILOT_IDENTITY[key].handle)
+    }
+  })
+
+  it('does not take another chart provenance for a placeholder: the pilot keeps its own', () => {
+    for (const chartProvenance of ['computed', 'authored', 'unattributed']) {
+      for (const key of PILOTS) {
+        const agent = withNatalChart(rosterAgent(resolveVesselAlias(key) ?? key), {
+          provenance: chartProvenance,
+        })
+        const vessel = ratableFromRoster(agent, key)
+        expect(vessel.provenance, `${key} ${chartProvenance}`).toBe(PILOT_IDENTITY[key].provenance)
+        expect(vessel.isPlaceholder, `${key} ${chartProvenance}`).toBe(false)
+      }
+    }
+  })
+
+  it('leaves every other roster agent as it was: its own name, historical (or placeholder)', () => {
+    let checked = 0
+    for (const agent of HISTORICAL_AGENTS) {
+      if ((PILOTS as readonly string[]).includes(withoutYear(agent.id))) continue
+      const vessel = ratableFromRoster(agent)
+      expect(vessel.name, agent.id).toBe(agent.name)
+      expect(vessel.provenance, agent.id).toBe(
+        isPlaceholderAgent(agent) ? 'placeholder' : 'historical'
+      )
+      checked++
+    }
+    expect(checked).toBeGreaterThan(60)
+    // Asked for directly, the person behind the avatar is a roster agent like any other.
+    const direct = ratableFromRoster(rosterAgent('greg-castro-1991'))
+    expect(direct.agentId).toBe('greg-castro-1991')
+    expect(direct.name).toBe(rosterAgent('greg-castro-1991').name)
+    expect(direct.provenance).toBe('historical')
+  })
+
+  it('does not name a forged vessel after a pilot: it keeps its own name and user provenance', () => {
+    const vessel = ratableFromForgedRow(forgedRow('isaac-newton-1642', 'Aries'))
+    expect(vessel?.name).toBe('Forged isaac-newton-1642')
+    expect(vessel?.provenance).toBe('user')
+  })
+
+  describe('the Neo avatar alias', () => {
+    const greg = rosterAgent('greg-castro-1991')
+
+    it('is Adept Neo, user, the Sun, with the hand-authored look, rated from the roster agent', () => {
+      const direct = ratableFromRoster(greg)
+      const neo = ratableFromRoster(greg, 'user-avatar-neo')
+      expect(neo).toMatchObject({
+        agentId: 'user-avatar-neo',
+        name: 'Adept Neo',
+        origin: 'roster',
+        provenance: 'user',
+        isPlaceholder: false,
+        faction: 0,
+      })
+      expect(summarizeVessel(neo)).toMatchObject({ handle: 'Adept Neo', factionName: 'Sun' })
+      expect(neo.appearance).toEqual(resolveAgentAppearance('user-avatar-neo'))
+      expect(neo.appearance).toEqual(fixtureOf('user-avatar-neo').appearance)
+      // Rated exactly as the roster agent is: same stats, same chart.
+      expect(neo.stats).toEqual(direct.stats)
+      expect(neo.natalChart).toBe(greg.consciousness?.natalChart)
+      expect(neo.natalChart).toBe(direct.natalChart)
+    })
+
+    it('is a different vessel from the roster agent asked for directly', () => {
+      const direct = ratableFromRoster(greg)
+      const neo = ratableFromRoster(greg, 'user-avatar-neo')
+      expect(direct.name).toBe(greg.name)
+      expect(direct.name).not.toBe('Adept Neo')
+      expect(direct.provenance).toBe('historical')
+      // His Sun is in Cancer, so asked for directly he flies the Moon's colours (1), not the Sun's.
+      expect(greg.consciousness?.natalChart?.planets?.Sun?.sign).toBe('Cancer')
+      expect(direct.faction).toBe(1)
+      expect(neo.faction).toBe(0)
+      expect(direct.appearance).not.toEqual(neo.appearance)
+    })
+
+    it('goes through the real payload path as the contract avatar', () => {
+      const { payload } = pilotPayload('user-avatar-neo')
+      expect(payload).toMatchObject({
+        key: 'user-avatar-neo',
+        handle: 'Adept Neo',
+        provenance: 'user',
+        faction: 0,
+        factionName: 'Sun',
+        isPlaceholder: false,
+      })
+    })
+  })
+})
+
+describe('the look of a roster vessel: the manifest, or its faction colours when it lists none', () => {
+  afterEach(() => {
+    vi.doUnmock('@/lib/agents/vessel-appearance-manifest')
+    vi.resetModules()
+  })
+
+  const greg = rosterAgent('greg-castro-1991')
+
+  it('draws the roster agent asked for directly in the colours of its faction', () => {
+    const direct = ratableFromRoster(greg)
+    // The one roster agent the manifest does not list; his faction is the ruler of his Cancer Sun.
+    expect(manifestKnows(greg.id)).toBe(false)
+    expect(direct.faction).toBe(1)
+    expect(direct.appearance).toEqual(resolveAgentAppearance('greg-castro-1991', 1))
+    expect(direct.appearance.paletteOverrides.secondaryTrimHex).toBe(PLANET_COLORS[1])
+    expect(direct.appearance.paletteOverrides.secondaryTrimHex).toBe('#e0e0e0')
+    // Not the look the manifest hands out for the bare id, which is drawn in the Sun's colours.
+    const bare = resolveAgentAppearance('greg-castro-1991')
+    expect(bare.paletteOverrides.secondaryTrimHex).toBe('#ff9800')
+    expect(direct.appearance).not.toEqual(bare)
+  })
+
+  it('draws it in whichever faction its Sun sign names', () => {
+    const colours: Record<string, number> = {
+      Aries: 4,
+      Cancer: 1,
+      Capricorn: 6,
+      Aquarius: 7,
+      Scorpio: 9,
+    }
+    for (const [sign, faction] of Object.entries(colours)) {
+      const vessel = ratableFromRoster(withSunSign(greg, sign))
+      expect(vessel.faction, sign).toBe(faction)
+      expect(vessel.appearance, sign).toEqual(resolveAgentAppearance(greg.id, faction))
+      expect(vessel.appearance.paletteOverrides.secondaryTrimHex, sign).toBe(PLANET_COLORS[faction])
+    }
+  })
+
+  it("keeps the manifest's own look for every vessel it lists, whatever the agent's Sun sign", () => {
+    const listed = HISTORICAL_AGENTS.filter(agent => manifestKnows(agent.id))
+    expect(listed.length).toBeGreaterThanOrEqual(71)
+    for (const agent of listed) {
+      const moved = ratableFromRoster(withSunSign(agent, 'Aquarius'))
+      expect(moved.appearance, agent.id).toEqual(resolveAgentAppearance(agent.id))
+    }
+    // The pilots and the alias too: the hand-authored look, not one drawn from the faction.
+    for (const key of PILOTS) {
+      expect(pilotVessel(key).appearance, key).toEqual(resolveAgentAppearance(key))
+    }
+  })
+
+  it('asks the manifest for the bare id of a vessel it lists, and for id plus faction of one it does not', async () => {
+    vi.resetModules()
+    const calls: unknown[][] = []
+    vi.doMock('@/lib/agents/vessel-appearance-manifest', async importOriginal => {
+      const real = await importOriginal<typeof import('@/lib/agents/vessel-appearance-manifest')>()
+      return {
+        ...real,
+        resolveAgentAppearance: (...args: Parameters<typeof real.resolveAgentAppearance>) => {
+          calls.push(args)
+          return real.resolveAgentAppearance(...args)
+        },
+      }
+    })
+    const mod = await import('@/lib/agents/rating/vessel-payload')
+
+    let listed = 0
+    for (const agent of HISTORICAL_AGENTS) {
+      if (!manifestKnows(agent.id)) continue
+      calls.length = 0
+      mod.ratableFromRoster(agent)
+      expect(calls, agent.id).toEqual([[agent.id]])
+      listed++
+    }
+    expect(listed).toBeGreaterThanOrEqual(71)
+
+    // A pilot asked for under an alias or a suffix is listed too.
+    for (const id of ['user-avatar-neo', 'USER-AVATAR-NEO', 'isaac-newton-1642']) {
+      calls.length = 0
+      mod.ratableFromRoster(greg, id)
+      expect(calls, id).toEqual([[id]])
+    }
+
+    // The unlisted agent: asked with its faction, the Moon's for a Cancer Sun...
+    calls.length = 0
+    mod.ratableFromRoster(greg)
+    expect(calls).toEqual([['greg-castro-1991', 1]])
+    // ...and the Sun's (0) when its Sun sign is no sign, not an Aries Mars.
+    calls.length = 0
+    mod.ratableFromRoster(withSunSign(greg, 'Banana'))
+    expect(calls).toEqual([['greg-castro-1991', 0]])
+    calls.length = 0
+    mod.ratableFromRoster(withSunSign(greg, 'Scorpio'), 'fresh-agent-3')
+    expect(calls).toEqual([['fresh-agent-3', 9]])
+  })
+})
+
+describe('the Sun-sign fallback reads only a real zodiac sign', () => {
+  // Written out here: the ruler of each sign, as a faction index (0 Sun ... 9 Pluto).
+  const RULER: Array<[sign: string, faction: number]> = [
+    ['Aries', 4],
+    ['Taurus', 3],
+    ['Gemini', 2],
+    ['Cancer', 1],
+    ['Leo', 0],
+    ['Virgo', 2],
+    ['Libra', 3],
+    ['Scorpio', 9],
+    ['Sagittarius', 5],
+    ['Capricorn', 6],
+    ['Aquarius', 7],
+    ['Pisces', 8],
+  ]
+
+  /** A real sign in other clothes: case and surrounding space do not matter. */
+  const DRESSED: Array<[label: string, sign: string, faction: number]> = [
+    ['lower case', 'aries', 4],
+    ['upper case', 'SCORPIO', 9],
+    ['mixed case', 'AqUaRiUs', 7],
+    ['padded', '  aries ', 4],
+    ['padded with a tab and a newline', '\tSagittarius\n', 5],
+    ['upper case Pisces', 'PISCES', 8],
+    // Leo's ruler is the Sun, which is also the fallback: these prove nothing alone, but must not move.
+    ['upper case Leo', 'LEO', 0],
+    ['padded Leo', ' leo ', 0],
+  ]
+
+  /** Not a zodiac sign: no ruler, so the vessel falls to the Sun (0), never to an Aries Mars (4). */
+  const NOT_A_SIGN = [
+    'Banana',
+    'Ophiuchus',
+    'constructor',
+    'toString',
+    '__proto__',
+    'hasOwnProperty',
+    '',
+    ' ',
+    '   ',
+    'Ari',
+    'Ariess',
+    'Aries!',
+    'Aries Taurus',
+    'Sagittarious',
+    'Scorpio2',
+    'Mars',
+    'Moon',
+    'Sun',
+    'Pluto',
+  ]
+
+  const forgedFaction = (sign: string): number | undefined =>
+    ratableFromForgedRow(forgedRow('forged-sign-ab12', sign))?.faction
+
+  const greg = rosterAgent('greg-castro-1991')
+  const rosterFaction = (sign: string): number =>
+    ratableFromRoster(withSunSign(greg, sign), 'fresh-agent-9').faction
+
+  it('gives each of the twelve signs its ruler, on a forged vessel and a roster one', () => {
+    expect(RULER).toHaveLength(12)
+    for (const [sign, faction] of RULER) {
+      expect(forgedFaction(sign), `forged ${sign}`).toBe(faction)
+      expect(rosterFaction(sign), `roster ${sign}`).toBe(faction)
+    }
+  })
+
+  it.each(DRESSED)('reads %s as the sign it is: %j', (_label, sign, faction) => {
+    expect(forgedFaction(sign)).toBe(faction)
+    expect(rosterFaction(sign)).toBe(faction)
+  })
+
+  it.each(NOT_A_SIGN)('gives %j no ruler: the Sun (0)', sign => {
+    expect(forgedFaction(sign)).toBe(0)
+    expect(rosterFaction(sign)).toBe(0)
+  })
+
+  it('draws the look of a vessel with no ruler in the Sun colours, not Mars red', () => {
+    for (const sign of ['Banana', 'Ophiuchus', 'constructor', '']) {
+      const vessel = ratableFromRoster(withSunSign(greg, sign), 'fresh-agent-9')
+      expect(vessel.faction, sign).toBe(0)
+      expect(vessel.appearance.paletteOverrides.secondaryTrimHex, sign).toBe(PLANET_COLORS[0])
+      expect(vessel.appearance.paletteOverrides.secondaryTrimHex, sign).not.toBe(PLANET_COLORS[4])
+      const forged = ratableFromForgedRow(forgedRow('forged-sign-ab12', sign))
+      expect(forged?.appearance.paletteOverrides.secondaryTrimHex, sign).toBe(PLANET_COLORS[0])
+    }
+  })
+
+  it('gives a vessel with no Sun at all the Sun (0), as before', () => {
+    const noSun = withNatalChart(greg, { planets: { Moon: { sign: 'Scorpio', degree: 3 } } })
+    expect(ratableFromRoster(noSun, 'fresh-agent-9').faction).toBe(0)
+    expect(
+      ratableFromForgedRow({
+        ...forgedRow('forged-nosun-ab12', 'Scorpio'),
+        natalChart: { planets: { Moon: { sign: 'Scorpio', degree: 3 } } },
+      })?.faction
+    ).toBe(0)
+  })
+
+  it('lets a pilot or a listed roster key win over the Sun sign, however it is spelled', () => {
+    // [sign, the faction the Sun-sign route alone would give an unlisted id]
+    const signs: Array<[string, number]> = [
+      ['Scorpio', 9],
+      ['Banana', 0],
+      ['taurus', 3],
+    ]
+    for (const [sign, bySun] of signs) {
+      const agent = withSunSign(greg, sign)
+      expect(ratableFromRoster(agent, 'fresh-agent-9').faction, sign).toBe(bySun)
+      expect(ratableFromRoster(agent, 'user-avatar-neo').faction, sign).toBe(0)
+      expect(ratableFromRoster(agent, 'isaac-newton').faction, sign).toBe(6)
+      // 'machiavelli' is Mars (4) in the manifest roster, whatever Sun the agent has.
+      expect(ratableFromRoster(agent, 'machiavelli-1469').faction, sign).toBe(4)
+    }
+  })
+})
 
 // ─── 5b. A stubbed contract moves every result ───────────────────────────────
 
@@ -2456,7 +3160,7 @@ describe('stubbing the contract moves every result (the modules call it, they do
   const UNIT: SurgeCalibration = { heat: { low: 0, high: 1 }, reactivity: { low: 0, high: 1 } }
   const NO_BALANCES: EsmsBalances = { spirit: 0, essence: 0, matter: 0, substance: 0 }
 
-  it('ovr-archetype: every rating is clampStat, and ovr, advantage and archetype chain through the contract', async () => {
+  it('ovr-archetype: the bounds and every rating are clampStat, and ovr, advantage and archetype chain through the contract', async () => {
     const seen = {
       clamp: [] as number[],
       ovr: [] as unknown[],
@@ -2466,7 +3170,12 @@ describe('stubbing the contract moves every result (the modules call it, they do
     const ADVANTAGE = { stub: 'advantage' }
     const ARCHETYPE = { title: 'Stub Title', primary: 'vitality', secondary: 'power' }
     const { ovr } = await withContract(() => ({
+      // A clamp of the range 30-90 (not the contract's 25-99) that answers 61 for anything
+      // strictly inside it: the module has to read its bounds from this function, and every rating
+      // from its answer.
       clampStat: (value: number) => {
+        if (!(value > 30)) return 30
+        if (value >= 90) return 90
         seen.clamp.push(value)
         return 61
       },
@@ -2484,9 +3193,20 @@ describe('stubbing the contract moves every result (the modules call it, they do
       },
     }))
 
+    // The scale's ends are whatever clampStat says its ends are.
+    expect([ovr.RATING_FLOOR, ovr.RATING_CEILING]).toEqual([30, 90])
+    expect(ovr.VESSEL_RATING_SCALE).toEqual({
+      name: 'Pentacle Vessel Rating Scale',
+      floor: 30,
+      ceiling: 90,
+    })
+    expect(ovr.toRating(0)).toBe(30)
+    expect(ovr.toRating(100)).toBe(90)
+    seen.clamp.length = 0
+
     const rated = ovr.rateStats(uniformStats(50))
     expect(rated.ratings).toEqual(uniformStats(61))
-    expect(seen.clamp).toEqual(Array(7).fill(62)) // the linear mapping 25 + 0.5 * 74, un-rounded
+    expect(seen.clamp).toEqual(Array(7).fill(60)) // the linear mapping 30 + 0.5 * (90 - 30), un-rounded
     expect(rated.ovr).toBe(77)
     expect(rated.relativeAdvantage).toBe(ADVANTAGE)
     expect(rated.archetype).toBe(ARCHETYPE)
@@ -2498,7 +3218,7 @@ describe('stubbing the contract moves every result (the modules call it, they do
 
     seen.clamp.length = 0
     ovr.toRating(33.3)
-    expect(seen.clamp[0]).toBeCloseTo(25 + 0.333 * 74, 9)
+    expect(seen.clamp[0]).toBeCloseTo(30 + 0.333 * 60, 9)
   })
 
   it('seals-surge: asks the contract for each tier with the rating, the balance and the Celestial bar', async () => {
@@ -2742,6 +3462,51 @@ describe('stubbing the contract moves every result (the modules call it, they do
     expect(mod.ratableFromRoster(other).faction).toBe(
       ROSTER_FACTION.get(other.id.replace(/-\d+$/, ''))
     )
+  })
+
+  it('vessel-payload: the name and provenance of a contract pilot are the contract fixture ones, and the pilot list is the contract list', async () => {
+    const { payload: mod } = await withContract(real => ({
+      FIXTURE_AGENTS: [
+        {
+          ...real.FIXTURE_AGENTS[0],
+          key: 'isaac-newton',
+          handle: 'Stub Newton',
+          provenance: 'user',
+        },
+        // A fixture with no provenance leaves the roster default; a year suffix on its key is read.
+        {
+          ...real.FIXTURE_AGENTS[0],
+          key: 'emily-dickinson-1830',
+          handle: 'Stub Emily',
+          provenance: undefined,
+        },
+      ],
+    }))
+    const newton = rosterAgent('isaac-newton')
+    const stubbed = mod.ratableFromRoster(newton)
+    expect(stubbed.name).toBe('Stub Newton')
+    expect(stubbed.provenance).toBe('user')
+    const emily = mod.ratableFromRoster(rosterAgent('emily-dickinson'))
+    expect(emily.name).toBe('Stub Emily')
+    expect(emily.provenance).toBe('historical')
+    // A placeholder chart still wins over the stubbed provenance.
+    expect(
+      mod.ratableFromRoster(withNatalChart(newton, { provenance: 'placeholder' })).provenance
+    ).toBe('placeholder')
+    // Leonardo is no pilot in this contract: his own name, the roster faction, the manifest look.
+    const leonardo = rosterAgent('leonardo-da-vinci')
+    const plain = mod.ratableFromRoster({ ...leonardo, name: 'Roster Leonardo' })
+    expect(plain.name).toBe('Roster Leonardo')
+    expect(plain.provenance).toBe('historical')
+    expect(plain.faction).toBe(ROSTER_FACTION.get('leonardo-da-vinci'))
+    // The payload built from it carries the stubbed handle and provenance.
+    const built = mod.buildRatedAgentPayload({
+      vessel: stubbed,
+      balances: { agentId: 'isaac-newton', balances: NO_BALANCES, esmsSource: 'database' },
+      sky: SKY_ACTIVE,
+    })
+    expect(built.handle).toBe('Stub Newton')
+    expect(built.provenance).toBe('user')
   })
 
   it('vessel-payload: ovr, archetype, Seals and surge of a built payload are the contract functions', async () => {

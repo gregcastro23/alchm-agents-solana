@@ -139,6 +139,37 @@ const RULER_FACTION: Record<string, number> = {
 }
 const rank = (tier: string | null): number => (tier === null ? -1 : TIERS.indexOf(tier as Tier))
 
+/** The manifest and the route reduce an id to its base key: trimmed, lower-cased, no `-<birth year>`. */
+const baseKeyOf = (id: string): string => id.trim().toLowerCase().replace(/-\d+$/, '')
+/** The contract's pilots (the keys of `FIXTURE_AGENTS`) by base key. */
+const PILOTS = new Map(FIXTURE_AGENTS.map(pilot => [baseKeyOf(pilot.key), pilot]))
+/**
+ * What a roster agent is called in a payload: the contract's handle for a pilot, else its own
+ * name. Only Newton ('Sir Isaac Newton' against the roster's 'Isaac Newton') differs today, so
+ * the literal pins in the pilot tests below carry the weight and this is the sweep's oracle.
+ */
+const handleOf = (agent: { id: string; name: string }): string =>
+  PILOTS.get(baseKeyOf(agent.id))?.handle ?? agent.name
+/** The identity fields a payload shares with the contract's fixtures. */
+const identityOf = (p: {
+  key: string
+  handle: string
+  faction: number
+  factionName: string
+  isPlaceholder?: boolean
+  provenance?: string
+}) => ({
+  key: p.key,
+  handle: p.handle,
+  faction: p.faction,
+  factionName: p.factionName,
+  isPlaceholder: p.isPlaceholder,
+  provenance: p.provenance,
+})
+/** The classical bodies' trim colours the manifest draws a look in (`PLANET_COLORS`, by faction). */
+const SUN_TRIM = '#ff9800'
+const MOON_TRIM = '#e0e0e0'
+
 // Wallets with values no rating, seal or coordinate could produce by accident, so that a number
 // turning up anywhere in a response can only have come from that wallet.
 const CREATOR_WALLET: EsmsHoldings = {
@@ -484,6 +515,17 @@ const walletReads = (h: Harness) =>
 
 const advanceTo = (ms: number) => vi.setSystemTime(NOW.getTime() + ms)
 
+/**
+ * A roster agent as the booted route sees it. Every `boot` re-imports the roster, so an edit
+ * made to the returned object lives exactly as long as its test.
+ */
+async function rosterAgent(id: string) {
+  const { getHistoricalAgent } = await import('@/lib/agents/historical')
+  const agent = getHistoricalAgent(id)
+  if (!agent) throw new Error(`${id} is not on the roster`)
+  return agent
+}
+
 // ─── Reading a payload against the contract ──────────────────────────────────
 
 interface SealView {
@@ -737,9 +779,11 @@ describe('rating route with the ESMS resolver stubbed', () => {
     expect(res.status).toBe(200)
     expect(keysOf(body)).toEqual([...ALL_KEYS].sort())
     for (const retired of RETIRED_KEYS) expect(body).not.toHaveProperty(retired)
+    // Newton is one of the contract's pilots, so he is named as the contract names him
+    // ('Sir Isaac Newton'), not as the roster does ('Isaac Newton').
     expect(body).toMatchObject({
       key: 'isaac-newton',
-      handle: 'Isaac Newton',
+      handle: 'Sir Isaac Newton',
       isPlaceholder: false,
       provenance: 'historical',
     })
@@ -806,13 +850,16 @@ describe('rating route with the ESMS resolver stubbed', () => {
     )
   })
 
-  it('rates Gregory’s Pentacles avatar from his roster agent’s ledger id and keeps the avatar look', async () => {
+  it('rates Gregory’s Pentacles avatar from his roster agent’s ledger id, named and looking as the contract’s pilot', async () => {
     const resolver = stubResolver()
     const h = await boot({ resolver })
     const body = await view(await h.get('?agentId=user-avatar-neo'))
 
     expect(body.key).toBe('user-avatar-neo')
-    expect(body.handle).toBe('Gregory Castro')
+    // The avatar is the contract's pilot 'Adept Neo' (provenance `user`), not the person who
+    // owns the ledger id it is rated from.
+    expect(body.handle).toBe('Adept Neo')
+    expect(body.provenance).toBe('user')
     expect(body.appearance).toMatchObject({ era: 'astral' })
     expect(resolver.mock.calls[0][0]).toBe('greg-castro-1991')
     expect(resolver.mock.calls[0][1]).toMatchObject({ creatorWallet: 'deny' })
@@ -1298,7 +1345,8 @@ describe('rating route end to end', () => {
 
       expect(res.status).toBe(200)
       expect(body.key).toBe('user-avatar-neo')
-      expect(body.handle).toBe('Gregory Castro')
+      expect(body.handle).toBe('Adept Neo') // the pilot's name; the wallet below is still Gregory's
+      expect(body.provenance).toBe('user')
       expect(body.appearance).toMatchObject({ era: 'astral' })
       expect(body.esmsSource).toBe('database')
       expect(body.esms).toEqual(GREG_WALLET)
@@ -1723,8 +1771,9 @@ describe('rating route end to end', () => {
         expect(body.agents.map((a: { key: string }) => a.key)).toEqual(
           HISTORICAL_AGENTS.map(a => a.id)
         )
+        // A contract pilot is listed under the contract's handle, every other agent under its name.
         expect(body.agents.map((a: { handle: string }) => a.handle)).toEqual(
-          HISTORICAL_AGENTS.map(a => a.name)
+          HISTORICAL_AGENTS.map(handleOf)
         )
         for (const entry of body.agents) {
           expect(Object.keys(entry).sort()).toEqual(
@@ -3180,6 +3229,65 @@ describe('rating route end to end', () => {
       expect(body.factionName).toBe('Sun')
     })
 
+    describe('a natal Sun sign that is not one of the twelve', () => {
+      // `getRulingPlanet` reads any string it does not know as Aries, whose ruler is Mars (4), so
+      // an unrecognised sign must never reach it: such a chart names no Sun and the vessel is
+      // the Sun's (0), drawn in the Sun's colour.
+      it.each([
+        'Banana',
+        'Ophiuchus',
+        'constructor',
+        '__proto__',
+        'toString',
+        'hasOwnProperty',
+        '',
+        '   ',
+        'Ari',
+        'Aries!',
+        'Aries Taurus',
+        'Arie s',
+        'Sagittarius.',
+        'Aries\u0000',
+        '0',
+      ])('gives a Sun in %j no ruler: faction 0, not Aries’ Mars', async sign => {
+        const h = await boot({ world: withSun(sign) })
+        const res = await h.get(`?agentId=${FORGED}`)
+        const body = await view(res)
+
+        expect(res.status).toBe(200)
+        expect([body.faction, body.factionName]).toEqual([0, 'Sun'])
+        expect(body.provenance).toBe('user')
+        expect(body.appearance).toEqual(resolveAgentAppearance(FORGED, 0, body.archetype))
+        expect(body.appearance.paletteOverrides.secondaryTrimHex).toBe(SUN_TRIM)
+      })
+    })
+
+    describe('a natal Sun sign written loosely', () => {
+      // A real sign is a real sign in any case and with stray white space around it. 'LEO' lands on
+      // the same faction as an unknown sign (the Sun rules Leo), so the other rows carry the weight.
+      it.each([
+        ['  aries ', 4],
+        ['ARIES', 4],
+        ['taurus', 3],
+        ['\tGemini', 2],
+        ['cAnCeR', 1],
+        ['LEO', 0],
+        ['virgo\n', 2],
+        [' LIBRA ', 3],
+        ['sCoRpIo', 9],
+        ['SAGITTARIUS', 5],
+        [' Capricorn\n', 6],
+        ['AQUARIUS', 7],
+        ['pisces', 8],
+      ])('puts a Sun in %j in faction %i, as the sign spelt properly', async (sign, faction) => {
+        const h = await boot({ world: withSun(sign) })
+        const body = await view(await h.get(`?agentId=${FORGED}`))
+
+        expect([body.faction, body.factionName]).toEqual([faction, FACTIONS[faction]])
+        expect(body.appearance).toEqual(resolveAgentAppearance(FORGED, faction, body.archetype))
+      })
+    })
+
     it('gives two forged vessels with different factions different looks, trimmed in their faction’s colour', async () => {
       const aries = await view(
         await (await boot({ world: withSun('Aries') })).get(`?agentId=${FORGED}`)
@@ -3364,18 +3472,26 @@ describe('rating route end to end', () => {
     })
 
     describe('the Pentacles avatar alias', () => {
-      it('answers as user-avatar-neo, in the Sun’s faction, wearing the pilot’s look', async () => {
+      /** What the contract says of its pilot `user-avatar-neo`, as literals. */
+      const ADEPT_NEO = {
+        key: 'user-avatar-neo',
+        handle: 'Adept Neo',
+        faction: 0,
+        factionName: 'Sun',
+        isPlaceholder: false,
+        provenance: 'user',
+      }
+
+      it('answers as the contract’s Adept Neo: user-avatar-neo, the Sun’s faction, provenance user, the pilot’s look', async () => {
         const pilot = FIXTURE_AGENTS.find(agent => agent.key === 'user-avatar-neo')
+        if (!pilot) throw new Error('the contract has no user-avatar-neo pilot')
         const resolver = stubResolver()
         const h = await boot({ resolver })
         const body = await view(await h.get('?agentId=user-avatar-neo'))
 
-        expect(body.key).toBe('user-avatar-neo')
-        expect(body.handle).toBe('Gregory Castro')
-        expect(body.faction).toBe(0)
-        expect(body.factionName).toBe('Sun')
-        expect(body.faction).toBe(pilot?.faction)
-        expect(body.appearance).toEqual(pilot?.appearance)
+        expect(identityOf(body)).toEqual(ADEPT_NEO)
+        expect(identityOf(body)).toEqual(identityOf(pilot)) // the premise, and the contract as oracle
+        expect(body.appearance).toEqual(pilot.appearance)
         expect(body.appearance).toMatchObject({
           era: 'astral',
           headSilhouette: { crownStyle: 'sovereign-crest' },
@@ -3386,23 +3502,36 @@ describe('rating route end to end', () => {
         expectContractConformant(body)
       })
 
-      it('shares the stats, ratings and wallet of greg-castro-1991, under a different key, faction and look', async () => {
+      it('is Adept Neo on a POST too, and neither response names the person behind the ledger id', async () => {
+        const h = await boot()
+        const read = await (await h.get('?agentId=user-avatar-neo')).text()
+        const pushed = await (await h.post({ agentId: 'user-avatar-neo', esms: PUSHED })).text()
+
+        for (const text of [read, pushed]) {
+          expect(identityOf(JSON.parse(text))).toEqual(ADEPT_NEO)
+          expect(text).not.toMatch(/gregory|castro|greg-/i)
+        }
+      })
+
+      it('shares the stats, ratings and wallet of greg-castro-1991, under a different key, name, provenance, faction and look', async () => {
         const h = await boot()
         const avatar = await view(await h.get('?agentId=user-avatar-neo'))
         const rostered = await view(await h.get('?agentId=greg-castro-1991'))
 
         expect(rostered.key).toBe('greg-castro-1991')
-        expect(rostered.handle).toBe(avatar.handle)
+        expect([rostered.handle, avatar.handle]).toEqual(['Gregory Castro', 'Adept Neo'])
+        expect([rostered.provenance, avatar.provenance]).toEqual(['historical', 'user'])
         expect(rostered.ratings).toEqual(avatar.ratings)
         expect(rostered.ovr).toBe(avatar.ovr)
         expect(rostered.archetype).toEqual(avatar.archetype)
         expect(rostered.esms).toEqual(GREG_WALLET)
         expect(avatar.esms).toEqual(GREG_WALLET)
         expect(rostered.sealProgress).toEqual(avatar.sealProgress)
-        // Gregory is a Cancer: his roster entry follows the Moon; the avatar is the Sun's pilot.
+        // Gregory is a Cancer: his roster entry follows the Moon and is drawn in the Moon's
+        // colours; the avatar is the Sun's pilot and wears the pilot's look.
         expect(rostered.faction).toBe(1)
         expect(avatar.faction).toBe(0)
-        expect(rostered.appearance).toEqual(resolveAgentAppearance('greg-castro-1991'))
+        expect(rostered.appearance).toEqual(resolveAgentAppearance('greg-castro-1991', 1))
         expect(rostered.appearance).not.toEqual(avatar.appearance)
       })
 
@@ -3413,14 +3542,365 @@ describe('rating route end to end', () => {
         expect((await h.get('?agentId=zz')).status).toBe(404)
       })
 
-      it('is listed under its roster id, never under the alias', async () => {
+      it('is listed under its roster id and name, never under the alias or the pilot’s', async () => {
         const h = await boot()
-        const keys = (await (await h.get('?roster=true')).json()).agents.map(
-          (entry: { key: string }) => entry.key
-        )
-        expect(keys).toContain('greg-castro-1991')
-        expect(keys).not.toContain('user-avatar-neo')
+        const agents = (await (await h.get('?roster=true')).json()).agents as Array<{
+          key: string
+          handle: string
+        }>
+        const handles = new Map(agents.map(entry => [entry.key, entry.handle]))
+        expect(handles.get('greg-castro-1991')).toBe('Gregory Castro')
+        expect(handles.has('user-avatar-neo')).toBe(false)
+        expect([...handles.values()]).not.toContain('Adept Neo')
       })
+    })
+
+    describe('a contract pilot’s name and provenance', () => {
+      /** The three pilots that are also on the roster: id, handle, faction and its name. */
+      const ON_THE_ROSTER = [
+        ['isaac-newton', 'Sir Isaac Newton', 6, 'Saturn'],
+        ['leonardo-da-vinci', 'Leonardo da Vinci', 9, 'Pluto'],
+        ['emily-dickinson', 'Emily Dickinson', 3, 'Venus'],
+      ] as const
+
+      it('premise: the contract has these four pilots, named and sourced so', () => {
+        expect(
+          Object.fromEntries(
+            FIXTURE_AGENTS.map(pilot => [
+              pilot.key,
+              [pilot.handle, pilot.provenance, pilot.faction],
+            ])
+          )
+        ).toEqual({
+          'isaac-newton': ['Sir Isaac Newton', 'historical', 6],
+          'leonardo-da-vinci': ['Leonardo da Vinci', 'historical', 9],
+          'emily-dickinson': ['Emily Dickinson', 'historical', 3],
+          'user-avatar-neo': ['Adept Neo', 'user', 0],
+        })
+        // Newton is the one whose roster name differs from the contract's handle.
+        for (const [id, handle] of ON_THE_ROSTER) {
+          const onRoster = HISTORICAL_AGENTS.find(agent => agent.id === id)
+          expect([id, onRoster?.name === handle]).toEqual([id, id !== 'isaac-newton'])
+        }
+      })
+
+      it.each(ON_THE_ROSTER)(
+        'GET %s answers with the contract’s handle %s, provenance historical and faction %i (%s)',
+        async (id, handle, faction, factionName) => {
+          const pilot = FIXTURE_AGENTS.find(agent => agent.key === id)
+          const h = await boot()
+          const body = await view(await h.get(`?agentId=${id}`))
+
+          expect(identityOf(body)).toEqual({
+            key: id,
+            handle,
+            faction,
+            factionName,
+            isPlaceholder: false,
+            provenance: 'historical',
+          })
+          expect(identityOf(body)).toEqual(identityOf(pilot as NonNullable<typeof pilot>))
+          expect(body.appearance).toEqual(resolveAgentAppearance(id))
+          expectContractConformant(body)
+        }
+      )
+
+      it.each(ON_THE_ROSTER)(
+        'POST %s answers with the same handle %s, and a GET of the push says the same',
+        async (id, handle) => {
+          const h = await boot()
+          const pushed = await view(await h.post({ agentId: id, esms: PUSHED }))
+          const read = await view(await h.get(`?agentId=${id}`))
+
+          expect([pushed.handle, pushed.provenance]).toEqual([handle, 'historical'])
+          expect(read.esmsSource).toBe('spacetimedb') // it did read the push
+          expect(identityOf(read)).toEqual(identityOf(pushed))
+        }
+      )
+
+      it.each(ON_THE_ROSTER)(
+        'names %s as the contract does, whatever the roster calls it (GET and the listing)',
+        async (id, handle) => {
+          const h = await boot()
+          const agent = await rosterAgent(id)
+          agent.name = 'Renamed In The Roster'
+
+          const body = await view(await h.get(`?agentId=${id}`))
+          expect(body.handle).toBe(handle)
+          const listed = (await (await h.get('?roster=true')).json()).agents.find(
+            (entry: { key: string }) => entry.key === id
+          )
+          expect(listed.handle).toBe(handle)
+        }
+      )
+
+      it.each(ON_THE_ROSTER)(
+        'finds %s by its base key when the roster id carries a birth year, in any case',
+        async (pilotId, handle, faction, factionName) => {
+          // No pilot's roster id has a birth year today, so one is given to it for the test.
+          for (const id of [`${pilotId}-1643`, `${pilotId.toUpperCase()}-1643`]) {
+            const h = await boot()
+            const agent = await rosterAgent(pilotId)
+            agent.id = id
+            agent.name = 'Renamed In The Roster'
+
+            const body = await view(await h.get(`?agentId=${id}`))
+            expect([id, identityOf(body)]).toEqual([
+              id,
+              {
+                key: id,
+                handle,
+                faction,
+                factionName,
+                isPlaceholder: false,
+                provenance: 'historical',
+              },
+            ])
+            expect([id, body.appearance]).toEqual([id, resolveAgentAppearance(id)])
+          }
+        }
+      )
+
+      it('names every roster agent that is no pilot by the roster’s own name', async () => {
+        const h = await boot()
+        expect(FIXTURE_AGENTS.some(pilot => pilot.key === 'lewis-carroll')).toBe(false)
+        const agent = await rosterAgent('lewis-carroll')
+        agent.name = 'Renamed In The Roster'
+
+        const body = await view(await h.get('?agentId=lewis-carroll'))
+        expect([body.handle, body.provenance]).toEqual(['Renamed In The Roster', 'historical'])
+        const listed = (await (await h.get('?roster=true')).json()).agents.find(
+          (entry: { key: string }) => entry.key === 'lewis-carroll'
+        )
+        expect(listed.handle).toBe('Renamed In The Roster')
+      })
+
+      it('lists the pilots under the contract’s handles, beside everyone else’s roster names', async () => {
+        const h = await boot()
+        const agents = (await (await h.get('?roster=true')).json()).agents as Array<{
+          key: string
+          handle: string
+        }>
+        const handles = new Map(agents.map(entry => [entry.key, entry.handle]))
+
+        expect([
+          handles.get('isaac-newton'),
+          handles.get('leonardo-da-vinci'),
+          handles.get('emily-dickinson'),
+          handles.get('lewis-carroll'),
+          handles.get('greg-castro-1991'),
+        ]).toEqual([
+          'Sir Isaac Newton',
+          'Leonardo da Vinci',
+          'Emily Dickinson',
+          'Lewis Carroll',
+          'Gregory Castro',
+        ])
+        expect([...handles.values()]).not.toContain('Isaac Newton')
+      })
+
+      it.each([
+        ['isaac-newton', 'Sir Isaac Newton', 6, 'Saturn'],
+        ['user-avatar-neo', 'Adept Neo', 0, 'Sun'],
+      ])(
+        'keeps %s a placeholder when its chart is one: the chart outranks the pilot’s provenance',
+        async (id, handle, faction, factionName) => {
+          const h = await boot()
+          const ledgerId = id === 'user-avatar-neo' ? 'greg-castro-1991' : id
+          const agent = await rosterAgent(ledgerId)
+          agent.consciousness.natalChart.provenance = 'placeholder'
+
+          const body = await view(await h.get(`?agentId=${id}`))
+          expect(identityOf(body)).toEqual({
+            key: id,
+            handle,
+            faction,
+            factionName,
+            isPlaceholder: true,
+            provenance: 'placeholder',
+          })
+          expect(body.sealProgress.every(p => p.natalAffinity === null)).toBe(true)
+          expectContractConformant(body)
+        }
+      )
+
+      it('does not rename or re-source a person’s forged vessel that borrows a pilot’s id: only the roster has pilots', async () => {
+        const world = defaultWorld()
+        world.forged = [
+          forgedRow('isaac-newton-1643', { name: 'Isaac The Second' }),
+          forgedRow('user-avatar-neo-7', { name: 'Not The Avatar' }),
+        ]
+        const h = await boot({ world })
+
+        const newton = await view(await h.get('?agentId=isaac-newton-1643'))
+        expect([newton.handle, newton.provenance]).toEqual(['Isaac The Second', 'user'])
+        expect(newton.faction).toBe(6) // the pilot's faction is taken from its base key all the same
+        const neo = await view(await h.get('?agentId=user-avatar-neo-7'))
+        expect([neo.handle, neo.provenance]).toEqual(['Not The Avatar', 'user'])
+      })
+    })
+
+    describe('the one roster vessel the manifest does not list', () => {
+      it('draws greg-castro-1991 in his own faction’s colour, the Moon’s, not the manifest’s default Sun', async () => {
+        // The premise: asked for no faction, the manifest would draw him in the Sun's colour.
+        expect(resolveAgentAppearance('greg-castro-1991').paletteOverrides.secondaryTrimHex).toBe(
+          SUN_TRIM
+        )
+        const h = await boot()
+        const body = await view(await h.get('?agentId=greg-castro-1991'))
+
+        expect([body.faction, body.factionName]).toEqual([1, 'Moon'])
+        expect(body.appearance.paletteOverrides.secondaryTrimHex).toBe(MOON_TRIM)
+        expect(body.appearance).toEqual(resolveAgentAppearance('greg-castro-1991', 1))
+        expect(body.appearance).not.toEqual(resolveAgentAppearance('greg-castro-1991'))
+      })
+
+      it.each(['greg-castro', 'GREG-CASTRO-1991'])(
+        'draws it the same when the roster resolves the id %s to his',
+        async id => {
+          const h = await boot()
+          const body = await view(await h.get(`?agentId=${id}`))
+          expect(body.key).toBe('greg-castro-1991')
+          expect(body.appearance).toEqual(resolveAgentAppearance('greg-castro-1991', 1))
+        }
+      )
+
+      it('draws it the same on a POST and in the listing, and each says what the look is', async () => {
+        const h = await boot()
+        const pushed = await view(await h.post({ agentId: 'greg-castro-1991', esms: PUSHED }))
+        expect(pushed.appearance).toEqual(resolveAgentAppearance('greg-castro-1991', 1))
+
+        const listed = (await (await h.get('?roster=true')).json()).agents.find(
+          (entry: { key: string }) => entry.key === 'greg-castro-1991'
+        )
+        expect(listed).toMatchObject({
+          faction: 1,
+          factionName: 'Moon',
+          era: pushed.appearance.era,
+          crownStyle: pushed.appearance.headSilhouette.crownStyle,
+          signatureRelic: pushed.appearance.signatureRelic,
+        })
+      })
+    })
+
+    describe('what the route asks the manifest for', () => {
+      // The look of a vessel the manifest knows is the manifest's own, and the route must ask
+      // for it by id alone: a faction passed along would redraw it. For every roster vessel
+      // today the two coincide (the roster's own faction is the manifest's), so the only
+      // place the difference shows is in the call.
+      const MANIFEST = '@/lib/agents/vessel-appearance-manifest'
+      let asked: unknown[][]
+      beforeEach(() => {
+        asked = []
+        vi.doMock(MANIFEST, async importOriginal => {
+          const real =
+            await importOriginal<typeof import('@/lib/agents/vessel-appearance-manifest')>()
+          return {
+            ...real,
+            resolveAgentAppearance: (...args: Parameters<typeof real.resolveAgentAppearance>) => {
+              asked.push(args)
+              return real.resolveAgentAppearance(...args)
+            },
+          }
+        })
+      })
+      afterEach(() => {
+        vi.doUnmock(MANIFEST)
+      })
+      const askedFor = (id: string) => asked.filter(args => args[0] === id)
+
+      it.each([
+        ['isaac-newton', 'a contract pilot'],
+        ['lewis-carroll', 'a roster entry'],
+        ['nikola-tesla-1856', 'a roster entry with a birth year'],
+        ['user-avatar-neo', 'the avatar alias'],
+      ])('asks for %s (%s) by its id alone', async id => {
+        const h = await boot()
+        asked.length = 0 // loading the contract asked for its own pilots' looks
+        expect((await h.get(`?agentId=${id}`)).status).toBe(200)
+        expect(askedFor(id)).toEqual([[id]])
+      })
+
+      it('asks for greg-castro-1991, whom it does not list, with his faction: the Moon’s, 1', async () => {
+        const h = await boot()
+        asked.length = 0
+        expect((await h.get('?agentId=greg-castro-1991')).status).toBe(200)
+        expect(askedFor('greg-castro-1991')).toEqual([['greg-castro-1991', 1]])
+      })
+
+      it('asks for every roster vessel by its id alone but the one it does not list, across the whole listing', async () => {
+        const h = await boot()
+        asked.length = 0
+        expect((await h.get('?roster=true')).status).toBe(200)
+
+        const unknown = HISTORICAL_AGENTS.filter(
+          agent =>
+            !PILOTS.has(baseKeyOf(agent.id)) &&
+            !CANONICAL_ROSTER_71.some(entry => baseKeyOf(entry.key) === baseKeyOf(agent.id))
+        )
+        expect(unknown.map(agent => agent.id)).toEqual(['greg-castro-1991']) // the premise
+        for (const agent of HISTORICAL_AGENTS) {
+          const withFaction = unknown.includes(agent) ? [1] : []
+          expect([agent.id, askedFor(agent.id)]).toEqual([agent.id, [[agent.id, ...withFaction]]])
+        }
+      })
+    })
+  })
+
+  // ─── (J2) the ends of the scale ────────────────────────────────────────────
+
+  describe('the ends of the rating scale', () => {
+    const scored = (scores: number[]): World => {
+      const [power, resonance, wisdom, charisma, intuition, adaptability, vitality] = scores
+      const world = defaultWorld()
+      world.forged = [
+        forgedRow(FORGED, {
+          powerScore: power,
+          resonanceScore7: resonance,
+          wisdomScore: wisdom,
+          charismaScore: charisma,
+          intuitionScore: intuition,
+          adaptabilityScore: adaptability,
+          vitalityScore: vitality,
+        }),
+      ]
+      return world
+    }
+    const SCALE = { name: 'Pentacle Vessel Rating Scale', floor: 25, ceiling: 99 }
+
+    it('rates a score of 0 as 25 and a score of 100 as 99, and rounds the ones between', async () => {
+      // 25 + score / 100 * 74, rounded: 0 -> 25, 1 -> 25.74, 10 -> 32.4, 50 -> 62, 90 -> 91.6,
+      // 99 -> 98.26, 100 -> 99.
+      const h = await boot({ world: scored([0, 50, 100, 1, 99, 10, 90]) })
+      const body = await view(await h.get(`?agentId=${FORGED}`))
+
+      expect(body.ratings).toEqual({
+        power: 25,
+        resonance: 62,
+        wisdom: 99,
+        charisma: 26,
+        intuition: 98,
+        adaptability: 32,
+        vitality: 92,
+      })
+      expect(body.scale).toEqual(SCALE)
+      expectContractConformant(body)
+    })
+
+    it('rates a vessel of perfect scores 99 all through, and of the faintest ones 25 all through', async () => {
+      const rated = async (world: World, query = `?agentId=${FORGED}`) =>
+        view(await (await boot({ world })).get(query))
+      const perfect = await rated(scored([100, 100, 100, 100, 100, 100, 100]))
+      expect(Object.values(perfect.ratings)).toEqual(Array(7).fill(99))
+      expect(perfect.ovr).toBe(99)
+
+      const faint = await rated(scored([0, 0, 0, 0, 0, 0, 0.001]))
+      expect(Object.values(faint.ratings)).toEqual(Array(7).fill(25))
+      expect(faint.ovr).toBe(25)
+
+      // The scale a payload announces is the same wherever the vessel sits on it.
+      const roster = await rated(defaultWorld(), '?agentId=isaac-newton')
+      for (const body of [perfect, faint, roster]) expect(body.scale).toEqual(SCALE)
     })
   })
 
@@ -3807,6 +4287,7 @@ describe('rating route end to end', () => {
         const h = await boot()
         const seen = new Set<string>()
         const bodies = new Map<string, PayloadView>()
+        const unlisted: string[] = []
 
         for (const agent of HISTORICAL_AGENTS) {
           const res = await h.post({ agentId: agent.id, esms: holdings(1000) })
@@ -3816,7 +4297,8 @@ describe('rating route end to end', () => {
           const body = JSON.parse(text) as PayloadView
           bodies.set(agent.id, body)
 
-          expect([agent.id, body.key, body.handle]).toEqual([agent.id, agent.id, agent.name])
+          // A contract pilot is named by the contract, every other agent by the roster.
+          expect([agent.id, body.key, body.handle]).toEqual([agent.id, agent.id, handleOf(agent)])
           expectContractConformant(body)
           const expected = expectedFaction(agent)
           expect([agent.id, body.faction, body.factionName]).toEqual([
@@ -3824,13 +4306,24 @@ describe('rating route end to end', () => {
             expected,
             FACTIONS[expected],
           ])
+          // A placeholder chart is a placeholder whoever the vessel is; otherwise a pilot carries
+          // the contract's provenance and everyone else is historical.
           const placeholder = agent.consciousness.natalChart.provenance === 'placeholder'
           expect([agent.id, body.isPlaceholder, body.provenance]).toEqual([
             agent.id,
             placeholder,
-            placeholder ? 'placeholder' : 'historical',
+            placeholder
+              ? 'placeholder'
+              : (PILOTS.get(stripped(agent.id))?.provenance ?? 'historical'),
           ])
-          expect([agent.id, body.appearance]).toEqual([agent.id, resolveAgentAppearance(agent.id)])
+          // The manifest's own look for every vessel it knows; the one it does not list is drawn
+          // in its faction's colours.
+          const listed = pilots.has(stripped(agent.id)) || canonical.has(stripped(agent.id))
+          expect([agent.id, body.appearance]).toEqual([
+            agent.id,
+            listed ? resolveAgentAppearance(agent.id) : resolveAgentAppearance(agent.id, expected),
+          ])
+          if (!listed) unlisted.push(agent.id)
           expect([agent.id, stray(body)]).toEqual([agent.id, []])
           for (const seal of body.seals) seen.add(seal.tier)
         }
@@ -3840,6 +4333,7 @@ describe('rating route end to end', () => {
         expect(seen.size).toBeGreaterThan(0)
         expect([...seen].every(tier => (TIERS as readonly string[]).includes(tier))).toBe(true)
         expect(bodies.size).toBe(HISTORICAL_AGENTS.length)
+        expect(unlisted).toEqual(['greg-castro-1991']) // the one vessel drawn rather than looked up
 
         // The listing says of each vessel exactly what its own payload says.
         const listing = await (await h.get('?roster=true')).json()

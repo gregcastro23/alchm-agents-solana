@@ -48,9 +48,12 @@ export const CORE_STAT_KEYS = SACRED_STAT_KEYS
 export type CoreStatKey = SacredStatKey
 export type CoreStats = Pick<Sacred7Stats, CoreStatKey>
 
-/** A stat of 0 rates as the floor and a stat of 100 as the ceiling. */
-export const RATING_FLOOR = 25
-export const RATING_CEILING = 99
+/**
+ * A stat of 0 rates as the floor and a stat of 100 as the ceiling. The contract holds its bounds
+ * only inside `clampStat`, so they are read from it rather than repeated here.
+ */
+export const RATING_FLOOR = clampStat(-Number.MAX_VALUE)
+export const RATING_CEILING = clampStat(Number.MAX_VALUE)
 
 /** The scale's public name and bounds, for payloads and UI copy. */
 export const VESSEL_RATING_SCALE = {
