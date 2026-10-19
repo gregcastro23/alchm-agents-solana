@@ -549,8 +549,11 @@ export interface CraftedAgent {
   // Specialized Abilities
   abilities: Abilities
 
-  // Visual Representation & Vessel Likeness
-  appearance?: Appearance | VesselAppearanceProfile
+  // Visual Representation & Vessel Likeness. The legacy `Appearance` (avatar, color, symbol, aura)
+  // that the UI reads, optionally carrying the Pentacles likeness manifest's fields. It is an
+  // intersection, not a union: a union hid `.color`/`.avatar` from every consumer and made the
+  // whole field optional, which broke `tsc` and `next build` after #65.
+  appearance: Appearance & Partial<VesselAppearanceProfile>
   avatarModelUrl?: string
   headMeshUrl?: string
 

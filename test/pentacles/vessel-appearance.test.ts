@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test'
+import { describe, it, expect } from 'vitest'
 import {
   resolveAgentAppearance,
   createVesselPortraitSvg,
@@ -22,7 +22,7 @@ describe('Vessel Appearance Manifest & Procedural Likeness Contract', () => {
       expect(newton.paletteOverrides.hairOrCrownHex).toBe('#d6c9b5')
       expect(newton.portraitUrl).toBe('/avatars/newton.png')
       expect(newton.portraitSvgDataUri).toBeDefined()
-      expect(newton.portraitSvgDataUri).toStartWith('data:image/svg+xml,')
+      expect(newton.portraitSvgDataUri).toMatch(/^data:image\/svg\+xml,/)
       expect(decodeURIComponent(newton.portraitSvgDataUri!)).toContain('<svg')
     })
 
@@ -38,7 +38,7 @@ describe('Vessel Appearance Manifest & Procedural Likeness Contract', () => {
       expect(leonardo.paletteOverrides.secondaryTrimHex).toBe('#deb968')
       expect(leonardo.portraitUrl).toBe('/avatars/leonardo-da-vinci.png')
       expect(leonardo.portraitSvgDataUri).toBeDefined()
-      expect(leonardo.portraitSvgDataUri).toStartWith('data:image/svg+xml,')
+      expect(leonardo.portraitSvgDataUri).toMatch(/^data:image\/svg\+xml,/)
     })
 
     it('resolves Emily Dickinson pilot profile accurately', () => {
@@ -52,7 +52,7 @@ describe('Vessel Appearance Manifest & Procedural Likeness Contract', () => {
       expect(emily.paletteOverrides.primaryGarmentHex).toBe('#ece6d8')
       expect(emily.portraitUrl).toBe('/avatars/emily-dickinson.png')
       expect(emily.portraitSvgDataUri).toBeDefined()
-      expect(emily.portraitSvgDataUri).toStartWith('data:image/svg+xml,')
+      expect(emily.portraitSvgDataUri).toMatch(/^data:image\/svg\+xml,/)
     })
 
     it('resolves User Avatar Neo pilot profile accurately', () => {
@@ -66,7 +66,7 @@ describe('Vessel Appearance Manifest & Procedural Likeness Contract', () => {
       expect(neo.paletteOverrides.primaryGarmentHex).toBe('#171b2c')
       expect(neo.paletteOverrides.secondaryTrimHex).toBe('#efc45c')
       expect(neo.portraitSvgDataUri).toBeDefined()
-      expect(neo.portraitSvgDataUri).toStartWith('data:image/svg+xml,')
+      expect(neo.portraitSvgDataUri).toMatch(/^data:image\/svg\+xml,/)
     })
   })
 
@@ -87,12 +87,12 @@ describe('Vessel Appearance Manifest & Procedural Likeness Contract', () => {
         expect(profile.garmentSilhouette.mantleStyle).toBeDefined()
         expect(profile.garmentSilhouette.collarStyle).toBeDefined()
         expect(profile.signatureRelic).toBeDefined()
-        expect(profile.paletteOverrides.primaryGarmentHex).toStartWith('#')
-        expect(profile.paletteOverrides.secondaryTrimHex).toStartWith('#')
-        expect(profile.paletteOverrides.hairOrCrownHex).toStartWith('#')
-        expect(profile.paletteOverrides.skinOrMaterialToneHex).toStartWith('#')
+        expect(profile.paletteOverrides.primaryGarmentHex).toMatch(/^\#/)
+        expect(profile.paletteOverrides.secondaryTrimHex).toMatch(/^\#/)
+        expect(profile.paletteOverrides.hairOrCrownHex).toMatch(/^\#/)
+        expect(profile.paletteOverrides.skinOrMaterialToneHex).toMatch(/^\#/)
         expect(profile.portraitSvgDataUri).toBeDefined()
-        expect(profile.portraitSvgDataUri).toStartWith('data:image/svg+xml,')
+        expect(profile.portraitSvgDataUri).toMatch(/^data:image\/svg\+xml,/)
       }
     })
 
@@ -117,7 +117,7 @@ describe('Vessel Appearance Manifest & Procedural Likeness Contract', () => {
       }
 
       const svgDataUri = createVesselPortraitSvg(mockProfile)
-      expect(svgDataUri).toStartWith('data:image/svg+xml,')
+      expect(svgDataUri).toMatch(/^data:image\/svg\+xml,/)
       const decoded = decodeURIComponent(svgDataUri)
       expect(decoded).toContain('<svg xmlns="http://www.w3.org/2000/svg"')
       expect(decoded).toContain('Prism') // Relic label
