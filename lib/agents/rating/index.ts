@@ -1,8 +1,10 @@
 /**
  * Pentacle Vessel Rating — the public surface of ASOL's rating system.
  *
- * ASOL owns the Sacred 7 maths, the Alchemical Seals, the Resonance Surge, the vessel's look
- * and the zone-contest rules; `pentacles` consumes them through `app/api/agents/rating`.
+ * The rating CONTRACT (types, tiers, gates, formulas) is `lib/agents/rating-contract.ts` and the
+ * look is `lib/agents/vessel-appearance-manifest.ts`; this directory feeds them live inputs —
+ * the Sacred 7 stats, ESMS ledger holdings, the live sky, natal charts — and adds the
+ * zone-contest rules. `pentacles` consumes the result through `app/api/agents/rating`.
  * Everything exported here is safe to import from a client module: no export reaches `@/lib/db`,
  * Prisma or a Node built-in, even lazily. The Prisma-backed ledger store is deliberately NOT in
  * this barrel — it is `esms-ledger-store.server.ts` (`import 'server-only'`), imported only by
@@ -12,7 +14,6 @@
 export * from './ovr-archetype'
 export * from './seals-surge'
 export * from './pentacle-contest'
-export * from './vessel-appearance'
 export * from './esms-balance-resolver'
 export * from './live-sky'
 export * from './vessel-payload'

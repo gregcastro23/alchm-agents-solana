@@ -27,9 +27,12 @@ import { bearerMatches } from '@/lib/security/secure-compare'
  *   POST /api/agents/rating                internal: push an agent's ESMS holdings, get the
  *                                          recalculated payload back
  *
- * ASOL is the single source of truth for the Sacred 7 maths, the Alchemical Seals, the
- * Resonance Surge and the vessel's look; this route only assembles them
- * (`lib/agents/rating/vessel-payload.ts`).
+ * The payload is the Pentacles rating contract's `RatedAgentPayload`
+ * (`lib/agents/rating-contract.ts`: `key`, `handle`, `faction`, `ratings`, `ovr`, `archetype`,
+ * `esms`, `seals`, `surge`, `appearance`) plus what only a live rating knows (`esmsSource`,
+ * `sealProgress`, `sky`, `zoneSynergies`, `degraded`); this route only assembles it
+ * (`lib/agents/rating/vessel-payload.ts`). POST takes `{ agentId, esms: { spirit, essence,
+ * matter, substance } }`.
  *
  * ## Whose balances a GET may show
  *
@@ -345,12 +348,12 @@ export async function POST(request: NextRequest) {
     const invalid = badAgentId(agentId, false)
     if (invalid) return invalid
 
-    const balances = parseHoldings(body?.esmsBalances)
+    const balances = parseHoldings(body?.esms)
     if (!balances) {
       return json(
         {
           success: false,
-          error: 'esmsBalances must hold finite, non-negative spirit, essence, matter, substance.',
+          error: 'esms must hold finite, non-negative spirit, essence, matter, substance.',
         },
         400,
         {},

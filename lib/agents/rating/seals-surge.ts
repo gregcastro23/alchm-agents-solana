@@ -5,109 +5,128 @@
  * calls serve an off-chain agent preview, an on-chain Token-2022 balance, and a
  * shader reading uniforms.
  *
- *   • `evaluateSeals`          — ESMS holdings + Sacred 7 stats (+ natal chart) → tiered Seals.
+ *   • `evaluateSeals`           — ESMS holdings + Sacred 7 stats (+ natal chart) → each Seal's
+ *     progress; `earnedSeals` turns it into the contract's `AlchemicalSeal[]`.
  *   • `calculateResonanceSurge` — a live `Thermodynamics` payload (+ Monica, + an optional
- *     natal chart against the live sky) → a 0–100 meter, an active flag, a type, and
- *     temporary stat boosts.
+ *     natal chart against the live sky) → the contract's `ResonanceSurgeState`.
+ *
+ * ## The contract decides; this module feeds it
+ *
+ * Tier names, stat gates, ESMS gates, tier multipliers, the Seal catalog, the roster baselines
+ * and mean alignment, the Monica classification, the surge type and the surge's stat boosts all
+ * live in `lib/agents/rating-contract.ts` (ratified in #65) and are called, not copied:
+ * `evaluateSealTier`, `computeMeanAlignedRating`, `buildCanonicalSeal`, `determineMonicaState`,
+ * `evaluateSurgeState`. What is added here is what the contract has no inputs for:
+ *
+ *   • **Celestial needs the chart's blessing** (a stricter ASOL rule, see below);
+ *   • **progress** — `nextTier`, `blockedBy`, `maxTier` — so a UI can say what stops a Seal;
+ *   • **the surge meter** — the contract takes a precomputed meter; this module computes it from
+ *     the live sky's heat and reactivity (measured anchors) and an optional natal harmony offset.
+ *
+ * `test/agents/rating-contract-parity.spec.ts` checks that every result equals the contract's own
+ * function on the same inputs, so the two cannot drift.
  *
  * ## Nothing here derives thermodynamics
  *
  * Heat, reactivity, Monica and Kalchm have exactly one definition per runtime
- * (`lib/thermodynamics/kalchm.ts`). `calculateResonanceSurge` only *reads* the numbers
- * that engine produced and maps them onto a meter — a game-design mapping, not a
- * physical formula — so `bun run check:no-stray-kalchm` has nothing to object to.
- * Monica never enters the meter; it only classifies the surge (see below).
- *
- * ## Seal stat gates are mean-aligned
- *
- * `deriveStatsFromChart` weights `power` far above the other six stats (roster mean
- * ≈ 76.5 against 65–70), so gating every Seal on the raw rating handed out *Crucible
- * Finisher* at well over twice the rate of the other Seals. Rather than touch the
- * derivation — persona prompts and Anthropic cache keys hash its output — each stat's
- * rating is shifted by its own league mean before it meets a gate
- * (`computeMeanAlignedRating`). Ratings, OVR and the radar stay on the raw 25–99 scale;
- * only the comparison against the Seal gates is aligned.
+ * (`lib/thermodynamics/kalchm.ts`). `calculateResonanceSurge` only *reads* the numbers that
+ * engine produced and maps them onto a meter — a game-design mapping, not a physical formula —
+ * so `bun run check:no-stray-kalchm` has nothing to object to. Monica never enters the meter;
+ * it only classifies the surge (the contract's `determineMonicaState`).
  *
  * ## Calibration constants are measured, not guessed
  *
- * The surge anchors come from the live sky (600 evenly spaced dates, 2020–2035,
- * through `deriveLiveEphemeris`); `test/agents/surge-calibration.spec.ts` repeats the
- * measurement and fails if the engine's output moves. The stat gates come from the
- * roster's rating distribution (`test/agents/seals-surge.spec.ts` re-measures them).
- * The **ESMS balance gates are policy, not measurement** — the repo holds no
- * distribution of real user balances — and are the first thing to tune once there is
- * one.
+ * The surge anchors come from the live sky (600 evenly spaced dates, 2020–2035, through
+ * `deriveLiveEphemeris`); `test/agents/surge-calibration.spec.ts` repeats the measurement and
+ * fails if the engine's output moves. The **ESMS balance gates are policy, not measurement** —
+ * the repo holds no distribution of real user balances.
  */
 import type { NatalChartProvenance } from '@/lib/agent-types'
-import { MONICA_EQUILIBRIUM, type Thermodynamics } from '@/lib/thermodynamics/kalchm'
+import type { Thermodynamics } from '@/lib/thermodynamics/kalchm'
 import { ELEMENT_BY_SIGN, ESMS_ELEMENT, type ZodiacSign } from '@/lib/staking/elements'
 import type { Element, EsmsId } from '@/lib/staking/types'
 import {
+  CANONICAL_SEAL_CATALOG,
+  ESMS_KEYS,
+  SACRED_STAT_KEYS,
+  SEAL_ESMS_GATES,
+  SEAL_STAT_GATES,
+  SEAL_TIERS,
+  buildCanonicalSeal,
+  computeMeanAlignedRating,
+  evaluateSealTier,
+  evaluateSurgeState,
+  type AlchemicalSeal,
+  type EsmsBalances,
+  type EsmsKey,
+  type MonicaState,
+  type ResonanceSurgeState,
+  type SealTier,
+  type SurgeType,
+} from '../rating-contract'
+import {
   RATING_CEILING,
-  RATING_FLOOR,
-  STAT_BASELINES,
   toRating,
-  type CoreStatKey,
   type CoreStats,
   type SacredStatKey,
+  type VesselArchetype,
 } from './ovr-archetype'
 
-// ─── Alchemical Seals ────────────────────────────────────────────────────────
+export { SEAL_TIERS, computeMeanAlignedRating }
+export type { AlchemicalSeal, MonicaState, ResonanceSurgeState, SealTier, SurgeType }
 
-export const SEAL_TIERS = ['Copper', 'Silver', 'Gold', 'Aether', 'Celestial'] as const
-export type SealTier = (typeof SEAL_TIERS)[number]
+// ─── Vocabulary ──────────────────────────────────────────────────────────────
 
 /** Order matches `EsmsId` 0–3 (Spirit, Essence, Matter, Substance). */
-export const ESMS_TOKENS = ['spirit', 'essence', 'matter', 'substance'] as const
-export type EsmsToken = (typeof ESMS_TOKENS)[number]
+export const ESMS_TOKENS = ESMS_KEYS
+export type EsmsToken = EsmsKey
 
 /**
  * Holdings in **whole tokens** (UI units): Solana mints carry 4 decimals and the
- * Arc ESMS 18, so convert before calling. `EsmsBalances` from `useEsmsBalances`
- * fits as-is; extra fields are ignored.
+ * Arc ESMS 18, so convert before calling. The contract calls the same record `EsmsBalances`.
  */
-export type EsmsHoldings = Record<EsmsToken, number>
+export type EsmsHoldings = EsmsBalances
 
 /** A catalog entry: which stat and which ESMS token a Seal is earned through. */
 export interface AlchemicalSealDefinition {
+  /** The contract's id: `seal-<stat>`. */
   id: string
   name: string
   token: EsmsToken
   stat: SacredStatKey
 }
 
-/** One Seal per Sacred 7 stat, so every stat has somewhere to go. */
-export const SEAL_CATALOG: readonly AlchemicalSealDefinition[] = [
-  { id: 'crucible-finisher', name: 'Crucible Finisher', token: 'substance', stat: 'power' },
-  { id: 'astral-vision', name: 'Astral Vision', token: 'spirit', stat: 'intuition' },
-  { id: 'immovable-foundation', name: 'Immovable Foundation', token: 'matter', stat: 'vitality' },
-  { id: 'harmonic-sovereign', name: 'Harmonic Sovereign', token: 'essence', stat: 'charisma' },
-  { id: 'tidal-chorus', name: 'Tidal Chorus', token: 'essence', stat: 'resonance' },
-  { id: 'quicksilver-pivot', name: 'Quicksilver Pivot', token: 'spirit', stat: 'adaptability' },
-  { id: 'philosophers-stone', name: "Philosopher's Stone", token: 'matter', stat: 'wisdom' },
-]
+/** One Seal per Sacred 7 stat, in the contract's stat order, built from its catalog. */
+export const SEAL_CATALOG: readonly AlchemicalSealDefinition[] = SACRED_STAT_KEYS.map(stat => ({
+  id: `seal-${stat}`,
+  name: CANONICAL_SEAL_CATALOG[stat].name,
+  token: CANONICAL_SEAL_CATALOG[stat].category,
+  stat,
+}))
 
 /**
- * A Seal tier needs BOTH its (mean-aligned) stat rating on the 25–99 scale and its
- * ESMS balance — the tier is the lower of the two gates. The balance gates are the
- * whole-token thresholds 0.5 / 2 / 10 / 50 / 250. An agent's own `alchemicalElements`
- * (0.4–0.98) therefore top out at Copper, which is the intended off-chain baseline.
+ * A Seal tier needs BOTH its (mean-aligned) stat rating on the 25–99 scale and its ESMS balance;
+ * the tier is the highest whose two gates both clear. Read from the contract's
+ * `SEAL_STAT_GATES` / `SEAL_ESMS_GATES` (74 / 80 / 86 / 91 / 96 and 0.5 / 2 / 10 / 50 / 250).
  */
 export const SEAL_TIER_REQUIREMENTS: Readonly<
   Record<SealTier, { minRating: number; minBalance: number }>
-> = {
-  Copper: { minRating: 74, minBalance: 0.5 },
-  Silver: { minRating: 80, minBalance: 2 },
-  Gold: { minRating: 86, minBalance: 10 },
-  Aether: { minRating: 91, minBalance: 50 },
-  Celestial: { minRating: 96, minBalance: 250 },
-}
+> = Object.freeze(
+  Object.fromEntries(
+    SEAL_TIERS.map(tier => [
+      tier,
+      Object.freeze({ minRating: SEAL_STAT_GATES[tier], minBalance: SEAL_ESMS_GATES[tier] }),
+    ])
+  ) as Record<SealTier, { minRating: number; minBalance: number }>
+)
 
 /**
- * Celestial additionally needs the chart's blessing: at least this many of the
- * ten classical bodies natally placed in the Seal token's element (Fire→Spirit,
- * Water→Essence, Earth→Matter, Air→Substance — `lib/staking/elements.ts`). Across
- * the roster ≥4 holds for 7–22% of agents depending on the element.
+ * Celestial additionally needs the chart's blessing — a rule ASOL adds on top of the contract
+ * (which only bars a placeholder chart): at least this many of the ten classical bodies natally
+ * placed in the Seal token's element (Fire→Spirit, Water→Essence, Earth→Matter, Air→Substance —
+ * `lib/staking/elements.ts`). Across the roster ≥4 holds for 7–22% of agents depending on the
+ * element. It is passed to the contract's `evaluateSealTier` through its Celestial bar, so every
+ * other tier is exactly the contract's.
  */
 export const CELESTIAL_MIN_NATAL_AFFINITY = 4
 
@@ -137,35 +156,6 @@ function usableChart(chart: NatalChartInput | null | undefined): NatalChartInput
   return chart
 }
 
-// ─── Mean alignment ──────────────────────────────────────────────────────────
-
-/** Mean of the seven league means: the common level every stat is aligned to (0–100 scale). */
-export const GLOBAL_ROSTER_MEAN =
-  Object.values(STAT_BASELINES).reduce((sum, { mean }) => sum + mean, 0) /
-  Object.keys(STAT_BASELINES).length
-
-/** A 0–100 stat value expressed on the 25–99 rating scale, unrounded. */
-function toRatingUnits(stat: number): number {
-  return RATING_FLOOR + (stat / 100) * (RATING_CEILING - RATING_FLOOR)
-}
-
-/**
- * Shift a stat's rating by how far its league mean sits from the common mean, so the
- * Seal gates mean the same distance above "typical" for every stat:
- *
- *   aligned = rating − rating(league mean of the stat) + rating(GLOBAL_ROSTER_MEAN)
- *
- * The baselines are on the 0–100 stat scale and the gates on the 25–99 rating scale, so
- * the offset is converted before it is applied (a stat-point difference of d is
- * 0.74·d rating points). Returns an unrounded number; it is only ever compared to a gate.
- */
-export function computeMeanAlignedRating(stat: SacredStatKey, rating: number): number {
-  if (!Number.isFinite(rating)) {
-    throw new RangeError(`Cannot align ${stat}: ${String(rating)} is not a finite number`)
-  }
-  return rating - toRatingUnits(STAT_BASELINES[stat].mean) + toRatingUnits(GLOBAL_ROSTER_MEAN)
-}
-
 // ─── Evaluating Seals ────────────────────────────────────────────────────────
 
 export interface SealInputs {
@@ -176,8 +166,9 @@ export interface SealInputs {
   natalChart?: NatalChartInput | null
 }
 
-/** A catalog Seal with its evaluated tier. */
-export interface AlchemicalSeal {
+/** One catalog Seal's standing: the tier it holds and what stands between it and the next. */
+export interface SealProgress {
+  /** The contract's `seal-<stat>`. */
   id: string
   name: string
   token: EsmsToken
@@ -193,14 +184,15 @@ export interface AlchemicalSeal {
   blockedBy: Array<'stat' | 'esms' | 'natal'>
   /**
    * The highest tier this Seal's stat can ever reach: the rating gates are compared with the
-   * mean-aligned rating, and a perfect stat (rating 99) aligns to a different ceiling per stat.
-   * A perfect `power` aligns to 93.5, short of the Celestial gate (96), so Crucible Finisher
-   * tops out at Aether; every other Seal can reach Celestial.
+   * mean-aligned rating, and a perfect stat (rating 99) aligns to a different ceiling per stat
+   * (`99 − mean + GLOBAL_ROSTER_MEAN`). With the contract's means a perfect `power` aligns to
+   * 90.5, short of the Astral gate (91), so Crucible Finisher tops out at Gold; every other Seal
+   * can reach Celestial.
    */
   maxTier: SealTier
   /** The raw 25–99 rating — what the radar shows. */
   statRating: number
-  /** The rating after mean alignment — what the gates were compared against (2 dp). */
+  /** The rating after the contract's mean alignment — what the gates were compared against (2 dp). */
   alignedRating: number
   balance: number
   /** Classical bodies in the token's element, or `null` if there is no usable chart. */
@@ -228,25 +220,14 @@ export function natalAffinity(
   return count
 }
 
-function clears(
-  tier: SealTier,
-  alignedRating: number,
-  balance: number,
-  affinity: number | null
-): boolean {
-  const need = SEAL_TIER_REQUIREMENTS[tier]
-  if (alignedRating < need.minRating || balance < need.minBalance) return false
-  return tier !== 'Celestial' || (affinity !== null && affinity >= CELESTIAL_MIN_NATAL_AFFINITY)
-}
-
 /**
- * Evaluate every catalog Seal. Always returns the whole catalog, in catalog
- * order, with `tier: null` for Seals not yet earned — filter with `earnedSeals`.
+ * Evaluate every catalog Seal. Always returns the whole catalog, in the contract's stat order,
+ * with `tier: null` for Seals not yet earned — `earnedSeals` turns it into the contract's list.
  *
  * Throws on a non-finite stat, or a balance that is non-finite or negative: a
  * quiet fallback would show a broken read as an agent who simply earned nothing.
  */
-export function evaluateSeals({ stats, esmsBalances, natalChart }: SealInputs): AlchemicalSeal[] {
+export function evaluateSeals({ stats, esmsBalances, natalChart }: SealInputs): SealProgress[] {
   for (const token of ESMS_TOKENS) {
     const balance = esmsBalances[token]
     if (!Number.isFinite(balance) || balance < 0) {
@@ -259,32 +240,23 @@ export function evaluateSeals({ stats, esmsBalances, natalChart }: SealInputs): 
     const alignedRating = computeMeanAlignedRating(seal.stat, statRating)
     const balance = esmsBalances[seal.token]
     const affinity = natalAffinity(natalChart, seal.token)
+    const celestialAllowed = affinity !== null && affinity >= CELESTIAL_MIN_NATAL_AFFINITY
 
-    let tierIndex = -1
-    for (let i = SEAL_TIERS.length - 1; i >= 0; i--) {
-      if (clears(SEAL_TIERS[i], alignedRating, balance, affinity)) {
-        tierIndex = i
-        break
-      }
-    }
+    // The contract's tier, with its Celestial bar closed unless the chart blesses it.
+    const tier = evaluateSealTier(seal.stat, statRating, balance, !celestialAllowed)
+    const tierIndex = tier === null ? -1 : SEAL_TIERS.indexOf(tier)
 
     const ceiling = computeMeanAlignedRating(seal.stat, RATING_CEILING)
     let maxTierIndex = 0
     for (let i = 0; i < SEAL_TIERS.length; i++) {
-      if (SEAL_TIER_REQUIREMENTS[SEAL_TIERS[i]].minRating <= ceiling) maxTierIndex = i
+      if (SEAL_STAT_GATES[SEAL_TIERS[i]] <= ceiling) maxTierIndex = i
     }
     const nextTier = tierIndex + 1 <= maxTierIndex ? SEAL_TIERS[tierIndex + 1] : null
-    const blockedBy: AlchemicalSeal['blockedBy'] = []
+    const blockedBy: SealProgress['blockedBy'] = []
     if (nextTier) {
-      const need = SEAL_TIER_REQUIREMENTS[nextTier]
-      if (alignedRating < need.minRating) blockedBy.push('stat')
-      if (balance < need.minBalance) blockedBy.push('esms')
-      if (
-        nextTier === 'Celestial' &&
-        (affinity === null || affinity < CELESTIAL_MIN_NATAL_AFFINITY)
-      ) {
-        blockedBy.push('natal')
-      }
+      if (alignedRating < SEAL_STAT_GATES[nextTier]) blockedBy.push('stat')
+      if (balance < SEAL_ESMS_GATES[nextTier]) blockedBy.push('esms')
+      if (nextTier === 'Celestial' && !celestialAllowed) blockedBy.push('natal')
     }
 
     return {
@@ -292,7 +264,7 @@ export function evaluateSeals({ stats, esmsBalances, natalChart }: SealInputs): 
       name: seal.name,
       token: seal.token,
       stat: seal.stat,
-      tier: tierIndex >= 0 ? SEAL_TIERS[tierIndex] : null,
+      tier,
       nextTier,
       blockedBy,
       maxTier: SEAL_TIERS[maxTierIndex],
@@ -304,37 +276,16 @@ export function evaluateSeals({ stats, esmsBalances, natalChart }: SealInputs): 
   })
 }
 
-export function earnedSeals(results: readonly AlchemicalSeal[]): AlchemicalSeal[] {
-  return results.filter(result => result.tier !== null)
+/** The Seals a vessel holds, as the contract's `AlchemicalSeal[]` (`buildCanonicalSeal`). */
+export function earnedSeals(results: readonly SealProgress[]): AlchemicalSeal[] {
+  const earned: AlchemicalSeal[] = []
+  for (const result of results) {
+    if (result.tier !== null) earned.push(buildCanonicalSeal(result.stat, result.tier))
+  }
+  return earned
 }
 
 // ─── Resonance Surge ─────────────────────────────────────────────────────────
-
-/**
- * Heat-led surges burn; reactivity-led ones storm; and an active surge at exact Monica
- * equilibrium is both.
- */
-export type ResonanceSurgeType = 'inferno' | 'tempest' | 'equilibrium'
-
-/** Where Monica sits, from the canonical engine's output (`null` there means ABSENT). */
-export type MonicaState = 'absent' | 'equilibrium' | 'convergent' | 'divergent'
-
-const SURGE_BOOSTED_STATS: Record<'inferno' | 'tempest', readonly SacredStatKey[]> = {
-  inferno: ['resonance', 'charisma'],
-  tempest: ['intuition', 'adaptability'],
-}
-
-/** The union of both: the dual surge boosts everything either type would. */
-const EQUILIBRIUM_BOOSTED_STATS: readonly SacredStatKey[] = [
-  ...SURGE_BOOSTED_STATS.inferno,
-  ...SURGE_BOOSTED_STATS.tempest,
-]
-
-/** Meter value (0–100) at which a surge is active. ≈8% of sky samples. */
-export const SURGE_ACTIVE_AT = 70
-
-/** Stat points added on the 0–100 scale at a full meter; scales linearly with the meter. */
-export const MAX_SURGE_BOOST = 10
 
 /** The most a natal chart's harmony with the live sky can move the meter, either way. */
 export const HARMONY_MAX_OFFSET = 12
@@ -379,10 +330,12 @@ export interface SurgeInputs {
    * Straight from `calculateMonica`, `null` meaning ABSENT. It never moves the meter:
    * ABSENT must never degrade a surge, and there is no measured meaning for Monica's
    * sign or magnitude to build a meter on (see the note on `calculateMonica`). It only
-   * classifies the result: `monicaState`, and the `equilibrium` upgrade of an *active*
-   * surge when Monica sits exactly at `MONICA_EQUILIBRIUM`.
+   * classifies the result, through the contract: `monicaState`, and the `equilibrium` upgrade
+   * of an *active* surge at Monica equilibrium.
    */
   monica?: number | null
+  /** The vessel's archetype: the contract boosts its primary and secondary stat the most. */
+  archetype: Pick<VesselArchetype, 'primary' | 'secondary'>
   /**
    * Optional per-agent harmony: this agent's natal chart against the live sky. Both are
    * needed; a `placeholder`/`unattributed` chart is ignored. Without them the meter is the
@@ -392,21 +345,16 @@ export interface SurgeInputs {
   sky?: SkyBodies | null
 }
 
-export interface ResonanceSurgeState {
-  /** 0–100 after the harmony offset; continuous, so a shader can ease it. */
-  meter: number
-  /** The shared-sky meter before any harmony offset, 0–100. */
+/**
+ * The contract's `ResonanceSurgeState` — `meter` an integer 0–100, `active` at 70 or more,
+ * `heat` and `reactivity` the quantities' **ramp positions** (0–1, "normalized" in the
+ * contract's words), `statBoosts` over all seven stats — plus how the meter was reached.
+ */
+export interface ResonanceSurgeReading extends ResonanceSurgeState {
+  /** The shared-sky meter before any harmony offset, 0–100, unrounded. */
   skyMeter: number
   /** −12…+12 (2 dp); 0 when no usable natal chart or sky was given. */
   harmonyOffset: number
-  active: boolean
-  /** The type the meter is building toward (also meaningful below the threshold). */
-  surgeType: ResonanceSurgeType
-  monicaState: MonicaState
-  /** Empty unless `active`. */
-  statBoosts: Partial<CoreStats>
-  /** Each quantity's share of the meter, 0–1 — ready to use as shader uniforms. */
-  components: { heat: number; reactivity: number }
 }
 
 function ramp(value: number, { low, high }: { low: number; high: number }): number {
@@ -421,18 +369,11 @@ function assertCalibration(calibration: SurgeCalibration): void {
   }
 }
 
-/**
- * Classify Monica. The engine reports ABSENT as `null`, never as a number; exact Kalchm
- * equilibrium is the constant `MONICA_EQUILIBRIUM`. Zero is not a value the engine
- * produces; it is not positive, so it classifies as divergent.
- */
-export function classifyMonica(monica: number | null | undefined): MonicaState {
-  if (monica === null || monica === undefined) return 'absent'
-  if (!Number.isFinite(monica)) {
+/** Monica is a finite number or `null` (ABSENT); anything else is a broken read, not a state. */
+function assertMonica(monica: number | null | undefined): void {
+  if (monica !== null && monica !== undefined && !Number.isFinite(monica)) {
     throw new RangeError(`Monica must be a finite number or null, got ${String(monica)}`)
   }
-  if (monica === MONICA_EQUILIBRIUM) return 'equilibrium'
-  return monica > 0 ? 'convergent' : 'divergent'
 }
 
 // ─── Elemental harmony (natal chart vs the live sky) ─────────────────────────
@@ -475,17 +416,21 @@ export function elementalHarmony(
   return counted === 0 ? null : total / counted
 }
 
+/**
+ * The surge for a vessel under the live sky: this module computes the meter (measured ramps plus
+ * the natal harmony offset) and the contract's `evaluateSurgeState` decides everything else.
+ */
 export function calculateResonanceSurge(
-  { thermodynamics, monica, natalChart, sky }: SurgeInputs,
+  { thermodynamics, monica, archetype, natalChart, sky }: SurgeInputs,
   calibration: SurgeCalibration = DEFAULT_SURGE_CALIBRATION
-): ResonanceSurgeState {
+): ResonanceSurgeReading {
   const { heat, reactivity } = thermodynamics
   if (!Number.isFinite(heat) || !Number.isFinite(reactivity)) {
     throw new RangeError(
       `Cannot compute a resonance surge from non-finite thermodynamics (heat ${String(heat)}, reactivity ${String(reactivity)})`
     )
   }
-  const monicaState = classifyMonica(monica) // also rejects a non-finite Monica
+  assertMonica(monica)
   assertCalibration(calibration)
 
   const heatShare = ramp(heat, calibration.heat)
@@ -496,35 +441,13 @@ export function calculateResonanceSurge(
   const harmonyOffset = harmony === null ? 0 : Math.round(harmony * HARMONY_MAX_OFFSET * 100) / 100
   const meter = Math.min(100, Math.max(0, skyMeter + harmonyOffset))
 
-  const active = meter >= SURGE_ACTIVE_AT
-  const building: 'inferno' | 'tempest' = heatShare >= reactivityShare ? 'inferno' : 'tempest'
-  const dual = active && monicaState === 'equilibrium'
-  const surgeType: ResonanceSurgeType = dual ? 'equilibrium' : building
-
-  const statBoosts: Partial<CoreStats> = {}
-  if (active) {
-    const boost = Math.round((MAX_SURGE_BOOST * meter) / 100)
-    const boosted = dual ? EQUILIBRIUM_BOOSTED_STATS : SURGE_BOOSTED_STATS[building]
-    for (const stat of boosted) statBoosts[stat] = boost
-  }
-
-  return {
+  const state = evaluateSurgeState(
     meter,
-    skyMeter,
-    harmonyOffset,
-    active,
-    surgeType,
-    monicaState,
-    statBoosts,
-    components: { heat: heatShare, reactivity: reactivityShare },
-  }
-}
-
-/** Apply boosts to stats, clamped to 100. Returns a new object; the input is untouched. */
-export function applyStatBoosts(stats: CoreStats, boosts: Partial<CoreStats>): CoreStats {
-  const boosted = { ...stats }
-  for (const [key, amount] of Object.entries(boosts) as Array<[CoreStatKey, number]>) {
-    boosted[key] = Math.min(100, boosted[key] + amount)
-  }
-  return boosted
+    heatShare,
+    reactivityShare,
+    archetype.primary,
+    archetype.secondary,
+    monica ?? null
+  )
+  return { ...state, skyMeter, harmonyOffset }
 }

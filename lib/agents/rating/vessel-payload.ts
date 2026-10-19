@@ -1,17 +1,26 @@
 /**
- * Assembles the `RatedAgentPayload` the rating API serves and `pentacles` consumes.
+ * Assembles the rated-vessel payload the rating API serves and `pentacles` consumes.
+ *
+ * The payload IS the Pentacles rating contract's `RatedAgentPayload`
+ * (`lib/agents/rating-contract.ts`, ratified in #65) — `key`, `handle`, `faction`, `ratings`,
+ * `relativeAdvantage`, `ovr`, `archetype`, `esms`, `seals`, `surge`, `appearance` — plus the
+ * fields only a live, server-side rating can know (`esmsSource`, `sealProgress`, `sky`,
+ * `zoneSynergies`, `bestZoneId`, `degraded`). One deliberate difference: `surge` is `null`
+ * (with `degraded.sky`) when the live sky could not be computed, because a calm-looking surge
+ * built from no sky would impersonate a real one.
  *
  * Pure: every input (the agent, its ESMS holdings, the live sky) is passed in, so the same
  * assembly serves the GET and POST routes and is testable without a database or a network.
  *
- *   stats ──► rateStats ──► ovr, ratings, relativeAdvantage, archetype
- *   stats + ESMS holdings + natal chart ──► evaluateSeals ──► seals
- *   live sky (+ Monica, + natal chart) ──► calculateResonanceSurge ──► surge
- *   stats + seals + surge ──► computeZoneSynergies ──► zoneSynergies
+ *   stats ──► rateStats ──► ovr, ratings, relativeAdvantage, archetype        (the contract's)
+ *   stats + ESMS holdings + natal chart ──► evaluateSeals ──► seals, sealProgress
+ *   live sky (+ Monica, + natal chart, + archetype) ──► calculateResonanceSurge ──► surge
+ *   ratings + seals + surge ──► computeZoneSynergies ──► zoneSynergies
+ *   agent id (+ faction, archetype) ──► resolveAgentAppearance ──► appearance (the manifest's)
  *
  * Nothing is derived twice: stats come from `deriveSacredStats` (or the persisted Sacred 7
  * columns of a forged vessel), thermodynamics from `lib/thermodynamics/kalchm.ts` via the
- * live-sky module, ESMS holdings from the resolver.
+ * live-sky module, ESMS holdings from the resolver, the look from the contract's manifest.
  *
  * ## Degraded reads announce themselves
  *
@@ -21,31 +30,26 @@
  */
 import type { CraftedAgent } from '@/lib/agent-types'
 import { deriveSacredStats } from '@/lib/agents/persona/derive-sacred-stats'
+import { getRulingPlanet } from '@/lib/astrological-data'
 import { ZODIAC_SIGNS } from '@/lib/staking/elements'
+import { FIXTURE_AGENTS, type RatedAgentPayload } from '../rating-contract'
+import {
+  CANONICAL_ROSTER_71,
+  resolveAgentAppearance,
+  type VesselAppearanceProfile,
+} from '../vessel-appearance-manifest'
 import type { ResolvedEsmsBalances } from './esms-balance-resolver'
 import type { LiveSky } from './live-sky'
-import {
-  CORE_STAT_KEYS,
-  VESSEL_RATING_SCALE,
-  rateStats,
-  type CoreStats,
-  type VesselArchetype,
-} from './ovr-archetype'
+import { CORE_STAT_KEYS, VESSEL_RATING_SCALE, rateStats, type CoreStats } from './ovr-archetype'
 import { bestZoneId, computeZoneSynergies, type ZoneSynergy } from './pentacle-contest'
 import {
   calculateResonanceSurge,
+  earnedSeals,
   evaluateSeals,
-  type AlchemicalSeal,
-  type EsmsHoldings,
   type NatalChartInput,
-  type ResonanceSurgeState,
+  type ResonanceSurgeReading,
+  type SealProgress,
 } from './seals-surge'
-import {
-  appearanceFromSeed,
-  deriveVesselAppearance,
-  getVesselAppearance,
-  type VesselAppearanceProfile,
-} from './vessel-appearance'
 
 /**
  * Pentacles' default avatar id and the roster agent it is rated from. The game knows
@@ -64,33 +68,100 @@ export function resolveVesselAlias(agentId: string): string | undefined {
   return Object.hasOwn(VESSEL_ALIASES, agentId) ? VESSEL_ALIASES[agentId] : undefined
 }
 
-/** Something that can be rated: stats, an optional natal chart, a look. */
+/** The ten classical bodies in the contract's faction order (a planet index, 0 = Sun). */
+export const FACTION_NAMES = [
+  'Sun',
+  'Moon',
+  'Mercury',
+  'Venus',
+  'Mars',
+  'Jupiter',
+  'Saturn',
+  'Uranus',
+  'Neptune',
+  'Pluto',
+] as const
+
+type Provenance = NonNullable<RatedAgentPayload['provenance']>
+
+/** Something that can be rated: stats, an optional natal chart, a faction, a look. */
 export interface RatableVessel {
   agentId: string
   name: string
   origin: 'roster' | 'forged'
   stats: CoreStats
   natalChart: NatalChartInput | null
+  /** The contract's `faction`: a planet index 0–9 (see `FACTION_NAMES`). */
+  faction: number
+  /** The natal chart is a stacked placeholder; such a chart never earns Celestial. */
+  isPlaceholder: boolean
+  provenance: Provenance
   appearance: VesselAppearanceProfile
+  avatarModelUrl?: string
+  headMeshUrl?: string
+}
+
+/** The manifest strips a trailing `-<digits>` (a birth-year suffix) when it looks an id up. */
+const baseKey = (id: string): string => id.trim().toLowerCase().replace(/-\d+$/, '')
+
+const ROSTER_FACTIONS: ReadonlyMap<string, number> = new Map(
+  CANONICAL_ROSTER_71.map(entry => [baseKey(entry.key), entry.faction])
+)
+
+/** The contract's own pilots carry hand-authored factions (e.g. `user-avatar-neo` is the Sun's). */
+const FIXTURE_FACTIONS: ReadonlyMap<string, number> = new Map(
+  FIXTURE_AGENTS.map(fixture => [baseKey(fixture.key), fixture.faction])
+)
+
+/** The ruling planet of a sign as a faction index; `undefined` when the sign has none. */
+function factionOfSign(sign: string | undefined): number | undefined {
+  if (!sign) return undefined
+  const index = (FACTION_NAMES as readonly string[]).indexOf(getRulingPlanet(sign))
+  return index >= 0 ? index : undefined
+}
+
+/**
+ * A vessel's faction: a contract pilot's own, else the roster's canonical one
+ * (`CANONICAL_ROSTER_71`), else the ruler of its natal Sun sign, else 0 (the manifest's default).
+ */
+function factionOf(agentId: string, natalChart: NatalChartInput | null): number {
+  const key = baseKey(agentId)
+  return (
+    FIXTURE_FACTIONS.get(key) ??
+    ROSTER_FACTIONS.get(key) ??
+    factionOfSign(natalChart?.planets.Sun?.sign) ??
+    0
+  )
+}
+
+/** A roster agent under `agentId` (which may be an alias such as `user-avatar-neo`). */
+export function ratableFromRoster(agent: CraftedAgent, agentId = agent.id): RatableVessel {
+  const natalChart = agent.consciousness?.natalChart ?? null
+  const isPlaceholder = natalChart?.provenance === 'placeholder'
+  const appearance = resolveAgentAppearance(agentId)
+  return {
+    agentId,
+    name: agent.name,
+    origin: 'roster',
+    stats: pickCoreStats(deriveSacredStats(agent) as unknown as Record<string, number>),
+    natalChart,
+    faction: factionOf(agentId, natalChart),
+    isPlaceholder,
+    provenance: isPlaceholder ? 'placeholder' : 'historical',
+    appearance,
+    ...((agent.avatarModelUrl ?? appearance.avatarModelUrl)
+      ? { avatarModelUrl: agent.avatarModelUrl ?? appearance.avatarModelUrl }
+      : {}),
+    ...((agent.headMeshUrl ?? appearance.headMeshUrl)
+      ? { headMeshUrl: agent.headMeshUrl ?? appearance.headMeshUrl }
+      : {}),
+  }
 }
 
 function pickCoreStats(stats: Record<string, number>): CoreStats {
   const out = {} as CoreStats
   for (const key of CORE_STAT_KEYS) out[key] = stats[key]
   return out
-}
-
-/** A roster agent under `agentId` (which may be an alias such as `user-avatar-neo`). */
-export function ratableFromRoster(agent: CraftedAgent, agentId = agent.id): RatableVessel {
-  const appearance = getVesselAppearance(agentId) ?? deriveVesselAppearance(agent)
-  return {
-    agentId,
-    name: agent.name,
-    origin: 'roster',
-    stats: pickCoreStats(deriveSacredStats(agent) as unknown as Record<string, number>),
-    natalChart: agent.consciousness?.natalChart ?? null,
-    appearance,
-  }
 }
 
 /** The columns of a forged `historical_agents` row that rating reads. */
@@ -242,41 +313,45 @@ export function ratableFromForgedRow(row: ForgedAgentRow): RatableVessel | null 
   }
 
   const archetype = rateStats(stats).archetype
+  const faction = factionOf(row.agentId, natalChart)
+  const appearance = resolveAgentAppearance(row.agentId, faction, archetype)
   return {
     agentId: row.agentId,
     name: row.name,
     origin: 'forged',
     stats,
     natalChart,
-    appearance:
-      getVesselAppearance(row.agentId) ??
-      appearanceFromSeed(row.agentId, archetype.primary, 'astral'),
+    faction,
+    isPlaceholder: false,
+    provenance: 'user',
+    appearance,
+    ...(appearance.avatarModelUrl ? { avatarModelUrl: appearance.avatarModelUrl } : {}),
+    ...(appearance.headMeshUrl ? { headMeshUrl: appearance.headMeshUrl } : {}),
   }
 }
 
 // ─── The payload ─────────────────────────────────────────────────────────────
 
-export interface RatedAgentPayload {
-  agentId: string
-  name: string
-  scale: typeof VESSEL_RATING_SCALE
-  ovr: number
-  ratings: ReturnType<typeof rateStats>['ratings']
-  spread: number
-  relativeAdvantage: ReturnType<typeof rateStats>['relativeAdvantage']
-  archetype: VesselArchetype
-  esmsBalances: EsmsHoldings
-  esmsSource: ResolvedEsmsBalances['esmsSource']
-  seals: AlchemicalSeal[]
-  /** `null` when the live sky could not be computed (see `degraded.sky`). */
-  surge: ResonanceSurgeState | null
+/**
+ * The contract's `RatedAgentPayload` plus what only a live rating knows. `surge` is the one
+ * field whose type differs: `null` when the sky could not be computed (see `degraded.sky`), and
+ * otherwise the contract's `ResonanceSurgeState` with how its meter was reached.
+ */
+export interface RatedVesselPayload extends Omit<RatedAgentPayload, 'surge' | 'appearance'> {
+  /** Always present, unlike the contract's optional field. */
   appearance: VesselAppearanceProfile
+  surge: ResonanceSurgeReading | null
+  scale: typeof VESSEL_RATING_SCALE
+  /** Every Seal's standing, including those not earned: `nextTier`, `blockedBy`, `maxTier`. */
+  sealProgress: SealProgress[]
+  esmsSource: ResolvedEsmsBalances['esmsSource']
   zoneSynergies: ZoneSynergy[]
   bestZoneId: number
-  /** Which sky the surge was read from, and its inputs; `null` with `surge`. */
+  /** Which sky the surge was read from, and its raw inputs; `null` with `surge`. */
   sky: {
     source: LiveSky['source']
     at: string
+    /** The engine's raw heat and reactivity; `surge.heat`/`surge.reactivity` are their ramp positions. */
     heat: number
     reactivity: number
     monica: number | null
@@ -299,41 +374,49 @@ export function buildRatedAgentPayload({
   balances,
   sky,
   skyError,
-}: BuildPayloadInput): RatedAgentPayload {
+}: BuildPayloadInput): RatedVesselPayload {
   const rating = rateStats(vessel.stats)
-  const seals = evaluateSeals({
+  const sealProgress = evaluateSeals({
     stats: vessel.stats,
     esmsBalances: balances.balances,
     natalChart: vessel.natalChart,
   })
+  const seals = earnedSeals(sealProgress)
   const surge = sky
     ? calculateResonanceSurge({
         thermodynamics: sky.thermodynamics,
         monica: sky.monica,
+        archetype: rating.archetype,
         natalChart: vessel.natalChart,
         sky: sky.bodies,
       })
     : null
-  const contestant = { stats: vessel.stats, seals, surge }
+  const contestant = { ratings: rating.ratings, seals, surge }
 
-  const degraded: NonNullable<RatedAgentPayload['degraded']> = {}
+  const degraded: NonNullable<RatedVesselPayload['degraded']> = {}
   if (balances.degraded) degraded.esms = balances.degraded.reason
   if (!sky) degraded.sky = skyError ?? 'live sky unavailable'
 
   return {
-    agentId: vessel.agentId,
-    name: vessel.name,
-    scale: VESSEL_RATING_SCALE,
-    ovr: rating.ovr,
+    key: vessel.agentId,
+    handle: vessel.name,
+    faction: vessel.faction,
+    factionName: FACTION_NAMES[vessel.faction] ?? FACTION_NAMES[0],
+    isPlaceholder: vessel.isPlaceholder,
+    provenance: vessel.provenance,
+    appearance: vessel.appearance,
+    ...(vessel.avatarModelUrl ? { avatarModelUrl: vessel.avatarModelUrl } : {}),
+    ...(vessel.headMeshUrl ? { headMeshUrl: vessel.headMeshUrl } : {}),
     ratings: rating.ratings,
-    spread: rating.spread,
     relativeAdvantage: rating.relativeAdvantage,
+    ovr: rating.ovr,
     archetype: rating.archetype,
-    esmsBalances: balances.balances,
-    esmsSource: balances.esmsSource,
+    esms: balances.balances,
     seals,
     surge,
-    appearance: vessel.appearance,
+    scale: VESSEL_RATING_SCALE,
+    sealProgress,
+    esmsSource: balances.esmsSource,
     zoneSynergies: computeZoneSynergies(contestant),
     bestZoneId: bestZoneId(contestant),
     sky: sky
@@ -349,13 +432,24 @@ export function buildRatedAgentPayload({
   }
 }
 
+/**
+ * The payload as the contract's own `RatedAgentPayload` (what `feedStreamBus.recordAgentRating`
+ * takes), or `null` when there is no surge to put in it. Compiles only while the payload stays
+ * assignable to the contract — extension fields ride along, nothing is renamed.
+ */
+export function asContractPayload(payload: RatedVesselPayload): RatedAgentPayload | null {
+  return payload.surge === null ? null : { ...payload, surge: payload.surge }
+}
+
 // ─── Roster summary (no ledger, no sky) ──────────────────────────────────────
 
 export interface RosterSummaryEntry {
-  agentId: string
-  name: string
+  key: string
+  handle: string
+  faction: number
+  factionName: string
   ovr: number
-  archetype: VesselArchetype
+  archetype: RatedVesselPayload['archetype']
   era: VesselAppearanceProfile['era']
   crownStyle: VesselAppearanceProfile['headSilhouette']['crownStyle']
   signatureRelic: VesselAppearanceProfile['signatureRelic']
@@ -365,8 +459,10 @@ export interface RosterSummaryEntry {
 export function summarizeVessel(vessel: RatableVessel): RosterSummaryEntry {
   const rating = rateStats(vessel.stats)
   return {
-    agentId: vessel.agentId,
-    name: vessel.name,
+    key: vessel.agentId,
+    handle: vessel.name,
+    faction: vessel.faction,
+    factionName: FACTION_NAMES[vessel.faction] ?? FACTION_NAMES[0],
     ovr: rating.ovr,
     archetype: rating.archetype,
     era: vessel.appearance.era,

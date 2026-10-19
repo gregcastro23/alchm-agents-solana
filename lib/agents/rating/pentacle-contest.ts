@@ -11,19 +11,22 @@
  *
  * Nothing here reads a clock, a random source, the network or a chart, and nothing imports a
  * Node builtin, so the same calls serve an off-chain preview, an API route and a client
- * component. It takes `CoreStats` as given (it never derives them) and reads Seals and a
- * Resonance Surge in the shapes `seals-surge.ts` already produces.
+ * component. It takes the vessel's ratings (the contract's 25–99 scale) as given — it never
+ * derives them — and reads Seals and a Resonance Surge in the shapes the rating contract
+ * (`lib/agents/rating-contract.ts`) defines: earned `AlchemicalSeal`s and a `ResonanceSurgeState`.
  *
  * ## The ECR
  *
- *   ECR(zone) = ( Σ_k  weight[zone][k] · clamp(stat′[k], 0, 100) ) × sealMultiplier(zone)
+ *   ECR(zone) = ( Σ_k  weight[zone][k] · rating′[k] ) × sealMultiplier(zone)
  *
- * rounded to 2 dp, where `stat′` is the vessel's stats plus the temporary boosts of its
- * Resonance Surge **only while that surge is active**. Every zone's weights sum to 1, so before
- * Seals the ECR is a weighted average of the stats: it never leaves the range of the vessel's
- * own stats, and a flat vessel scores the same everywhere. Seals are what tilt a vessel toward
- * a particular zone *beyond* its stats: the multiplier is that of the highest earned tier among
- * the vessel's Seals whose token matches the zone's element (1.0 when there is none).
+ * rounded to 2 dp, where `rating′` is the vessel's rating plus the temporary boost its Resonance
+ * Surge gives that stat **only while that surge is active**, clamped to the contract's 25–99
+ * (`clampStat`). Every zone's weights sum to 1, so before Seals the ECR is a weighted average of
+ * the ratings: it never leaves the range of the vessel's own ratings (plus boosts), and a flat
+ * vessel scores the same everywhere. Seals are what tilt a vessel toward a particular zone
+ * *beyond* its ratings: the multiplier (the contract's `SEAL_TIER_MULTIPLIERS`) is that of the
+ * highest earned tier among the vessel's Seals whose `category` matches the zone's element token
+ * (1.0 when there is none).
  *
  * ## Zone profiles are policy, not measurement
  *
@@ -59,16 +62,15 @@
 import { ELEMENT_TO_ESMS } from '@/lib/staking/elements'
 import { SPIRE_LABELS, zoneKind, type ZoneKindName } from '@/lib/staking/pentacle-geometry'
 import type { Element } from '@/lib/staking/types'
-import { CORE_STAT_KEYS, type CoreStats, type SacredStatKey } from './ovr-archetype'
 import {
-  ESMS_TOKENS,
   SEAL_TIERS,
-  applyStatBoosts,
+  SEAL_TIER_MULTIPLIERS,
+  clampStat,
   type AlchemicalSeal,
-  type EsmsToken,
   type ResonanceSurgeState,
-  type SealTier,
-} from './seals-surge'
+} from '../rating-contract'
+import { CORE_STAT_KEYS, type SacredStatKey } from './ovr-archetype'
+import { ESMS_TOKENS, type EsmsToken } from './seals-surge'
 
 // ─── Zone profiles ───────────────────────────────────────────────────────────
 
@@ -282,25 +284,20 @@ export const ZONE_PROFILES: readonly ZoneProfile[] = Object.freeze(
 // ─── Seals ───────────────────────────────────────────────────────────────────
 
 /**
- * ECR multiplier for the highest earned tier of a Seal whose token matches the zone's element.
- * Strictly increasing in tier order, so a higher tier can never lower the ECR.
+ * ECR multiplier for the highest earned tier of a Seal whose token matches the zone's element:
+ * the contract's table (1.05 / 1.10 / 1.18 / 1.28 / 1.40), strictly increasing in tier order, so a
+ * higher tier can never lower the ECR.
  */
-export const SEAL_TIER_MULTIPLIERS: Readonly<Record<SealTier, number>> = Object.freeze({
-  Copper: 1.05,
-  Silver: 1.1,
-  Gold: 1.18,
-  Aether: 1.28,
-  Celestial: 1.4,
-})
+export { SEAL_TIER_MULTIPLIERS }
 
 // ─── Effective Contest Rating ────────────────────────────────────────────────
 
 export interface ContestVessel {
-  /** Natal or live core stats, 0–100. Out-of-range finite values are clamped; non-finite throw. */
-  stats: CoreStats
-  /** The vessel's evaluated Seals (`evaluateSeals`); a Seal with `tier: null` counts for nothing. */
+  /** Natal or live ratings on the contract's 25–99 scale. Finite out-of-range values are clamped; non-finite throw. */
+  ratings: Record<SacredStatKey, number>
+  /** The vessel's earned Seals (the contract's `AlchemicalSeal[]`, as `earnedSeals` returns). */
   seals: readonly AlchemicalSeal[]
-  /** A Resonance Surge: its boosts apply only while `active`. */
+  /** A Resonance Surge: its boosts (rating points) apply only while `active`. */
   surge?: Pick<ResonanceSurgeState, 'active' | 'statBoosts'> | null
 }
 
@@ -316,9 +313,9 @@ function requireZone(zoneId: number): ZoneProfile {
   return profile
 }
 
-/** A vessel reduced to what every zone needs: clamped boosted stats and its best tier per token. */
+/** A vessel reduced to what every zone needs: clamped boosted ratings and its best tier per token. */
 interface PreparedVessel {
-  stats: CoreStats
+  ratings: Record<SacredStatKey, number>
   /** Index into `SEAL_TIERS` of the highest earned tier for each token, −1 if none. */
   bestTier: Record<EsmsToken, number>
 }
@@ -329,44 +326,46 @@ interface PreparedVessel {
  */
 function prepareVessel(vessel: ContestVessel): PreparedVessel {
   for (const key of CORE_STAT_KEYS) {
-    const value = vessel.stats[key]
+    const value = vessel.ratings[key]
     if (!Number.isFinite(value)) {
       throw new RangeError(`Cannot rate ${key}: ${String(value)} is not a finite number`)
     }
   }
 
-  const surge = vessel.surge
-  const boosted = applyStatBoosts(vessel.stats, surge?.active ? surge.statBoosts : {})
-  const stats = {} as CoreStats
+  const boosts = vessel.surge?.active ? vessel.surge.statBoosts : {}
+  const ratings = {} as Record<SacredStatKey, number>
   for (const key of CORE_STAT_KEYS) {
-    const value = boosted[key]
-    if (!Number.isFinite(value)) {
-      throw new RangeError(`Cannot rate ${key}: ${String(value)} after surge boosts is not finite`)
+    const boost = boosts[key] ?? 0
+    const boosted = vessel.ratings[key] + boost
+    if (!Number.isFinite(boosted)) {
+      throw new RangeError(
+        `Cannot rate ${key}: ${String(boosted)} after surge boosts is not finite`
+      )
     }
-    stats[key] = Math.min(100, Math.max(0, value))
+    ratings[key] = clampStat(boosted)
   }
 
   const bestTier: Record<EsmsToken, number> = { spirit: -1, essence: -1, matter: -1, substance: -1 }
   for (const seal of vessel.seals) {
     // Every Seal is checked, not only those that match this zone, so the answer is the same
     // whichever zone is asked about.
-    if (!ESMS_TOKENS.includes(seal.token)) {
-      throw new RangeError(`Seal ${seal.id} has an unknown token: ${String(seal.token)}`)
+    if (seal.category !== 'general' && !ESMS_TOKENS.includes(seal.category)) {
+      throw new RangeError(`Seal ${seal.id} has an unknown token: ${String(seal.category)}`)
     }
-    if (seal.tier === null) continue
     const tierIndex = SEAL_TIERS.indexOf(seal.tier)
     if (tierIndex < 0) {
       throw new RangeError(`Seal ${seal.id} has an unknown tier: ${String(seal.tier)}`)
     }
-    if (tierIndex > bestTier[seal.token]) bestTier[seal.token] = tierIndex
+    if (seal.category === 'general') continue
+    if (tierIndex > bestTier[seal.category]) bestTier[seal.category] = tierIndex
   }
 
-  return { stats, bestTier }
+  return { ratings, bestTier }
 }
 
 function rateInZone(prepared: PreparedVessel, profile: ZoneProfile): number {
   let weighted = 0
-  for (const key of CORE_STAT_KEYS) weighted += profile.weights[key] * prepared.stats[key]
+  for (const key of CORE_STAT_KEYS) weighted += profile.weights[key] * prepared.ratings[key]
   const tierIndex = prepared.bestTier[profile.esmsToken]
   const multiplier = tierIndex < 0 ? 1 : SEAL_TIER_MULTIPLIERS[SEAL_TIERS[tierIndex]]
   return round2(weighted * multiplier)
