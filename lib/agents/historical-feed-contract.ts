@@ -109,6 +109,7 @@ export interface HistoricalFeedResponse {
 
 /** Minimal agent metadata the serializers need, looked up from `historical_agents`. */
 export interface AgentMeta {
+  slug?: string | null
   name?: string | null
   natalChart?: unknown
   dominantElement?: string | null
