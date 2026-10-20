@@ -181,11 +181,19 @@ export function ConsciousnessCraftedAgentsShowcase() {
                 Consciousness Origin
               </h4>
               <div className="bg-muted/50 p-4 rounded-lg space-y-2 text-sm">
-                <div>
-                  Born: {featuredAgent.birthData.date.toLocaleDateString()} at{' '}
-                  {featuredAgent.birthData.time}
-                </div>
-                <div>Location: {featuredAgent.birthData.location.name}</div>
+                {featuredAgent.birthData?.date && (
+                  <div>
+                    Born:{' '}
+                    {(typeof featuredAgent.birthData.date === 'string'
+                      ? new Date(featuredAgent.birthData.date)
+                      : featuredAgent.birthData.date
+                    ).toLocaleDateString()}{' '}
+                    {featuredAgent.birthData.time ? `at ${featuredAgent.birthData.time}` : ''}
+                  </div>
+                )}
+                {featuredAgent.birthData?.location?.name && (
+                  <div>Location: {featuredAgent.birthData.location.name}</div>
+                )}
                 <div>Specialty: {featuredAgent.abilities.specialty}</div>
                 <div className="flex items-center gap-1 pt-2">
                   <MessageCircle className="w-3 h-3" />
