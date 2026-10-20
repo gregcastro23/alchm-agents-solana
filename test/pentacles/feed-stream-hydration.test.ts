@@ -81,6 +81,23 @@ describe('Feed Stream & Agent Rating Hydration Contract', () => {
     unsubscribe()
   })
 
+  it('preserves unavailable progression fields and clears cached ratings between runs', () => {
+    feedStreamBus.resetForTesting()
+    const payload = {
+      ...FIXTURE_AGENTS[0],
+      vesselLevel: null,
+      totalXp: null,
+      currentOverall: null,
+      trainedOverall: null,
+      progressionStatus: 'unavailable' as const,
+      progressionReasons: ['Permanent experience has not been loaded.'],
+    }
+    feedStreamBus.recordAgentRating(payload)
+    expect(feedStreamBus.getRecentRatings()[0]).toEqual(payload)
+    feedStreamBus.resetForTesting()
+    expect(feedStreamBus.getRecentRatings()).toEqual([])
+  })
+
   it('verifies appearance profiles for all 4 pilot fixtures in feeds', () => {
     const pilots = ['isaac-newton', 'leonardo-da-vinci', 'emily-dickinson', 'user-avatar-neo']
     for (const key of pilots) {

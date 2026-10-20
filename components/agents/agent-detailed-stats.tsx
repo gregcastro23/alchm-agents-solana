@@ -22,6 +22,8 @@ import {
   BarChart,
 } from 'lucide-react'
 import type { CraftedAgent } from '@/lib/agent-types'
+import { computeAgentProgression } from '@/lib/agents/leveling-service'
+import { VesselProgressionDisplay } from '@/components/vessel/vessel-progression-display'
 
 interface AgentDetailedStatsProps {
   agent: CraftedAgent
@@ -122,6 +124,14 @@ export function AgentDetailedStats({
           </div>
         </div>
       </div>
+
+      {/* Two-Level Vessel Progression System (Permanent Vessel Level & Dynamic Current Overall) */}
+      <VesselProgressionDisplay
+        progression={computeAgentProgression(agent)}
+        variant="full"
+        subjectName={agent.name}
+        defaultExpanded={true}
+      />
 
       {/* Core Stats Grid */}
       <div className="grid grid-cols-2 md:grid-cols-4 gap-4">

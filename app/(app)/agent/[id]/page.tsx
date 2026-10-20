@@ -20,6 +20,8 @@ import {
 } from '@/lib/agents/activity-surfaces'
 import { AgentActivity } from '@/components/agent-profile/AgentActivity'
 import type { CraftedAgent, Element } from '@/lib/agent-types'
+import { computeAgentProgression } from '@/lib/agents/leveling-service'
+import { VesselProgressionDisplay } from '@/components/vessel/vessel-progression-display'
 
 // Pre-render the 71 canonical agents at build time; resolve everything else
 // (the ~3,637 planetary/moon + DB-only crafted agents) on demand. Without
@@ -136,6 +138,8 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
   const agent = await resolveAnyAgent(id)
   if (!agent) notFound()
 
+  const progression = computeAgentProgression(agent)
+
   const accent = agent.appearance?.color || '#7c3aed'
   const tint =
     ELEMENT_TINT[agent.consciousness?.dominantElement as Element] ||
@@ -250,9 +254,14 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
             <h1 className="font-hero-title text-hero-title text-primary-gold leading-tight mb-2 py-1">
               {agent.name}
             </h1>
-            <p className="font-mono-label text-mono-label text-muted-text uppercase tracking-widest mb-md">
+            <p className="font-mono-label text-mono-label text-muted-text uppercase tracking-widest mb-xs">
               {agent.title || 'Agent Codex'}
             </p>
+
+            {/* Two-Level Progression Badges */}
+            <div className="mb-md flex flex-wrap items-center justify-center md:justify-start gap-2">
+              <VesselProgressionDisplay progression={progression} variant="card-badge" />
+            </div>
 
             {agent.quotes && agent.quotes.length > 0 && (
               <blockquote className="border-l-2 border-primary-gold/40 pl-4 py-1 italic text-muted-text text-sm leading-relaxed max-w-2xl mx-auto md:mx-0">
@@ -313,6 +322,14 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
           </span>
         </section>
 
+        {/* Two-Level Vessel Progression System (Permanent Vessel Level & Dynamic Current Overall) */}
+        <VesselProgressionDisplay
+          progression={progression}
+          variant="full"
+          subjectName={agent.name}
+          defaultExpanded={true}
+        />
+
         {/* 3-Column Codex Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-gutter relative z-10">
           {/* Column 1: Consciousness Profile */}
@@ -341,9 +358,43 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
               <div className="space-y-sm border-t border-border-gold/10 pt-md">
                 <div className="flex justify-between items-center py-xs border-b border-border-gold/5 font-mono-data text-[12px]">
                   <span className="text-muted-text uppercase font-mono-label text-[10px]">
-                    Level
+                    Vessel Level
                   </span>
-                  <span className="text-ivory-text font-semibold">
+                  <span className="text-bright-gold font-bold">
+                    VL {progression.vesselLevel ?? 1} (Permanent)
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-xs border-b border-border-gold/5 font-mono-data text-[12px]">
+                  <span className="text-muted-text uppercase font-mono-label text-[10px]">
+                    Current Overall
+                  </span>
+                  <span className="text-ivory-text font-semibold flex items-center gap-1">
+                    {progression.currentOverall !== null ? (
+                      <>
+                        <span>{progression.currentOverall.toFixed(1)}</span>
+                        <span
+                          className={`text-[10px] ${
+                            progression.transitDelta && progression.transitDelta > 0
+                              ? 'text-emerald-400'
+                              : progression.transitDelta && progression.transitDelta < 0
+                                ? 'text-rose-400'
+                                : 'text-zinc-400'
+                          }`}
+                        >
+                          ({progression.transitDelta && progression.transitDelta > 0 ? '+' : ''}
+                          {progression.transitDelta?.toFixed(1) ?? '±0.0'})
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-zinc-500">Unavailable</span>
+                    )}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-xs border-b border-border-gold/5 font-mono-data text-[12px]">
+                  <span className="text-muted-text uppercase font-mono-label text-[10px]">
+                    Consciousness Tier
+                  </span>
+                  <span className="text-ivory-text">
                     {agent.consciousness?.level || 'Transcendent'}
                   </span>
                 </div>

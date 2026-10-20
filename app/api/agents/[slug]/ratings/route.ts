@@ -11,10 +11,10 @@ import {
   buildCanonicalSeal,
   clampStat,
   SACRED_STAT_KEYS,
-  FIXTURE_AGENTS,
 } from '@/lib/agents/rating-contract'
 import { resolveAgentAppearance } from '@/lib/agents/vessel-appearance-manifest'
 import { feedStreamBus } from '@/lib/agents/feed-stream-bus'
+import { computeAgentProgression } from '@/lib/agents/leveling-service'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -33,25 +33,6 @@ export async function OPTIONS() {
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ slug: string }> }) {
   const { slug } = await params
   const agentId = slug.trim().toLowerCase()
-
-  // 1. Check if it's one of the canonical fixture pilots
-  const fixture = FIXTURE_AGENTS.find(
-    f => f.key === agentId || f.key === agentId.replace(/-\d+$/, '')
-  )
-  if (fixture) {
-    const payload = structuredClone(fixture)
-    payload.appearance = resolveAgentAppearance(agentId)
-    feedStreamBus.recordAgentRating(payload)
-    if (payload.surge.active) {
-      feedStreamBus.recordResonanceSurge({
-        agentId: payload.key,
-        surge: payload.surge,
-        esms: payload.esms,
-        appearance: payload.appearance,
-      })
-    }
-    return NextResponse.json(payload, { headers: CORS_HEADERS })
-  }
 
   // 2. Resolve agent from historical catalog
   const agent = getHistoricalAgent(agentId)
@@ -144,6 +125,7 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
   )
 
   const appearance = resolveAgentAppearance(agent.id, undefined, archetype)
+  const progression = computeAgentProgression(agent)
 
   const payload: RatedAgentPayload = {
     key: agent.id,
@@ -162,6 +144,36 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ slu
     esms,
     seals,
     surge,
+    vesselLevel: progression.vesselLevel,
+    totalXp: progression.totalXp,
+    xpToNextLevel: progression.xpToNextLevel,
+    levelBoost: progression.levelBoost,
+    baseOverall: progression.baseOverall,
+    trainedOverall: progression.trainedOverall,
+    currentOverall: progression.currentOverall,
+    transitDelta: progression.transitDelta,
+    progressionStatus: progression.progressionStatus,
+    expBreakdown: progression.expBreakdown,
+    trainingEvidence: progression.trainingEvidence,
+    planetaryStats: progression.stats
+      ? {
+          solarAgency: progression.stats.solarAgency,
+          lunarReceptivity: progression.stats.lunarReceptivity,
+          mercurialVelocity: progression.stats.mercurialVelocity,
+          venusianCoherence: progression.stats.venusianCoherence,
+          martialImpetus: progression.stats.martialImpetus,
+          jovianExpansion: progression.stats.jovianExpansion,
+          saturnianStructure: progression.stats.saturnianStructure,
+          chironicAdaptation: progression.stats.chironicAdaptation,
+          uranianSurprisal: progression.stats.uranianSurprisal,
+          neptunianResonance: progression.stats.neptunianResonance,
+          plutonicIntegration: progression.stats.plutonicIntegration,
+          kineticAlignment: progression.stats.kineticAlignment,
+        }
+      : null,
+    ratingAsOf: progression.asOf,
+    progressionReasons: progression.reasons,
+    statDeltas: progression.statDeltas,
   }
 
   feedStreamBus.recordAgentRating(payload)

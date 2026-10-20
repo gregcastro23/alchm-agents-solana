@@ -21,6 +21,7 @@ import type {
 } from '@/lib/vessel/contract'
 import { useAlchmVessel, type VesselSyncState } from '@/lib/vessel/useAlchmVessel'
 import { ALCHM_KITCHEN_URL } from '@/lib/kitchen-signin'
+import { VesselProgressionDisplay } from '@/components/vessel/vessel-progression-display'
 
 const TOKENS = [
   {
@@ -305,6 +306,53 @@ export function AlchmVesselWidget({ variant = 'full' }: { variant?: 'full' | 'co
               </span>
             )}
           </div>
+
+          {/* Two-Level Progression System (Permanent Vessel Level & Dynamic Current Overall) */}
+          {vessel.progression ? (
+            <VesselProgressionDisplay
+              progression={{
+                agentId: 'user',
+                vesselLevel: vessel.progression.level,
+                totalXp: vessel.progression.totalXp,
+                xpToNextLevel: vessel.progression.xpToNextLevel,
+                levelBoost: (12 * (vessel.progression.level - 1)) / 99,
+                baseOverall: vessel.progression.baseOverall,
+                trainedOverall: vessel.progression.trainedOverall,
+                currentOverall: vessel.progression.currentOverall,
+                transitDelta:
+                  vessel.progression.currentOverall !== null
+                    ? vessel.progression.currentOverall - vessel.progression.trainedOverall
+                    : null,
+                progressionStatus: vessel.progression.status,
+                asOf: vessel.progression.asOf,
+                expBreakdown: null,
+                trainingEvidence: null,
+                stats: null,
+                statDeltas: vessel.progression.statDeltas,
+                reasons: vessel.progression.reasons,
+              }}
+              title="Vessel Progression"
+              subjectName="You"
+              variant="full"
+            />
+          ) : (
+            <div className="rounded-xl border border-white/10 bg-white/[0.02] p-4 text-xs text-zinc-400 space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5 font-mono text-[11px] uppercase tracking-wider text-amber-300">
+                  <Shield size={13} className="text-amber-400" />
+                  <span>Vessel Level &amp; Current Overall</span>
+                </div>
+                <span className="text-[10px] font-mono uppercase px-2 py-0.5 rounded border border-zinc-700 bg-zinc-900/60 text-zinc-400">
+                  Pending Integration
+                </span>
+              </div>
+              <p className="text-[11px] text-zinc-400 leading-relaxed">
+                Authoritative user experience receipts and cross-site progression ingestion are connecting.
+                Your spendable ESMS balances, streaks, and arena victories are tracked above; once the transactional
+                receipt service is connected, permanent Alchm EXP will accumulate here without fluctuating with balances.
+              </p>
+            </div>
+          )}
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
             {STREAMS.map(s => (
