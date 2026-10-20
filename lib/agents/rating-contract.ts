@@ -68,6 +68,8 @@ export interface RatedAgentPayload {
   isPlaceholder?: boolean
   provenance?: 'historical' | 'user' | 'placeholder'
   appearance?: VesselAppearanceProfile
+  /** Same-origin `/avatars/<file>` portrait path, when the vessel has a painted portrait. */
+  portraitUrl?: string
   avatarModelUrl?: string
   headMeshUrl?: string
   ratings: Record<SacredStatKey, number> // [25, 99] raw scale

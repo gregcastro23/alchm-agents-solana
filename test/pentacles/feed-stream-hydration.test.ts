@@ -1,4 +1,4 @@
-import { describe, it, expect } from 'bun:test'
+import { describe, it, expect } from 'vitest'
 import { feedStreamBus } from '@/lib/agents/feed-stream-bus'
 import {
   serializeRecipePost,
@@ -35,7 +35,7 @@ describe('Feed Stream & Agent Rating Hydration Contract', () => {
     expect(item.agent.appearance!.era).toBe('enlightenment')
     expect(item.agent.appearance!.headSilhouette.crownStyle).toBe('newton-curls')
     expect(item.agent.appearance!.signatureRelic).toBe('prism-octahedron')
-    expect(item.agent.appearance!.portraitSvgDataUri).toStartWith('data:image/svg+xml,')
+    expect(item.agent.appearance!.portraitSvgDataUri).toMatch(/^data:image\/svg\+xml,/)
   })
 
   it('broadcasts and caches agent rating payloads on feedStreamBus', () => {
@@ -102,7 +102,7 @@ describe('Feed Stream & Agent Rating Hydration Contract', () => {
     const pilots = ['isaac-newton', 'leonardo-da-vinci', 'emily-dickinson', 'user-avatar-neo']
     for (const key of pilots) {
       const app = resolveAgentAppearance(key)
-      expect(app.portraitSvgDataUri).toStartWith('data:image/svg+xml,')
+      expect(app.portraitSvgDataUri).toMatch(/^data:image\/svg\+xml,/)
       expect(app.signatureRelic).toBeDefined()
       expect(app.headSilhouette.crownStyle).toBeDefined()
     }

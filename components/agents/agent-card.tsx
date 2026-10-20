@@ -77,8 +77,13 @@ const getConsciousnessColor = (level: string) => {
   }
 }
 
-const formatBirthLocation = (location: Coordinates) => {
-  return `${location.name} (${location.lat.toFixed(1)}°, ${location.lon.toFixed(1)}°)`
+const formatBirthLocation = (location?: Partial<Coordinates> | null) => {
+  if (!location) return 'Unknown'
+  const name = location.name || 'Unknown'
+  if (typeof location.lat === 'number' && typeof location.lon === 'number') {
+    return `${name} (${location.lat.toFixed(1)}°, ${location.lon.toFixed(1)}°)`
+  }
+  return name
 }
 
 function isImageAvatar(value?: string | null): value is string {
@@ -394,15 +399,24 @@ export function AgentCard({
         </div>
 
         {/* Birth Date */}
-        <div className="text-xs text-muted-foreground">
-          Born:{' '}
-          {agent.birthData.date.toLocaleDateString('en-US', {
-            year: 'numeric',
-            month: 'long',
-            day: 'numeric',
-          })}{' '}
-          in {agent.birthData.location.name}
-        </div>
+        {agent.birthData?.date ? (
+          <div className="text-xs text-muted-foreground">
+            Born:{' '}
+            {(typeof agent.birthData.date === 'string'
+              ? new Date(agent.birthData.date)
+              : agent.birthData.date
+            ).toLocaleDateString('en-US', {
+              year: 'numeric',
+              month: 'long',
+              day: 'numeric',
+            })}{' '}
+            {agent.birthData.location?.name ? `in ${agent.birthData.location.name}` : ''}
+          </div>
+        ) : agent.birthData?.location?.name ? (
+          <div className="text-xs text-muted-foreground">
+            Origin: {agent.birthData.location.name}
+          </div>
+        ) : null}
 
         {/* Element and Modality */}
         <div className="flex gap-2">
@@ -576,9 +590,19 @@ function AgentDetailsModal({ agent }: { agent: CraftedAgent }) {
             Birth Information
           </h4>
           <div className="bg-muted p-3 rounded-lg space-y-1 text-sm">
-            <div>Date: {agent.birthData.date.toLocaleDateString()}</div>
-            <div>Time: {agent.birthData.time}</div>
-            <div>Location: {formatBirthLocation(agent.birthData.location)}</div>
+            {agent.birthData?.date && (
+              <div>
+                Date:{' '}
+                {(typeof agent.birthData.date === 'string'
+                  ? new Date(agent.birthData.date)
+                  : agent.birthData.date
+                ).toLocaleDateString()}
+              </div>
+            )}
+            {agent.birthData?.time && <div>Time: {agent.birthData.time}</div>}
+            {agent.birthData?.location && (
+              <div>Location: {formatBirthLocation(agent.birthData.location)}</div>
+            )}
           </div>
         </div>
 

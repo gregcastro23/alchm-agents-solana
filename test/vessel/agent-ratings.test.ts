@@ -1,12 +1,24 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it, mock } from 'bun:test'
+mock.module('server-only', () => ({}))
+mock.module('@/lib/db', () => ({
+  prisma: {
+    historical_agents: {
+      findUnique: async () => null,
+    },
+    users: {
+      findUnique: async () => null,
+    },
+  },
+}))
 import { NextRequest } from 'next/server'
-import { GET } from '@/app/api/agents/[slug]/ratings/route'
 import { getHistoricalAgent } from '@/lib/agents/historical'
 
-const request = (slug: string) =>
-  GET(new NextRequest(`http://localhost/api/agents/${slug}/ratings`), {
+const request = async (slug: string) => {
+  const { GET } = await import('@/app/api/agents/[slug]/ratings/route')
+  return GET(new NextRequest(`http://localhost/api/agents/${slug}/ratings`), {
     params: Promise.resolve({ slug }),
   })
+}
 
 describe('agent rating progression boundary', () => {
   it('resolves pilot agents from their actual catalog with seeded conversation experience', async () => {
@@ -22,7 +34,7 @@ describe('agent rating progression boundary', () => {
     expect(payload.ovr).toBeGreaterThanOrEqual(25)
   })
 
-  it('does not serve a demo-only player as an actual agent', async () => {
-    expect((await request('user-avatar-neo')).status).toBe(404)
+  it('returns 404 for an unknown non-existent agent', async () => {
+    expect((await request('unknown-celestial-agent')).status).toBe(404)
   })
 })

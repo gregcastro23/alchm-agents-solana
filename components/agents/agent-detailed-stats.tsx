@@ -112,14 +112,19 @@ export function AgentDetailedStats({
                 {consciousness.level}
               </Badge>
               <Badge variant="outline">Kalchm: {consciousness.monicaConstant.toFixed(2)}</Badge>
-              <Badge className="text-xs bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
-                Born:{' '}
-                {agent.birthData.date.toLocaleDateString('en-US', {
-                  year: 'numeric',
-                  month: 'short',
-                  day: 'numeric',
-                })}
-              </Badge>
+              {agent.birthData?.date && (
+                <Badge className="text-xs bg-gray-100 text-gray-700 dark:bg-gray-800 dark:text-gray-300">
+                  Born:{' '}
+                  {(typeof agent.birthData.date === 'string'
+                    ? new Date(agent.birthData.date)
+                    : agent.birthData.date
+                  ).toLocaleDateString('en-US', {
+                    year: 'numeric',
+                    month: 'short',
+                    day: 'numeric',
+                  })}
+                </Badge>
+              )}
             </div>
           </div>
         </div>
