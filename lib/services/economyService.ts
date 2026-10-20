@@ -439,7 +439,11 @@ export class EconomyService {
    * a debit ever creates a row, drives an axis negative, or moves its ledger
    * writes back outside the transaction.
    */
-  static async debitOperation(userId: string, operationKey: string) {
+  static async debitOperation(
+    userId: string,
+    operationKey: string,
+    transaction?: Prisma.TransactionClient
+  ) {
     const cost = AGENT_OPERATION_COSTS[operationKey]
     if (!cost) {
       throw new Error(`Invalid operation key: ${operationKey}`)
@@ -459,7 +463,7 @@ export class EconomyService {
     // statements: a crash or a failing insert left the balance debited with no
     // ledger entry recording it, silently and with no error surfaced. Money
     // moved with no record is the same outcome as double-spending it.
-    return prisma.$transaction(async tx => {
+    const debit = async (tx: Prisma.TransactionClient) => {
       // Single atomic CTE query. See DEBIT vs CREDIT ASYMMETRY above.
       const updatedBalanceRows = await tx.$queryRawUnsafe<any[]>(
         `
@@ -523,7 +527,8 @@ export class EconomyService {
           lastDailyClaimAgentsAt: updated.last_daily_claim_agents_at?.toISOString() || null,
         },
       }
-    })
+    }
+    return transaction ? debit(transaction) : prisma.$transaction(debit)
   }
 
   /**
