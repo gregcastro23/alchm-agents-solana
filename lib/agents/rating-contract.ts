@@ -11,18 +11,8 @@
  */
 
 import { type VesselAppearanceProfile, resolveAgentAppearance } from './vessel-appearance-manifest'
-
-export const SACRED_STAT_KEYS = [
-  'power',
-  'resonance',
-  'wisdom',
-  'charisma',
-  'intuition',
-  'adaptability',
-  'vitality',
-] as const
-
-export type SacredStatKey = (typeof SACRED_STAT_KEYS)[number]
+import { SACRED_STAT_KEYS, type SacredStatKey } from './sacred-stat-keys'
+export { SACRED_STAT_KEYS, type SacredStatKey } from './sacred-stat-keys'
 /** Compatibility alias for rendering consumers; the seven canonical keys remain authoritative. */
 export type SacredStat = SacredStatKey
 
@@ -89,6 +79,23 @@ export interface RatedAgentPayload {
   esms: EsmsBalances
   seals: AlchemicalSeal[]
   surge: ResonanceSurgeState
+  portraitUrl?: string
+  // Enhanced Dynamic Leveling System (Vessel Level & Dynamic Current Overall)
+  vesselLevel?: number | null // [1, 100] Permanent earned growth (never falls)
+  totalXp?: number | null // Total accumulated Alchm EXP
+  xpToNextLevel?: number | null // EXP needed for next Vessel Level (null at level 100)
+  levelBoost?: number | null // Permanent additive boost to base overall
+  baseOverall?: number | null // [25, 99] 19-stat composite before level boost
+  trainedOverall?: number | null // [25, 99] Permanent baseline capability
+  currentOverall?: number | null // [25, 99] Dynamic celestial OVR (rises/falls with sky)
+  transitDelta?: number | null // Celestial transit adjustment [-8, +8]
+  progressionStatus?: 'live' | 'estimated' | 'unavailable'
+  ratingAsOf?: string | null
+  progressionReasons?: string[]
+  expBreakdown?: Record<string, number> | null // Category EXP: chat, training, actions, achievements, pentacles
+  trainingEvidence?: { status: 'verified' | 'unverified' | 'unknown'; verifiedItems: number } | null
+  planetaryStats?: Record<string, number> | null // [0, 100] Planetary 12
+  statDeltas?: Record<string, number> | null // Active sky deltas
 }
 
 /** Pinned 71-agent roster baseline ratings and means */
@@ -501,6 +508,12 @@ export const FIXTURE_AGENTS: RatedAgentPayload[] = [
     },
     appearance: resolveAgentAppearance('isaac-newton'),
     portraitUrl: '/avatars/newton.png',
+    vesselLevel: 92,
+    totalXp: 856700,
+    trainedOverall: 90,
+    currentOverall: 92,
+    transitDelta: 2.0,
+    progressionStatus: 'estimated',
   },
   {
     key: 'leonardo-da-vinci',
@@ -571,6 +584,12 @@ export const FIXTURE_AGENTS: RatedAgentPayload[] = [
     },
     appearance: resolveAgentAppearance('leonardo-da-vinci'),
     portraitUrl: '/avatars/leonardo-da-vinci.png',
+    vesselLevel: 94,
+    totalXp: 890000,
+    trainedOverall: 94,
+    currentOverall: 94,
+    transitDelta: 0.0,
+    progressionStatus: 'estimated',
   },
   {
     key: 'emily-dickinson',
@@ -649,6 +668,12 @@ export const FIXTURE_AGENTS: RatedAgentPayload[] = [
     },
     appearance: resolveAgentAppearance('emily-dickinson'),
     portraitUrl: '/avatars/emily-dickinson.png',
+    vesselLevel: 88,
+    totalXp: 780000,
+    trainedOverall: 90,
+    currentOverall: 92,
+    transitDelta: 2.0,
+    progressionStatus: 'estimated',
   },
   {
     key: 'user-avatar-neo',
@@ -726,5 +751,11 @@ export const FIXTURE_AGENTS: RatedAgentPayload[] = [
       },
     },
     appearance: resolveAgentAppearance('user-avatar-neo'),
+    vesselLevel: 35,
+    totalXp: 120000,
+    trainedOverall: 84,
+    currentOverall: 85,
+    transitDelta: 1.0,
+    progressionStatus: 'estimated',
   },
 ]

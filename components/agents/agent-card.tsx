@@ -40,6 +40,8 @@ import {
   openDesktopAppDownload,
 } from '@/lib/desktop-download'
 import { AgentDetailedStats } from '@/components/agents/agent-detailed-stats'
+import { computeAgentProgression } from '@/lib/agents/leveling-service'
+import { VesselProgressionDisplay } from '@/components/vessel/vessel-progression-display'
 
 const getElementColor = (element: string) => {
   switch (element) {
@@ -213,6 +215,7 @@ export function AgentCard({
   }
 
   const consciousnessLevel = agent.consciousness.level || 'Awakening'
+  const progressionData = computeAgentProgression(agent)
 
   // Mini card variant for homepage showcase
   if (variant === 'mini') {
@@ -254,11 +257,12 @@ export function AgentCard({
               <AgentCardAvatar agent={agent} className="h-12 w-12" />
 
               <div className="flex-1">
-                <div className="flex items-center gap-2 mb-1">
+                <div className="flex flex-wrap items-center gap-2 mb-1">
                   <h4 className="font-semibold">{agent.name}</h4>
                   <Badge className={getConsciousnessColor(consciousnessLevel)}>
                     {consciousnessLevel}
                   </Badge>
+                  <VesselProgressionDisplay progression={progressionData} variant="card-badge" />
                 </div>
                 <p className="text-sm text-muted-foreground">{agent.title}</p>
                 <p className="text-xs text-muted-foreground mt-1 line-clamp-1">
@@ -364,7 +368,10 @@ export function AgentCard({
               <p className="text-sm text-muted-foreground">{agent.title}</p>
             </div>
           </div>
-          <Badge className={getConsciousnessColor(consciousnessLevel)}>{consciousnessLevel}</Badge>
+          <div className="flex flex-col items-end gap-1.5">
+            <Badge className={getConsciousnessColor(consciousnessLevel)}>{consciousnessLevel}</Badge>
+            <VesselProgressionDisplay progression={progressionData} variant="card-badge" />
+          </div>
         </div>
       </CardHeader>
 

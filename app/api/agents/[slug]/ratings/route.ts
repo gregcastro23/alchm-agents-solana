@@ -11,6 +11,7 @@ import {
   resolveVessel,
 } from '@/lib/agents/rating/rating-resolver.server'
 import { asContractPayload } from '@/lib/agents/rating/vessel-payload'
+import { computeAgentProgression } from '@/lib/agents/leveling-service'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -61,6 +62,42 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
         : null
 
     const payload = await ratedPayload(vessel, live, creatorWallet)
+
+    // Calculate and attach two-level progression
+    const progression = computeAgentProgression(agentId)
+    Object.assign(payload, {
+      vesselLevel: progression.vesselLevel,
+      totalXp: progression.totalXp,
+      xpToNextLevel: progression.xpToNextLevel,
+      levelBoost: progression.levelBoost,
+      baseOverall: progression.baseOverall,
+      trainedOverall: progression.trainedOverall,
+      currentOverall: progression.currentOverall,
+      transitDelta: progression.transitDelta,
+      progressionStatus: progression.progressionStatus,
+      expBreakdown: progression.expBreakdown,
+      trainingEvidence: progression.trainingEvidence,
+      planetaryStats: progression.stats
+        ? {
+            solarAgency: progression.stats.solarAgency,
+            lunarReceptivity: progression.stats.lunarReceptivity,
+            mercurialVelocity: progression.stats.mercurialVelocity,
+            venusianCoherence: progression.stats.venusianCoherence,
+            martialImpetus: progression.stats.martialImpetus,
+            jovianExpansion: progression.stats.jovianExpansion,
+            saturnianStructure: progression.stats.saturnianStructure,
+            chironicAdaptation: progression.stats.chironicAdaptation,
+            uranianSurprisal: progression.stats.uranianSurprisal,
+            neptunianResonance: progression.stats.neptunianResonance,
+            plutonicIntegration: progression.stats.plutonicIntegration,
+            kineticAlignment: progression.stats.kineticAlignment,
+          }
+        : null,
+      ratingAsOf: progression.asOf,
+      progressionReasons: progression.reasons,
+      statDeltas: progression.statDeltas,
+    })
+
     const contract = asContractPayload(payload)
 
     if (contract) {

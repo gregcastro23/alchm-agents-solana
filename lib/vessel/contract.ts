@@ -13,6 +13,8 @@
  *   - The Vessel is read-only: nothing here mints, moves, or converts ESMS.
  */
 
+import type { VesselProgression } from './progression'
+
 export const VESSEL_CONTRACT_VERSION = 1 as const
 
 /** [Spirit, Essence, Matter, Substance] — Fire, Water, Earth, Air. */
@@ -114,6 +116,8 @@ export interface AlchmVesselState {
   } | null
   ledger: VesselLedgerEntry[]
   sources: Record<VesselSourceKey, VesselSourceStatus>
+  /** Null until authoritative permanent EXP and rating inputs are connected. */
+  progression?: VesselProgression | null
 }
 
 export const EMPTY_ESMS: EsmsTuple = [0, 0, 0, 0]

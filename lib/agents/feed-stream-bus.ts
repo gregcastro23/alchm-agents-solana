@@ -146,6 +146,7 @@ class FeedStreamBus {
   resetForTesting() {
     this.recentTrades = []
     this.activeWindows = []
+    this.recentRatings = []
     this.listeners.clear()
   }
 }

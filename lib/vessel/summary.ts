@@ -33,6 +33,7 @@ import {
   type VesselStreamKey,
 } from './contract'
 import { loadPentaclesVesselStats, type PentaclesVesselStats } from './spacetime-stats'
+import type { VesselProgression } from './progression'
 
 /** The alchm.kitchen /api/economy/vessel payload this module consumes. */
 export interface KitchenVesselLedger {
@@ -67,6 +68,8 @@ export interface VesselInputs {
     slot: number
   } | null
   sources: Record<VesselSourceKey, VesselSourceStatus>
+  /** Supplied by an authoritative progression reader, never inferred from treasury counters. */
+  progression?: VesselProgression | null
   now?: number
 }
 
@@ -147,6 +150,9 @@ export function assembleVesselState(inputs: VesselInputs): AlchmVesselState {
     ledger: kitchen?.recent ?? [],
     onchain: inputs.onchain ?? null,
     sources: inputs.sources,
+    // Treasury sources can disappear or change independently of lifetime EXP.
+    // Until a durable progression reader is connected, unknown remains null.
+    progression: inputs.progression ?? null,
   }
 }
 
