@@ -4,7 +4,7 @@
  * renders 0, and statuses carry a word.
  */
 import { describe, expect, it, vi } from 'vitest'
-import { render, screen, within } from '@testing-library/react'
+import { fireEvent, render, screen, within } from '@testing-library/react'
 
 vi.mock('@/lib/db', () => ({ prisma: {} }))
 vi.mock('next/navigation', () => ({
@@ -46,6 +46,45 @@ describe('Agents page', () => {
     const table = screen.getByRole('region', { name: 'Agent roster' })
     const rumi = within(table).getByText('Rumi').closest('tr')!
     expect(within(rumi).getAllByText('0').length).toBe(2)
+  })
+
+  it('links catalog identities to profiles and progression, with combined roster filters', () => {
+    render(<AgentsView data={agentsFixture()} />)
+    const table = screen.getByRole('region', { name: 'Agent roster' })
+    const ada = within(table).getByRole('link', { name: 'Ada Lovelace' }).closest('tr')!
+    expect(within(ada).getByRole('link', { name: 'Ada Lovelace' })).toHaveAttribute(
+      'href',
+      '/agent/ada-lovelace'
+    )
+    expect(within(ada).getByRole('link', { name: /Progression/ })).toHaveAttribute(
+      'href',
+      '/admin/leveling?agent=ada-lovelace'
+    )
+    expect(within(ada).getByText('Painted portrait')).toBeInTheDocument()
+    expect(within(ada).getByText('Polymath Craftsman')).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('searchbox', { name: 'Search roster' }), {
+      target: { value: 'romantic' },
+    })
+    expect(within(table).queryByText('Ada Lovelace')).not.toBeInTheDocument()
+    expect(within(table).getByText('Rumi')).toBeInTheDocument()
+    fireEvent.change(screen.getByRole('combobox', { name: 'Planetary faction' }), {
+      target: { value: 'Mercury' },
+    })
+    expect(within(table).getByText('No agents match these filters.')).toBeInTheDocument()
+  })
+
+  it('preserves an unreported catalog as unknown rather than declaring zero capabilities', () => {
+    const data = agentsFixture()
+    data.code = data.code.map(({ vessel: _vessel, ...agent }) => agent)
+    render(<AgentsView data={data} />)
+    const table = screen.getByRole('region', { name: 'Agent roster' })
+    expect(unknownsIn(table)).toHaveLength(6)
+    expect(screen.queryByText('Painted portrait')).not.toBeInTheDocument()
+    expect(
+      screen.getAllByLabelText(
+        'unknown: Vessel catalog metadata was not included in this response.'
+      )
+    ).toHaveLength(9)
   })
 })
 

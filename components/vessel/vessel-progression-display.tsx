@@ -42,7 +42,11 @@ export interface VesselProgressionDisplayProps {
 
 const SACRED_DISPLAY_META: Record<
   string,
-  { label: string; element: string; icon: React.ComponentType<{ size?: number; className?: string }> }
+  {
+    label: string
+    element: string
+    icon: React.ComponentType<{ size?: number; className?: string }>
+  }
 > = {
   power: { label: 'Power', element: 'Fire', icon: Flame },
   resonance: { label: 'Resonance', element: 'Water', icon: Droplets },
@@ -53,21 +57,38 @@ const SACRED_DISPLAY_META: Record<
   vitality: { label: 'Vitality', element: 'Earth', icon: Box },
 }
 
-const PLANETARY_DISPLAY_META: Record<
-  string,
-  { label: string; ruler: string; domain: string }
-> = {
+const PLANETARY_DISPLAY_META: Record<string, { label: string; ruler: string; domain: string }> = {
   solarAgency: { label: 'Solar Agency', ruler: 'Sun', domain: 'Will & Executive Force' },
   lunarReceptivity: { label: 'Lunar Receptivity', ruler: 'Moon', domain: 'Psychic Reflection' },
   mercurialVelocity: { label: 'Mercurial Velocity', ruler: 'Mercury', domain: 'Cognitive Speed' },
-  venusianCoherence: { label: 'Venusian Coherence', ruler: 'Venus', domain: 'Harmony & Proportion' },
+  venusianCoherence: {
+    label: 'Venusian Coherence',
+    ruler: 'Venus',
+    domain: 'Harmony & Proportion',
+  },
   martialImpetus: { label: 'Martial Impetus', ruler: 'Mars', domain: 'Initiative & Drive' },
   jovianExpansion: { label: 'Jovian Expansion', ruler: 'Jupiter', domain: 'Growth & Synthesis' },
-  saturnianStructure: { label: 'Saturnian Structure', ruler: 'Saturn', domain: 'Discipline & Rigor' },
-  chironicAdaptation: { label: 'Chironic Adaptation', ruler: 'Chiron', domain: 'Wound Transmutation' },
+  saturnianStructure: {
+    label: 'Saturnian Structure',
+    ruler: 'Saturn',
+    domain: 'Discipline & Rigor',
+  },
+  chironicAdaptation: {
+    label: 'Chironic Adaptation',
+    ruler: 'Chiron',
+    domain: 'Wound Transmutation',
+  },
   uranianSurprisal: { ruler: 'Uranus', label: 'Uranian Surprisal', domain: 'Insight & Rupture' },
-  neptunianResonance: { label: 'Neptunian Resonance', ruler: 'Neptune', domain: 'Transcendent Depth' },
-  plutonicIntegration: { label: 'Plutonic Integration', ruler: 'Pluto', domain: 'Catharsis & Rebirth' },
+  neptunianResonance: {
+    label: 'Neptunian Resonance',
+    ruler: 'Neptune',
+    domain: 'Transcendent Depth',
+  },
+  plutonicIntegration: {
+    label: 'Plutonic Integration',
+    ruler: 'Pluto',
+    domain: 'Catharsis & Rebirth',
+  },
   kineticAlignment: { label: 'Kinetic Alignment', ruler: 'All', domain: 'Harmonic Equilibrium' },
 }
 
@@ -118,18 +139,30 @@ export function VesselProgressionDisplay({
   const vesselLevel = progression.vesselLevel ?? 1
   const totalXp = progression.totalXp ?? 0
   const xpToNextLevel = progression.xpToNextLevel ?? (vesselLevel === 100 ? null : 100)
-  const levelBoost = progression.levelBoost ?? ((12 * (vesselLevel - 1)) / 99)
+  const levelBoost = progression.levelBoost ?? (12 * (vesselLevel - 1)) / 99
   const baseOverall = progression.baseOverall ?? null
   const trainedOverall = progression.trainedOverall ?? null
   const currentOverall = progression.currentOverall ?? null
-  const transitDelta = progression.transitDelta ?? (
-    currentOverall !== null && trainedOverall !== null ? currentOverall - trainedOverall : null
-  )
+  const transitDelta =
+    progression.transitDelta ??
+    (currentOverall !== null && trainedOverall !== null ? currentOverall - trainedOverall : null)
   const status = progression.progressionStatus ?? 'unavailable'
   const asOf = (progression as any).asOf ?? (progression as any).ratingAsOf ?? null
   const reasons = (progression as any).reasons ?? (progression as any).progressionReasons ?? []
   const expBreakdown = (progression as any).expBreakdown ?? null
   const trainingEvidence = (progression as any).trainingEvidence ?? null
+  const importedTrainingCount =
+    trainingEvidence?.status === 'verified-manifests'
+      ? trainingEvidence.importedConversations
+      : trainingEvidence?.status === 'verified'
+        ? trainingEvidence.verifiedItems
+        : null
+  const verifiedTrainingConversations =
+    typeof importedTrainingCount === 'number' &&
+    Number.isFinite(importedTrainingCount) &&
+    importedTrainingCount >= 0
+      ? importedTrainingCount
+      : null
 
   // Stats extraction
   const rawSacred = (progression as any).ratings ?? (progression as any).stats ?? {}
@@ -295,11 +328,7 @@ export function VesselProgressionDisplay({
                   <span className="text-zinc-400">Transit:</span>
                   <span
                     className={`font-semibold ${
-                      isSurging
-                        ? 'text-emerald-400'
-                        : isDipping
-                          ? 'text-rose-400'
-                          : 'text-zinc-300'
+                      isSurging ? 'text-emerald-400' : isDipping ? 'text-rose-400' : 'text-zinc-300'
                     }`}
                   >
                     {formatSigned(transitDelta, 1)}
@@ -488,8 +517,12 @@ export function VesselProgressionDisplay({
                         : 'even with baseline'
                   }`}
                 >
-                  {isSurging && <TrendingUp size={13} className="text-emerald-400" aria-hidden="true" />}
-                  {isDipping && <TrendingDown size={13} className="text-rose-400" aria-hidden="true" />}
+                  {isSurging && (
+                    <TrendingUp size={13} className="text-emerald-400" aria-hidden="true" />
+                  )}
+                  {isDipping && (
+                    <TrendingDown size={13} className="text-rose-400" aria-hidden="true" />
+                  )}
                   {isNeutral && <Minus size={13} className="text-zinc-400" aria-hidden="true" />}
                   <span>{formatSigned(transitDelta, 1)} OVR</span>
                 </div>
@@ -628,7 +661,9 @@ export function VesselProgressionDisplay({
                     <span className="font-mono-data text-lg font-bold text-bright-gold my-1">
                       +{formatNumber(levelBoost, 2)}
                     </span>
-                    <span className="text-[8px] text-primary-gold/80">Permanent Level {vesselLevel}</span>
+                    <span className="text-[8px] text-primary-gold/80">
+                      Permanent Level {vesselLevel}
+                    </span>
                   </div>
 
                   {/* Step 3: Baseline Overall */}
@@ -699,8 +734,8 @@ export function VesselProgressionDisplay({
                   </p>
                   <p>
                     Accumulated Alchm EXP produces a permanent{' '}
-                    <span className="text-primary-gold font-semibold">Vessel Level Boost</span> (up to
-                    +12 rating points at Level 100) that permanently raises the anchor to{' '}
+                    <span className="text-primary-gold font-semibold">Vessel Level Boost</span> (up
+                    to +12 rating points at Level 100) that permanently raises the anchor to{' '}
                     <span className="text-ivory-text font-semibold">Baseline Overall</span>.
                   </p>
                   <p>
@@ -732,9 +767,7 @@ export function VesselProgressionDisplay({
                       <span className="text-bright-gold font-bold uppercase tracking-wider">
                         Sacred 7 Attributes
                       </span>
-                      <span className="text-muted-text text-[9px] uppercase">
-                        Scale [25, 99]
-                      </span>
+                      <span className="text-muted-text text-[9px] uppercase">Scale [25, 99]</span>
                     </div>
 
                     <div className="space-y-1.5">
@@ -778,9 +811,7 @@ export function VesselProgressionDisplay({
                       <span className="text-bright-gold font-bold uppercase tracking-wider">
                         Planetary 12 Attributes
                       </span>
-                      <span className="text-muted-text text-[9px] uppercase">
-                        Scale [0, 100]
-                      </span>
+                      <span className="text-muted-text text-[9px] uppercase">Scale [0, 100]</span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
@@ -863,9 +894,14 @@ export function VesselProgressionDisplay({
 
                   <div className="p-2.5 rounded-lg border border-border-gold/20 bg-black/40 text-center">
                     <Award size={13} className="mx-auto text-emerald-400 mb-1" />
-                    <span className="text-[9px] uppercase text-muted-text block">Kitchen Quests</span>
+                    <span className="text-[9px] uppercase text-muted-text block">
+                      Kitchen Quests
+                    </span>
                     <span className="font-mono-data text-sm font-bold text-ivory-text">
-                      {expBreakdown?.achievements ? expBreakdown.achievements.toLocaleString() : '0'} EXP
+                      {expBreakdown?.achievements
+                        ? expBreakdown.achievements.toLocaleString()
+                        : '0'}{' '}
+                      EXP
                     </span>
                   </div>
 
@@ -887,24 +923,28 @@ export function VesselProgressionDisplay({
                     </span>
                     <span
                       className={`text-[9px] font-mono-label uppercase px-2 py-0.5 rounded border ${
-                        trainingEvidence?.status === 'verified'
+                        verifiedTrainingConversations !== null
                           ? 'border-emerald-500/40 text-emerald-400 bg-emerald-950/40'
                           : 'border-zinc-700 text-zinc-400'
                       }`}
                     >
-                      {trainingEvidence?.status === 'verified' ? 'Verified Manifest' : 'Pending Verification'}
+                      {verifiedTrainingConversations !== null
+                        ? 'Verified Manifest'
+                        : 'Pending Verification'}
                     </span>
                   </div>
 
                   <p className="text-[11px] text-muted-text leading-relaxed">
-                    {trainingEvidence?.status === 'verified' ? (
+                    {verifiedTrainingConversations !== null ? (
                       <>
                         Credited{' '}
                         <strong className="text-bright-gold">
-                          {trainingEvidence.verifiedItems.toLocaleString()} verified training conversations
+                          {verifiedTrainingConversations.toLocaleString()} verified training
+                          conversations
                         </strong>{' '}
-                        under the canonical 25 EXP/conversation policy. Manifest digests are cryptographically
-                        verified against the historical catalog.
+                        under the canonical 25 EXP/conversation policy. Catalog training imports use
+                        deterministic manifest digests; durable live awards remain pending
+                        integration.
                       </>
                     ) : (
                       'Historical training manifests will display once authoritative event receipts are synced.'
@@ -912,8 +952,9 @@ export function VesselProgressionDisplay({
                   </p>
 
                   <div className="text-[10px] text-zinc-500 pt-1 border-t border-border-gold/10">
-                    <em>Notice:</em> Spendable ESMS token balances, arena tokens, and unverified counters do not
-                    fabricate unearned experience. Durable transactional receipts survive chat text expiration.
+                    <em>Notice:</em> Spendable ESMS token balances, arena tokens, and unverified
+                    counters do not grant experience. Live awards require durable receipts that
+                    survive chat text expiration; receipt persistence is pending integration.
                   </div>
                 </div>
               </div>

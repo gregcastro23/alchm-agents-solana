@@ -79,7 +79,6 @@ export interface RatedAgentPayload {
   esms: EsmsBalances
   seals: AlchemicalSeal[]
   surge: ResonanceSurgeState
-  portraitUrl?: string
   // Enhanced Dynamic Leveling System (Vessel Level & Dynamic Current Overall)
   vesselLevel?: number | null // [1, 100] Permanent earned growth (never falls)
   totalXp?: number | null // Total accumulated Alchm EXP
