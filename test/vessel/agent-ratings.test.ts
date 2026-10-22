@@ -1,15 +1,58 @@
 import { describe, expect, it, mock } from 'bun:test'
+import path from 'path'
+
 mock.module('server-only', () => ({}))
-mock.module('@/lib/db', () => ({
-  prisma: {
-    historical_agents: {
-      findUnique: async () => null,
-    },
-    users: {
-      findUnique: async () => null,
-    },
+
+// Prevent any network fetch from stalling tests
+const originalFetch = globalThis.fetch
+globalThis.fetch = async () => {
+  throw new Error('network disabled in test')
+}
+
+const mockPrisma = {
+  historical_agents: {
+    findUnique: async () => null,
+    findMany: async () => [],
+    findFirst: async () => null,
   },
+  users: {
+    findUnique: async () => null,
+    findFirst: async () => null,
+  },
+  created_agents: {
+    findFirst: async () => null,
+  },
+  tokenBalance: {
+    findUnique: async () => null,
+  },
+  token_balances: {
+    findUnique: async () => null,
+  },
+}
+
+const dbResolved = require.resolve('../../lib/db')
+mock.module('@/lib/db', () => ({ prisma: mockPrisma }))
+mock.module(dbResolved, () => ({ prisma: mockPrisma }))
+
+mock.module('@/lib/auth', () => ({
+  auth: async () => null,
 }))
+mock.module(require.resolve('../../lib/auth'), () => ({ auth: async () => null }))
+
+const liveSkyResolved = require.resolve('../../lib/agents/rating/live-sky')
+mock.module('@/lib/agents/rating/live-sky', () => ({
+  resolveLiveSky: async () => {
+    throw new Error('live sky unavailable in test')
+  },
+  SkyUnavailableError: class SkyUnavailableError extends Error {},
+}))
+mock.module(liveSkyResolved, () => ({
+  resolveLiveSky: async () => {
+    throw new Error('live sky unavailable in test')
+  },
+  SkyUnavailableError: class SkyUnavailableError extends Error {},
+}))
+
 import { NextRequest } from 'next/server'
 import { getHistoricalAgent } from '@/lib/agents/historical'
 
