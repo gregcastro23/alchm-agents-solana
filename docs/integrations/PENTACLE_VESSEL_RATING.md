@@ -203,15 +203,132 @@ the contract's `clampStat`) and the contract's per-tier Seal multiplier for the 
   this route is the one that reads the live sky and the ledger.
 - The forged-vessel lookup and the ledger reads are covered with fakes, not against Postgres.
 
+## Two-Tier Progression & Celestial Dignity Rating Engine
+
+Vessel performance is decomposed into two distinct, orthogonal layers:
+
+1. **Permanent Vessel Progression ($V$)**: Earned through lifetime EXP and verified training evidence. Monotonically non-decreasing; never reduced by unfavorable skies.
+2. **Dynamic Celestial Dignity Rating ($D$)**: Driven by real-time ephemeris aspect geometry, planetary reception, and essential dignity. Fluctuates smoothly in $[-15, +15]$ OVR points.
+
+### Scalar vs. Vector Taxonomy
+
+| Domain              | Quantity                                     | Type             | Scale / Range                                   | Mathematical Role                                                                                 |
+| :------------------ | :------------------------------------------- | :--------------- | :---------------------------------------------- | :------------------------------------------------------------------------------------------------ |
+| **Permanent ($V$)** | $\mathbf{S}_{\text{vessel}}$                 | **Vector (19D)** | Sacred: $[25, 99]$<br>Planetary: $[0, 100]$     | Base permanent stat vector across Sacred 7 and Planetary 12.                                      |
+| **Permanent ($V$)** | $\text{TotalXP}$                             | **Scalar**       | $[0, \infty)$                                   | Lifetime accumulated experience (25 EXP / verified training conversation).                        |
+| **Permanent ($V$)** | $\text{VesselLevel}$                         | **Scalar**       | $[1, 100]$                                      | $1 + \lfloor\sqrt{\text{TotalXP} / 100}\rfloor$, capped at 100.                                   |
+| **Permanent ($V$)** | $\text{LevelBoost}$                          | **Scalar**       | $[0.0, +12.0]$                                  | $12 \cdot (\text{Level} - 1) / 99$ additive boost to base composite.                              |
+| **Permanent ($V$)** | $\text{TrainedOverall}$                      | **Scalar**       | $[25.0, 99.0]$                                  | $\text{clamp}_{[25, 99]}(\Phi(\mathbf{S}_{\text{vessel}}) + \text{LevelBoost})$. Never decreases. |
+| **Dynamic ($D$)**   | $\boldsymbol{\Delta}_{\text{dignity}}$       | **Vector (19D)** | Sacred: $[-18, +18]$<br>Planetary: $[-24, +24]$ | Active sky deltas in native stat scales via hybrid projection.                                    |
+| **Dynamic ($D$)**   | $R_{\text{dignity}}$ ($\text{transitDelta}$) | **Scalar**       | $[-15.0, +15.0]$                                | Blended OWA ($40\%$) + uniform ($60\%$) celestial rating swing.                                   |
+| **Composite**       | $OVR_{\text{current}}$                       | **Scalar**       | $[25.0, 99.0]$                                  | $\text{clamp}_{[25, 99]}(\text{TrainedOverall} + R_{\text{dignity}})$.                            |
+
+$$\mathbf{S}_{\text{current}} = \text{clamp}_{\text{native}}(\mathbf{S}_{\text{vessel}} + \boldsymbol{\Delta}_{\text{dignity}})$$
+
+$$OVR_{\text{current}} = \text{clamp}_{[25, 99]}(\text{TrainedOverall} + R_{\text{dignity}})$$
+
+---
+
+### Diagnostic Audit: The Four-Stage Variance Collapse in Legacy $\pm 8$ System
+
+In the legacy implementation, live ephemeris skies produced `transitDelta` values tightly clustered around $[-2.5, +2.5]$, making the theoretical $\pm 8$ ceiling unreachable:
+
+1. **Stage 2 (Aspect Averaging Dilution):** Dividing active transits by the full denominator ($\sum w_j = 13$) averaged 2–4 active orbs with 7–9 inactive zeroes, cutting response magnitude by $65\%\text{--}80\%$.
+2. **Stage 2 (Blind Conjunctions & Missing Essential Dignity):** Conjunctions awarded a static $+1.0$ unconditionally, ignoring planetary natures (e.g. Saturn in Fall afflicting a luminary was treated as a $+1.0$ buff). Planets transiting their own Domicile/Exaltation received zero baseline dignity.
+3. **Stage 3 ($L_1$ Affinity Contraction):** Averaging across $\mathbf{r}$ with $L_1$ normalization induced central-limit cancellation ($\|\boldsymbol{\rho}\|_\infty \ll \|\mathbf{r}\|_\infty$).
+4. **Stage 4 (Archetype Dampening):** Coefficients $c_k \in [0.75, 1.00]$ suppressed sensitivity by $15\%\text{--}25\%$ rather than amplifying signature stats.
+
+**Net Result:** $\mathbb{E}[|R_{\text{dignity}}|] \approx 8 \times 0.11 \times 0.82 \approx 0.72$ OVR points.
+
+---
+
+### Upgraded Mathematical Architecture ($\pm 15$ OVR / $\pm 18$ Stat Swing)
+
+The upgraded engine in `lib/vessel/progression.ts` resolves all four bottlenecks:
+
+#### Stage 1.5: Essential Dignity & Reception ($d_{\text{ess}} \in [-3, +3]$)
+
+Each transiting body evaluates against canonical classical sign rulers:
+
+- **Domicile:** $+3$ | **Exaltation:** $+2$ | **Triplicity/Peregrine:** $0$ | **Detriment:** $-2$ | **Fall:** $-3$
+
+Essential posture of natal body $i$:
+$$b_i = \frac{d_{\text{ess}}(\lambda_{\text{sky}, i})}{3} \in [-1, +1]$$
+
+Conjunction base polarities adapt to the transiting body's nature and essential dignity:
+$$A_{\text{conj}}(j) = \text{clamp}_{[-0.85, +1.0]}\left(A_{\text{base}}(j) + 0.20 \cdot d_{\text{ess}}(\lambda_{\text{sky}, j})\right)$$
+where $A_{\text{base}}$ provides benefic/malefic weighting (Sun $0.85$, Moon $0.80$, Venus $0.90$, Jupiter $0.95$, Mars $0.25$, Saturn $0.25$, Pluto $0.20$).
+
+#### Stage 2: Root-Energy Active Aspect Pooling & 4D ESMS Wavefunction Coupling
+
+Active transits pool into an active-energy normalized hyperbolic tangent coupled with the 4D Alchemical Wavefunction $\boldsymbol{\Psi}(t) = (\Psi_{\text{Spirit}}, \Psi_{\text{Essence}}, \Psi_{\text{Matter}}, \Psi_{\text{Substance}}) \in [-2, 2]^4$ (`lib/vessel/esms-wavefunction.ts`):
+
+- **Channel A (Ambient Alchemical Tide $\psi_i(t) \in [-1, 1]$):**
+  $$\psi_i(t) = \text{clamp}_{[-1, 1]}\left(\frac{1}{2} \sum_{a \in \text{ESMS}} u_{i,a} \cdot \Psi_a(t)\right), \quad \sum_a u_{i,a} = 1$$
+- **Channel B (Dyadic Chord Reception Gain $G_{i,j}(t) \in [0.65, 1.35]$):**
+  $$G_{i,j}(t) = \text{clamp}_{[0.65, 1.35]}\left(1 + 0.35 \cdot \left(\frac{\psi_i(t) + \psi_j(t)}{2}\right) \cdot \text{sign}(P_{i,j})\right) > 0$$
+- **Active-Energy Normalized Pooling:**
+  $$E_i = \frac{\sum_{j=1}^{11} w_{i,j} \cdot P_{i,j} \cdot G_{i,j}(t) \cdot \alpha(\text{orb}_{i,j})}{\sqrt{\sum_{j=1}^{11} w_{i,j}^2 \cdot \mathbb{I}(|\text{Response}(i, j)| > 0) + \tau^2}}$$
+  $$r_i = \tanh\left(\kappa_{\text{aspect}} \cdot E_i + \kappa_{\text{ess}} \cdot b_i + \kappa_{\psi} \cdot \psi_i(t)\right) \in (-1, +1)$$
+  with damping floor $\tau^2 = 2.25$ ($\tau = 1.5$), $\kappa_{\text{aspect}} = 1.15$, $\kappa_{\text{ess}} = 0.35$, and $\kappa_{\psi} = 0.12$.
+  A single exact Solar Return ($w_{i,j} = 3.0$) drives $r_{\text{Sun}} \ge 0.80$ without zero-dilution from inactive planets, while exposing 4D `esmsAxisAttribution` $\in [-1, 1]^4$ on `VesselProgression`.
+
+#### Stage 3 & 4: Variance-Preserving Projection & Archetype Amplification
+
+- **Hybrid $L_1 \times L_2$ Projection:**
+  $$\rho_k = \text{clamp}_{[-1, +1]}\left(\frac{\mathbf{A}_k \cdot \mathbf{r}}{\sqrt{\|\mathbf{A}_k\|_1 \cdot \sqrt{\sum w^2}}}\right)$$
+- **Archetype Amplifier ($c_k \in [0.85, 1.35]$):**
+  $$c_k = 0.85 + 0.30 \cdot \text{overlap}(\mathbf{A}_k, \mathbf{A}_{\text{primary}}) + 0.20 \cdot \text{overlap}(\mathbf{A}_k, \mathbf{A}_{\text{secondary}})$$
+- **19D Stat Deltas:**
+  $$\Delta_k = \text{clamp}_{[-M_k, +M_k]}\left(\rho_k \cdot c_k \cdot \left(\frac{15}{74}\right) \cdot \text{Scale}_k\right)$$
+  where $M_k = 18$ for Sacred 7 ($\text{Scale}_k = 74$) and $M_k = 24$ for Planetary 12 ($\text{Scale}_k = 100$).
+
+#### Stage 5: OWA-Coupled Scalar Dignity Rating ($R_{\text{dignity}} \in [-15, +15]$)
+
+Combines unified functional delta ($60\%$) with signature Sacred OWA delta ($40\%$) using the convex 7-stat weight vector $\mathbf{w}_{\text{OWA}} = \frac{1}{7.9}[1.6, 1.3, 1.0, 1.0, 1.0, 1.0, 1.0]$ ($\sum w_i = 1.0$):
+$$\Delta\Phi_{\text{uniform}} = \Phi(\mathbf{S}_{\text{vessel}} + \boldsymbol{\Delta}_{\text{dignity}}) - \Phi(\mathbf{S}_{\text{vessel}})$$
+$$\Delta\Phi_{\text{OWA}} = \mathbf{w}_{\text{OWA}} \cdot \boldsymbol{\Delta}_{\text{sacred},\,\pi(\mathbf{S}_{\text{vessel}})} = \frac{1.6 \cdot \Delta_{\text{primary}} + 1.3 \cdot \Delta_{\text{secondary}} + \sum_{r=1}^{5} 1.0 \cdot \Delta_{\text{rest}, r}}{7.9}$$
+$$R_{\text{dignity}} = \text{clamp}_{[-15, +15]}\left(0.60 \cdot \Delta\Phi_{\text{uniform}} + 0.40 \cdot \Delta\Phi_{\text{OWA}}\right)$$
+
+---
+
+### Side-by-Side Comparison: Legacy vs. Upgraded System
+
+| Metric / Scenario                                      | Legacy System ($\pm 8$)     | Upgraded System ($\pm 15$)              |
+| :----------------------------------------------------- | :-------------------------- | :-------------------------------------- |
+| **Hard Scalar Bounds ($R_{\text{dignity}}$)**          | $[-8, +8]$                  | $[-15, +15]$ (30-point dynamic window)  |
+| **Max Per-Stat Delta (Sacred / Planetary)**            | $\pm 8.0$ / $\pm 10.8$      | $\pm 18.0$ / $\pm 24.0$                 |
+| **Typical Everyday Live Sky ($1\sigma$ RMS)**          | $\pm 0.8$ to $\pm 1.6$ OVR  | $\pm 4.0$ to $\pm 6.5$ OVR              |
+| **Major Transit Event (Solar Return + Jupiter Trine)** | $+2.4$ to $+3.5$ OVR        | $+9.0$ to $+13.0$ OVR                   |
+| **Heavy Affliction (Mars Fall Sq. + Saturn Opp.)**     | $-2.0$ to $-3.1$ OVR        | $-8.5$ to $-13.5$ OVR                   |
+| **Extreme Multi-Planet Alignment (Peak Window)**       | $+5.2$ OVR                  | $+14.0$ to $+15.0$ OVR                  |
+| **Relation to Max LevelBoost ($+12$)**                 | Subordinate ($\max 8 < 12$) | Can overtake level gap ($\max 15 > 12$) |
+
+---
+
+### UI & Arena HUD Badge Thresholds
+
+Downstream display surfaces (including `VesselProgressionDisplay`) calibrate celestial transit tiers according to the expanded dynamic range:
+
+- **Notable Transit:** $|R_{\text{dignity}}| \ge 4.0$ OVR
+- **Strong Alignment / Affliction:** $|R_{\text{dignity}}| \ge 8.0$ OVR
+- **Peak Exaltation / Severe Affliction:** $|R_{\text{dignity}}| \ge 12.0$ OVR
+
+---
+
 ## Files
 
-| Concern                 | File                                                                        |
-| ----------------------- | --------------------------------------------------------------------------- |
-| The contract            | `lib/agents/rating-contract.ts`, `lib/agents/vessel-appearance-manifest.ts` |
-| Ratings, OVR, archetype | `lib/agents/rating/ovr-archetype.ts` (an adapter over the contract)         |
-| Seals, Resonance Surge  | `lib/agents/rating/seals-surge.ts`                                          |
-| Live sky                | `lib/agents/rating/live-sky.ts`, `lib/spacetime/derive-live-ephemeris.ts`   |
-| ESMS holdings           | `lib/agents/rating/esms-balance-resolver.ts`, `esms-ledger-store.server.ts` |
-| Zone contests           | `lib/agents/rating/pentacle-contest.ts`                                     |
-| Payload assembly        | `lib/agents/rating/vessel-payload.ts`                                       |
-| Route                   | `app/api/agents/rating/route.ts`                                            |
+| Concern                                 | File                                                                        |
+| :-------------------------------------- | :-------------------------------------------------------------------------- |
+| The contract & bounds                   | `lib/agents/rating-contract.ts`, `lib/agents/vessel-appearance-manifest.ts` |
+| Ratings, OVR, archetype                 | `lib/agents/rating/ovr-archetype.ts` (adapter over contract)                |
+| Seals, Resonance Surge                  | `lib/agents/rating/seals-surge.ts`                                          |
+| Live sky                                | `lib/agents/rating/live-sky.ts`, `lib/spacetime/derive-live-ephemeris.ts`   |
+| ESMS holdings                           | `lib/agents/rating/esms-balance-resolver.ts`, `esms-ledger-store.server.ts` |
+| Zone contests                           | `lib/agents/rating/pentacle-contest.ts`                                     |
+| Payload assembly                        | `lib/agents/rating/vessel-payload.ts`                                       |
+| 4D ESMS Wavefunction & Stage 2 coupling | `lib/vessel/esms-wavefunction.ts`                                           |
+| Vessel progression & dignity engine     | `lib/vessel/progression.ts`, `lib/vessel/stat-resolver.ts`                  |
+| Lean 4 formal verification              | `proofs/lean/Proofs/Wavefunction.lean`                                      |
+| Vessel progression UI display           | `components/vessel/vessel-progression-display.tsx`                          |
+| Route                                   | `app/api/agents/rating/route.ts`                                            |

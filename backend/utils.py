@@ -109,73 +109,82 @@ def get_planetary_sect_element(planet: str, diurnal: bool) -> str:
     return entry["diurnal"] if diurnal else entry["nocturnal"]
 
 def get_planetary_dignity(planet: str, sign: str) -> int:
+    """
+    Canonical classical & modern essential dignity score in [-3, +3], aligned with
+    SIGN_RULERS in lib/vessel/progression.ts and JEPA Domicile > Exaltation precedence:
+    Domicile: +3 | Exaltation: +2 | Detriment: -2 | Fall: -3 | Peregrine: 0
+    """
     dignity_map = {
         "Sun": {
-            "leo": 1,
+            "leo": 3,
             "aries": 2,
-            "aquarius": -1,
-            "libra": -2,
+            "aquarius": -2,
+            "libra": -3,
         },
         "Moon": {
-            "cancer": 1,
+            "cancer": 3,
             "taurus": 2,
-            "capricorn": -1,
-            "scorpio": -2,
+            "capricorn": -2,
+            "scorpio": -3,
         },
         "Mercury": {
-            "gemini": 1,
+            "gemini": 3,
             "virgo": 3,
-            "sagittarius": 1,
+            "sagittarius": -2,
             "pisces": -3,
         },
         "Venus": {
-            "libra": 1,
-            "taurus": 1,
+            "libra": 3,
+            "taurus": 3,
             "pisces": 2,
-            "aries": -1,
-            "scorpio": -1,
-            "virgo": -2,
+            "aries": -2,
+            "scorpio": -2,
+            "virgo": -3,
         },
         "Mars": {
-            "aries": 1,
-            "scorpio": 1,
+            "aries": 3,
+            "scorpio": 3,
             "capricorn": 2,
-            "taurus": -1,
-            "libra": -1,
-            "cancer": -2,
+            "taurus": -2,
+            "libra": -2,
+            "cancer": -3,
         },
         "Jupiter": {
-            "pisces": 1,
-            "sagittarius": 1,
+            "pisces": 3,
+            "sagittarius": 3,
             "cancer": 2,
-            "gemini": -1,
-            "virgo": -1,
-            "capricorn": -2,
+            "gemini": -2,
+            "virgo": -2,
+            "capricorn": -3,
         },
         "Saturn": {
-            "aquarius": 1,
-            "capricorn": 1,
+            "aquarius": 3,
+            "capricorn": 3,
             "libra": 2,
-            "cancer": -1,
-            "leo": -1,
-            "aries": -2,
+            "cancer": -2,
+            "leo": -2,
+            "aries": -3,
         },
         "Uranus": {
-            "aquarius": 1,
+            "aquarius": 3,
             "scorpio": 2,
+            "leo": -2,
             "taurus": -3,
         },
         "Neptune": {
-            "pisces": 1,
-            "cancer": 2,
-            "virgo": -1,
-            "capricorn": -2,
+            "pisces": 3,
+            "leo": 2,
+            "virgo": -2,
+            "aquarius": -3,
         },
         "Pluto": {
-            "scorpio": 1,
-            "leo": 2,
-            "taurus": -1,
-            "aquarius": -2,
+            "scorpio": 3,
+            "taurus": -2,
+            "leo": -3,
+        },
+        "Chiron": {
+            "virgo": 3,
+            "sagittarius": 2,
         },
     }
     planet_map = dignity_map.get(planet)
@@ -216,6 +225,7 @@ def alchemize(
         "Uranus": {"Spirit": 0, "Essence": 1, "Matter": 1, "Substance": 0},
         "Neptune": {"Spirit": 0, "Essence": 1, "Matter": 0, "Substance": 1},
         "Pluto": {"Spirit": 0, "Essence": 1, "Matter": 1, "Substance": 0},
+        "Chiron": {"Spirit": 0.25, "Essence": 0.25, "Matter": 0.25, "Substance": 0.25},
         "Ascendant": {"Spirit": 1, "Essence": 1, "Matter": 1, "Substance": 1},
     }
     
@@ -371,6 +381,7 @@ def alchemize_detailed(
         "Uranus": {"Spirit": 0, "Essence": 1, "Matter": 1, "Substance": 0},
         "Neptune": {"Spirit": 0, "Essence": 1, "Matter": 0, "Substance": 1},
         "Pluto": {"Spirit": 0, "Essence": 1, "Matter": 1, "Substance": 0},
+        "Chiron": {"Spirit": 0.25, "Essence": 0.25, "Matter": 0.25, "Substance": 0.25},
         "Ascendant": {"Spirit": 1, "Essence": 1, "Matter": 1, "Substance": 1},
     }
     

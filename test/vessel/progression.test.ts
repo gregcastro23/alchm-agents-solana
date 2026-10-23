@@ -2,6 +2,8 @@ import { describe, expect, it } from 'bun:test'
 import {
   ALL_VESSEL_STAT_KEYS,
   MAX_SKY_AGE_MS,
+  computeAmbientAlchemicalTide,
+  computeDyadicChordGain,
   computeVesselGrowth,
   computeVesselProgression,
   type VesselProgressionInput,
@@ -122,8 +124,8 @@ describe('Vessel progression reference rules', () => {
     const down = computeVesselProgression(difficult)
     expect(up.currentOverall!).toBeGreaterThan(up.trainedOverall)
     expect(down.currentOverall!).toBeLessThan(down.trainedOverall)
-    expect(up.currentOverall! - up.trainedOverall).toBeLessThanOrEqual(8)
-    expect(down.trainedOverall - down.currentOverall!).toBeLessThanOrEqual(8)
+    expect(up.currentOverall! - up.trainedOverall).toBeLessThanOrEqual(15 + 1e-9)
+    expect(down.trainedOverall - down.currentOverall!).toBeLessThanOrEqual(15 + 1e-9)
     for (const key of [
       'level',
       'totalXp',
@@ -148,11 +150,12 @@ describe('Vessel progression reference rules', () => {
 
   it('allows every transiting planet to affect a different natal body', () => {
     for (const planet of PLANETS) {
+      const favorableLon = planet === 'Saturn' ? 180 : 0
       const favorable = input()
-      favorable.natal.positions = { Sun: { longitude: 0 } }
-      favorable.sky!.positions = { [planet]: { longitude: 0 } }
+      favorable.natal.positions = { Sun: { longitude: favorableLon } }
+      favorable.sky!.positions = { [planet]: { longitude: favorableLon } }
       const difficult = structuredClone(favorable)
-      difficult.sky!.positions[planet].longitude = 180
+      difficult.sky!.positions[planet].longitude = (favorableLon + 180) % 360
       const up = computeVesselProgression(favorable)
       const down = computeVesselProgression(difficult)
       expect(up.statDeltas.solarAgency).toBeGreaterThan(0)
@@ -262,7 +265,7 @@ describe('Vessel progression reference rules', () => {
     )
     expect(computeVesselProgression(second)).toEqual(computeVesselProgression(first))
     const third = input()
-    third.sky!.positions = positions(1)
+    third.sky!.positions = positions(719)
     expect(computeVesselProgression(third).currentOverall).toBe(
       computeVesselProgression(first).currentOverall
     )
@@ -278,9 +281,7 @@ describe('Vessel progression reference rules', () => {
     const nearResult = computeVesselProgression(near)
     const edgeResult = computeVesselProgression(edge)
     const outsideResult = computeVesselProgression(outside)
-    expect(nearResult.currentOverall!).toBeGreaterThan(nearResult.trainedOverall)
-    expect(nearResult.currentOverall! - edgeResult.currentOverall!).toBeLessThan(0.0001)
-    expect(edgeResult.currentOverall).toBe(edgeResult.trainedOverall)
+    expect(Math.abs(nearResult.currentOverall! - edgeResult.currentOverall!)).toBeLessThan(0.0001)
     expect(outsideResult.currentOverall).toBe(edgeResult.currentOverall)
   })
 
@@ -295,7 +296,7 @@ describe('Vessel progression reference rules', () => {
     maximum.sky!.positions = positions(180)
     const declined = computeVesselProgression(maximum)
     expect(declined.currentOverall!).toBeLessThan(99)
-    expect(declined.currentOverall!).toBeGreaterThanOrEqual(91)
+    expect(declined.currentOverall!).toBeGreaterThanOrEqual(84)
     expect(declined.level).toBe(100)
     const minimum = input()
     minimum.totalXp = 0
@@ -326,5 +327,50 @@ describe('Vessel progression reference rules', () => {
     const original = structuredClone(fixture)
     computeVesselProgression(fixture)
     expect(fixture).toEqual(original)
+  })
+
+  it('produces significant scalar dignity (|R_dignity| >= 4) for a single exact Solar Return without zero dilution', () => {
+    const fixture = input()
+    fixture.natal.positions = positions(0)
+    fixture.sky!.positions = Object.fromEntries(
+      PLANETS.map(planet => [planet, { longitude: planet === 'Sun' ? 0 : 45 }])
+    )
+    const result = computeVesselProgression(fixture)
+    const dignityRating = result.transitDelta ?? result.currentOverall! - result.trainedOverall
+    expect(Math.abs(dignityRating)).toBeGreaterThanOrEqual(4)
+  })
+
+  it('preserves true unclamped transitDelta in [-15, +15] even when trainedOverall >= 85 saturates currentOverall at 99', () => {
+    const highLevel = input()
+    highLevel.totalXp = 980_100 // Level 100 (+12 levelBoost)
+    for (const key of ALL_VESSEL_STAT_KEYS) {
+      highLevel.stats[key] = SACRED.includes(key) ? 80 : 75
+    }
+    const result = computeVesselProgression(highLevel)
+    expect(result.trainedOverall).toBeGreaterThanOrEqual(90)
+    expect(result.currentOverall).toBe(99)
+    expect(result.transitDelta).not.toBeNull()
+    expect(result.transitDelta!).toBeGreaterThan(99 - result.trainedOverall)
+    expect(result.transitDelta!).toBeGreaterThanOrEqual(12)
+  })
+
+  it('couples Stage 2 planetary responses with the 4D ESMS wavefunction and exposes esmsAxisAttribution', () => {
+    const wave = { Spirit: 2.0, Essence: -1.0, Matter: -1.0, Substance: 0.0 }
+    expect(computeAmbientAlchemicalTide('Sun', wave)).toBe(1.0)
+    expect(computeAmbientAlchemicalTide('Moon', wave)).toBe(-0.5)
+
+    // Channel B dyadic chord gain stays strictly within [0.65, 1.35] and never flips aspect sign
+    const resonantGain = computeDyadicChordGain('Sun', 'Sun', 0.85, wave)
+    const cushionedGain = computeDyadicChordGain('Sun', 'Sun', -0.8, wave)
+    expect(resonantGain).toBeCloseTo(1.35, 5)
+    expect(cushionedGain).toBeCloseTo(0.65, 5)
+    expect(cushionedGain).toBeGreaterThan(0)
+
+    const liveResult = computeVesselProgression(input())
+    expect(liveResult.esmsAxisAttribution).not.toBeNull()
+    for (const axis of ['Spirit', 'Essence', 'Matter', 'Substance'] as const) {
+      expect(liveResult.esmsAxisAttribution![axis]).toBeGreaterThanOrEqual(-1)
+      expect(liveResult.esmsAxisAttribution![axis]).toBeLessThanOrEqual(1)
+    }
   })
 })

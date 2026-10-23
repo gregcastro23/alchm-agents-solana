@@ -20,6 +20,15 @@ export interface CodeAgent {
   name: string
   /** computed | authored | placeholder | unattributed, or 'missing' when no chart */
   chart: string
+  /** Bundled Vessel identity; this does not imply live progression or seal eligibility. */
+  vessel?: {
+    faction: string
+    era: string
+    archetype: string | null
+    provenance: 'historical' | 'user' | 'placeholder'
+    likeness: 'painted' | 'procedural'
+    hasModel: boolean
+  }
 }
 
 export interface AgentsReport {
@@ -226,14 +235,31 @@ async function readFromPrisma(): Promise<Parameters<typeof buildAgentsReport>[1]
 }
 
 export async function codeRoster(): Promise<CodeAgent[]> {
-  const { HISTORICAL_AGENTS } = await import('@/lib/agents/historical')
+  const [{ HISTORICAL_AGENTS }, { ratableFromRoster, FACTION_NAMES }, { rateStats }] =
+    await Promise.all([
+      import('@/lib/agents/historical'),
+      import('@/lib/agents/rating/vessel-payload'),
+      import('@/lib/agents/rating/ovr-archetype'),
+    ])
   return HISTORICAL_AGENTS.map(agent => {
     const chart = (agent as { consciousness?: { natalChart?: { provenance?: string } } })
       .consciousness?.natalChart
+    const vessel = ratableFromRoster(agent)
     return {
       agentId: agent.id,
       name: agent.name,
       chart: chart ? (chart.provenance ?? 'unattributed') : 'missing',
+      vessel: {
+        faction: FACTION_NAMES[vessel.faction],
+        era: vessel.appearance.era,
+        archetype:
+          chart && chart.provenance !== 'placeholder'
+            ? rateStats(vessel.stats).archetype.title
+            : null,
+        provenance: vessel.provenance,
+        likeness: vessel.appearance.portraitUrl ? 'painted' : 'procedural',
+        hasModel: Boolean(vessel.avatarModelUrl || vessel.headMeshUrl),
+      },
     }
   })
 }

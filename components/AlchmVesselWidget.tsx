@@ -7,6 +7,7 @@ import {
   Flame,
   Loader2,
   RefreshCw,
+  Shield,
   ShieldCheck,
   Sparkles,
   Swords,
@@ -320,9 +321,11 @@ export function AlchmVesselWidget({ variant = 'full' }: { variant?: 'full' | 'co
                 trainedOverall: vessel.progression.trainedOverall,
                 currentOverall: vessel.progression.currentOverall,
                 transitDelta:
-                  vessel.progression.currentOverall !== null
-                    ? vessel.progression.currentOverall - vessel.progression.trainedOverall
-                    : null,
+                  vessel.progression.transitDelta !== undefined
+                    ? vessel.progression.transitDelta
+                    : vessel.progression.currentOverall !== null
+                      ? vessel.progression.currentOverall - vessel.progression.trainedOverall
+                      : null,
                 progressionStatus: vessel.progression.status,
                 asOf: vessel.progression.asOf,
                 expBreakdown: null,
@@ -347,9 +350,10 @@ export function AlchmVesselWidget({ variant = 'full' }: { variant?: 'full' | 'co
                 </span>
               </div>
               <p className="text-[11px] text-zinc-400 leading-relaxed">
-                Authoritative user experience receipts and cross-site progression ingestion are connecting.
-                Your spendable ESMS balances, streaks, and arena victories are tracked above; once the transactional
-                receipt service is connected, permanent Alchm EXP will accumulate here without fluctuating with balances.
+                Authoritative user experience receipts and cross-site progression ingestion are
+                connecting. Your spendable ESMS balances, streaks, and arena victories are tracked
+                above; once the transactional receipt service is connected, permanent Alchm EXP will
+                accumulate here without fluctuating with balances.
               </p>
             </div>
           )}

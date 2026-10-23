@@ -148,7 +148,7 @@ except Exception as _e:
 
 
 # Configuration
-ALCHM_KITCHEN_URL = os.getenv("ALCHM_KITCHEN_URL", "https://whattoeatnext-production.up.railway.app")
+ALCHM_KITCHEN_URL = os.getenv("ALCHM_KITCHEN_URL", "https://alchm.kitchen")
 INTERNAL_API_SECRET = os.getenv("INTERNAL_API_SECRET")
 if not INTERNAL_API_SECRET:
     # Fail closed: no committed default. Internal/admin endpoints (mcp-summary,

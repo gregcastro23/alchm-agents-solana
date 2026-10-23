@@ -16,6 +16,7 @@ import {
   SEAL_STAT_GATES,
   SEAL_ESMS_GATES,
   CANONICAL_SEAL_CATALOG,
+  RATING_BOUNDS,
 } from '@/lib/agents/rating-contract'
 
 describe('Vessel Rating & Resonance Surge Contract', () => {
@@ -40,6 +41,18 @@ describe('Vessel Rating & Resonance Surge Contract', () => {
       expect(clampStat(99)).toBe(99)
       expect(clampStat(120)).toBe(99)
       expect(clampStat(NaN)).toBe(25)
+    })
+
+    it('exports canonical RATING_BOUNDS with ±15 transitDelta and ±18/±24 stat delta caps', () => {
+      expect(RATING_BOUNDS).toEqual({
+        MIN_OVERALL: 25,
+        MAX_OVERALL: 99,
+        MAX_LEVEL_BOOST: 12,
+        MIN_TRANSIT_DELTA: -15,
+        MAX_TRANSIT_DELTA: 15,
+        MAX_SACRED_STAT_DELTA: 18,
+        MAX_PLANETARY_STAT_DELTA: 24,
+      })
     })
   })
 

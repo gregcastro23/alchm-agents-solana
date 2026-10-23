@@ -524,12 +524,14 @@ function createWalker(fs: SourceFs, root: string) {
 const real = createWalker(diskFs, ROOT)
 const RATING_DIR = join(ROOT, 'lib/agents/rating')
 
-/** Every `lib/agents/rating/*.ts(x)` except the `.server` modules, plus the spacetime hooks. */
+/** Every `lib/agents/rating/*.ts(x)` except the `.server` modules, plus vessel progression & spacetime hooks. */
 const ROOTS: string[] = [
   ...readdirSync(RATING_DIR)
     .filter(name => /\.tsx?$/.test(name) && !name.endsWith('.d.ts') && !SERVER_MODULE.test(name))
     .sort()
     .map(name => join(RATING_DIR, name)),
+  join(ROOT, 'lib/vessel/progression.ts'),
+  join(ROOT, 'lib/vessel/esms-wavefunction.ts'),
   join(ROOT, 'lib/spacetime/derive-live-ephemeris.ts'),
   join(ROOT, 'lib/spacetime/hooks/useLiveEphemeris.ts'),
 ]
@@ -557,6 +559,8 @@ describe('rating modules are safe to import from a client component', () => {
       'lib/agents/rating/live-sky.ts',
       'lib/agents/rating/seals-surge.ts',
       'lib/agents/rating/vessel-payload.ts',
+      'lib/vessel/progression.ts',
+      'lib/vessel/esms-wavefunction.ts',
       'lib/spacetime/derive-live-ephemeris.ts',
       'lib/spacetime/hooks/useLiveEphemeris.ts',
     ]) {

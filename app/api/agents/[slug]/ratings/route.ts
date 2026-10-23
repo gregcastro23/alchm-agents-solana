@@ -96,6 +96,7 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       ratingAsOf: progression.asOf,
       progressionReasons: progression.reasons,
       statDeltas: progression.statDeltas,
+      esmsAxisAttribution: progression.esmsAxisAttribution ?? null,
     })
 
     const contract = asContractPayload(payload)

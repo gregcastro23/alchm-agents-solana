@@ -42,7 +42,11 @@ export interface VesselProgressionDisplayProps {
 
 const SACRED_DISPLAY_META: Record<
   string,
-  { label: string; element: string; icon: React.ComponentType<{ size?: number; className?: string }> }
+  {
+    label: string
+    element: string
+    icon: React.ComponentType<{ size?: number; className?: string }>
+  }
 > = {
   power: { label: 'Power', element: 'Fire', icon: Flame },
   resonance: { label: 'Resonance', element: 'Water', icon: Droplets },
@@ -53,21 +57,38 @@ const SACRED_DISPLAY_META: Record<
   vitality: { label: 'Vitality', element: 'Earth', icon: Box },
 }
 
-const PLANETARY_DISPLAY_META: Record<
-  string,
-  { label: string; ruler: string; domain: string }
-> = {
+const PLANETARY_DISPLAY_META: Record<string, { label: string; ruler: string; domain: string }> = {
   solarAgency: { label: 'Solar Agency', ruler: 'Sun', domain: 'Will & Executive Force' },
   lunarReceptivity: { label: 'Lunar Receptivity', ruler: 'Moon', domain: 'Psychic Reflection' },
   mercurialVelocity: { label: 'Mercurial Velocity', ruler: 'Mercury', domain: 'Cognitive Speed' },
-  venusianCoherence: { label: 'Venusian Coherence', ruler: 'Venus', domain: 'Harmony & Proportion' },
+  venusianCoherence: {
+    label: 'Venusian Coherence',
+    ruler: 'Venus',
+    domain: 'Harmony & Proportion',
+  },
   martialImpetus: { label: 'Martial Impetus', ruler: 'Mars', domain: 'Initiative & Drive' },
   jovianExpansion: { label: 'Jovian Expansion', ruler: 'Jupiter', domain: 'Growth & Synthesis' },
-  saturnianStructure: { label: 'Saturnian Structure', ruler: 'Saturn', domain: 'Discipline & Rigor' },
-  chironicAdaptation: { label: 'Chironic Adaptation', ruler: 'Chiron', domain: 'Wound Transmutation' },
+  saturnianStructure: {
+    label: 'Saturnian Structure',
+    ruler: 'Saturn',
+    domain: 'Discipline & Rigor',
+  },
+  chironicAdaptation: {
+    label: 'Chironic Adaptation',
+    ruler: 'Chiron',
+    domain: 'Wound Transmutation',
+  },
   uranianSurprisal: { ruler: 'Uranus', label: 'Uranian Surprisal', domain: 'Insight & Rupture' },
-  neptunianResonance: { label: 'Neptunian Resonance', ruler: 'Neptune', domain: 'Transcendent Depth' },
-  plutonicIntegration: { label: 'Plutonic Integration', ruler: 'Pluto', domain: 'Catharsis & Rebirth' },
+  neptunianResonance: {
+    label: 'Neptunian Resonance',
+    ruler: 'Neptune',
+    domain: 'Transcendent Depth',
+  },
+  plutonicIntegration: {
+    label: 'Plutonic Integration',
+    ruler: 'Pluto',
+    domain: 'Catharsis & Rebirth',
+  },
   kineticAlignment: { label: 'Kinetic Alignment', ruler: 'All', domain: 'Harmonic Equilibrium' },
 }
 
@@ -81,6 +102,89 @@ const formatSigned = (val?: number | null, decimals = 1): string => {
   if (val === null || val === undefined || !Number.isFinite(val)) return '±0.0'
   const sign = val > 0 ? '+' : val < 0 ? '' : '±'
   return `${sign}${val.toFixed(decimals)}`
+}
+
+export interface TransitTierInfo {
+  tier: 'peak' | 'strong' | 'notable' | 'subtle' | 'neutral'
+  label: string
+  badgeClass: string
+}
+
+/**
+ * Calibrated celestial transit tier thresholds for the [-15, +15] Dignity Rating domain:
+ * - |delta| >= 12: Peak Exaltation / Severe Affliction
+ * - |delta| >= 8:  Strong Alignment / Strong Affliction
+ * - |delta| >= 4:  Notable Alignment / Notable Affliction
+ */
+export function resolveTransitTier(transitDelta?: number | null): TransitTierInfo {
+  if (transitDelta === null || transitDelta === undefined || !Number.isFinite(transitDelta)) {
+    return {
+      tier: 'neutral',
+      label: 'Preserving baseline OVR',
+      badgeClass: 'border-zinc-700 bg-zinc-900/60 text-zinc-300',
+    }
+  }
+  if (transitDelta >= 12) {
+    return {
+      tier: 'peak',
+      label: 'Peak Exaltation',
+      badgeClass: 'border-amber-400/60 bg-amber-950/50 text-amber-200',
+    }
+  }
+  if (transitDelta <= -12) {
+    return {
+      tier: 'peak',
+      label: 'Severe Affliction',
+      badgeClass: 'border-red-500/60 bg-red-950/50 text-red-200',
+    }
+  }
+  if (transitDelta >= 8) {
+    return {
+      tier: 'strong',
+      label: 'Strong Alignment',
+      badgeClass: 'border-emerald-400/50 bg-emerald-950/50 text-emerald-200',
+    }
+  }
+  if (transitDelta <= -8) {
+    return {
+      tier: 'strong',
+      label: 'Strong Affliction',
+      badgeClass: 'border-rose-500/50 bg-rose-950/50 text-rose-200',
+    }
+  }
+  if (transitDelta >= 4) {
+    return {
+      tier: 'notable',
+      label: 'Notable Alignment',
+      badgeClass: 'border-emerald-500/40 bg-emerald-950/40 text-emerald-300',
+    }
+  }
+  if (transitDelta <= -4) {
+    return {
+      tier: 'notable',
+      label: 'Notable Affliction',
+      badgeClass: 'border-rose-500/40 bg-rose-950/40 text-rose-300',
+    }
+  }
+  if (transitDelta > 0.05) {
+    return {
+      tier: 'subtle',
+      label: 'Surging above baseline',
+      badgeClass: 'border-emerald-500/40 bg-emerald-950/40 text-emerald-300',
+    }
+  }
+  if (transitDelta < -0.05) {
+    return {
+      tier: 'subtle',
+      label: 'Dipping below baseline',
+      badgeClass: 'border-rose-500/40 bg-rose-950/40 text-rose-300',
+    }
+  }
+  return {
+    tier: 'neutral',
+    label: 'Aligned with baseline',
+    badgeClass: 'border-zinc-700 bg-zinc-900/60 text-zinc-300',
+  }
 }
 
 export function VesselProgressionDisplay({
@@ -118,23 +222,36 @@ export function VesselProgressionDisplay({
   const vesselLevel = progression.vesselLevel ?? 1
   const totalXp = progression.totalXp ?? 0
   const xpToNextLevel = progression.xpToNextLevel ?? (vesselLevel === 100 ? null : 100)
-  const levelBoost = progression.levelBoost ?? ((12 * (vesselLevel - 1)) / 99)
+  const levelBoost = progression.levelBoost ?? (12 * (vesselLevel - 1)) / 99
   const baseOverall = progression.baseOverall ?? null
   const trainedOverall = progression.trainedOverall ?? null
   const currentOverall = progression.currentOverall ?? null
-  const transitDelta = progression.transitDelta ?? (
-    currentOverall !== null && trainedOverall !== null ? currentOverall - trainedOverall : null
-  )
+  const transitDelta =
+    progression.transitDelta ??
+    (currentOverall !== null && trainedOverall !== null ? currentOverall - trainedOverall : null)
   const status = progression.progressionStatus ?? 'unavailable'
   const asOf = (progression as any).asOf ?? (progression as any).ratingAsOf ?? null
   const reasons = (progression as any).reasons ?? (progression as any).progressionReasons ?? []
   const expBreakdown = (progression as any).expBreakdown ?? null
   const trainingEvidence = (progression as any).trainingEvidence ?? null
+  const importedTrainingCount =
+    trainingEvidence?.status === 'verified-manifests'
+      ? trainingEvidence.importedConversations
+      : trainingEvidence?.status === 'verified'
+        ? trainingEvidence.verifiedItems
+        : null
+  const verifiedTrainingConversations =
+    typeof importedTrainingCount === 'number' &&
+    Number.isFinite(importedTrainingCount) &&
+    importedTrainingCount >= 0
+      ? importedTrainingCount
+      : null
 
   // Stats extraction
   const rawSacred = (progression as any).ratings ?? (progression as any).stats ?? {}
   const rawPlanetary = (progression as any).planetaryStats ?? (progression as any).stats ?? {}
   const statDeltas = (progression as any).statDeltas ?? {}
+  const esmsAxisAttribution = (progression as any).esmsAxisAttribution ?? null
 
   // Calculate XP progress bar into current level span
   const isMaxLevel = vesselLevel >= 100
@@ -150,6 +267,7 @@ export function VesselProgressionDisplay({
   const isSurging = transitDelta !== null && transitDelta > 0.05
   const isDipping = transitDelta !== null && transitDelta < -0.05
   const isNeutral = transitDelta !== null && !isSurging && !isDipping
+  const transitTier = resolveTransitTier(transitDelta)
 
   // ==========================================
   // 1. CARD BADGE VARIANT (Compact for Grid Cards)
@@ -295,11 +413,7 @@ export function VesselProgressionDisplay({
                   <span className="text-zinc-400">Transit:</span>
                   <span
                     className={`font-semibold ${
-                      isSurging
-                        ? 'text-emerald-400'
-                        : isDipping
-                          ? 'text-rose-400'
-                          : 'text-zinc-300'
+                      isSurging ? 'text-emerald-400' : isDipping ? 'text-rose-400' : 'text-zinc-300'
                     }`}
                   >
                     {formatSigned(transitDelta, 1)}
@@ -473,13 +587,7 @@ export function VesselProgressionDisplay({
             <div className="text-right">
               {currentOverall !== null && transitDelta !== null ? (
                 <div
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded border font-mono-data text-xs font-bold ${
-                    isSurging
-                      ? 'border-emerald-500/40 bg-emerald-950/40 text-emerald-300'
-                      : isDipping
-                        ? 'border-rose-500/40 bg-rose-950/40 text-rose-300'
-                        : 'border-zinc-700 bg-zinc-900/60 text-zinc-300'
-                  }`}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded border font-mono-data text-xs font-bold ${transitTier.badgeClass}`}
                   aria-label={`Celestial transit difference: ${formatSigned(transitDelta, 1)} points, ${
                     isSurging
                       ? 'rising above baseline'
@@ -488,8 +596,12 @@ export function VesselProgressionDisplay({
                         : 'even with baseline'
                   }`}
                 >
-                  {isSurging && <TrendingUp size={13} className="text-emerald-400" aria-hidden="true" />}
-                  {isDipping && <TrendingDown size={13} className="text-rose-400" aria-hidden="true" />}
+                  {isSurging && (
+                    <TrendingUp size={13} className="text-emerald-400" aria-hidden="true" />
+                  )}
+                  {isDipping && (
+                    <TrendingDown size={13} className="text-rose-400" aria-hidden="true" />
+                  )}
                   {isNeutral && <Minus size={13} className="text-zinc-400" aria-hidden="true" />}
                   <span>{formatSigned(transitDelta, 1)} OVR</span>
                 </div>
@@ -500,9 +612,9 @@ export function VesselProgressionDisplay({
               )}
               <span className="text-[9px] font-mono-label text-muted-text uppercase mt-1 block">
                 {isSurging
-                  ? 'Surging above baseline'
+                  ? `Surging above baseline${transitTier.tier !== 'subtle' ? ` · ${transitTier.label}` : ''}`
                   : isDipping
-                    ? 'Dipping below baseline'
+                    ? `Dipping below baseline${transitTier.tier !== 'subtle' ? ` · ${transitTier.label}` : ''}`
                     : isNeutral
                       ? 'Aligned with baseline'
                       : 'Preserving baseline OVR'}
@@ -628,7 +740,9 @@ export function VesselProgressionDisplay({
                     <span className="font-mono-data text-lg font-bold text-bright-gold my-1">
                       +{formatNumber(levelBoost, 2)}
                     </span>
-                    <span className="text-[8px] text-primary-gold/80">Permanent Level {vesselLevel}</span>
+                    <span className="text-[8px] text-primary-gold/80">
+                      Permanent Level {vesselLevel}
+                    </span>
                   </div>
 
                   {/* Step 3: Baseline Overall */}
@@ -674,7 +788,7 @@ export function VesselProgressionDisplay({
                     >
                       {transitDelta !== null ? formatSigned(transitDelta, 1) : '—'}
                     </span>
-                    <span className="text-[8px] text-zinc-400">Bounded [-8, +8]</span>
+                    <span className="text-[8px] text-zinc-400">Bounded [-15, +15]</span>
                   </div>
 
                   {/* Step 5: Current Overall */}
@@ -689,6 +803,51 @@ export function VesselProgressionDisplay({
                   </div>
                 </div>
 
+                {/* 4D ESMS Wavefunction Attribution */}
+                {esmsAxisAttribution && (
+                  <div
+                    className="p-3 rounded-lg border border-border-gold/20 bg-black/40 space-y-2"
+                    aria-label="4D ESMS Wavefunction Attribution"
+                  >
+                    <div className="flex items-center justify-between text-[10px] font-mono-label">
+                      <span className="uppercase text-bright-gold font-semibold">
+                        4D ESMS Wavefunction Attribution
+                      </span>
+                      <span className="text-muted-text">
+                        Harmonic Axis Projection [-1.00, +1.00]
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono-data">
+                      {(['Spirit', 'Essence', 'Matter', 'Substance'] as const).map(axis => {
+                        const val = Number(esmsAxisAttribution[axis] ?? 0)
+                        const positive = val > 0.02
+                        const negative = val < -0.02
+                        return (
+                          <div
+                            key={axis}
+                            className="flex items-center justify-between px-2.5 py-1.5 rounded border border-white/5 bg-surface-container-low/20"
+                          >
+                            <span className="text-[10px] font-mono-label uppercase text-zinc-300">
+                              {axis}
+                            </span>
+                            <span
+                              className={
+                                positive
+                                  ? 'text-emerald-300 font-semibold'
+                                  : negative
+                                    ? 'text-rose-300 font-semibold'
+                                    : 'text-zinc-400'
+                              }
+                            >
+                              {formatSigned(val, 2)}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
+
                 {/* Explanatory Narrative */}
                 <div className="p-3 rounded-lg bg-black/40 border border-border-gold/15 text-xs text-muted-text space-y-1.5 leading-relaxed">
                   <p>
@@ -699,8 +858,8 @@ export function VesselProgressionDisplay({
                   </p>
                   <p>
                     Accumulated Alchm EXP produces a permanent{' '}
-                    <span className="text-primary-gold font-semibold">Vessel Level Boost</span> (up to
-                    +12 rating points at Level 100) that permanently raises the anchor to{' '}
+                    <span className="text-primary-gold font-semibold">Vessel Level Boost</span> (up
+                    to +12 rating points at Level 100) that permanently raises the anchor to{' '}
                     <span className="text-ivory-text font-semibold">Baseline Overall</span>.
                   </p>
                   <p>
@@ -732,9 +891,7 @@ export function VesselProgressionDisplay({
                       <span className="text-bright-gold font-bold uppercase tracking-wider">
                         Sacred 7 Attributes
                       </span>
-                      <span className="text-muted-text text-[9px] uppercase">
-                        Scale [25, 99]
-                      </span>
+                      <span className="text-muted-text text-[9px] uppercase">Scale [25, 99]</span>
                     </div>
 
                     <div className="space-y-1.5">
@@ -778,9 +935,7 @@ export function VesselProgressionDisplay({
                       <span className="text-bright-gold font-bold uppercase tracking-wider">
                         Planetary 12 Attributes
                       </span>
-                      <span className="text-muted-text text-[9px] uppercase">
-                        Scale [0, 100]
-                      </span>
+                      <span className="text-muted-text text-[9px] uppercase">Scale [0, 100]</span>
                     </div>
 
                     <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 max-h-[220px] overflow-y-auto pr-1 custom-scrollbar">
@@ -863,9 +1018,14 @@ export function VesselProgressionDisplay({
 
                   <div className="p-2.5 rounded-lg border border-border-gold/20 bg-black/40 text-center">
                     <Award size={13} className="mx-auto text-emerald-400 mb-1" />
-                    <span className="text-[9px] uppercase text-muted-text block">Kitchen Quests</span>
+                    <span className="text-[9px] uppercase text-muted-text block">
+                      Kitchen Quests
+                    </span>
                     <span className="font-mono-data text-sm font-bold text-ivory-text">
-                      {expBreakdown?.achievements ? expBreakdown.achievements.toLocaleString() : '0'} EXP
+                      {expBreakdown?.achievements
+                        ? expBreakdown.achievements.toLocaleString()
+                        : '0'}{' '}
+                      EXP
                     </span>
                   </div>
 
@@ -887,24 +1047,28 @@ export function VesselProgressionDisplay({
                     </span>
                     <span
                       className={`text-[9px] font-mono-label uppercase px-2 py-0.5 rounded border ${
-                        trainingEvidence?.status === 'verified'
+                        verifiedTrainingConversations !== null
                           ? 'border-emerald-500/40 text-emerald-400 bg-emerald-950/40'
                           : 'border-zinc-700 text-zinc-400'
                       }`}
                     >
-                      {trainingEvidence?.status === 'verified' ? 'Verified Manifest' : 'Pending Verification'}
+                      {verifiedTrainingConversations !== null
+                        ? 'Verified Manifest'
+                        : 'Pending Verification'}
                     </span>
                   </div>
 
                   <p className="text-[11px] text-muted-text leading-relaxed">
-                    {trainingEvidence?.status === 'verified' ? (
+                    {verifiedTrainingConversations !== null ? (
                       <>
                         Credited{' '}
                         <strong className="text-bright-gold">
-                          {trainingEvidence.verifiedItems.toLocaleString()} verified training conversations
+                          {verifiedTrainingConversations.toLocaleString()} verified training
+                          conversations
                         </strong>{' '}
-                        under the canonical 25 EXP/conversation policy. Manifest digests are cryptographically
-                        verified against the historical catalog.
+                        under the canonical 25 EXP/conversation policy. Catalog training imports use
+                        deterministic manifest digests; durable live awards remain pending
+                        integration.
                       </>
                     ) : (
                       'Historical training manifests will display once authoritative event receipts are synced.'
@@ -912,8 +1076,9 @@ export function VesselProgressionDisplay({
                   </p>
 
                   <div className="text-[10px] text-zinc-500 pt-1 border-t border-border-gold/10">
-                    <em>Notice:</em> Spendable ESMS token balances, arena tokens, and unverified counters do not
-                    fabricate unearned experience. Durable transactional receipts survive chat text expiration.
+                    <em>Notice:</em> Spendable ESMS token balances, arena tokens, and unverified
+                    counters do not grant experience. Live awards require durable receipts that
+                    survive chat text expiration; receipt persistence is pending integration.
                   </div>
                 </div>
               </div>
