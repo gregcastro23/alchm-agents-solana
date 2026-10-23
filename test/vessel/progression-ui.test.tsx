@@ -1,11 +1,16 @@
 import { describe, it, expect } from 'bun:test'
 import React from 'react'
 import { renderToStaticMarkup } from 'react-dom/server'
-import { VesselProgressionDisplay } from '@/components/vessel/vessel-progression-display'
+import {
+  VesselProgressionDisplay,
+  resolveTransitTier,
+} from '@/components/vessel/vessel-progression-display'
 import type { AgentProgressionProfile } from '@/lib/agents/leveling-service'
 import type { VesselStats } from '@/lib/vessel/progression'
 
-function createSampleProgression(overrides: Partial<AgentProgressionProfile> = {}): AgentProgressionProfile {
+function createSampleProgression(
+  overrides: Partial<AgentProgressionProfile> = {}
+): AgentProgressionProfile {
   const stats: VesselStats = {
     power: 80,
     resonance: 75,
@@ -69,7 +74,9 @@ describe('VesselProgressionDisplay Component', () => {
   describe('Card Badge Variant (variant="card-badge")', () => {
     it('renders both Vessel Level and Current Overall as distinct indicators', () => {
       const data = createSampleProgression()
-      const html = renderToStaticMarkup(<VesselProgressionDisplay progression={data} variant="card-badge" />)
+      const html = renderToStaticMarkup(
+        <VesselProgressionDisplay progression={data} variant="card-badge" />
+      )
 
       // Vessel Level
       expect(html).toContain('VL 15')
@@ -86,7 +93,9 @@ describe('VesselProgressionDisplay Component', () => {
         currentOverall: 77.9,
         transitDelta: -2.2,
       })
-      const html = renderToStaticMarkup(<VesselProgressionDisplay progression={data} variant="card-badge" />)
+      const html = renderToStaticMarkup(
+        <VesselProgressionDisplay progression={data} variant="card-badge" />
+      )
 
       expect(html).toContain('OVR 78')
       expect(html).toContain('-2.2')
@@ -99,7 +108,9 @@ describe('VesselProgressionDisplay Component', () => {
         transitDelta: null,
         progressionStatus: 'unavailable',
       })
-      const html = renderToStaticMarkup(<VesselProgressionDisplay progression={data} variant="card-badge" />)
+      const html = renderToStaticMarkup(
+        <VesselProgressionDisplay progression={data} variant="card-badge" />
+      )
 
       // Vessel Level remains visible and permanent
       expect(html).toContain('VL 15')
@@ -112,7 +123,9 @@ describe('VesselProgressionDisplay Component', () => {
   describe('Compact Variant (variant="compact")', () => {
     it('renders two distinct summary cards and status badge', () => {
       const data = createSampleProgression()
-      const html = renderToStaticMarkup(<VesselProgressionDisplay progression={data} variant="compact" />)
+      const html = renderToStaticMarkup(
+        <VesselProgressionDisplay progression={data} variant="compact" />
+      )
 
       expect(html).toContain('Vessel Level')
       expect(html).toContain('15')
@@ -259,10 +272,58 @@ describe('VesselProgressionDisplay Component', () => {
     })
 
     it('renders honest pending state when progression data is missing', () => {
-      const html = renderToStaticMarkup(<VesselProgressionDisplay progression={null} variant="full" />)
+      const html = renderToStaticMarkup(
+        <VesselProgressionDisplay progression={null} variant="full" />
+      )
 
       expect(html).toContain('Vessel Progression Pending')
       expect(html).toContain('Progression records are currently unavailable')
+    })
+
+    it('calibrates transit tier thresholds at ±4 (Notable), ±8 (Strong), and ±12 (Peak/Severe)', () => {
+      expect(resolveTransitTier(4.0).label).toBe('Notable Alignment')
+      expect(resolveTransitTier(-4.0).label).toBe('Notable Affliction')
+      expect(resolveTransitTier(8.0).label).toBe('Strong Alignment')
+      expect(resolveTransitTier(-8.0).label).toBe('Strong Affliction')
+      expect(resolveTransitTier(12.0).label).toBe('Peak Exaltation')
+      expect(resolveTransitTier(-12.0).label).toBe('Severe Affliction')
+
+      const peakHtml = renderToStaticMarkup(
+        <VesselProgressionDisplay
+          progression={createSampleProgression({
+            trainedOverall: 92.0,
+            currentOverall: 99.0, // Clamped at 99 ceiling (92 + 13 = 105 -> 99)
+            transitDelta: 13.0, // Raw unclamped transitDelta preserved
+          })}
+          variant="full"
+          defaultExpanded={true}
+        />
+      )
+      expect(peakHtml).toContain('Peak Exaltation')
+      expect(peakHtml).toContain('+13.0 OVR')
+      expect(peakHtml).toContain('Bounded [-15, +15]')
+    })
+
+    it('renders 4D ESMS Wavefunction Attribution in breakdown panel when present', () => {
+      const html = renderToStaticMarkup(
+        <VesselProgressionDisplay
+          progression={createSampleProgression({
+            esmsAxisAttribution: {
+              Spirit: 0.72,
+              Essence: 0.34,
+              Matter: -0.41,
+              Substance: 0.15,
+            },
+          })}
+          variant="full"
+          defaultExpanded={true}
+        />
+      )
+      expect(html).toContain('4D ESMS Wavefunction Attribution')
+      expect(html).toContain('+0.72')
+      expect(html).toContain('+0.34')
+      expect(html).toContain('-0.41')
+      expect(html).toContain('+0.15')
     })
   })
 })

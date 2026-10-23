@@ -104,6 +104,89 @@ const formatSigned = (val?: number | null, decimals = 1): string => {
   return `${sign}${val.toFixed(decimals)}`
 }
 
+export interface TransitTierInfo {
+  tier: 'peak' | 'strong' | 'notable' | 'subtle' | 'neutral'
+  label: string
+  badgeClass: string
+}
+
+/**
+ * Calibrated celestial transit tier thresholds for the [-15, +15] Dignity Rating domain:
+ * - |delta| >= 12: Peak Exaltation / Severe Affliction
+ * - |delta| >= 8:  Strong Alignment / Strong Affliction
+ * - |delta| >= 4:  Notable Alignment / Notable Affliction
+ */
+export function resolveTransitTier(transitDelta?: number | null): TransitTierInfo {
+  if (transitDelta === null || transitDelta === undefined || !Number.isFinite(transitDelta)) {
+    return {
+      tier: 'neutral',
+      label: 'Preserving baseline OVR',
+      badgeClass: 'border-zinc-700 bg-zinc-900/60 text-zinc-300',
+    }
+  }
+  if (transitDelta >= 12) {
+    return {
+      tier: 'peak',
+      label: 'Peak Exaltation',
+      badgeClass: 'border-amber-400/60 bg-amber-950/50 text-amber-200',
+    }
+  }
+  if (transitDelta <= -12) {
+    return {
+      tier: 'peak',
+      label: 'Severe Affliction',
+      badgeClass: 'border-red-500/60 bg-red-950/50 text-red-200',
+    }
+  }
+  if (transitDelta >= 8) {
+    return {
+      tier: 'strong',
+      label: 'Strong Alignment',
+      badgeClass: 'border-emerald-400/50 bg-emerald-950/50 text-emerald-200',
+    }
+  }
+  if (transitDelta <= -8) {
+    return {
+      tier: 'strong',
+      label: 'Strong Affliction',
+      badgeClass: 'border-rose-500/50 bg-rose-950/50 text-rose-200',
+    }
+  }
+  if (transitDelta >= 4) {
+    return {
+      tier: 'notable',
+      label: 'Notable Alignment',
+      badgeClass: 'border-emerald-500/40 bg-emerald-950/40 text-emerald-300',
+    }
+  }
+  if (transitDelta <= -4) {
+    return {
+      tier: 'notable',
+      label: 'Notable Affliction',
+      badgeClass: 'border-rose-500/40 bg-rose-950/40 text-rose-300',
+    }
+  }
+  if (transitDelta > 0.05) {
+    return {
+      tier: 'subtle',
+      label: 'Surging above baseline',
+      badgeClass: 'border-emerald-500/40 bg-emerald-950/40 text-emerald-300',
+    }
+  }
+  if (transitDelta < -0.05) {
+    return {
+      tier: 'subtle',
+      label: 'Dipping below baseline',
+      badgeClass: 'border-rose-500/40 bg-rose-950/40 text-rose-300',
+    }
+  }
+  return {
+    tier: 'neutral',
+    label: 'Aligned with baseline',
+    badgeClass: 'border-zinc-700 bg-zinc-900/60 text-zinc-300',
+  }
+}
+
 export function VesselProgressionDisplay({
   progression,
   variant = 'full',
@@ -168,6 +251,7 @@ export function VesselProgressionDisplay({
   const rawSacred = (progression as any).ratings ?? (progression as any).stats ?? {}
   const rawPlanetary = (progression as any).planetaryStats ?? (progression as any).stats ?? {}
   const statDeltas = (progression as any).statDeltas ?? {}
+  const esmsAxisAttribution = (progression as any).esmsAxisAttribution ?? null
 
   // Calculate XP progress bar into current level span
   const isMaxLevel = vesselLevel >= 100
@@ -183,6 +267,7 @@ export function VesselProgressionDisplay({
   const isSurging = transitDelta !== null && transitDelta > 0.05
   const isDipping = transitDelta !== null && transitDelta < -0.05
   const isNeutral = transitDelta !== null && !isSurging && !isDipping
+  const transitTier = resolveTransitTier(transitDelta)
 
   // ==========================================
   // 1. CARD BADGE VARIANT (Compact for Grid Cards)
@@ -502,13 +587,7 @@ export function VesselProgressionDisplay({
             <div className="text-right">
               {currentOverall !== null && transitDelta !== null ? (
                 <div
-                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded border font-mono-data text-xs font-bold ${
-                    isSurging
-                      ? 'border-emerald-500/40 bg-emerald-950/40 text-emerald-300'
-                      : isDipping
-                        ? 'border-rose-500/40 bg-rose-950/40 text-rose-300'
-                        : 'border-zinc-700 bg-zinc-900/60 text-zinc-300'
-                  }`}
+                  className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded border font-mono-data text-xs font-bold ${transitTier.badgeClass}`}
                   aria-label={`Celestial transit difference: ${formatSigned(transitDelta, 1)} points, ${
                     isSurging
                       ? 'rising above baseline'
@@ -533,9 +612,9 @@ export function VesselProgressionDisplay({
               )}
               <span className="text-[9px] font-mono-label text-muted-text uppercase mt-1 block">
                 {isSurging
-                  ? 'Surging above baseline'
+                  ? `Surging above baseline${transitTier.tier !== 'subtle' ? ` · ${transitTier.label}` : ''}`
                   : isDipping
-                    ? 'Dipping below baseline'
+                    ? `Dipping below baseline${transitTier.tier !== 'subtle' ? ` · ${transitTier.label}` : ''}`
                     : isNeutral
                       ? 'Aligned with baseline'
                       : 'Preserving baseline OVR'}
@@ -709,7 +788,7 @@ export function VesselProgressionDisplay({
                     >
                       {transitDelta !== null ? formatSigned(transitDelta, 1) : '—'}
                     </span>
-                    <span className="text-[8px] text-zinc-400">Bounded [-8, +8]</span>
+                    <span className="text-[8px] text-zinc-400">Bounded [-15, +15]</span>
                   </div>
 
                   {/* Step 5: Current Overall */}
@@ -723,6 +802,51 @@ export function VesselProgressionDisplay({
                     <span className="text-[8px] text-bright-gold/90">Dynamic Sky OVR</span>
                   </div>
                 </div>
+
+                {/* 4D ESMS Wavefunction Attribution */}
+                {esmsAxisAttribution && (
+                  <div
+                    className="p-3 rounded-lg border border-border-gold/20 bg-black/40 space-y-2"
+                    aria-label="4D ESMS Wavefunction Attribution"
+                  >
+                    <div className="flex items-center justify-between text-[10px] font-mono-label">
+                      <span className="uppercase text-bright-gold font-semibold">
+                        4D ESMS Wavefunction Attribution
+                      </span>
+                      <span className="text-muted-text">
+                        Harmonic Axis Projection [-1.00, +1.00]
+                      </span>
+                    </div>
+                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs font-mono-data">
+                      {(['Spirit', 'Essence', 'Matter', 'Substance'] as const).map(axis => {
+                        const val = Number(esmsAxisAttribution[axis] ?? 0)
+                        const positive = val > 0.02
+                        const negative = val < -0.02
+                        return (
+                          <div
+                            key={axis}
+                            className="flex items-center justify-between px-2.5 py-1.5 rounded border border-white/5 bg-surface-container-low/20"
+                          >
+                            <span className="text-[10px] font-mono-label uppercase text-zinc-300">
+                              {axis}
+                            </span>
+                            <span
+                              className={
+                                positive
+                                  ? 'text-emerald-300 font-semibold'
+                                  : negative
+                                    ? 'text-rose-300 font-semibold'
+                                    : 'text-zinc-400'
+                              }
+                            >
+                              {formatSigned(val, 2)}
+                            </span>
+                          </div>
+                        )
+                      })}
+                    </div>
+                  </div>
+                )}
 
                 {/* Explanatory Narrative */}
                 <div className="p-3 rounded-lg bg-black/40 border border-border-gold/15 text-xs text-muted-text space-y-1.5 leading-relaxed">

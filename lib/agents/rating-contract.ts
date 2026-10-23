@@ -87,7 +87,7 @@ export interface RatedAgentPayload {
   baseOverall?: number | null // [25, 99] 19-stat composite before level boost
   trainedOverall?: number | null // [25, 99] Permanent baseline capability
   currentOverall?: number | null // [25, 99] Dynamic celestial OVR (rises/falls with sky)
-  transitDelta?: number | null // Celestial transit adjustment [-8, +8]
+  transitDelta?: number | null // Celestial transit adjustment [-15, +15]
   progressionStatus?: 'live' | 'estimated' | 'unavailable'
   ratingAsOf?: string | null
   progressionReasons?: string[]
@@ -95,7 +95,19 @@ export interface RatedAgentPayload {
   trainingEvidence?: { status: 'verified' | 'unverified' | 'unknown'; verifiedItems: number } | null
   planetaryStats?: Record<string, number> | null // [0, 100] Planetary 12
   statDeltas?: Record<string, number> | null // Active sky deltas
+  esmsAxisAttribution?: Record<'Spirit' | 'Essence' | 'Matter' | 'Substance', number> | null // 4D ESMS transit attribution [-1, 1]^4
 }
+
+/** Canonical numeric bounds for vessel progression, leveling, and dignity ratings */
+export const RATING_BOUNDS = {
+  MIN_OVERALL: 25,
+  MAX_OVERALL: 99,
+  MAX_LEVEL_BOOST: 12,
+  MIN_TRANSIT_DELTA: -15, // Upgraded from -8
+  MAX_TRANSIT_DELTA: 15, // Upgraded from +8
+  MAX_SACRED_STAT_DELTA: 18,
+  MAX_PLANETARY_STAT_DELTA: 24,
+} as const
 
 /** Pinned 71-agent roster baseline ratings and means */
 export const ROSTER_BASELINE_RATINGS: Record<SacredStatKey, { mean: number; baseline: number }> =

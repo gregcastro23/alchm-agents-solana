@@ -321,9 +321,11 @@ export function AlchmVesselWidget({ variant = 'full' }: { variant?: 'full' | 'co
                 trainedOverall: vessel.progression.trainedOverall,
                 currentOverall: vessel.progression.currentOverall,
                 transitDelta:
-                  vessel.progression.currentOverall !== null
-                    ? vessel.progression.currentOverall - vessel.progression.trainedOverall
-                    : null,
+                  vessel.progression.transitDelta !== undefined
+                    ? vessel.progression.transitDelta
+                    : vessel.progression.currentOverall !== null
+                      ? vessel.progression.currentOverall - vessel.progression.trainedOverall
+                      : null,
                 progressionStatus: vessel.progression.status,
                 asOf: vessel.progression.asOf,
                 expBreakdown: null,

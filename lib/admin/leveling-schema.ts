@@ -2,6 +2,7 @@
 import { z } from 'zod'
 import { AdminAlertSchema } from '@/lib/admin/page-schemas'
 import type { AgentProgressionProfile } from '@/lib/agents/leveling-service'
+import { RATING_BOUNDS } from '@/lib/agents/rating-contract'
 
 const count = z.number().finite().int().nonnegative().max(Number.MAX_SAFE_INTEGER)
 const overall = z.number().finite().min(25).max(99)
@@ -34,11 +35,16 @@ export const AgentProgressionProfileSchema = z.object({
   vesselLevel: level.nullable(),
   totalXp: count.nullable(),
   xpToNextLevel: count.nullable(),
-  levelBoost: z.number().finite().min(0).max(12).nullable(),
+  levelBoost: z.number().finite().min(0).max(RATING_BOUNDS.MAX_LEVEL_BOOST).nullable(),
   baseOverall: overall.nullable(),
   trainedOverall: overall.nullable(),
   currentOverall: overall.nullable(),
-  transitDelta: z.number().finite().min(-8).max(8).nullable(),
+  transitDelta: z
+    .number()
+    .finite()
+    .min(RATING_BOUNDS.MIN_TRANSIT_DELTA)
+    .max(RATING_BOUNDS.MAX_TRANSIT_DELTA)
+    .nullable(),
   progressionStatus: z.enum(['live', 'estimated', 'unavailable']),
   asOf: z.string().datetime().nullable(),
   expBreakdown: z
@@ -58,6 +64,15 @@ export const AgentProgressionProfileSchema = z.object({
     .nullable(),
   stats: stats.nullable(),
   statDeltas: stats.nullable(),
+  esmsAxisAttribution: z
+    .object({
+      Spirit: z.number().finite().min(-1).max(1),
+      Essence: z.number().finite().min(-1).max(1),
+      Matter: z.number().finite().min(-1).max(1),
+      Substance: z.number().finite().min(-1).max(1),
+    })
+    .nullable()
+    .optional(),
   reasons: z.array(z.string()),
 }) satisfies z.ZodType<AgentProgressionProfile>
 

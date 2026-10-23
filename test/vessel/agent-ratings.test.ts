@@ -55,6 +55,8 @@ mock.module(liveSkyResolved, () => ({
 
 import { NextRequest } from 'next/server'
 import { getHistoricalAgent } from '@/lib/agents/historical'
+import { RATING_BOUNDS } from '@/lib/agents/rating-contract'
+import { ALL_VESSEL_STAT_KEYS, type VesselStats } from '@/lib/vessel/progression'
 
 const request = async (slug: string) => {
   const { GET } = await import('@/app/api/agents/[slug]/ratings/route')
@@ -75,6 +77,43 @@ describe('agent rating progression boundary', () => {
     expect(payload.progressionStatus).toBe('unavailable')
     expect(payload.ratings.power).toBeGreaterThanOrEqual(25)
     expect(payload.ovr).toBeGreaterThanOrEqual(25)
+  })
+
+  it('bounds live/estimated progression transitDelta within [-15, +15]', async () => {
+    const { computeAgentProgression } = await import('@/lib/agents/leveling-service')
+    const stats = Object.fromEntries(ALL_VESSEL_STAT_KEYS.map(key => [key, 65])) as VesselStats
+    const planets = Object.fromEntries(
+      [
+        'Sun',
+        'Moon',
+        'Mercury',
+        'Venus',
+        'Mars',
+        'Jupiter',
+        'Saturn',
+        'Uranus',
+        'Neptune',
+        'Pluto',
+        'Chiron',
+      ].map(p => [p, { longitude: 120 }])
+    )
+    const result = computeAgentProgression(
+      {
+        id: 'isaac-newton',
+        sacredStats: stats,
+        stats: { conversations: 789 },
+        consciousness: {
+          natalChart: {
+            provenance: 'computed',
+            planets,
+          },
+        },
+      },
+      { now: Date.parse('2026-10-20T12:00:00Z') }
+    )
+    expect(result.transitDelta).not.toBeNull()
+    expect(Math.abs(result.transitDelta!)).toBeLessThanOrEqual(RATING_BOUNDS.MAX_TRANSIT_DELTA)
+    expect(Math.abs(result.transitDelta!)).toBeLessThanOrEqual(15)
   })
 
   it('returns 404 for an unknown non-existent agent', async () => {

@@ -3,6 +3,7 @@ import { getHistoricalAgent } from '@/lib/agents/historical'
 import {
   computeVesselProgression,
   computeVesselGrowth,
+  type EsmsAxisAttribution,
   type VesselStats,
 } from '@/lib/vessel/progression'
 import {
@@ -34,6 +35,7 @@ export interface AgentProgressionProfile {
   trainingEvidence: ExperienceLedger['trainingEvidence'] | null
   stats: VesselStats | null
   statDeltas: VesselStats | null
+  esmsAxisAttribution?: EsmsAxisAttribution | null
   reasons: string[]
 }
 
@@ -100,6 +102,7 @@ export function computeAgentProgression(
     trainingEvidence: null,
     stats: null,
     statDeltas: null,
+    esmsAxisAttribution: null,
     reasons: [],
   }
   let experience = options.experience
@@ -180,12 +183,15 @@ export function computeAgentProgression(
   result.trainedOverall = progression.trainedOverall
   result.currentOverall = progression.currentOverall
   result.transitDelta =
-    progression.currentOverall === null
-      ? null
-      : progression.currentOverall - progression.trainedOverall
+    progression.transitDelta !== undefined
+      ? progression.transitDelta
+      : progression.currentOverall === null
+        ? null
+        : progression.currentOverall - progression.trainedOverall
   result.progressionStatus = progression.status
   result.asOf = progression.asOf
   result.statDeltas = progression.statDeltas
+  result.esmsAxisAttribution = progression.esmsAxisAttribution ?? null
   result.reasons.push(...progression.reasons)
   return result
 }

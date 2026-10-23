@@ -1,6 +1,25 @@
 /** Pure, versioned Vessel progression. XP is permanent; the sky changes only current ratings. */
 import { SACRED_STAT_KEYS, type SacredStatKey } from '@/lib/agents/sacred-stat-keys'
 import { detectAspect, type AspectName } from '@/lib/agents/council/aspect-dialogue-engine'
+import {
+  computeAmbientAlchemicalTide,
+  computeDignityWaveharmonics,
+  computeDyadicChordGain,
+  computeEsmsAxisAttribution,
+  computeSkyEsmsWavefunction,
+  type EsmsAxisAttribution,
+  type EsmsWavefunction,
+} from '@/lib/vessel/esms-wavefunction'
+
+export {
+  computeAmbientAlchemicalTide,
+  computeDignityWaveharmonics,
+  computeDyadicChordGain,
+  computeEsmsAxisAttribution,
+  computeSkyEsmsWavefunction,
+  type EsmsAxisAttribution,
+  type EsmsWavefunction,
+}
 
 export const PLANETARY_STAT_KEYS = [
   'solarAgency',
@@ -22,6 +41,10 @@ export type VesselStatKey = (typeof ALL_VESSEL_STAT_KEYS)[number]
 export type VesselStats = Record<VesselStatKey, number>
 export const VESSEL_PROGRESSION_VERSION = 1 as const
 export const MAX_SKY_AGE_MS = 15 * 60 * 1000
+
+export const MAX_DIGNITY_OVR_DELTA = 15 as const
+export const MAX_SACRED_DELTA = 18 as const
+export const MAX_PLANETARY_DELTA = 24 as const
 
 export interface VesselProgressionInput {
   /** Sacred 7 use [25,99]; Planetary 12 use [0,100]. */
@@ -51,6 +74,10 @@ export interface VesselProgression {
   baseOverall: number
   trainedOverall: number
   currentOverall: number | null
+  /** True unclamped [-15, +15] scalar celestial dignity delta, preserved even when currentOverall saturates at 25 or 99. */
+  transitDelta?: number | null
+  /** Four-axis ESMS attribution in [-1, 1]^4 showing which alchemical element drives the live transit shift. */
+  esmsAxisAttribution?: EsmsAxisAttribution | null
   status: 'live' | 'estimated' | 'unavailable'
   asOf: string | null
   reasons: string[]
@@ -155,34 +182,238 @@ function affinityOverlap(affinity: Affinity, signature: Affinity): number {
   return sum(PLANETS.map(planet => (affinity[planet] ?? 0) * (signature[planet] ? 1 : 0))) / weight
 }
 
+const SIGN_RULERS: Record<
+  number,
+  { domicile: string[]; exaltation: string[]; detriment: string[]; fall: string[] }
+> = {
+  0: { domicile: ['Mars'], exaltation: ['Sun'], detriment: ['Venus'], fall: ['Saturn'] }, // Aries
+  1: { domicile: ['Venus'], exaltation: ['Moon'], detriment: ['Mars', 'Pluto'], fall: ['Uranus'] }, // Taurus
+  2: { domicile: ['Mercury'], exaltation: [], detriment: ['Jupiter'], fall: [] }, // Gemini
+  3: { domicile: ['Moon'], exaltation: ['Jupiter'], detriment: ['Saturn'], fall: ['Mars'] }, // Cancer
+  4: {
+    domicile: ['Sun'],
+    exaltation: ['Neptune'],
+    detriment: ['Saturn', 'Uranus'],
+    fall: ['Pluto'],
+  }, // Leo
+  5: {
+    domicile: ['Mercury', 'Chiron'],
+    exaltation: ['Mercury'],
+    detriment: ['Jupiter', 'Neptune'],
+    fall: ['Venus'],
+  }, // Virgo
+  6: { domicile: ['Venus'], exaltation: ['Saturn'], detriment: ['Mars'], fall: ['Sun'] }, // Libra
+  7: { domicile: ['Mars', 'Pluto'], exaltation: ['Uranus'], detriment: ['Venus'], fall: ['Moon'] }, // Scorpio
+  8: { domicile: ['Jupiter'], exaltation: ['Chiron'], detriment: ['Mercury'], fall: [] }, // Sagittarius
+  9: { domicile: ['Saturn'], exaltation: ['Mars'], detriment: ['Moon'], fall: ['Jupiter'] }, // Capricorn
+  10: { domicile: ['Saturn', 'Uranus'], exaltation: [], detriment: ['Sun'], fall: ['Neptune'] }, // Aquarius
+  11: {
+    domicile: ['Jupiter', 'Neptune'],
+    exaltation: ['Venus'],
+    detriment: ['Mercury'],
+    fall: ['Mercury'],
+  }, // Pisces
+}
+
+const CONJUNCTION_BASE_BIAS: Record<string, number> = {
+  Sun: 0.85,
+  Moon: 0.8,
+  Venus: 0.9,
+  Jupiter: 0.95,
+  Mercury: 0.65,
+  Chiron: 0.6,
+  Uranus: 0.5,
+  Neptune: 0.55,
+  Mars: 0.25,
+  Saturn: 0.25,
+  Pluto: 0.2,
+}
+
 /**
- * Every transit can aspect every natal body. A same-body return carries three
- * units of influence; each cross-body aspect carries one. These fixed weights
- * are game tuning and their denominator includes missing bodies, so incomplete
- * charts never concentrate all influence into the remaining measurements.
- *
- * The orb taper is continuous at the edge of each aspect and bounded [-1, 1].
- * The aspect engine is pure geometry and has no profile or ephemeris imports.
+ * Returns classical essential dignity score in [-3, +3] for a planet at a given ecliptic longitude.
+ * Domicile: +3 | Exaltation: +2 | Detriment: -2 | Fall: -3 | Peregrine: 0
  */
-function natalTransitResponse(
-  natalBody: Planet,
-  natalLongitude: number,
-  sky: Partial<Record<Planet, number>>
-): number {
-  let response = 0
-  let totalWeight = 0
-  for (const transitBody of PLANETS) {
-    const weight = transitBody === natalBody ? 3 : 1
-    totalWeight += weight
-    const transitLongitude = sky[transitBody]
-    if (transitLongitude === undefined) continue
-    const aspect = detectAspect(natalLongitude, transitLongitude)
-    if (aspect) {
-      response +=
-        weight * ASPECT_RESPONSE[aspect.name] * Math.max(0, 1 - aspect.orb / aspect.definition.orb)
+export function computeEssentialDignityScore(planet: string, longitude: number): number {
+  const normalizedLon = ((longitude % 360) + 360) % 360
+  const signIndex = Math.floor(normalizedLon / 30)
+  const table = SIGN_RULERS[signIndex]
+  if (!table) return 0
+
+  const p = planet.trim().toLowerCase()
+  const match = (list: string[]) => list.some(item => item.toLowerCase() === p)
+
+  if (match(table.domicile)) return 3
+  if (match(table.exaltation)) return 2
+  if (match(table.fall)) return -3
+  if (match(table.detriment)) return -2
+  return 0
+}
+
+/**
+ * Stage 2: Active-Energy Normalized Planetary Response Vector in [-1, 1]^11
+ * Coupled with the 4D ESMS Wavefunction \Psi(t) via Channel A (ambient tide)
+ * and Channel B (dyadic chord reception gain).
+ */
+export function computePlanetaryResponseVector(
+  natalLongitudes: Partial<Record<Planet, number>>,
+  skyLongitudes: Partial<Record<Planet, number>>,
+  bodies: readonly Planet[] = PLANETS,
+  wavefunctionOverride?: EsmsWavefunction
+): Record<Planet, number> {
+  const responses = {} as Record<Planet, number>
+  const TAU_SQUARED = 2.25 // Damping floor (1.5^2)
+  const KAPPA_ASPECT = 1.15
+  const KAPPA_ESSENTIAL = 0.35
+  const KAPPA_PSI = 0.12
+  const wavefunction =
+    wavefunctionOverride ?? computeSkyEsmsWavefunction(skyLongitudes, computeEssentialDignityScore)
+  const presentSkyCount = bodies.filter(b => skyLongitudes[b] !== undefined).length
+
+  for (const natalBody of bodies) {
+    const natalLon = natalLongitudes[natalBody]
+    if (natalLon === undefined) {
+      responses[natalBody] = 0
+      continue
     }
+
+    const skySelfLon = skyLongitudes[natalBody]
+    let weightedSum = 0
+    let activeWeightSqSum = 0
+
+    for (const transitBody of bodies) {
+      const isSameBody = natalBody === transitBody
+      const pairWeight = isSameBody ? 3.0 : 1.0
+      const transitLon = skyLongitudes[transitBody]
+      if (transitLon === undefined) {
+        // When a required sky planet is missing from a multi-planet snapshot, retain its
+        // denominator weight so missing telemetry never amplifies remaining measurements.
+        if (presentSkyCount > 1 && transitBody !== 'Chiron') {
+          activeWeightSqSum += pairWeight * pairWeight
+        }
+        continue
+      }
+
+      const aspect = detectAspect(natalLon, transitLon)
+      if (!aspect) continue
+
+      const transitEssential = computeEssentialDignityScore(transitBody, transitLon)
+
+      // Conjunctions are modulated by the transiting body's essential dignity & nature
+      const basePolarity =
+        aspect.name === 'Conjunction'
+          ? clamp((CONJUNCTION_BASE_BIAS[transitBody] ?? 0.55) + 0.2 * transitEssential, -0.85, 1.0)
+          : ASPECT_RESPONSE[aspect.name] *
+            (1 + 0.08 * transitEssential * Math.sign(ASPECT_RESPONSE[aspect.name]))
+
+      const attenuation = Math.max(0, 1 - aspect.orb / aspect.definition.orb)
+      const chordGain = computeDyadicChordGain(natalBody, transitBody, basePolarity, wavefunction)
+      const responseIJ = basePolarity * chordGain * attenuation
+
+      if (Math.abs(responseIJ) > 0) {
+        weightedSum += pairWeight * responseIJ
+        activeWeightSqSum += pairWeight * pairWeight
+      }
+    }
+
+    const aspectEnergy = weightedSum / Math.sqrt(activeWeightSqSum + TAU_SQUARED)
+    const essentialPosture =
+      skySelfLon !== undefined ? computeEssentialDignityScore(natalBody, skySelfLon) / 3.0 : 0
+    const ambientTide =
+      skySelfLon !== undefined ? computeAmbientAlchemicalTide(natalBody, wavefunction) : 0
+
+    responses[natalBody] = Math.tanh(
+      KAPPA_ASPECT * aspectEnergy + KAPPA_ESSENTIAL * essentialPosture + KAPPA_PSI * ambientTide
+    )
   }
-  return response / totalWeight
+
+  return responses
+}
+
+/**
+ * Stage 3 & 4: Variance-Preserving Affinity Projection & Archetype Amplification
+ */
+export function computeDignityStatDeltas(
+  planetaryResponses: Record<Planet, number>,
+  primaryStat: SacredStatKey,
+  secondaryStat: SacredStatKey
+): VesselStats {
+  const deltas = {} as VesselStats
+  const primaryAffinity = AFFINITIES[primaryStat]
+  const secondaryAffinity = AFFINITIES[secondaryStat]
+
+  for (const key of ALL_VESSEL_STAT_KEYS) {
+    const affinity = AFFINITIES[key]
+    let dot = 0
+    let l1Norm = 0
+    let l2SqNorm = 0
+
+    for (const planet of PLANETS) {
+      const weight = affinity[planet] ?? 0
+      const r = planetaryResponses[planet] ?? 0
+      dot += weight * r
+      l1Norm += Math.abs(weight)
+      l2SqNorm += weight * weight
+    }
+
+    const hybridNorm = Math.sqrt(l1Norm * Math.sqrt(l2SqNorm))
+    const rho = hybridNorm > 0 ? clamp(dot / hybridNorm, -1, 1) : 0
+
+    // Amplifying sensitivity in [0.85, 1.35] instead of dampening in [0.75, 1.00]
+    const ovPrimary = affinityOverlap(affinity, primaryAffinity)
+    const ovSecondary = affinityOverlap(affinity, secondaryAffinity)
+    const c_k = 0.85 + 0.3 * ovPrimary + 0.2 * ovSecondary
+
+    const isSacredStat = isSacred(key)
+    const scale = isSacredStat ? 74 : 100
+    const maxCap = isSacredStat ? MAX_SACRED_DELTA : MAX_PLANETARY_DELTA
+
+    const rawDelta = rho * c_k * (MAX_DIGNITY_OVR_DELTA / 74) * scale
+    deltas[key] = clamp(rawDelta, -maxCap, maxCap)
+  }
+
+  return deltas
+}
+
+const OWA_SACRED_WEIGHTS = [
+  1.6 / 7.9,
+  1.3 / 7.9,
+  1.0 / 7.9,
+  1.0 / 7.9,
+  1.0 / 7.9,
+  1.0 / 7.9,
+  1.0 / 7.9,
+] as const
+
+export function computeScalarDignityRating(
+  vesselStats: VesselStats,
+  statDeltas: VesselStats,
+  primaryStat?: SacredStatKey,
+  secondaryStat?: SacredStatKey
+): number {
+  const modifiedStats = Object.fromEntries(
+    ALL_VESSEL_STAT_KEYS.map(key => [key, vesselStats[key] + statDeltas[key]])
+  ) as VesselStats
+
+  const uniformDelta = overall(modifiedStats) - overall(vesselStats)
+
+  // Order Sacred 7 keys by archetype primary & secondary, then descending by permanent vessel stats
+  const sortedByValue = [...SACRED_STAT_KEYS].sort((a, b) => {
+    const diff = vesselStats[b] - vesselStats[a]
+    if (diff !== 0) return diff
+    return SACRED_STAT_KEYS.indexOf(a) - SACRED_STAT_KEYS.indexOf(b)
+  })
+  const primary = primaryStat ?? sortedByValue[0]
+  const secondary = secondaryStat ?? sortedByValue.find(k => k !== primary) ?? sortedByValue[1]
+  const restKeys = sortedByValue.filter(k => k !== primary && k !== secondary)
+  const orderedSacredKeys = [primary, secondary, ...restKeys]
+
+  const owaSacredDelta = orderedSacredKeys.reduce(
+    (acc, key, idx) => acc + OWA_SACRED_WEIGHTS[idx]! * (statDeltas[key] ?? 0),
+    0
+  )
+
+  const blendedDelta = 0.6 * uniformDelta + 0.4 * owaSacredDelta
+  return clamp(blendedDelta, -MAX_DIGNITY_OVR_DELTA, MAX_DIGNITY_OVR_DELTA)
 }
 
 /** Permanent earned growth remains available even when chart or stat data is missing. */
@@ -207,7 +438,7 @@ export function computeVesselGrowth(totalXp: number): {
 /**
  * One deterministic snapshot. No fetching, clock reads, random values or XP writes.
  * Every stat contributes to overall. Level adds at most 12 points; sky adds or
- * removes at most 8, and never changes XP, level or the trained baseline.
+ * removes at most 15, and never changes XP, level or the trained baseline.
  */
 export function computeVesselProgression(input: VesselProgressionInput): VesselProgression {
   const growth = computeVesselGrowth(input.totalXp)
@@ -240,6 +471,8 @@ export function computeVesselProgression(input: VesselProgressionInput): VesselP
     baseOverall,
     trainedOverall,
     currentOverall: null,
+    transitDelta: null,
+    esmsAxisAttribution: null,
     status: 'unavailable',
     asOf: null,
     reasons: [],
@@ -299,31 +532,30 @@ export function computeVesselProgression(input: VesselProgressionInput): VesselP
       ? 'live'
       : 'estimated'
 
-  const responses: Partial<Record<Planet, number>> = {}
-  for (const planet of natalBodies) {
-    responses[planet] = natalTransitResponse(planet, natal[planet]!, sky)
-  }
+  const wavefunction = computeSkyEsmsWavefunction(sky, computeEssentialDignityScore)
+  const responses = computePlanetaryResponseVector(natal, sky, PLANETS, wavefunction)
+  const rawDeltas = computeDignityStatDeltas(
+    responses,
+    input.character.primary,
+    input.character.secondary
+  )
+
   for (const key of ALL_VESSEL_STAT_KEYS) {
-    const affinity = AFFINITIES[key]
-    // Missing bodies keep their weight but contribute no response: partial DNA
-    // never amplifies a remaining body's effect or invents a placement.
-    const response =
-      sum(PLANETS.map(planet => (affinity[planet] ?? 0) * (responses[planet] ?? 0))) /
-      sum(Object.values(affinity))
-    const sensitivity =
-      0.75 +
-      0.15 * affinityOverlap(affinity, AFFINITIES[input.character.primary]) +
-      0.1 * affinityOverlap(affinity, AFFINITIES[input.character.secondary])
-    const scale = isSacred(key) ? 74 : 100
-    const delta = response * sensitivity * (8 / 74) * scale
+    const isSacredStat = isSacred(key)
+    const minBound = isSacredStat ? 25 : 0
+    const maxBound = isSacredStat ? 99 : 100
     result.statDeltas[key] =
-      clamp(input.stats[key] + delta, isSacred(key) ? 25 : 0, isSacred(key) ? 99 : 100) -
-      input.stats[key]
+      clamp(input.stats[key] + rawDeltas[key], minBound, maxBound) - input.stats[key]
   }
-  const changed = Object.fromEntries(
-    ALL_VESSEL_STAT_KEYS.map(key => [key, input.stats[key] + result.statDeltas[key]])
-  ) as VesselStats
-  const transitDelta = clamp(overall(changed) - baseOverall, -8, 8)
+
+  const transitDelta = computeScalarDignityRating(
+    input.stats,
+    result.statDeltas,
+    input.character.primary,
+    input.character.secondary
+  )
+  result.transitDelta = transitDelta
+  result.esmsAxisAttribution = computeEsmsAxisAttribution(responses, wavefunction)
   result.currentOverall = clamp(trainedOverall + transitDelta, 25, 99)
   return result
 }
