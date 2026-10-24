@@ -8,8 +8,13 @@ import 'server-only'
 import type { NextRequest } from 'next/server'
 import { getHistoricalAgent } from '@/lib/agents/historical'
 import {
+  EsmsValueError,
+  USER_AVATAR_ID_PREFIX,
+  agenticEmailForAgent,
+  parseEsmsHoldings,
   resolveAgentEsmsBalances,
   type CreatorWalletPolicy,
+  type ResolvedEsmsBalances,
 } from '@/lib/agents/rating/esms-balance-resolver'
 import { prismaLedgerLoader } from '@/lib/agents/rating/esms-ledger-store.server'
 import { SkyUnavailableError, resolveLiveSky } from '@/lib/agents/rating/live-sky'
@@ -111,6 +116,111 @@ export async function resolveVessel(agentId: string): Promise<VesselLookupResult
   }
 }
 
+const WTEN_LEDGER_TIMEOUT_MS = 4000
+const DEFAULT_WTEN_BASE_URL = 'https://alchm.kitchen'
+
+export function resolveWtenLedgerConfig(): { baseUrl: string; secret: string } | null {
+  const secret = process.env.ALCHM_KITCHEN_SYNC_SECRET?.trim()
+  if (!secret) return null
+  const rawBaseUrl =
+    process.env.ALCHM_KITCHEN_SYNC_URL ||
+    process.env.WHATTOEATNEXT_URL ||
+    process.env.NEXT_PUBLIC_MAIN_SITE_URL ||
+    DEFAULT_WTEN_BASE_URL
+  return {
+    baseUrl: rawBaseUrl.trim().replace(/\/+$/, ''),
+    secret,
+  }
+}
+
+export async function fetchWtenAgentLedger(
+  agentId: string,
+  config: { baseUrl: string; secret: string }
+): Promise<
+  { status: 'found'; holdings: EsmsHoldings } | { status: 'missing' } | { status: 'unconfigured' }
+> {
+  const email = agenticEmailForAgent(agentId)
+  const url = `${config.baseUrl}/api/economy/balance?email=${encodeURIComponent(email)}`
+  const response = await fetch(url, {
+    method: 'GET',
+    headers: {
+      'X-Sync-Secret': config.secret,
+      Accept: 'application/json',
+    },
+    cache: 'no-store',
+    signal: AbortSignal.timeout(WTEN_LEDGER_TIMEOUT_MS),
+  })
+  if (!response || typeof response.status !== 'number') {
+    return { status: 'unconfigured' }
+  }
+  if (response.status === 404) {
+    return { status: 'missing' }
+  }
+  if (!response.ok) {
+    throw new Error(`WTEN balance HTTP ${response.status}`)
+  }
+  const body: unknown = await response.json()
+  const rawBalances =
+    body && typeof body === 'object' && 'balances' in body
+      ? (body as { balances?: unknown }).balances
+      : null
+  const holdings = parseEsmsHoldings(rawBalances)
+  if (!holdings) {
+    throw new Error('WTEN balance payload missing balances')
+  }
+  return { status: 'found', holdings }
+}
+
+/**
+ * When the local Prisma ledger is unavailable or holds no row for a canonical roster agent
+ * (`vessel.origin === 'roster'`, non-`user-avatar-*`), consult WTEN's authoritative S2S
+ * ledger endpoint (`GET /api/economy/balance?email=<id>@agentic.alchm.kitchen`).
+ */
+export async function resolveWtenFallbackBalances(
+  vessel: RatableVessel,
+  balances: ResolvedEsmsBalances
+): Promise<ResolvedEsmsBalances> {
+  if (balances.esmsSource !== 'fallback') return balances
+  if (vessel.origin !== 'roster' || balances.agentId.startsWith(USER_AVATAR_ID_PREFIX)) {
+    return balances
+  }
+  const reason = balances.degraded?.reason
+  if (reason !== 'ledger unavailable' && reason !== 'no ledger row') {
+    return balances
+  }
+  const config = resolveWtenLedgerConfig()
+  if (!config) return balances
+
+  try {
+    const wtenResult = await fetchWtenAgentLedger(balances.agentId, config)
+    if (wtenResult.status === 'unconfigured') {
+      return balances
+    }
+    if (wtenResult.status === 'missing') {
+      return {
+        agentId: balances.agentId,
+        balances: balances.balances,
+        esmsSource: 'fallback',
+        degraded: { reason: 'no ledger row' },
+      }
+    }
+    return {
+      agentId: balances.agentId,
+      balances: wtenResult.holdings,
+      esmsSource: 'database',
+    }
+  } catch (error) {
+    return {
+      agentId: balances.agentId,
+      balances: balances.balances,
+      esmsSource: 'fallback',
+      degraded: {
+        reason: error instanceof EsmsValueError ? 'ledger row invalid' : 'ledger unavailable',
+      },
+    }
+  }
+}
+
 export async function ratedPayload(
   vessel: RatableVessel,
   spacetime: EsmsHoldings | null,
@@ -124,7 +234,7 @@ export async function ratedPayload(
       creatorWallet,
       onDegraded: (stage, detail) =>
         console.error(`[rating] esms ${stage} fell through: ${detail}`),
-    }),
+    }).then(resolved => resolveWtenFallbackBalances(vessel, resolved)),
     resolveLiveSky().then(
       sky => ({ sky, error: undefined }),
       (error: unknown) => {

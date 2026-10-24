@@ -444,4 +444,135 @@ describe('GET /api/agents/[slug]/ratings', () => {
       expect(res.headers.get('access-control-allow-headers')).toBe('Content-Type')
     })
   })
+
+  describe('WTEN authoritative ESMS ledger fallback', () => {
+    const WTEN_SECRET = 'test-wten-sync-secret'
+    let origSecret: string | undefined
+    let origUrl: string | undefined
+    let origFetch: typeof global.fetch
+
+    beforeEach(() => {
+      origSecret = process.env.ALCHM_KITCHEN_SYNC_SECRET
+      origUrl = process.env.ALCHM_KITCHEN_SYNC_URL
+      origFetch = global.fetch
+      process.env.ALCHM_KITCHEN_SYNC_SECRET = WTEN_SECRET
+      process.env.ALCHM_KITCHEN_SYNC_URL = 'https://alchm.kitchen'
+    })
+
+    afterEach(() => {
+      if (origSecret === undefined) delete process.env.ALCHM_KITCHEN_SYNC_SECRET
+      else process.env.ALCHM_KITCHEN_SYNC_SECRET = origSecret
+      if (origUrl === undefined) delete process.env.ALCHM_KITCHEN_SYNC_URL
+      else process.env.ALCHM_KITCHEN_SYNC_URL = origUrl
+      global.fetch = origFetch
+    })
+
+    it('resolves authoritative ESMS balances from WTEN when local Prisma DB is unavailable', async () => {
+      h.db.failures.user = new Error('PrismaClientInitializationError')
+      const wtenHoldings = { spirit: 60.5321, essence: 29.6787, matter: 19.5531, substance: 18.704 }
+      const fetchMock = vi.fn(
+        async () =>
+          new Response(JSON.stringify({ balances: wtenHoldings }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+      )
+      global.fetch = fetchMock as unknown as typeof global.fetch
+
+      const res = await h.get('isaac-newton')
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.esmsSource).toBe('database')
+      expect(body.esms).toEqual(wtenHoldings)
+      expect(body.degraded).toBeUndefined()
+      expect(fetchMock).toHaveBeenCalledWith(
+        'https://alchm.kitchen/api/economy/balance?email=isaac-newton%40agentic.alchm.kitchen',
+        expect.objectContaining({
+          method: 'GET',
+          headers: expect.objectContaining({
+            'X-Sync-Secret': WTEN_SECRET,
+            Accept: 'application/json',
+          }),
+        })
+      )
+    })
+
+    it('resolves authoritative ESMS balances from WTEN for canonical roster agents absent from local Prisma', async () => {
+      const chironHoldings = { spirit: 0.95, essence: 0.9, matter: 0.4, substance: 0.85 }
+      const fetchMock = vi.fn(
+        async () =>
+          new Response(JSON.stringify({ balances: chironHoldings }), {
+            status: 200,
+            headers: { 'Content-Type': 'application/json' },
+          })
+      )
+      global.fetch = fetchMock as unknown as typeof global.fetch
+
+      const res = await h.get('chiron')
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.key).toBe('chiron')
+      expect(body.esmsSource).toBe('database')
+      expect(body.esms).toEqual(chironHoldings)
+      expect(body.degraded).toBeUndefined()
+    })
+
+    it('preserves explicit "no ledger row" status when WTEN returns 404 without inventing holdings', async () => {
+      const fetchMock = vi.fn(
+        async () =>
+          new Response(JSON.stringify({ error: 'user_not_found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json' },
+          })
+      )
+      global.fetch = fetchMock as unknown as typeof global.fetch
+
+      const res = await h.get('leonardo-da-vinci')
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.esmsSource).toBe('fallback')
+      expect(body.degraded).toEqual({ esms: 'no ledger row' })
+    })
+
+    it('preserves "ledger unavailable" when both Prisma and WTEN fail', async () => {
+      h.db.failures.user = new Error('PrismaClientInitializationError')
+      const fetchMock = vi.fn(async () => new Response('Bad Gateway', { status: 502 }))
+      global.fetch = fetchMock as unknown as typeof global.fetch
+
+      const res = await h.get('isaac-newton')
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.esmsSource).toBe('fallback')
+      expect(body.degraded).toEqual({ esms: 'ledger unavailable' })
+    })
+
+    it('marks "ledger row invalid" when WTEN returns negative or corrupt ESMS numbers', async () => {
+      const fetchMock = vi.fn(
+        async () =>
+          new Response(
+            JSON.stringify({ balances: { spirit: -1, essence: 1, matter: 1, substance: 1 } }),
+            { status: 200, headers: { 'Content-Type': 'application/json' } }
+          )
+      )
+      global.fetch = fetchMock as unknown as typeof global.fetch
+
+      const res = await h.get('leonardo-da-vinci')
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.esmsSource).toBe('fallback')
+      expect(body.degraded).toEqual({ esms: 'ledger row invalid' })
+    })
+
+    it('never queries WTEN for a forged creator vessel, preserving creator wallet privacy', async () => {
+      const fetchMock = vi.fn()
+      global.fetch = fetchMock as unknown as typeof global.fetch
+
+      const res = await h.get(FORGED)
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.esmsSource).toBe('fallback')
+      expect(body.degraded).toEqual({ esms: 'owner wallet is private' })
+      expect(fetchMock).not.toHaveBeenCalled()
+    })
+  })
 })
