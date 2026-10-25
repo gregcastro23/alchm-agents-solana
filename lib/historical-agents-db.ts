@@ -4,6 +4,7 @@
 import { prisma } from './db'
 import { DEMO_AGENTS } from './demo-agents-data'
 import { ensureAgenticUserAndSync } from './agents/agentic-user-sync'
+import { isSyntheticAgentId } from './agents/forged-privacy'
 import {
   calculateXpGain,
   calculateEvGain,
@@ -33,14 +34,9 @@ export interface EnhancedHistoricalAgent extends HistoricalAgent {
 }
 
 export function isSyntheticDegreeAgentId(id: string): boolean {
-  if (!id) return false
-  const lower = id.toLowerCase().trim()
-  return (
-    lower.startsWith('planetary-') ||
-    lower.startsWith('moon-phase-') ||
-    lower.startsWith('moon-agent-') ||
-    lower.startsWith('planetary_')
-  )
+  // One definition, shared with the privacy projection (lib/agents/forged-privacy.ts), which
+  // treats exactly these ids as public sky-generated agents and everything else as a person's.
+  return isSyntheticAgentId(id)
 }
 
 export function isHistoricalAgent(agent: { agentId: string; natalChart?: any }): boolean {

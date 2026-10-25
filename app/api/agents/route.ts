@@ -2,9 +2,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import { backend } from '@/lib/backend'
 import { DEMO_AGENTS } from '@/lib/demo-agents-data'
 import { HISTORICAL_AGENTS } from '@/lib/agents/historical'
+import { CANONICAL_AGENT_IDS, isPublicRosterId } from '@/lib/agents/public-roster'
 import { prisma } from '@/lib/db'
 import { HistoricalAgentsService } from '@/lib/historical-agents-db'
 import { hasPrivilegedInternalApiSecret } from '@/lib/security/internal-auth'
+import {
+  isUserCreatedAgentRow,
+  projectNumberRecord,
+  projectPublicAura,
+  projectPublicBirthData,
+  projectPublicNatalChart,
+  projectPublicPersonalityCore,
+  projectStringList,
+} from '@/lib/agents/forged-privacy'
 
 interface GetAgentsResponse {
   success: boolean
@@ -17,105 +27,6 @@ interface AuthContext {
   isServiceOrAdmin: boolean
   creatorUserId: string | null
   creatorAgentIds: Set<string>
-}
-
-/** Extracts the location name from whatever shape birthLocation holds. */
-function extractLocationName(rawLocation: unknown): string | null {
-  if (!rawLocation) return null
-  if (typeof rawLocation === 'string') {
-    const trimmed = rawLocation.trim()
-    return trimmed || null
-  }
-  if (typeof rawLocation === 'object' && rawLocation !== null) {
-    const loc = rawLocation as Record<string, unknown>
-    if (typeof loc.name === 'string' && loc.name.trim()) return loc.name.trim()
-    if (typeof loc.city === 'string' && loc.city.trim()) return loc.city.trim()
-  }
-  return null
-}
-
-/**
- * Extracts the Sun sign from either the roster/fixture shape
- * (`{ planets: { Sun: { sign } } }`) or the forge shape
- * (`{ tropical: { CelestialBodies: { all: [{ label: "Sun", Sign: { label } }] } } }`).
- */
-function extractSunSign(rawChart: unknown): string | null {
-  if (!rawChart || typeof rawChart !== 'object') return null
-  const chart = rawChart as Record<string, unknown>
-
-  // 1. planets object or array
-  if (chart.planets && typeof chart.planets === 'object') {
-    const planets = chart.planets as Record<string, unknown>
-    const sun = (planets.Sun ?? planets.sun) as Record<string, unknown> | undefined
-    if (sun && typeof sun === 'object' && typeof sun.sign === 'string' && sun.sign.trim()) {
-      return sun.sign.trim()
-    }
-    if (Array.isArray(chart.planets)) {
-      const entry = chart.planets.find(
-        (p: unknown) =>
-          p &&
-          typeof p === 'object' &&
-          ((p as any).name?.toLowerCase?.() === 'sun' ||
-            (p as any).label?.toLowerCase?.() === 'sun')
-      ) as Record<string, unknown> | undefined
-      if (entry && typeof entry.sign === 'string' && entry.sign.trim()) {
-        return entry.sign.trim()
-      }
-    }
-  }
-
-  // 2. Direct Sun property
-  const directSun = (chart.Sun ?? chart.sun) as Record<string, unknown> | undefined
-  if (
-    directSun &&
-    typeof directSun === 'object' &&
-    typeof directSun.sign === 'string' &&
-    directSun.sign.trim()
-  ) {
-    return directSun.sign.trim()
-  }
-
-  // 3. Forge output with tropical.CelestialBodies
-  if (chart.tropical && typeof chart.tropical === 'object') {
-    const tropical = chart.tropical as Record<string, unknown>
-    if (tropical.CelestialBodies && typeof tropical.CelestialBodies === 'object') {
-      const cb = tropical.CelestialBodies as Record<string, unknown>
-      if (Array.isArray(cb.all)) {
-        const sun = cb.all.find(
-          (entry: unknown) =>
-            entry && typeof entry === 'object' && (entry as any).label?.toLowerCase?.() === 'sun'
-        ) as Record<string, unknown> | undefined
-        const signLabel = (sun?.Sign as Record<string, unknown> | undefined)?.label
-        if (typeof signLabel === 'string' && signLabel.trim()) {
-          return signLabel.trim()
-        }
-      }
-      const directCbSun = (cb.Sun ?? cb.sun) as Record<string, unknown> | undefined
-      const signLabel = (directCbSun?.Sign as Record<string, unknown> | undefined)?.label
-      if (typeof signLabel === 'string' && signLabel.trim()) {
-        return signLabel.trim()
-      }
-    }
-  }
-
-  return null
-}
-
-/**
- * For unauthorized callers, projects user-created natal charts to only what the
- * public gallery consumes (Sun sign for faction filtering). Degrees, ascendant,
- * houses, aspects, and other planetary bodies are strictly redacted.
- */
-function projectPublicNatalChart(rawChart: unknown): { planets: { Sun: { sign: string } } } | null {
-  const sunSign = extractSunSign(rawChart)
-  if (!sunSign) return null
-  return {
-    planets: {
-      Sun: {
-        sign: sunSign,
-      },
-    },
-  }
 }
 
 async function resolveCreatorAgentIds(userId: string): Promise<Set<string>> {
@@ -143,6 +54,19 @@ async function resolveCreatorAgentIds(userId: string): Promise<Set<string>> {
   return ids
 }
 
+async function isDatabaseAdmin(user: {
+  id?: string | null
+  email?: string | null
+}): Promise<boolean> {
+  try {
+    const { requireAdmin } = await import('@/lib/admin-auth')
+    return (await requireAdmin(user)).ok
+  } catch {
+    // Fail closed: if the role cannot be verified, the caller is not an admin.
+    return false
+  }
+}
+
 async function resolveAuthContext(request: NextRequest): Promise<AuthContext> {
   let isServiceOrAdmin = false
   let creatorUserId: string | null = null
@@ -161,7 +85,10 @@ async function resolveAuthContext(request: NextRequest): Promise<AuthContext> {
       const { auth } = await import('@/lib/auth')
       const session = await auth()
       if (session?.user) {
-        if (session.user.role === 'admin') {
+        // `role` on the session is a claim (stamped at sign-in, or copied from the
+        // alchm.kitchen bridge). Entitlement comes from the database, the same way every
+        // /api/admin/* route decides it, so a stale or bridged claim cannot unlock birth data.
+        if (session.user.role === 'admin' && (await isDatabaseAdmin(session.user))) {
           isServiceOrAdmin = true
         } else if (session.user.id) {
           creatorUserId = session.user.id
@@ -186,28 +113,24 @@ function isAgentAuthorized(agent: any, auth: AuthContext): boolean {
 
 // Maps a historical_agents row (Railway response or Prisma row — same table,
 // same field names) to the gallery's agent shape.
-function formatAgentRow(agent: any, isAuthorized = false) {
-  const isUserCreated =
-    agent.historicalEra === 'user_created' ||
-    agent.craftedBy === 'philosopher-stone-user' ||
-    agent.historicalEra === 'MONICA_SPECIAL' ||
-    agent.isUserCreated === true
+//
+// Every value built from a JSON column (or from the owner's own text) goes through an
+// allow-list projection for a caller who is not entitled to the row: see
+// lib/agents/forged-privacy.ts. `forcePrivate` marks a row that must be treated as a
+// person's even though nothing on it says so (a Railway row, which carries no `craftedBy`).
+function formatAgentRow(agent: any, isAuthorized = false, forcePrivate = false) {
+  const isUserCreated = isUserCreatedAgentRow(agent)
+  const redact = (isUserCreated || forcePrivate) && !isAuthorized
 
-  const birthData =
-    !isUserCreated || isAuthorized
-      ? {
-          date: agent.birthDate,
-          time: agent.birthTime,
-          location: agent.birthLocation,
-        }
-      : {
-          location: {
-            name: extractLocationName(agent.birthLocation) ?? 'Unknown',
-          },
-        }
+  const birthData = redact
+    ? projectPublicBirthData(agent.birthLocation)
+    : {
+        date: agent.birthDate,
+        time: agent.birthTime,
+        location: agent.birthLocation,
+      }
 
-  const natalChart =
-    !isUserCreated || isAuthorized ? agent.natalChart : projectPublicNatalChart(agent.natalChart)
+  const natalChart = redact ? projectPublicNatalChart(agent.natalChart) : agent.natalChart
 
   return {
     id: agent.agentId,
@@ -223,16 +146,22 @@ function formatAgentRow(agent: any, isAuthorized = false) {
       signature: agent.signature || 'Standard',
     },
     personality: {
-      core: agent.personalityCore || {},
-      shadows: agent.personalityShadows || [],
-      gifts: agent.personalityGifts || [],
-      challenges: agent.personalityChallenges || [],
+      core: redact
+        ? projectPublicPersonalityCore(agent.personalityCore)
+        : agent.personalityCore || {},
+      shadows: redact
+        ? projectStringList(agent.personalityShadows)
+        : agent.personalityShadows || [],
+      gifts: redact ? projectStringList(agent.personalityGifts) : agent.personalityGifts || [],
+      challenges: redact
+        ? projectStringList(agent.personalityChallenges)
+        : agent.personalityChallenges || [],
       currentMood: agent.currentMood || 'Neutral',
       evolutionStage: agent.evolutionStage || 0,
     },
     abilities: {
       specialty: agent.specialty,
-      wisdomDomains: agent.wisdomDomains || [],
+      wisdomDomains: redact ? projectStringList(agent.wisdomDomains) : agent.wisdomDomains || [],
       teachingStyle: agent.teachingStyle || 'Standard',
       resonanceType: agent.resonanceType || 'Standard',
       uniquePower: agent.uniquePower || '',
@@ -241,7 +170,7 @@ function formatAgentRow(agent: any, isAuthorized = false) {
       avatar: agent.avatar,
       color: agent.color,
       symbol: agent.symbol,
-      aura: agent.aura,
+      aura: redact ? projectPublicAura(agent.aura) : agent.aura,
     },
     stats: {
       conversations: agent.conversations,
@@ -271,13 +200,39 @@ function formatAgentRow(agent: any, isAuthorized = false) {
     // also hydrates these directly from Neon via /api/agents/leveling).
     level: agent.level,
     xp: agent.xp,
-    evolutionValues: agent.evolutionValues,
+    evolutionValues: redact ? projectNumberRecord(agent.evolutionValues) : agent.evolutionValues,
     evTotal: agent.evTotal,
-    ivSnapshot: agent.ivSnapshot,
+    ivSnapshot: redact ? projectNumberRecord(agent.ivSnapshot) : agent.ivSnapshot,
     isUserCreated,
     craftedBy: agent.craftedBy || 'philosopher-stone',
     historicalEra: agent.historicalEra,
   }
+}
+
+// The answer varies by caller (a creator, an admin, or a holder of INTERNAL_API_SECRET gets
+// more than a stranger), so a shared cache must never serve one caller's answer to another.
+// vercel.json gives every /api/* response `s-maxage=60`: an entitled body must say it is
+// private and uncacheable itself. `CDN-Cache-Control` is the CDN-targeted twin that
+// Vercel's CDN reads ahead of `Cache-Control`, so the guarantee does not rest on which of
+// vercel.json's header and ours wins.
+const VARY_BY_CALLER = 'Authorization, Cookie, X-Internal-Secret'
+
+/** True when this caller may receive data the public projection withholds. */
+function isEntitledCaller(auth: AuthContext): boolean {
+  return auth.isServiceOrAdmin || auth.creatorUserId !== null
+}
+
+function respond(
+  body: GetAgentsResponse,
+  auth: AuthContext,
+  init: { status?: number } = {}
+): NextResponse<GetAgentsResponse> {
+  const headers: Record<string, string> = { Vary: VARY_BY_CALLER }
+  if (isEntitledCaller(auth)) {
+    headers['Cache-Control'] = 'private, no-store'
+    headers['CDN-Cache-Control'] = 'no-store'
+  }
+  return NextResponse.json(body, { status: init.status, headers })
 }
 
 export async function GET(request: NextRequest): Promise<NextResponse<GetAgentsResponse>> {
@@ -292,14 +247,20 @@ export async function GET(request: NextRequest): Promise<NextResponse<GetAgentsR
       const offset = parseInt(searchParams.get('offset') || '0')
       const dbAgents = await HistoricalAgentsService.getPlanetaryDegreeAgents({ limit, offset })
       const agents = dbAgents.map(a => formatAgentRow(a, isAgentAuthorized(a, authContext)))
-      return NextResponse.json({ success: true, agents, total: agents.length })
+      return respond({ success: true, agents, total: agents.length }, authContext)
     } catch (error: any) {
-      return NextResponse.json({
-        success: false,
-        agents: [],
-        total: 0,
-        error: `Failed to fetch planetary agents: ${error.message}`,
-      })
+      // The datastore's own message (a query excerpt, a source path, a host) stays in the log.
+      console.error('[agents] planetary roster fetch failed:', error?.message)
+      return respond(
+        {
+          success: false,
+          agents: [],
+          total: 0,
+          error: 'Planetary agents are temporarily unavailable',
+        },
+        authContext,
+        { status: 503 }
+      )
     }
   }
 
@@ -309,15 +270,25 @@ export async function GET(request: NextRequest): Promise<NextResponse<GetAgentsR
       const limit = parseInt(searchParams.get('limit') || '100')
       const offset = parseInt(searchParams.get('offset') || '0')
       const dbAgents = await backend.agents.list({ skip: offset, limit })
-      const agents = dbAgents.map(a => formatAgentRow(a, isAgentAuthorized(a, authContext)))
-      return NextResponse.json({ success: true, agents, total: agents.length })
+      // A Railway row carries no `craftedBy`, and the era it is stamped with is whatever the
+      // writer chose (a person created through POST /api/agents gets `modern_pre1950`). So here
+      // public means "a canonical figure or a sky-generated agent"; everything else is a
+      // person's until proven otherwise.
+      const agents = dbAgents.map(a =>
+        formatAgentRow(a, isAgentAuthorized(a, authContext), !isPublicRosterId(a.agentId))
+      )
+      return respond({ success: true, agents, total: agents.length }, authContext)
     } catch (error: any) {
-      return NextResponse.json({
-        success: true,
-        agents: DEMO_AGENTS,
-        total: DEMO_AGENTS.length,
-        error: `Backend error, falling back to demo data: ${error.message}`,
-      })
+      console.error('[agents] backend roster fetch failed, serving demo data:', error?.message)
+      return respond(
+        {
+          success: true,
+          agents: DEMO_AGENTS,
+          total: DEMO_AGENTS.length,
+          error: 'Backend unavailable, falling back to demo data',
+        },
+        authContext
+      )
     }
   }
 
@@ -353,14 +324,9 @@ export async function GET(request: NextRequest): Promise<NextResponse<GetAgentsR
     console.warn('User-created roster fetch failed (canonical roster only):', error.message)
   }
 
-  const canonicalIds = new Set(canonical.map(a => a.id))
-  const allAgents = [...canonical, ...userCreated.filter(a => !canonicalIds.has(a.id))]
+  const allAgents = [...canonical, ...userCreated.filter(a => !CANONICAL_AGENT_IDS.has(a.id))]
 
-  return NextResponse.json({
-    success: true,
-    agents: allAgents,
-    total: allAgents.length,
-  })
+  return respond({ success: true, agents: allAgents, total: allAgents.length }, authContext)
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {

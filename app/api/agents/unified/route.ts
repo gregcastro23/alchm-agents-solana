@@ -6,6 +6,7 @@ import { consciousnessPersistence } from '@/lib/consciousness-persistence'
 import { calculateAgentChatPricing } from '@/lib/economy/chat-pricing'
 import type { ByokProvider } from '@/lib/premium/tiers'
 import { createHash } from 'node:crypto'
+import { requireAdminOrService } from '@/lib/security/privileged-api-auth'
 
 interface UnifiedAgentRequest {
   action: string
@@ -18,6 +19,69 @@ interface UnifiedAgentResponse {
   error?: string
   message?: string
   timestamp: string
+}
+
+/**
+ * What this route does without credentials, and nothing else.
+ *
+ * `chat`, `interact` and `multi_agent_chat` are the product: each authenticates the user
+ * itself (a session, or this week's free rotation) and prices the call. `evolve` answers 501
+ * and touches nothing. `health` is a static literal.
+ *
+ * Every other action (`list`, `get`, `create`, `update`, `delete`, `stats`, `search`,
+ * `dashboard`) is a verbatim proxy of Railway's agent CRUD, and `lib/backend.ts` attaches
+ * INTERNAL_API_SECRET to every upstream call, so an unauthenticated proxy lends the platform's
+ * credential to any caller: it served every forged vessel's exact birth date, time and
+ * coordinates, and let anyone rename or delete a vessel. Those need an admin session or the
+ * internal secret. The list is an allow-list on purpose: an action added to the switch later
+ * is gated until someone decides it is public.
+ */
+const PUBLIC_POST_ACTIONS: ReadonlySet<string> = new Set([
+  'chat',
+  'interact',
+  'multi_agent_chat',
+  'evolve',
+])
+const PUBLIC_GET_ACTIONS: ReadonlySet<string> = new Set(['health'])
+
+// Whatever this route answers to an entitled caller must not be served to anyone else from a
+// shared cache (vercel.json gives every /api/* response `s-maxage=60`), and a 401 must not be
+// served to the admin who asks next.
+const GATED_HEADERS = {
+  'Cache-Control': 'private, no-store',
+  Vary: 'Authorization, Cookie, X-Internal-Secret',
+}
+
+/** `null` when the caller may proceed; otherwise the response to return. */
+async function denyUnlessAdminOrService(
+  request: NextRequest,
+  timestamp: string
+): Promise<NextResponse<UnifiedAgentResponse> | null> {
+  try {
+    const access = await requireAdminOrService(request)
+    if (access.ok) return null
+    const detail = (await access.response
+      .clone()
+      .json()
+      .catch(() => null)) as {
+      error?: unknown
+    } | null
+    return NextResponse.json(
+      {
+        success: false,
+        error: typeof detail?.error === 'string' ? detail.error : 'Forbidden',
+        timestamp,
+      },
+      { status: access.response.status, headers: GATED_HEADERS }
+    )
+  } catch (error) {
+    // Identity could not be established: fail closed, and keep the cause in the log.
+    console.error('[agents/unified] authorization check failed:', error)
+    return NextResponse.json(
+      { success: false, error: 'Authorization unavailable', timestamp },
+      { status: 503, headers: GATED_HEADERS }
+    )
+  }
 }
 
 function requestParameter(
@@ -56,6 +120,11 @@ export async function POST(request: NextRequest): Promise<NextResponse<UnifiedAg
     const { action, parameters = {} } = body
 
     const timestamp = new Date().toISOString()
+
+    if (!PUBLIC_POST_ACTIONS.has(action)) {
+      const denied = await denyUnlessAdminOrService(request, timestamp)
+      if (denied) return denied
+    }
 
     switch (action) {
       case 'list': {
@@ -536,10 +605,18 @@ export async function GET(request: NextRequest): Promise<NextResponse<UnifiedAge
   const timestamp = new Date().toISOString()
 
   try {
+    if (!PUBLIC_GET_ACTIONS.has(action)) {
+      const denied = await denyUnlessAdminOrService(request, timestamp)
+      if (denied) return denied
+    }
+
     switch (action) {
       case 'list': {
         const listData = await backend.agents.list(Object.fromEntries(searchParams))
-        return NextResponse.json({ success: true, data: listData, timestamp })
+        return NextResponse.json(
+          { success: true, data: listData, timestamp },
+          { headers: GATED_HEADERS }
+        )
       }
 
       case 'health':
@@ -560,7 +637,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<UnifiedAge
             error: `Unknown GET action: ${action}`,
             timestamp,
           },
-          { status: 400 }
+          { status: 400, headers: GATED_HEADERS }
         )
     }
   } catch (error) {
@@ -570,7 +647,7 @@ export async function GET(request: NextRequest): Promise<NextResponse<UnifiedAge
         error: error instanceof Error ? error.message : 'Internal server error',
         timestamp,
       },
-      { status: 500 }
+      { status: 500, headers: GATED_HEADERS }
     )
   }
 }
