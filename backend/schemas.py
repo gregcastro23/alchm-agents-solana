@@ -84,6 +84,78 @@ class Agent(AgentBase):
 
     model_config = ConfigDict(from_attributes=True)
 
+class PublicBirthLocation(BaseModel):
+    """The only part of a person's birth place that is public: its name.
+
+    Latitude and longitude are not declared, and ``extra="ignore"`` drops them if a
+    caller ever passes the full location dict in.
+    """
+
+    model_config = ConfigDict(extra="ignore")
+
+    name: str
+
+
+class PublicAgent(BaseModel):
+    """What an unauthenticated caller may see of a user-created ("forged vessel") row.
+
+    This is an ALLOW-LIST: it is a standalone model, not a subclass of ``Agent``, so a
+    field added to ``AgentBase`` / ``Agent`` later does not become public by inheritance.
+    Everything that is a person's private data is simply not declared here: birth date,
+    birth time, coordinates, birth year, natal chart, aura, and the owner's free text
+    (``personalityCore`` is reduced to ``agent_privacy.PUBLIC_PERSONALITY_CORE_KEYS``).
+    ``extra="forbid"`` makes the projection fail loudly instead of passing an extra
+    field through.
+
+    ``redacted`` is always true. A projected row is otherwise shaped like a complete
+    record, and a reader must be able to tell "this field is withheld" from "this
+    agent has no birth data".
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    id: str
+    agentId: str
+    name: str
+    title: Optional[str] = None
+    birthLocation: PublicBirthLocation
+
+    consciousnessLevel: Optional[str] = None
+    monicaConstant: Optional[float] = None
+    dominantElement: Optional[str] = None
+    dominantModality: Optional[str] = None
+
+    specialty: Optional[str] = None
+    wisdomDomains: List[str] = Field(default_factory=list)
+
+    avatar: Optional[str] = None
+    color: Optional[str] = None
+    symbol: Optional[str] = None
+
+    personalityCore: Dict[str, str] = Field(default_factory=dict)
+
+    historicalEra: Optional[str] = None
+    culture: Optional[str] = None
+    geography: Optional[str] = None
+
+    currentMood: Optional[str] = None
+    evolutionStage: Optional[int] = None
+
+    conversations: Optional[int] = None
+    wisdomShared: Optional[int] = None
+    resonanceScore: Optional[float] = None
+    evolutionPoints: Optional[int] = None
+
+    level: Optional[int] = None
+    xp: Optional[int] = None
+    evTotal: Optional[int] = None
+
+    lastActive: Optional[datetime] = None
+    isActive: Optional[bool] = None
+
+    redacted: Literal[True] = True
+
+
 class ConversationBase(BaseModel):
     agentId: str
     sessionId: str
