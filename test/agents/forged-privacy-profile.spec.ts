@@ -6,17 +6,19 @@ import {
   ANONYMOUS_VIEWER,
   PRIVATE_PROGRESSION_REASON,
   agentRowFacts,
-  extractLocationName,
-  extractSunSign,
   isEntitledToForgedVessel,
   isForgedVesselRow,
   isRestrictedProfileRow,
   projectForgedAgentForPublic,
   projectProgressionForPublic,
-  projectPublicBirthData,
-  projectPublicNatalChart,
   type ForgedViewer,
 } from '@/lib/agents/forged-privacy-profile'
+import {
+  extractLocationName,
+  extractSunSign,
+  projectPublicBirthData,
+  projectPublicNatalChart,
+} from '@/lib/agents/forged-privacy'
 
 const viewer = (over: Partial<ForgedViewer> = {}): ForgedViewer => ({
   ...ANONYMOUS_VIEWER,
