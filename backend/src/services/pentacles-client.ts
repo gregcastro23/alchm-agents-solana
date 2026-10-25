@@ -1,4 +1,14 @@
+import { assertCanonicalRosterAgent } from './pentacles-roster-guard.js'
+
 type Row = Record<string, unknown>
+
+/**
+ * Reducers that write a birth moment, coordinates or chart placements into a table Pentacles
+ * clients can read. Each takes the agent key as its first argument. They are refused for any
+ * key that is not a canonical roster figure, whoever the caller is: `call` is the one door
+ * every reducer invocation walks through, so a new caller cannot route around the service.
+ */
+const CHART_PUBLISHING_REDUCERS: ReadonlySet<string> = new Set(['seed_agent_player'])
 
 interface SchemaVariant {
   name?: string | { some?: string }
@@ -197,6 +207,9 @@ export class PentaclesBackendClient {
   }
 
   async call(name: string, args: unknown[]): Promise<void> {
+    // Checked before the token and before any network I/O: a refusal must not depend on
+    // configuration, and nothing about the vessel may leave the process.
+    if (CHART_PUBLISHING_REDUCERS.has(name)) assertCanonicalRosterAgent(args[0])
     if (!this.ownerToken) {
       throw new Error('PENTACLES_SPACETIME_OWNER_TOKEN is required for privileged reducer calls')
     }
