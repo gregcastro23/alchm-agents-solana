@@ -38,7 +38,7 @@
  *
  * The predicate (`isUserCreatedAgentRow`), the Sun-sign and place-name extraction, and the public
  * birth/chart projections live in `forged-privacy.ts`, which `GET /api/agents`, `GET /api/feed` and
- * `/api/agents/unified` use too, so the gallery API and this profile page cannot project differently.
+ * the unified-agents proxy use too, so the gallery API and this profile page cannot project differently.
  * This module adds only what a PAGE needs on top: who is looking, the wider "restricted profile
  * row" check, and the projection of a whole agent and of its progression.
  */
