@@ -57,6 +57,23 @@ Run it against **every** database the app or the Railway backend reads (producti
 staging). It refuses to run without `DATABASE_URL`, prints host and database only, and is
 idempotent. The chart itself stays in the `natalChart` column.
 
+## Verify the cache headers on a deployed preview
+
+`vercel.json` puts `Cache-Control: s-maxage=60, stale-while-revalidate` on every `/api/*`
+response. Whether Vercel applies that over a `Cache-Control` the function sets could not be
+checked from a development machine (a local `next start` shows the route's own headers and
+nothing of `vercel.json`). The entitled responses therefore also send `CDN-Cache-Control:
+no-store`, a different header name that `vercel.json` cannot overwrite and that Vercel
+documents as taking precedence over `Cache-Control` for its CDN. After the first deploy:
+
+```bash
+curl -sI -H "Authorization: Bearer $INTERNAL_API_SECRET" https://<deployment>/api/agents | grep -i -E "cache-control|vary"
+```
+
+Expect `cache-control: private, no-store` and `vary: Authorization, Cookie, X-Internal-Secret`.
+If `cache-control` shows `s-maxage=60`, `vercel.json` wins for that header: narrow its `/api/(.*)`
+source so it skips `/api/agents`, `/api/agents/unified` and `/api/agents/*/ratings`.
+
 ## Not covered here
 
 The Python backend (`api.agents.alchm.kitchen` `GET/PUT/DELETE /api/agents*`), the Pentacles

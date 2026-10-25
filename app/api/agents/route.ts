@@ -212,9 +212,11 @@ function formatAgentRow(agent: any, isAuthorized = false, forcePrivate = false) 
 // The answer varies by caller (a creator, an admin, or a holder of INTERNAL_API_SECRET gets
 // more than a stranger), so a shared cache must never serve one caller's answer to another.
 // vercel.json gives every /api/* response `s-maxage=60`: an entitled body must say it is
-// private and uncacheable itself. `CDN-Cache-Control` is the CDN-targeted twin that
-// Vercel's CDN reads ahead of `Cache-Control`, so the guarantee does not rest on which of
-// vercel.json's header and ours wins.
+// private and uncacheable itself. Whether Vercel applies vercel.json's `Cache-Control` over
+// the one a function sets could not be checked offline, so `CDN-Cache-Control: no-store` rides
+// along: Vercel documents it as taking precedence over `Cache-Control` for its own CDN, and
+// it is a different header name, so vercel.json's rule cannot overwrite it. Verify on a
+// deployed preview: docs/integrations/FORGED_VESSEL_PRIVACY.md.
 const VARY_BY_CALLER = 'Authorization, Cookie, X-Internal-Secret'
 
 /** True when this caller may receive data the public projection withholds. */
