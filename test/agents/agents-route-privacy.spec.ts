@@ -417,6 +417,7 @@ interface World {
   session?: any
   createdAgents?: any[]
   dbUser?: any
+  dbError?: Error
 }
 
 function mockWorld(world: World) {
@@ -428,7 +429,11 @@ function mockWorld(world: World) {
           (world.createdAgents ?? []).filter(r => r.creatorId === args?.where?.creatorId)
         ),
       },
-      users: { findFirst: vi.fn().mockResolvedValue(world.dbUser ?? null) },
+      users: {
+        findFirst: world.dbError
+          ? vi.fn().mockRejectedValue(world.dbError)
+          : vi.fn().mockResolvedValue(world.dbUser ?? null),
+      },
     },
   }))
   vi.doMock('@/lib/backend', () => ({
@@ -711,6 +716,37 @@ describe('GET /api/agents: a vessel forged through the real writer', () => {
       })
     })
   }
+
+  it('a session claiming admin is a stranger when the role cannot be read from the database', async () => {
+    const { json } = await getAgents({
+      rows: [vessel.row],
+      session: { user: { id: DB_ADMIN.id, email: DB_ADMIN.email, role: 'admin' } },
+      dbError: new Error('connection refused'),
+    })
+    expectPublicView(
+      json.agents.find((a: any) => a.id === vessel.agentId),
+      vessel.row
+    )
+  })
+
+  it('...and when the admin check itself throws', async () => {
+    vi.doMock('@/lib/admin-auth', () => ({
+      requireAdmin: vi.fn().mockRejectedValue(new Error('admin guard unavailable')),
+    }))
+    try {
+      const { res, json } = await getAgents({
+        rows: [vessel.row],
+        session: { user: { id: DB_ADMIN.id, email: DB_ADMIN.email, role: 'admin' } },
+      })
+      expect(res.status).toBe(200)
+      expectPublicView(
+        json.agents.find((a: any) => a.id === vessel.agentId),
+        vessel.row
+      )
+    } finally {
+      vi.doUnmock('@/lib/admin-auth')
+    }
+  })
 
   it("another creator's vessel stays redacted for a signed-in creator of a different vessel", async () => {
     const { json } = await getAgents({
