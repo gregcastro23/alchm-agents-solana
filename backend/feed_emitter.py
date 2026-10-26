@@ -67,7 +67,12 @@ _legacy = os.getenv("ALCHM_KITCHEN_URL", "").rstrip("/")
 if _legacy and "railway.app" not in _legacy and ALCHM_KITCHEN_URL == "https://alchm.kitchen":
     ALCHM_KITCHEN_URL = _legacy
 
-INTERNAL_API_SECRET = os.getenv("INTERNAL_API_SECRET", "")
+INTERNAL_API_SECRET = (
+    os.getenv("INTERNAL_API_SECRET")
+    or os.getenv("ALCHM_KITCHEN_SYNC_SECRET")
+    or os.getenv("WHATTOEATNEXT_API_KEY")
+    or ""
+)
 AGENTIC_EMAIL_DOMAIN = "@agentic.alchm.kitchen"
 FEED_EMIT_TIMEOUT_SECONDS = 4.0
 
@@ -235,6 +240,7 @@ async def _post_feed_event(
     payload["idempotencyKey"] = event_id
     headers = {
         "Authorization": f"Bearer {INTERNAL_API_SECRET}",
+        "X-Sync-Secret": INTERNAL_API_SECRET,
         "Content-Type": "application/json",
         "Idempotency-Key": event_id,
     }

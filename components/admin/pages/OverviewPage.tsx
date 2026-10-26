@@ -4,6 +4,7 @@ import CosmicTelemetryPanel from '@/components/admin/panels/CosmicTelemetryPanel
 import SystemPulsePanel, { type PulsePayload } from '@/components/admin/panels/SystemPulsePanel'
 import { LegacyEnvelopeSchema, type DashboardPayload } from '@/lib/admin/page-schemas'
 import { AdminFrame } from './AdminFrame'
+import { ProgressionOverview } from './ProgressionOverview'
 import { useAdminNavigate, useDashboard } from './hooks'
 import {
   Card,
@@ -178,6 +179,7 @@ export function OverviewPage() {
         onRetry={pulse.refresh}
         onNavigate={navigate}
       />
+      <ProgressionOverview />
       <LoadState loaded={dashboard.loaded} onRetry={dashboard.refresh} />
       {data && <OverviewView data={data} />}
     </AdminFrame>

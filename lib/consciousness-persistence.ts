@@ -70,7 +70,7 @@ class ConsciousnessPersistence {
         create: {
           agentId,
           userId,
-          currentLevel: state.currentLevel || 'bronze',
+          currentLevel: state.currentLevel || 'copper',
           totalPower: state.totalPower || 0,
           interactionCount: state.interactionCount || 0,
           lastInteraction: state.lastInteraction || new Date(),
@@ -248,7 +248,7 @@ class ConsciousnessPersistence {
    * Calculate consciousness level based on total power
    */
   private calculateLevel(totalPower: number): string {
-    if (totalPower < 100) return 'bronze'
+    if (totalPower < 100) return 'copper'
     if (totalPower < 500) return 'silver'
     if (totalPower < 1000) return 'gold'
     if (totalPower < 2500) return 'platinum'
@@ -292,7 +292,7 @@ class ConsciousnessPersistence {
 
       // Create fresh state
       return this.saveEvolutionState(userId, agentId, {
-        currentLevel: 'bronze',
+        currentLevel: 'copper',
         totalPower: 0,
         interactionCount: 0,
         specialAbilitiesUnlocked: [],

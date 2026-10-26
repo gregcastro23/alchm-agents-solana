@@ -1,0 +1,114 @@
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
+
+// (test/setup.ts already stubs 'server-only'.)
+
+// Prevent any network fetch from stalling tests
+const originalFetch = globalThis.fetch
+beforeAll(() => {
+  globalThis.fetch = async () => {
+    throw new Error('network disabled in test')
+  }
+})
+afterAll(() => {
+  globalThis.fetch = originalFetch
+})
+
+const { mockPrisma } = vi.hoisted(() => ({
+  mockPrisma: {
+    historical_agents: {
+      findUnique: async () => null,
+      findMany: async () => [],
+      findFirst: async () => null,
+    },
+    users: {
+      findUnique: async () => null,
+      findFirst: async () => null,
+    },
+    created_agents: {
+      findFirst: async () => null,
+    },
+    tokenBalance: {
+      findUnique: async () => null,
+    },
+    token_balances: {
+      findUnique: async () => null,
+    },
+  },
+}))
+
+vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
+vi.mock('@/lib/auth', () => ({ auth: async () => null }))
+vi.mock('@/lib/agents/rating/live-sky', () => ({
+  resolveLiveSky: async () => {
+    throw new Error('live sky unavailable in test')
+  },
+  SkyUnavailableError: class SkyUnavailableError extends Error {},
+}))
+
+import { NextRequest } from 'next/server'
+import { getHistoricalAgent } from '@/lib/agents/historical'
+import { RATING_BOUNDS } from '@/lib/agents/rating-contract'
+import { ALL_VESSEL_STAT_KEYS, type VesselStats } from '@/lib/vessel/progression'
+
+const request = async (slug: string) => {
+  const { GET } = await import('@/app/api/agents/[slug]/ratings/route')
+  return GET(new NextRequest(`http://localhost/api/agents/${slug}/ratings`), {
+    params: Promise.resolve({ slug }),
+  })
+}
+
+describe('agent rating progression boundary', () => {
+  it('resolves pilot agents from their actual catalog with seeded conversation experience', async () => {
+    const response = await request('isaac-newton')
+    const payload = await response.json()
+    expect(response.status).toBe(200)
+    expect(payload.key).toBe(getHistoricalAgent('isaac-newton')!.id)
+    expect(payload.totalXp).toBe(19725) // 789 seeded conversations * 25 XP
+    expect(payload.vesselLevel).toBe(15) // Level 15 earned growth
+    expect(payload.currentOverall).toBeNull()
+    expect(payload.progressionStatus).toBe('unavailable')
+    expect(payload.ratings.power).toBeGreaterThanOrEqual(25)
+    expect(payload.ovr).toBeGreaterThanOrEqual(25)
+  })
+
+  it('bounds live/estimated progression transitDelta within [-15, +15]', async () => {
+    const { computeAgentProgression } = await import('@/lib/agents/leveling-service')
+    const stats = Object.fromEntries(ALL_VESSEL_STAT_KEYS.map(key => [key, 65])) as VesselStats
+    const planets = Object.fromEntries(
+      [
+        'Sun',
+        'Moon',
+        'Mercury',
+        'Venus',
+        'Mars',
+        'Jupiter',
+        'Saturn',
+        'Uranus',
+        'Neptune',
+        'Pluto',
+        'Chiron',
+      ].map(p => [p, { longitude: 120 }])
+    )
+    const result = computeAgentProgression(
+      {
+        id: 'isaac-newton',
+        sacredStats: stats,
+        stats: { conversations: 789 },
+        consciousness: {
+          natalChart: {
+            provenance: 'computed',
+            planets,
+          },
+        },
+      },
+      { now: Date.parse('2026-10-20T12:00:00Z') }
+    )
+    expect(result.transitDelta).not.toBeNull()
+    expect(Math.abs(result.transitDelta!)).toBeLessThanOrEqual(RATING_BOUNDS.MAX_TRANSIT_DELTA)
+    expect(Math.abs(result.transitDelta!)).toBeLessThanOrEqual(15)
+  })
+
+  it('returns 404 for an unknown non-existent agent', async () => {
+    expect((await request('unknown-celestial-agent')).status).toBe(404)
+  })
+})

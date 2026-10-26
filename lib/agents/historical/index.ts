@@ -271,6 +271,16 @@ export const getHistoricalAgent = (id: string) => {
   )
   if (suffixStripped.length === 1) return suffixStripped[0]
 
+  // 2c. Preposition / naming variation normalization (e.g. hildegard-von-bingen <-> hildegard-of-bingen)
+  if (slug.includes('-von-') || slug.includes('-of-')) {
+    const ofVariant = slug.replace(/-von-/g, '-of-')
+    const vonVariant = slug.replace(/-of-/g, '-von-')
+    const variantMatch = HISTORICAL_AGENTS.find(
+      agent => agent.id.toLowerCase() === ofVariant || agent.id.toLowerCase() === vonVariant
+    )
+    if (variantMatch) return variantMatch
+  }
+
   return undefined
 }
 

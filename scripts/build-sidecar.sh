@@ -31,6 +31,7 @@
 #                        Silicon under Rosetta. Default:
 #                        backend/venv-x86_64. Auto-created if missing
 #                        when Rosetta is available.
+#   PA_MCP_X86_PYTHON    Rosetta-capable Python 3.11+ for creating that venv.
 #
 # Why two venvs: PyInstaller's --target-arch is *not* a true
 # cross-compiler. It rewrites the bootloader's load commands but still
@@ -50,7 +51,7 @@ WTEN_MCP_SRC="$ROOT_DIR/../WhatToEatNext-master/mcp-server/src/index.ts"
 
 PA_MCP_VENV="${PA_MCP_VENV:-$BACKEND_DIR/venv}"
 PA_MCP_VENV_X86_64="${PA_MCP_VENV_X86_64:-$BACKEND_DIR/venv-x86_64}"
-PA_MCP_DEPS=(httpx sqlalchemy python-dotenv pyinstaller)
+PA_MCP_DEPS=(-r "$BACKEND_DIR/requirements-mcp.lock")
 
 SKIP_ORCHESTRATOR=0
 SKIP_ALCHM_MCP=0
@@ -129,13 +130,15 @@ ensure_x86_64_venv() {
   log "Bootstrapping x86_64 venv at $PA_MCP_VENV_X86_64"
   # Use the system universal2 python; the arm64 venv's python wrapper
   # cannot be launched as x86_64.
-  local sys_py="/Library/Developer/CommandLineTools/Library/Frameworks/Python3.framework/Versions/3.9/bin/python3.9"
-  if [[ ! -x "$sys_py" ]]; then
-    sys_py="$(command -v python3.9 || command -v python3)"
+  local sys_py="${PA_MCP_X86_PYTHON:-$(command -v python3.11 || command -v python3)}"
+  if ! /usr/bin/arch -x86_64 "$sys_py" -c 'import sys; assert sys.version_info >= (3, 11)' 2>/dev/null; then
+    echo "[build-sidecar] Set PA_MCP_X86_PYTHON to a Rosetta-capable Python 3.11+ interpreter." >&2
+    return 1
   fi
   /usr/bin/arch -x86_64 "$sys_py" -m venv "$PA_MCP_VENV_X86_64"
   /usr/bin/arch -x86_64 "$PA_MCP_VENV_X86_64/bin/pip" install --upgrade pip >&2
-  /usr/bin/arch -x86_64 "$PA_MCP_VENV_X86_64/bin/pip" install "${PA_MCP_DEPS[@]}" >&2
+  /usr/bin/arch -x86_64 "$PA_MCP_VENV_X86_64/bin/pip" install --require-hashes "${PA_MCP_DEPS[@]}" >&2
+  /usr/bin/arch -x86_64 "$PA_MCP_VENV_X86_64/bin/pip" install "pyinstaller==6.22.3" >&2
 }
 
 build_pa_mcp() {
@@ -169,6 +172,25 @@ build_pa_mcp() {
     return 1
   fi
 
+  if ! $arch_wrap "$venv/bin/python" - "$BACKEND_DIR/requirements-mcp.lock" <<'PY'
+import sys
+from importlib.metadata import version
+from pathlib import Path
+from packaging.requirements import Requirement
+
+assert sys.version_info >= (3, 11), "pa-mcp requires Python 3.11+"
+for line in Path(sys.argv[1]).read_text().splitlines():
+    if not line or line[0].isspace() or line.startswith("#"):
+        continue
+    requirement = Requirement(line.removesuffix("\\").strip())
+    if requirement.marker is None or requirement.marker.evaluate():
+        assert requirement.specifier.contains(version(requirement.name), prereleases=True), f"Locked dependency mismatch: {requirement.name}"
+assert version("pyinstaller") == "6.22.3", "PyInstaller must match the tested build version"
+PY
+  then
+    echo "[build-sidecar] Install requirements-mcp.lock with --require-hashes and pyinstaller==6.22.3 in $venv." >&2
+    return 1
+  fi
   log "Building pa-mcp ($target_arch) → $out"
   local dist_path="$BACKEND_DIR/dist"
   local work_path="$BACKEND_DIR/build"

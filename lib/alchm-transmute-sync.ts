@@ -3,6 +3,12 @@ import { prisma } from '@/lib/db'
 import { loadAlchmSyncConfig } from './alchmSyncConfig'
 import { deliverToWten, stableEventId, type DeliveryOutcome } from './wten/delivery'
 import type { TokenType } from './economy-config'
+import type {
+  CircleBoardResonanceWindow,
+  TriplicateTradeSummary,
+} from '@/components/cosmic-agents/types'
+
+export type { CircleBoardResonanceWindow, TriplicateTradeSummary }
 
 export type CircleFailureReason =
   | 'invalid_request'
@@ -82,6 +88,8 @@ export interface CircleBoardSuccess {
     corridorPct: number
   }
   bonus: { tokenType: TokenType; baseAmount: number; minTradeValue: number; perPartnerPerDay: 1 }
+  recentTrades?: TriplicateTradeSummary[]
+  resonanceWindows?: CircleBoardResonanceWindow[]
 }
 
 export interface CircleCloseSuccess {
@@ -94,13 +102,20 @@ export interface CircleOfferSuccess extends CircleCloseSuccess {
   replayed: boolean
 }
 
-export interface CircleAcceptSuccess extends CircleCloseSuccess {
+export interface CircleAcceptSuccess {
+  ok: true
+  agentId?: string
+  offer?: CircleOffer
   trade: {
     gave: { tokenType: TokenType; amount: number }
     received: { tokenType: TokenType; amount: number }
     transactionGroupId: string
+    resonanceBonusPct?: number
+    aspectDescription?: string
+    transitCatalyst?: string
+    celestialRebate?: { maker: number; taker: number }
   }
-  balances: { spirit: number; essence: number; matter: number; substance: number }
+  balances?: Record<string, number>
 }
 
 export interface CircleFailure {

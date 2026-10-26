@@ -1,7 +1,8 @@
 fastapi
 uvicorn
 httpx
-pydantic
+pydantic>=2.12,<3
+mcp==2.3.0
 python-dotenv
 alembic
 sqlalchemy
@@ -16,5 +17,6 @@ pytest
 pytest-asyncio
 ruff
 web3
-pyswisseph
+pyswisseph>=2.10,<2.11
 psycopg[binary]
+PyJWT[crypto]>=2.8

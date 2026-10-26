@@ -27,6 +27,11 @@ vi.mock('@/lib/planetary-hour', () => ({ PlanetaryHourCalculator: class {} }))
 
 import { circleStep, type CircleAgent } from '@/lib/services/agent-circle-trading'
 import { AgentActionService, type ActivationResult } from '@/lib/services/agent-action-service'
+import { feedStreamBus } from '@/lib/agents/feed-stream-bus'
+import type {
+  CircleBoardResonanceWindow,
+  TriplicateTradeSummary,
+} from '@/components/cosmic-agents/types'
 
 const agent: CircleAgent = {
   userId: 'asol-id',
@@ -134,6 +139,67 @@ describe('one Circle step', () => {
     )
     await circleStep(agent)
     expect(mocks.accept).toHaveBeenCalledExactlyOnceWith(agent.agentEmail, 'direct')
+  })
+
+  it('hydrates feedStreamBus with recent triplicate trades and resonance windows from board', async () => {
+    const hydrateSpy = vi.spyOn(feedStreamBus, 'hydrate')
+    const sampleTrade: TriplicateTradeSummary = {
+      id: 'trade-step-1',
+      timestamp: '2026-09-30T10:00:00Z',
+      makerName: 'Sol',
+      takerName: 'Luna',
+      gaveToken: 'Spirit',
+      gaveAmount: 5,
+      receivedToken: 'Essence',
+      receivedAmount: 5,
+      resonanceBonusPct: 10,
+      aspectDescription: 'Trine',
+    }
+    const sampleWindow: CircleBoardResonanceWindow = {
+      windowKey: 'triplicate_window:sol:luna',
+      expiresAt: '2026-09-30T13:00:00Z',
+      makerId: 'sol',
+      takerId: 'luna',
+      bonusPct: 10,
+      harmonicAspect: 'Trine',
+      transitCatalyst: 'Sun Trine Moon',
+    }
+    mocks.board.mockResolvedValue(
+      board({
+        recentTrades: [sampleTrade],
+        resonanceWindows: [sampleWindow],
+      })
+    )
+    await circleStep(agent)
+    expect(hydrateSpy).toHaveBeenCalledWith([sampleTrade], [sampleWindow])
+  })
+
+  it('records a trade to feedStreamBus immediately on circleAccept when resonanceBonusPct > 0', async () => {
+    const recordSpy = vi.spyOn(feedStreamBus, 'recordTrade')
+    mocks.board.mockResolvedValue(board({ board: [offer()] }))
+    mocks.accept.mockResolvedValue({
+      ok: true,
+      trade: {
+        transactionGroupId: 'trade-123',
+        gave: { tokenType: 'Matter', amount: 4 },
+        received: { tokenType: 'Spirit', amount: 4 },
+        resonanceBonusPct: 14,
+        aspectDescription: 'Sun Trine Jupiter',
+        transitCatalyst: 'Mars Trine Venus',
+      },
+    })
+    await circleStep(agent)
+    expect(recordSpy).toHaveBeenCalledOnce()
+    expect(recordSpy).toHaveBeenCalledWith(
+      expect.objectContaining({
+        type: 'triplicate-trade',
+        tradeId: 'trade-123',
+        gaveToken: 'Spirit',
+        receivedToken: 'Matter',
+        resonanceBonusPct: 14,
+        aspectDescription: 'Sun Trine Jupiter',
+      })
+    )
   })
 
   it.each([

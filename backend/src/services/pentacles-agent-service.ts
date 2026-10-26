@@ -1,6 +1,8 @@
 import crypto from 'crypto'
 import { PrismaClient } from '@prisma/client'
+import { logger } from '../utils/logger.js'
 import { cacheService } from './cache.js'
+import { CANONICAL_ROSTER_AGENT_IDS } from './pentacles-canonical-roster.js'
 import {
   PentaclesBackendClient,
   pentaclesBackendClient,
@@ -10,6 +12,7 @@ import {
   pentaclesTimestampMicros,
   type PentaclesWorldState,
 } from './pentacles-client.js'
+import { assertCanonicalRosterAgent, rosterExclusionReason } from './pentacles-roster-guard.js'
 
 const PLANETS = [
   'Sun',
@@ -133,6 +136,16 @@ interface HistoricalAgentRow {
   birthTime: string
   birthLocation: unknown
   natalChart: unknown
+  craftedBy?: string | null
+  historicalEra?: string | null
+}
+
+/** What `PentaclesBackendClient.seedAgent` takes: the one payload that carries birth data. */
+export interface SeedAgentInput {
+  agentKey: string
+  handle: string
+  chart: Record<string, unknown>
+  faction: Planet
 }
 
 let prisma: PrismaClient | null = null
@@ -245,6 +258,10 @@ function normalizeRosterAgent(row: HistoricalAgentRow): RosterAgent | null {
   return { agentKey: row.agentId, handle: row.name, chart, faction: topFaction(chart) }
 }
 
+/**
+ * Not exported: `buildSeedAgentInput` is the only way to turn a roster entry into reducer
+ * arguments, so the canonical-roster check below cannot be skipped by calling this directly.
+ */
 function reducerChart(chart: RosterAgent['chart']): Record<string, unknown> {
   const enumArg = (value: string) => ({ [value.charAt(0).toLowerCase() + value.slice(1)]: [] })
   return {
@@ -265,6 +282,25 @@ function reducerChart(chart: RosterAgent['chart']): Record<string, unknown> {
     house_cusps: { none: [] },
     house_system: { placidus: [] },
     intercepted_signs: { none: [] },
+  }
+}
+
+/**
+ * The single place the controller builds the arguments of `seed_agent_player` - the reducer
+ * that publishes `birth_unix`, `birth_lat`, `birth_lon`, the placements, the ascendant and the
+ * midheaven to the client-readable `agent_chart` table.
+ *
+ * Throws for any agent that is not on the canonical roster, so a forged vessel (a person's
+ * birth data) cannot be turned into reducer arguments by any caller, whatever the roster
+ * query returned. `PentaclesBackendClient.call` repeats the check at the network boundary.
+ */
+export function buildSeedAgentInput(roster: RosterAgent): SeedAgentInput {
+  assertCanonicalRosterAgent(roster.agentKey)
+  return {
+    agentKey: roster.agentKey,
+    handle: roster.handle,
+    chart: reducerChart(roster.chart),
+    faction: roster.faction,
   }
 }
 
@@ -489,7 +525,11 @@ export class PentaclesAgentService {
 
   private async loadRoster(limit: number): Promise<{ roster: RosterAgent[]; invalid: string[] }> {
     const rows = (await (rosterDatabase() as any).historical_agents.findMany({
-      where: { isActive: true },
+      // The allow-list is in the query itself, so a forged vessel's birth data and chart are
+      // never read into this process, and vessels cannot fill the `take` window ahead of
+      // canonical figures. `craftedBy`/`historicalEra` are selected only for the contradiction
+      // check in `rosterExclusionReason`; they are not the gate.
+      where: { isActive: true, agentId: { in: [...CANONICAL_ROSTER_AGENT_IDS] } },
       select: {
         agentId: true,
         name: true,
@@ -497,12 +537,25 @@ export class PentaclesAgentService {
         birthTime: true,
         birthLocation: true,
         natalChart: true,
+        craftedBy: true,
+        historicalEra: true,
       },
       orderBy: { agentId: 'asc' },
       take: limit,
     })) as HistoricalAgentRow[]
     const invalid: string[] = []
     const roster = rows.flatMap(row => {
+      // Second layer, independent of the query: whatever came back, a row that is not a
+      // canonical figure is dropped before `normalizeRosterAgent` copies its birth data into
+      // a roster entry. The log carries the id and a fixed reason, never the row.
+      const exclusion = rosterExclusionReason(row)
+      if (exclusion) {
+        logger.warn('Pentacles roster skipped a non-canonical agent', {
+          agentId: row.agentId,
+          reason: exclusion,
+        })
+        return []
+      }
       const normalized = normalizeRosterAgent(row)
       if (!normalized) {
         invalid.push(`${row.agentId}: natal chart lacks all ten Pentacles placements`)
@@ -559,12 +612,7 @@ export class PentaclesAgentService {
     if (intent.action === 'provision_agent') {
       const roster = rosterByKey.get(intent.agentKey)
       if (!roster) throw new Error(`Roster entry disappeared: ${intent.agentKey}`)
-      await this.client.seedAgent({
-        agentKey: roster.agentKey,
-        handle: roster.handle,
-        chart: reducerChart(roster.chart),
-        faction: roster.faction,
-      })
+      await this.client.seedAgent(buildSeedAgentInput(roster))
       return
     }
     if (intent.action === 'star_battle') {

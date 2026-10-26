@@ -31,9 +31,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - os: macos-latest # GitHub's macos-latest is Apple Silicon (arm64)
+          - os: macos-15 # Pinned Apple Silicon (arm64) runner
             triple: aarch64-apple-darwin
-          - os: macos-13 # last x86_64 (Intel) macOS runner
+          - os: macos-15-intel # Explicit x86_64 runner label
             triple: x86_64-apple-darwin
           - os: windows-latest
             triple: x86_64-pc-windows-msvc
@@ -47,44 +47,26 @@ jobs:
         with:
           python-version: '3.11'
 
-      # Only the four runtime deps the stdio server actually uses. The spec's
-      # aggressive excludes mean the heavy FastAPI/ML/Postgres deps are never
-      # bundled, so a minimal install keeps CI fast and the binary small.
+      # The SDK and its validation/transport dependencies are locked separately
+      # from the much larger FastAPI/ML application environment.
       - name: Install build deps
-        run: python -m pip install --upgrade pip httpx sqlalchemy python-dotenv pyinstaller
+        run: |
+          python -m pip install --require-hashes -r backend/requirements-mcp.lock
+          python -m pip install "pyinstaller==6.22.3"
 
       - name: Build pa-mcp
         working-directory: backend
         run: python -m PyInstaller pa-mcp.spec --noconfirm --clean
 
-      # Strongest possible check short of a full Tauri install: spawn the
-      # freshly built binary and drive a real MCP initialize + tools/list
-      # handshake. Runs natively on each runner, so it proves the per-OS
-      # binary actually boots (not just that `file` reports an executable).
-      - name: Smoke test (initialize + tools/list handshake)
+      # Interactive requests keep stdin open through each response: closing it
+      # immediately cancels outstanding work in the official SDK.
+      - name: Smoke test (legacy + modern protocols and typed tools)
         shell: python
         run: |
-          import glob, json, os, subprocess
+          import glob, os, subprocess, sys
           matches = glob.glob(os.path.join("backend", "dist", "pa-mcp*"))
-          assert matches, "no pa-mcp binary was produced in backend/dist"
-          exe = matches[0]
-          reqs = (
-              json.dumps({"jsonrpc": "2.0", "id": 1, "method": "initialize",
-                          "params": {"protocolVersion": "2025-06-18", "capabilities": {},
-                                     "clientInfo": {"name": "ci", "version": "1"}}}) + "\n"
-              + json.dumps({"jsonrpc": "2.0", "id": 2, "method": "tools/list"}) + "\n"
-          )
-          # Strip any runner-set Postgres DSN: the frozen binary forces local
-          # SQLite regardless (database.IS_FROZEN_SIDECAR), but keep it hermetic.
-          env = {k: v for k, v in os.environ.items() if k not in ("DATABASE_URL", "DIRECT_URL")}
-          proc = subprocess.run([exe], input=reqs, capture_output=True, text=True, timeout=90, env=env)
-          lines = [ln for ln in proc.stdout.splitlines() if ln.strip()]
-          assert len(lines) >= 2, f"expected 2 responses; stdout={proc.stdout!r} stderr={proc.stderr!r}"
-          init, tools = json.loads(lines[0]), json.loads(lines[1])
-          assert init["result"]["serverInfo"]["name"] == "planetary-agents-mcp-server", init
-          names = sorted(t["name"] for t in tools["result"]["tools"])
-          assert len(names) == 4, f"expected 4 tools, got {names}"
-          print("handshake OK:", names)
+          assert len(matches) == 1, f"expected one sidecar executable, found {matches}"
+          subprocess.run([sys.executable, "backend/mcp_smoke.py", matches[0]], check=True, timeout=180)
 
       - name: Stage artifact with triple-suffixed name
         shell: bash
