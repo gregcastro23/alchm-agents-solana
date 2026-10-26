@@ -2481,6 +2481,22 @@ describe('rating route end to end', () => {
       expect(res.headers.get('cache-control')).toBe('public, max-age=300')
     })
 
+    it('tells the CDN a forged vessel’s answer is per viewer, anonymous or unlocked', async () => {
+      for (const res of [
+        await (await boot()).get(`?agentId=${FORGED}`),
+        await (await boot()).get(`?agentId=${FORGED}`, bearer),
+      ]) {
+        expect(res.status).toBe(200)
+        expect(res.headers.get('cache-control')).toBe('no-store')
+        expect(res.headers.get('cdn-cache-control')).toBe('no-store')
+        expect(res.headers.get('vary')).toBe('Authorization, Cookie, X-Internal-Secret')
+      }
+      // A roster vessel's answer is the same for everyone.
+      const roster = await (await boot()).get('?agentId=isaac-newton')
+      expect(roster.headers.get('cdn-cache-control')).toBeNull()
+      expect(roster.headers.get('vary')).toBeNull()
+    })
+
     it('answers the preflight with 204, the read-only CORS set and no Authorization allowance', async () => {
       const { route } = await boot()
       const res = await route.OPTIONS()

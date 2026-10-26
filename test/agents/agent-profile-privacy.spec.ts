@@ -546,6 +546,12 @@ describe.each([
     ])
   })
 
+  it('does not mount the live rating card, whose payload carries chart-derived fields', async () => {
+    signInAs(session)
+    const { props } = await renderProfile(PSTONE_ID)
+    expect(props.find(p => p.name === 'AgentRatingCard')).toBeUndefined()
+  })
+
   it('titles the page from public fields only', async () => {
     signInAs(session)
     const { meta } = await renderProfile(PSTONE_ID)
@@ -591,6 +597,13 @@ describe.each([
     expectNoConversations(page)
     expect(H.conversationQueries).toBe(0)
   })
+
+  it('mounts the live rating card with the agent id and nothing else', async () => {
+    signInAs(session)
+    const { props } = await renderProfile(PSTONE_ID)
+    const card = props.find(p => p.name === 'AgentRatingCard')
+    expect(card && JSON.parse(card.props)).toEqual({ agentId: PSTONE_ID })
+  })
 })
 
 // ── The live forge (create-agent): tropical chart, object traits ────────────
@@ -624,6 +637,7 @@ describe('forged vessel written by /api/create-agent', () => {
       expect(flat, probe).not.toContain(probe)
     }
     expectNoConversations(page)
+    expect(page.props.find(p => p.name === 'AgentRatingCard')).toBeUndefined()
   })
 
   it('shows the creator the same page the page always rendered for this chart shape', async () => {
@@ -707,6 +721,9 @@ describe('canonical roster agent', () => {
     expect(flat).toContain('Lunar Receptivity')
     expect(flat).not.toContain('creator only')
     expect(H.authCalls).toBe(0)
+
+    const card = page.props.find(p => p.name === 'AgentRatingCard')
+    expect(card && JSON.parse(card.props)).toEqual({ agentId: 'albert-einstein' })
   })
 
   it('still loses its visitors’ conversations: no viewer is shown another person’s chat', async () => {

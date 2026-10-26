@@ -62,6 +62,13 @@ const READ_CORS = {
 }
 const NO_STORE = { 'Cache-Control': 'no-store' }
 const RETRY = { 'Retry-After': '60' }
+// A forged vessel's answer depends on who asks (its creator and the secret holder get the
+// wallet), and vercel.json gives every /api/* response `s-maxage=60`. Function headers win over
+// that, but the CDN is told directly too, as `GET /api/agents/[slug]/ratings` does: never shared.
+const PER_VIEWER = {
+  'CDN-Cache-Control': 'no-store',
+  Vary: 'Authorization, Cookie, X-Internal-Secret',
+}
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: READ_CORS })
@@ -177,7 +184,11 @@ export async function GET(request: NextRequest) {
       vessel.origin === 'roster' || creatorWallet === 'allow'
         ? readPushed(ledgerIdOf(vessel))
         : null
-    return json(await ratedPayload(vessel, live, creatorWallet), 200)
+    return json(
+      await ratedPayload(vessel, live, creatorWallet),
+      200,
+      vessel.origin === 'forged' ? PER_VIEWER : {}
+    )
   } catch (error) {
     if (error instanceof AgentLookupUnavailable) {
       console.error('[rating] agent lookup unavailable:', error.message)
