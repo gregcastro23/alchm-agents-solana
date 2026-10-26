@@ -2,6 +2,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import type { CraftedAgent } from '@/lib/agent-types'
 import { HISTORICAL_AGENTS, getHistoricalAgent } from '@/lib/agents/historical'
+import { computeAgentProgression } from '@/lib/agents/leveling-service'
 import { deriveSacredStats } from '@/lib/agents/persona/derive-sacred-stats'
 import { getRulingPlanet } from '@/lib/astrological-data'
 import {
@@ -32,6 +33,7 @@ import {
   earnedSeals,
   evaluateSeals,
   holdingsFromAlchemicalElements,
+  progressionFields,
   rateStats,
   ratableFromForgedRow,
   ratableFromRoster,
@@ -3603,7 +3605,12 @@ describe('buildRatedAgentPayload, value by value', () => {
 describe('asContractPayload', () => {
   const vessel = ratableFromRoster(newton)
   const at = (liveSky: LiveSky | null) =>
-    buildRatedAgentPayload({ vessel, balances: balances(vessel.agentId), sky: liveSky })
+    buildRatedAgentPayload({
+      vessel,
+      balances: balances(vessel.agentId),
+      sky: liveSky,
+      progression: computeAgentProgression(vessel.agentId),
+    })
 
   it('is null for a payload without a surge: the contract has no calm-looking stand-in', () => {
     expect(asContractPayload(at(null))).toBeNull()
@@ -3637,6 +3644,50 @@ describe('asContractPayload', () => {
     expect(contract).toEqual(payload)
     expect(contract).toHaveProperty('sealProgress', payload.sealProgress)
     expect(contract).toHaveProperty('zoneSynergies', payload.zoneSynergies)
+  })
+})
+
+// ─── progression fields ──────────────────────────────────────────────────────
+
+describe('progression fields on the payload', () => {
+  const vessel = ratableFromRoster(newton)
+  const build = (progression?: ReturnType<typeof computeAgentProgression> | null) =>
+    buildRatedAgentPayload({ vessel, balances: balances(vessel.agentId), sky, progression })
+
+  it('carries the leveling service’s numbers, not a made-up level', () => {
+    const progression = computeAgentProgression(vessel.agentId)
+    const payload = build(progression)
+    expect(payload.vesselLevel).toBe(progression.vesselLevel)
+    expect(payload.totalXp).toBe(progression.totalXp)
+    expect(payload.progressionStatus).toBe(progression.progressionStatus)
+    expect(payload.ratingAsOf).toBe(progression.asOf)
+    expect(payload).toMatchObject(progressionFields(progression))
+  })
+
+  it('has no progression keys at all when none was supplied', () => {
+    for (const progression of [undefined, null]) {
+      const payload = build(progression)
+      for (const key of Object.keys(progressionFields(computeAgentProgression(vessel.agentId)))) {
+        expect(Object.hasOwn(payload, key), key).toBe(false)
+      }
+    }
+  })
+
+  it('reports an agent the ledger does not know as unavailable, with null numbers', () => {
+    const fields = progressionFields(computeAgentProgression('forged-agent-not-in-the-ledger'))
+    expect(fields.progressionStatus).toBe('unavailable')
+    expect(fields.vesselLevel).toBeNull()
+    expect(fields.totalXp).toBeNull()
+    expect(fields.currentOverall).toBeNull()
+  })
+
+  it('does not change anything the rating itself derives', () => {
+    const { vesselLevel: _l, ...withProgression } = build(computeAgentProgression(vessel.agentId))
+    const without = build()
+    expect(withProgression.ovr).toBe(without.ovr)
+    expect(withProgression.ratings).toEqual(without.ratings)
+    expect(withProgression.archetype).toEqual(without.archetype)
+    expect(withProgression.seals).toEqual(without.seals)
   })
 })
 
