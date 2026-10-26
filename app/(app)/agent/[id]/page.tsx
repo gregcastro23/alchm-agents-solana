@@ -14,6 +14,7 @@ import { loadAgentProfile, loadAgentProfileMetadata } from '@/lib/agents/agent-p
 import { AgentActivity } from '@/components/agent-profile/AgentActivity'
 import type { CraftedAgent, Element } from '@/lib/agent-types'
 import { VesselProgressionDisplay } from '@/components/vessel/vessel-progression-display'
+import { AgentRatingCard } from '@/components/vessel/agent-rating-card'
 
 // Rendered per request, never from the static/ISR cache. A forged vessel is a person's private
 // data, and who may see its chart is decided from the session cookie (see
@@ -320,6 +321,12 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
           subjectName={agent.name}
           defaultExpanded={true}
         />
+
+        {/* Pentacle Vessel Rating, read live by the client (GET /api/agents/rating). Not in a
+            restricted view: that payload carries chart-derived fields (natal affinity, natal
+            harmony) the projection withholds, so a stranger's page must not render it. The route
+            still serves them to any caller; this only keeps the page from displaying them. */}
+        {!restricted && <AgentRatingCard agentId={agent.id} />}
 
         {/* 3-Column Codex Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-gutter relative z-10">

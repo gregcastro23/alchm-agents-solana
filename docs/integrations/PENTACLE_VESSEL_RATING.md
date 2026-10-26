@@ -160,7 +160,21 @@ made-up level 1.
 
 Statuses: `400` bad id, `404` unknown, `422` known but unratable, `429` (per-caller 120/min,
 shared 1200/min; `RATING_API_PER_CALLER_PER_MIN`, `RATING_API_GLOBAL_PER_MIN`), `503` lookup
-unavailable, `500` opaque. Always `Cache-Control: no-store`; CORS `*` for `GET`/`OPTIONS`.
+unavailable, `500` opaque. Always `Cache-Control: no-store`; CORS `*` for `GET`/`OPTIONS`. A
+forged vessel's `200` also sends `CDN-Cache-Control: no-store` and `Vary: Authorization, Cookie,
+X-Internal-Secret`: its answer depends on who asks, and `vercel.json` gives every `/api/*` response
+`s-maxage=60` (function headers win, but the CDN is told directly too, as `[slug]/ratings` does).
+
+**In the app.** `AgentRatingCard` (`components/vessel/agent-rating-card.tsx`) reads this route
+from the browser on `/agent/[id]`, with the session cookie, so a vessel's creator sees their own
+wallet. The page mounts it only for a view that is not restricted (a roster figure, the
+creator, an admin): the payload carries chart-derived fields — `sealProgress[].natalAffinity`,
+`surge.harmonyOffset` — that a stranger's restricted view withholds. That gate is the page's
+only: this route still serves those fields to any caller for a forged vessel, so it keeps a
+stranger's page from showing them, not the data from being read. It validates what it reads
+with zod against `RatedVesselPayload` (a drift guard fails `tsc`), and shows a missing sky as
+missing, a baseline wallet as a baseline and a harmony read from no chart as "—", never as a
+calm ring, real holdings or a neutral harmony.
 
 ### `GET /api/agents/rating?roster=true`
 
@@ -340,4 +354,5 @@ Downstream display surfaces (including `VesselProgressionDisplay`) calibrate cel
 | Vessel progression & dignity engine     | `lib/vessel/progression.ts`, `lib/vessel/stat-resolver.ts`                  |
 | Lean 4 formal verification              | `proofs/lean/Proofs/Wavefunction.lean`                                      |
 | Vessel progression UI display           | `components/vessel/vessel-progression-display.tsx`                          |
+| Live rating card (`/agent/[id]`)        | `components/vessel/agent-rating-card.tsx`                                   |
 | Route                                   | `app/api/agents/rating/route.ts`                                            |
