@@ -107,9 +107,13 @@ def update_agent(db: Session, agent_id: str, agent_update: schemas.AgentUpdate):
         return None
     
     update_data = agent_update.model_dump(exclude_unset=True)
+    if not update_data:
+        # An empty patch changes nothing, so it must not touch the row either:
+        # bumping lastActive made `PUT {}` a write.
+        return db_agent
     for key, value in update_data.items():
         setattr(db_agent, key, value)
-    
+
     db_agent.lastActive = datetime.utcnow()
     db.commit()
     db.refresh(db_agent)

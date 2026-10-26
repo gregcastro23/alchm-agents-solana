@@ -390,10 +390,27 @@ export async function getAgentBalances(slug: string): Promise<AgentBalances | nu
   }
 }
 
+export interface ActivityReadOptions {
+  /**
+   * Whether `AgentConversation` rows may be read at all. Defaults to true, which is what the
+   * bearer-gated `/api/agents/[slug]/{actions,interactions}` routes (service callers holding
+   * INTERNAL_API_SECRET) rely on.
+   *
+   * Pass `false` from anything a browser can reach. Those rows are the chatting users' ids,
+   * messages, replies, session ids and raw `contextData`; the chat-consent rule
+   * (`backend/chat_privacy.py`) keeps a chat private unless its sender chose `visibility: 'public'`,
+   * and nothing here knows whether they did. With `false` the rows are never queried, so they
+   * cannot reach a page's props by accident.
+   */
+  includeConversations?: boolean
+}
+
 export async function getAgentActions(
   slug: string,
-  searchParams: URLSearchParams
+  searchParams: URLSearchParams,
+  options: ActivityReadOptions = {}
 ): Promise<{ agent: AgentReference; actions: AgentAction[]; nextCursor: string | null }> {
+  const includeConversations = options.includeConversations !== false
   const agent = await resolveAgent(slug)
   const limit = parseLimit(searchParams, 50, 100)
   const cursor = decodeCursor(searchParams.get('cursor'))
@@ -414,11 +431,13 @@ export async function getAgentActions(
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
       take: limit + 1,
     }),
-    prisma.agentConversation.findMany({
-      where: { agentId: { in: agentIdVariants(slug) }, ...createdAtFilter },
-      orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
-      take: limit + 1,
-    }),
+    includeConversations
+      ? prisma.agentConversation.findMany({
+          where: { agentId: { in: agentIdVariants(slug) }, ...createdAtFilter },
+          orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+          take: limit + 1,
+        })
+      : Promise.resolve([]),
   ])
 
   const actionRows: AgentAction[] = eventRows.map(row => {

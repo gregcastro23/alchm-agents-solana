@@ -18,6 +18,7 @@
 import fs from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { isUserCreatedAgentRow } from '@/lib/agents/forged-privacy'
 import { HISTORICAL_AGENTS } from '@/lib/agents/historical'
 import { CANONICAL_ROSTER_AGENT_IDS } from '../../backend/src/services/pentacles-canonical-roster'
 import {
@@ -300,14 +301,26 @@ describe('canonical roster allow-list', () => {
     }
   })
 
-  it('repeats the user-created markers that app/api/agents/route.ts uses for isUserCreated', () => {
-    const route = fs.readFileSync(
-      fileURLToPath(new URL('../../app/api/agents/route.ts', import.meta.url)),
-      'utf8'
-    )
-    expect(route).toContain("agent.historicalEra === 'user_created'")
-    expect(route).toContain("agent.craftedBy === 'philosopher-stone-user'")
-    expect(route).toContain("agent.historicalEra === 'MONICA_SPECIAL'")
+  it('flags exactly the rows that lib/agents/forged-privacy.ts calls user-created', () => {
+    // The controller image cannot import from lib/, so it repeats the markers. They are pinned
+    // by behaviour against the one definition the API routes use (`isUserCreatedAgentRow`),
+    // not by scanning source text, so moving that definition cannot silently unpin them.
+    const crafted = [
+      undefined,
+      null,
+      'philosopher-stone-user',
+      'historical-seed',
+      'Philosopher-Stone-User',
+    ]
+    const eras = [undefined, null, 'user_created', 'MONICA_SPECIAL', 'ancient', 'USER_CREATED']
+    for (const craftedBy of crafted) {
+      for (const historicalEra of eras) {
+        const row = { agentId: 'plato', craftedBy, historicalEra }
+        expect(rosterExclusionReason(row) === USER_CREATED_MARKER_REASON, JSON.stringify(row)).toBe(
+          isUserCreatedAgentRow(row)
+        )
+      }
+    }
   })
 })
 

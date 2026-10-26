@@ -145,6 +145,8 @@ The app has two distinct backends that must stay in sync:
 
 When touching agent data or chat logic, check both layers to understand which one is authoritative.
 
+⚠️ **The Python API serves the same `historical_agents` table as Next, so a person's forged vessel is private there too.** `backend/agent_privacy.py` holds the rule: `is_user_created` is the same predicate as `isUserCreated` in `app/api/agents/route.ts` (`historicalEra` `user_created`/`MONICA_SPECIAL` or `craftedBy` `philosopher-stone-user`), and `schemas.PublicAgent` is the allow-list a caller **without** `INTERNAL_API_SECRET` gets for such a row (birth date/time/coordinates/year, natal chart, aura and the owner's free text are not declared, so they cannot appear; only `birthLocation.name` survives). The secret is accepted in `INTERNAL_API_SECRET` (what `lib/backend.ts` sends), `X-Internal-Secret` or `Authorization: Bearer`, via `main.caller_is_service`; the secret holder gets the full record, exactly as before. `POST`/`PUT`/`DELETE /api/agents` are **service-only** (503 when the secret is unset, 401 when wrong), `/api/rag/search` serves no chunks of a user-created or unknown agent to anyone else, `/api/admin/mcp-status` is gated like `mcp-summary`, and anything an anonymous response says about a failure is a code from `backend/public_errors.py`, never an exception string. Any new route returning a `historical_agents` row must go through `agent_privacy.agent_view`; `backend/tests/test_agents_privacy.py` pins the key set. Next routes that forward the secret-holder's full row to the public (`/api/agents/unified`) must redact it themselves.
+
 ### Agent System
 
 Three agent types are unified through `lib/unified-agent-types.ts` and `lib/unified-agent-factory.ts`:
