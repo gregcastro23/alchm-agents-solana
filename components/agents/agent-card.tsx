@@ -369,7 +369,9 @@ export function AgentCard({
             </div>
           </div>
           <div className="flex flex-col items-end gap-1.5">
-            <Badge className={getConsciousnessColor(consciousnessLevel)}>{consciousnessLevel}</Badge>
+            <Badge className={getConsciousnessColor(consciousnessLevel)}>
+              {consciousnessLevel}
+            </Badge>
             <VesselProgressionDisplay progression={progressionData} variant="card-badge" />
           </div>
         </div>

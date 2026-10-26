@@ -149,6 +149,15 @@ The response is the contract's `RatedAgentPayload` — `key`, `handle`, `faction
 degraded way, `degraded: { esms?, sky? }`. `faction` is a planet index (0 = Sun … 9 = Pluto): a
 contract pilot's own, else the roster's, else the ruler of the natal Sun sign.
 
+The contract's optional progression fields (`vesselLevel`, `totalXp`, `xpToNextLevel`, `levelBoost`,
+`baseOverall`, `trainedOverall`, `currentOverall`, `transitDelta`, `progressionStatus`,
+`ratingAsOf`, `progressionReasons`, `expBreakdown`, `trainingEvidence`, `planetaryStats`,
+`statDeltas`, `esmsAxisAttribution`) come from `computeAgentProgression` in
+`lib/agents/leveling-service.ts`, passed into `buildRatedAgentPayload` so that this route and
+`/api/agents/[slug]/ratings` serve the same numbers. An agent the experience ledger does not know —
+a vessel someone forged — gets `progressionStatus: "unavailable"` and `null` numbers, never a
+made-up level 1.
+
 Statuses: `400` bad id, `404` unknown, `422` known but unratable, `429` (per-caller 120/min,
 shared 1200/min; `RATING_API_PER_CALLER_PER_MIN`, `RATING_API_GLOBAL_PER_MIN`), `503` lookup
 unavailable, `500` opaque. Always `Cache-Control: no-store`; CORS `*` for `GET`/`OPTIONS`.
