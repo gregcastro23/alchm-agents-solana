@@ -494,47 +494,86 @@ async def _build_alchm_mcp_context(
         return "", metadata
 
     context = request.context or {}
+    evidence_snapshot = context.get("evidenceSnapshot") or context.get("evidence_snapshot")
+    snapshot_dict = evidence_snapshot.to_dict() if hasattr(evidence_snapshot, "to_dict") else (evidence_snapshot if isinstance(evidence_snapshot, dict) else {})
+    snapshot_id = snapshot_dict.get("snapshotId") or snapshot_dict.get("snapshot_id") or context.get("evidenceSnapshotId")
+    if snapshot_id:
+        metadata["evidenceSnapshotId"] = snapshot_id
+
     latitude, longitude = _extract_coordinates(context)
     ingredients = _extract_ingredient_candidates(request.message, context)
     results: List[Dict[str, Any]] = []
     live_sky: Dict[str, Any] = {}
 
-    try:
-        live_sky = await alchm_mcp.get_live_sky_transits(latitude=latitude, longitude=longitude)
-        results.append({"tool": "get_live_sky_transits", "data": live_sky})
+    preloaded_sky = (
+        snapshot_dict.get("skyTransits")
+        or snapshot_dict.get("sky_transits")
+        or context.get("liveSkyState")
+        or context.get("skyTransits")
+    )
+    if isinstance(preloaded_sky, dict) and preloaded_sky:
+        live_sky = preloaded_sky
+        results.append({"tool": "get_live_sky_transits", "data": live_sky, "reused": True})
         metadata["tools"].append("get_live_sky_transits")
-    except Exception as exc:
-        metadata["errors"].append(f"get_live_sky_transits: {public_errors.public_error_code(exc)}")
-        print(f"alchm_mcp_context_error tool=get_live_sky_transits error={str(exc)[:180]}", flush=True)
+        metadata.setdefault("evidenceReused", []).append("get_live_sky_transits")
+    else:
+        try:
+            live_sky = await alchm_mcp.get_live_sky_transits(latitude=latitude, longitude=longitude)
+            results.append({"tool": "get_live_sky_transits", "data": live_sky})
+            metadata["tools"].append("get_live_sky_transits")
+        except Exception as exc:
+            metadata["errors"].append(f"get_live_sky_transits: {public_errors.public_error_code(exc)}")
+            print(f"alchm_mcp_context_error tool=get_live_sky_transits error={str(exc)[:180]}", flush=True)
 
     if ingredients:
-        try:
-            scan = await alchm_mcp.alchemize_ingredients(ingredients)
-            results.append({"tool": "alchemize_ingredients", "data": scan})
+        preloaded_scan = (
+            snapshot_dict.get("alchemicalScan")
+            or snapshot_dict.get("alchemical_scan")
+            or context.get("alchemicalScan")
+        )
+        if isinstance(preloaded_scan, dict) and preloaded_scan:
+            results.append({"tool": "alchemize_ingredients", "data": preloaded_scan, "reused": True})
             metadata["tools"].append("alchemize_ingredients")
             metadata["ingredients"] = ingredients
-        except Exception as exc:
-            metadata["errors"].append(f"alchemize_ingredients: {public_errors.public_error_code(exc)}")
-            print(f"alchm_mcp_context_error tool=alchemize_ingredients error={str(exc)[:180]}", flush=True)
+            metadata.setdefault("evidenceReused", []).append("alchemize_ingredients")
+        else:
+            try:
+                scan = await alchm_mcp.alchemize_ingredients(ingredients)
+                results.append({"tool": "alchemize_ingredients", "data": scan})
+                metadata["tools"].append("alchemize_ingredients")
+                metadata["ingredients"] = ingredients
+            except Exception as exc:
+                metadata["errors"].append(f"alchemize_ingredients: {public_errors.public_error_code(exc)}")
+                print(f"alchm_mcp_context_error tool=alchemize_ingredients error={str(exc)[:180]}", flush=True)
 
     if _should_fetch_recipe_candidates(request, ingredients):
-        try:
-            dominant_element = (
-                context.get("dominantElement")
-                or context.get("dominant_element")
-                or live_sky.get("dominantElement")
-            )
-            recipes = await alchm_mcp.generate_cosmic_recipe(
-                prompt=request.message[:280],
-                cuisine=context.get("cuisine") or context.get("preferredCuisine"),
-                dietary=_dietary_from_context(context),
-                dominant_element=dominant_element,
-            )
-            results.append({"tool": "generate_cosmic_recipe", "data": recipes})
+        preloaded_recipes = (
+            snapshot_dict.get("recipeCandidates")
+            or snapshot_dict.get("recipe_candidates")
+            or context.get("recipeCandidates")
+        )
+        if isinstance(preloaded_recipes, dict) and preloaded_recipes:
+            results.append({"tool": "generate_cosmic_recipe", "data": preloaded_recipes, "reused": True})
             metadata["tools"].append("generate_cosmic_recipe")
-        except Exception as exc:
-            metadata["errors"].append(f"generate_cosmic_recipe: {public_errors.public_error_code(exc)}")
-            print(f"alchm_mcp_context_error tool=generate_cosmic_recipe error={str(exc)[:180]}", flush=True)
+            metadata.setdefault("evidenceReused", []).append("generate_cosmic_recipe")
+        else:
+            try:
+                dominant_element = (
+                    context.get("dominantElement")
+                    or context.get("dominant_element")
+                    or live_sky.get("dominantElement")
+                )
+                recipes = await alchm_mcp.generate_cosmic_recipe(
+                    prompt=request.message[:280],
+                    cuisine=context.get("cuisine") or context.get("preferredCuisine"),
+                    dietary=_dietary_from_context(context),
+                    dominant_element=dominant_element,
+                )
+                results.append({"tool": "generate_cosmic_recipe", "data": recipes})
+                metadata["tools"].append("generate_cosmic_recipe")
+            except Exception as exc:
+                metadata["errors"].append(f"generate_cosmic_recipe: {public_errors.public_error_code(exc)}")
+                print(f"alchm_mcp_context_error tool=generate_cosmic_recipe error={str(exc)[:180]}", flush=True)
 
     return _format_alchm_mcp_block(results), metadata
 

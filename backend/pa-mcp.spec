@@ -50,6 +50,7 @@ a = Analysis(
         'models',
         'mcp_contracts',
         'mcp_sdk_adapter',
+        'mcp_context',
         'pydantic_core._pydantic_core',
         # SQLAlchemy SQLite dialect — analysis sometimes misses these
         # because they're loaded by URL inspection at runtime. The

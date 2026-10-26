@@ -190,6 +190,7 @@ class ChatResult(ResultModel):
     sessionId: Optional[Session] = None
     metadata: Optional[JsonObject] = None
     liveSkyState: Optional[JsonObject] = None
+    evidenceSnapshotId: Optional[Name] = None
 
 
 class AgentSummary(ResultModel):
@@ -250,6 +251,7 @@ class CulinaryDebateResult(ResultModel):
     triggeredJing: Optional[JsonObject]
     dataErrors: Annotated[List[ErrorText], Field(max_length=20)]
     dialogue: Annotated[List[Union[ChatResult, DialogueError]], Field(min_length=1, max_length=6)]
+    evidenceSnapshotId: Optional[Name] = None
 
     @model_validator(mode="after")
     def matching_dialogue(self) -> "CulinaryDebateResult":
