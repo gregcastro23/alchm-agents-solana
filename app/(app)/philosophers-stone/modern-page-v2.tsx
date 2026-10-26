@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -34,6 +34,7 @@ import { downloadManifest, downloadIgnitionBundle } from '@/lib/agents/ignition-
 import { calculateAllPlanets } from '@/lib/enhanced-astronomical-calculator'
 import type { EnhancedBirthInfo } from '@/lib/enhanced-astronomical-calculator'
 import { parseBirthData, formatBirthData } from '@/lib/monica/birth-data-parser'
+import { createForgeAttempt, submitForge, type ForgeIdentity } from '@/lib/agents/forge-client'
 import {
   type Sacred7Stats,
   SACRED_STATS_METADATA,
@@ -89,7 +90,8 @@ const STAT_ICONS: Record<string, any> = {
   kineticAlignment: Activity,
 }
 
-export default function ModernPhilosophersStone() {
+export default function ModernPhilosophersStone({ creatorId, identityUnavailable }: ForgeIdentity) {
+  const forgeAttempt = useRef(createForgeAttempt())
   const [step, setStep] = useState(1)
   const [agentData, setAgentData] = useState<AgentCreationData>({
     name: '',
@@ -632,23 +634,22 @@ export default function ModernPhilosophersStone() {
                   onClick={async () => {
                     setIsCalculating(true)
                     try {
-                      const response = await fetch('/api/create-agent', {
-                        method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify(agentData),
-                      })
-                      await response.json()
+                      const result = await submitForge(forgeAttempt.current, creatorId, agentData)
                       addMonicaMessage(
-                        `🎉 Success! ${agentData.name} has been crafted and is learning about you. Continue conversing to deepen the connection!`
+                        `🎉 Success! ${result.agent.name} has been crafted and is learning about you. Continue conversing to deepen the connection!`
                       )
                     } catch (error) {
-                      addMonicaMessage('There was an issue creating the agent. Please try again.')
+                      addMonicaMessage(
+                        error instanceof Error
+                          ? error.message
+                          : 'Creation confirmation is unavailable.'
+                      )
                     } finally {
                       setIsCalculating(false)
                     }
                   }}
                   className="w-full relative group overflow-hidden"
-                  disabled={isCalculating}
+                  disabled={isCalculating || identityUnavailable}
                 >
                   <div className="absolute inset-0 bg-gradient-to-r from-purple-500/20 via-pink-500/20 to-yellow-500/20 opacity-0 group-hover:opacity-100 transition-opacity duration-500" />
                   {isCalculating ? (
@@ -663,6 +664,11 @@ export default function ModernPhilosophersStone() {
                     </>
                   )}
                 </Button>
+                {identityUnavailable && (
+                  <p role="alert" className="text-sm text-red-400">
+                    Sign-in confirmation is unavailable. Reload this page before creating an agent.
+                  </p>
+                )}
 
                 <div className="grid grid-cols-3 gap-3 mt-2">
                   <Button

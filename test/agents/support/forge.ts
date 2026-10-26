@@ -77,8 +77,8 @@ export async function forgeVessel(
   vi.doMock('@/lib/auth', () => ({
     auth: vi.fn().mockResolvedValue(options.creatorId ? { user: { id: options.creatorId } } : null),
   }))
-  vi.doMock('@/lib/db', () => ({
-    prisma: {
+  vi.doMock('@/lib/db', () => {
+    const prisma: Record<string, any> = {
       historical_agents: {
         create: vi.fn(async ({ data }: { data: Record<string, any> }) => {
           written = structuredClone(data)
@@ -96,8 +96,12 @@ export async function forgeVessel(
           return {}
         }),
       },
-    },
-  }))
+    }
+    // The forge commits every local write in one transaction (lib/agents/forge-creation.ts), so the
+    // transaction handle is the same fake: what reaches `create` is what reaches the database.
+    prisma.$transaction = async (run: (tx: typeof prisma) => unknown) => run(prisma)
+    return { prisma }
+  })
   vi.doMock('@/lib/backend', () => ({
     backend: {},
     getAlchemicalQuantitiesLegacy: vi.fn().mockResolvedValue({
@@ -133,6 +137,8 @@ export async function forgeVessel(
   }))
   vi.doMock('@/lib/agents/agentic-user-sync', () => ({
     ensureAgenticUserAndSync: vi.fn().mockResolvedValue(undefined),
+    // The forge provisions the agentic user inside its transaction (lib/agents/forge-creation.ts).
+    provisionAgenticUser: vi.fn().mockResolvedValue('agentic-user-1'),
   }))
 
   try {
