@@ -542,9 +542,11 @@ export function buildRatedAgentPayload({
 /**
  * The payload as the contract's own `RatedAgentPayload` (what `feedStreamBus.recordAgentRating`
  * takes), or `null` when there is no surge to put in it — a payload built from no sky is never
- * published as if it had one. Extension fields ride along. The `[slug]/ratings` route uses it to
- * publish to the feed; `GET /api/agents/rating` does not (a public GET must not write to a live
- * stream).
+ * published as if it had one. Extension fields ride along. `GET /api/agents/[slug]/ratings` is the
+ * caller: it puts the result on the anonymous feed stream ONLY for a roster vessel read under the
+ * 'deny' wallet policy, because a payload computed for a forged vessel or for an entitled caller
+ * can hold a person's private ESMS wallet. This function does not decide that; the caller must.
+ * `GET /api/agents/rating` never publishes: a public GET must not write to a live stream.
  */
 export function asContractPayload(payload: RatedVesselPayload): RatedAgentPayload | null {
   return payload.surge === null ? null : { ...payload, surge: payload.surge }

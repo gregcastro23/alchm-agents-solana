@@ -3,6 +3,10 @@
 // Each action proxies to the @/lib/backend client, which is mocked
 // here so we exercise the route's switch wiring without a live
 // Railway backend.
+//
+// These actions are gated (admin session or INTERNAL_API_SECRET) because they proxy Railway's
+// agent CRUD verbatim; the requests here carry the secret. The refusals are in
+// test/agents/unified-route-gate.spec.ts.
 
 import { describe, it, expect, beforeEach, vi } from 'vitest'
 import { NextRequest } from 'next/server'
@@ -38,9 +42,12 @@ vi.mock('@/lib/consciousness-persistence', () => ({
 
 import { POST } from '@/app/api/agents/unified/route'
 
+const SECRET = 'unified-actions-test-secret'
+
 function postWith(body: unknown): NextRequest {
   return new NextRequest('http://localhost/api/agents/unified', {
     method: 'POST',
+    headers: { authorization: `Bearer ${SECRET}` },
     body: JSON.stringify(body),
   })
 }
@@ -48,6 +55,7 @@ function postWith(body: unknown): NextRequest {
 describe('agents/unified actions', () => {
   beforeEach(() => {
     vi.clearAllMocks()
+    process.env.INTERNAL_API_SECRET = SECRET
   })
 
   it('update proxies to backend.agents.update with the patch', async () => {
