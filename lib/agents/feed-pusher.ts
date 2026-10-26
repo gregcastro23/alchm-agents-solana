@@ -45,9 +45,14 @@ const LOCAL_API_URL = getLocalApiUrl()
 let loggedLocalPushDisabled = false
 
 function getInternalApiSecret(): string {
-  const secret = process.env.INTERNAL_API_SECRET || process.env.WHATTOEATNEXT_API_KEY
+  const secret =
+    process.env.INTERNAL_API_SECRET ||
+    process.env.ALCHM_KITCHEN_SYNC_SECRET ||
+    process.env.WHATTOEATNEXT_API_KEY
   if (!secret) {
-    throw new Error('INTERNAL_API_SECRET or WHATTOEATNEXT_API_KEY is required to push feed actions')
+    throw new Error(
+      'INTERNAL_API_SECRET or ALCHM_KITCHEN_SYNC_SECRET is required to push feed actions'
+    )
   }
 
   return secret
@@ -476,10 +481,14 @@ export class FeedPusherService {
     const eventId =
       idempotencyKey ||
       stableEventId(`feed:${action.eventType}:${action.agentEmail}`, action.metadataPayload)
+    const secret = getInternalApiSecret()
     const delivery = await deliverToWten({
       endpoint: 'feed',
       url: WTEN_API_URL,
-      headers: { Authorization: `Bearer ${getInternalApiSecret()}` },
+      headers: {
+        Authorization: `Bearer ${secret}`,
+        'X-Sync-Secret': secret,
+      },
       body: { ...payload, idempotencyKey: eventId },
       eventId,
     })
@@ -527,11 +536,13 @@ export class FeedPusherService {
           timestamp,
         },
       }
+      const secret = getInternalApiSecret()
       const response = await fetch(LOCAL_API_URL, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
-          Authorization: `Bearer ${getInternalApiSecret()}`,
+          Authorization: `Bearer ${secret}`,
+          'X-Sync-Secret': secret,
           ...(idempotencyKey ? { 'Idempotency-Key': idempotencyKey } : {}),
         },
         body: JSON.stringify(payload),

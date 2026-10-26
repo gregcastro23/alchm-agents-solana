@@ -69,7 +69,12 @@ _legacy = os.getenv("ALCHM_KITCHEN_URL", "").rstrip("/")
 if _legacy and "railway.app" not in _legacy and ALCHM_KITCHEN_URL == "https://alchm.kitchen":
     ALCHM_KITCHEN_URL = _legacy
 
-INTERNAL_API_SECRET = os.getenv("INTERNAL_API_SECRET", "")
+INTERNAL_API_SECRET = (
+    os.getenv("INTERNAL_API_SECRET")
+    or os.getenv("ALCHM_KITCHEN_SYNC_SECRET")
+    or os.getenv("WHATTOEATNEXT_API_KEY")
+    or ""
+)
 AGENTIC_EMAIL_DOMAIN = "@agentic.alchm.kitchen"
 FEED_EMIT_TIMEOUT_SECONDS = 4.0
 HOOK_SECRET_ASOL = os.getenv("HOOK_SECRET_ASOL", "")
@@ -283,6 +288,7 @@ async def _post_feed_event(
     body_bytes = json.dumps(payload, separators=(",", ":")).encode("utf-8")
     headers = {
         "Authorization": f"Bearer {INTERNAL_API_SECRET}",
+        "X-Sync-Secret": INTERNAL_API_SECRET,
         "Content-Type": "application/json",
         "Idempotency-Key": event_id,
     }
@@ -303,7 +309,10 @@ async def _post_feed_event(
 
     try:
         async with httpx.AsyncClient(timeout=FEED_EMIT_TIMEOUT_SECONDS) as client:
-            resp = await client.post(url, json=payload, headers=headers)
+            # Send the exact bytes that were signed. `json=payload` would let httpx
+            # re-serialize (it emits raw UTF-8 where json.dumps above
+            # escapes non-ASCII), so any non-ASCII post would fail signature verification.
+            resp = await client.post(url, content=body_bytes, headers=headers)
             if resp.status_code >= 400:
                 logger.warning(
                     "feed_emit non-2xx: %s %s for %s/%s body=%s",

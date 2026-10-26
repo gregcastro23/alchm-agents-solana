@@ -14,6 +14,19 @@ It is the cognitive/agent counterpart to the data-focused
 transits, ingredient ESMS analysis, recipes, and synastry, this one exposes the
 **personas that reason over them**.
 
+## Runtime and compatibility
+
+Requires Python 3.11+. The stdio transport uses the official Python MCP SDK
+`2.3.0`; modern `2026-07-28` discovery and legacy initialization are supported.
+Every tool advertises typed input/output schemas and returns structured JSON
+alongside compatible JSON text. Credentials belong in standard request `_meta`
+or `PA_MCP_API_KEY`; legacy argument `_meta` remains accepted. Conflicting
+credentials fail before downstream work.
+
+Source/native builds use `backend/requirements-mcp.lock` and PyInstaller
+`6.22.3`. Do not reuse a build environment with a different SDK/native dependency
+set; the local build script checks the lock before freezing.
+
 ## Tools
 
 | Tool                               | What it does                                                                                                                |
@@ -25,7 +38,8 @@ transits, ingredient ESMS analysis, recipes, and synastry, this one exposes the
 | `trigger_chart_specific_jing_duel` | Detect birthchart synastry between two agents and stage an in-character elemental duel.                                     |
 | `play_agent_word_duel`             | Invoke an agent or celestial sphere to play a strategic word move with rationale in Word Duels of the Spheres.              |
 | `play_jing_arena_move`             | Invoke an agent or celestial sphere to counter an opening move in the Jing Arena elemental clash minigame.                  |
-| `plan_weekly_menu`                 | Generate an astrologically attuned weekly menu for an agent persona and optionally share it to the feed.                    |
+| `plan_weekly_menu`                 | Generate an unpublished weekly menu draft without saving or sharing it.                                                     |
+| `publish_weekly_menu`              | Publish a reviewed draft using an authorized publisher credential and a stable idempotency key.                             |
 
 ## MCP Resources
 

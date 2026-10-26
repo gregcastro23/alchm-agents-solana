@@ -7,6 +7,7 @@ import {
   toJulianDay,
   calculateEnhancedPlanetPosition,
   longitudeToSignDegree,
+  type EphemerisSource,
 } from './enhanced-astronomical-calculator'
 
 export interface CurrentPlanetPosition {
@@ -16,6 +17,9 @@ export interface CurrentPlanetPosition {
   longitude: number
   /** Daily motion in degrees per day (signed, negative = retrograde) */
   speed?: number
+  /** The origin of this position, retained through every council adapter. */
+  source?: EphemerisSource | 'unverified'
+  asOf?: string
 }
 
 export class DegradedEphemerisError extends Error {
@@ -39,8 +43,7 @@ const PLANETS = [
 ] as const
 
 /**
- * Returns the current approximate position for each planet.
- * Uses the enhanced VSOP87-based calculator (±0.1° accuracy for inner planets).
+ * Returns labelled local Keplerian approximations, never measured Swiss positions.
  */
 export function getCurrentPlanetaryPositions(
   date: Date = new Date(),
@@ -55,10 +58,12 @@ export function getCurrentPlanetaryPositions(
       const { sign, degree } = longitudeToSignDegree(pos.longitude)
       result[planet] = {
         sign,
-        degree: Math.round(degree * 100) / 100,
+        degree,
         retrograde: pos.retrograde,
-        longitude: Math.round(pos.longitude * 10000) / 10000,
-        speed: typeof pos.speed === 'number' ? Math.round(pos.speed * 10000) / 10000 : undefined,
+        longitude: pos.longitude,
+        speed: pos.speed,
+        source: pos.source,
+        asOf: date.toISOString(),
       }
     } catch {
       // Skip planets that fail calculation

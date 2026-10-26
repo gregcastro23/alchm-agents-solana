@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import Link from 'next/link'
 import { AgentsReportSchema, type AgentsPayload } from '@/lib/admin/page-schemas'
 import { AdminFrame } from './AdminFrame'
 import {
@@ -30,6 +31,7 @@ const CHART: Record<string, { glyph: string; label: string; tone: Tone }> = {
 
 const yes = <Badge glyph="✓" label="Yes" tone="ok" />
 const no = (label = 'No') => <Badge glyph="✕" label={label} tone="bad" />
+const CATALOG_UNREPORTED = 'Vessel catalog metadata was not included in this response.'
 
 function sumCounts(counts: Record<string, number>) {
   return Object.values(counts).reduce((a, b) => a + b, 0)
@@ -51,11 +53,12 @@ function StatusCounts({ counts }: { counts: Record<string, number> }) {
 
 export function AgentsView({ data }: { data: AgentsPayload }) {
   const [attentionOnly, setAttentionOnly] = useState(false)
+  const [search, setSearch] = useState('')
+  const [faction, setFaction] = useState('')
 
   const rows = useMemo(() => {
     const db = data.db.ok ? new Map(data.db.value.rows.map(r => [r.agentId, r])) : null
     const sync = data.sync.ok ? new Map(data.sync.value.rows.map(r => [r.agentId, r])) : null
-    const wallets = data.wallets.ok ? new Set(data.wallets.value.agentIds) : null
     const activity = data.activity.ok ? data.activity.value.byAgent7d : null
     return data.code
       .map(agent => {
@@ -73,7 +76,28 @@ export function AgentsView({ data }: { data: AgentsPayload }) {
       .sort((a, b) => b.issues.length - a.issues.length || a.agent.name.localeCompare(b.agent.name))
   }, [data])
 
-  const shown = attentionOnly ? rows.filter(r => r.issues.length > 0) : rows
+  const query = search.trim().toLocaleLowerCase()
+  const shown = rows.filter(({ agent, issues }) => {
+    const catalog = agent.vessel
+    const matchesSearch = [
+      agent.name,
+      agent.agentId,
+      catalog?.faction,
+      catalog?.era,
+      catalog?.archetype,
+    ]
+      .filter(Boolean)
+      .join(' ')
+      .toLocaleLowerCase()
+      .includes(query)
+    return (
+      matchesSearch &&
+      (!faction || catalog?.faction === faction) &&
+      (!attentionOnly || issues.length > 0)
+    )
+  })
+  const catalog = data.code.flatMap(agent => (agent.vessel ? [agent.vessel] : []))
+  const factions = [...new Set(catalog.map(vessel => vessel.faction))].sort()
   const chartCounts = data.code.reduce<Record<string, number>>((acc, a) => {
     acc[a.chart] = (acc[a.chart] ?? 0) + 1
     return acc
@@ -111,6 +135,49 @@ export function AgentsView({ data }: { data: AgentsPayload }) {
           sub={data.wten.ok ? undefined : 'Not exposed by WTEN yet'}
         />
       </div>
+
+      <Card
+        title="Vessel catalog"
+        subtitle="Identity and likeness from the shared Vessel catalog; archetypes use the natal Sacred 7 baseline. Open progression for earned levels, trained capability and current sky effects."
+        action={
+          <Link className="text-xs text-indigo-300 hover:underline" href="/admin/leveling">
+            View agent progression →
+          </Link>
+        }
+      >
+        <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
+          <Stat
+            label="Catalog coverage"
+            value={`${catalog.length} / ${data.code.length}`}
+            sub="Roster identities reported"
+          />
+          <Stat
+            label="Planetary factions"
+            value={num(catalog.length ? factions.length : null, CATALOG_UNREPORTED)}
+            sub="Represented in reported identities"
+          />
+          <Stat
+            label="Painted portraits"
+            value={num(
+              catalog.length
+                ? catalog.filter(vessel => vessel.likeness === 'painted').length
+                : null,
+              CATALOG_UNREPORTED
+            )}
+            sub="Portrait path declared in the catalog"
+          />
+          <Stat
+            label="Procedural cameos"
+            value={num(
+              catalog.length
+                ? catalog.filter(vessel => vessel.likeness === 'procedural').length
+                : null,
+              CATALOG_UNREPORTED
+            )}
+            sub="Generated from the likeness manifest"
+          />
+        </div>
+      </Card>
 
       <div className="grid gap-5 xl:grid-cols-2">
         <Card
@@ -172,7 +239,7 @@ export function AgentsView({ data }: { data: AgentsPayload }) {
 
       <Card
         title="Roster"
-        subtitle="Agents needing attention first: no computed chart, not seeded, not linked to alchm.kitchen, or silent for 7 days."
+        subtitle="Agents needing attention first: missing or placeholder chart, not seeded, not linked to alchm.kitchen, or silent for 7 days."
         action={
           <label className="flex items-center gap-2 text-xs text-zinc-300">
             <input
@@ -185,10 +252,39 @@ export function AgentsView({ data }: { data: AgentsPayload }) {
           </label>
         }
       >
+        <div className="mb-4 grid gap-3 sm:grid-cols-[1fr_12rem]">
+          <label className="text-xs text-zinc-300">
+            Search roster
+            <input
+              type="search"
+              value={search}
+              onChange={event => setSearch(event.target.value)}
+              placeholder="Name, agent ID, era or archetype"
+              className="mt-1 block w-full rounded-lg border border-white/10 bg-zinc-950 px-3 py-2 text-sm text-zinc-100 placeholder:text-zinc-500"
+            />
+          </label>
+          <label className="text-xs text-zinc-300">
+            Planetary faction
+            <select
+              value={faction}
+              onChange={event => setFaction(event.target.value)}
+              className="mt-1 block w-full rounded-lg border border-white/10 bg-zinc-950 px-3 py-2 text-sm text-zinc-100"
+            >
+              <option value="">All factions</option>
+              {factions.map(name => (
+                <option key={name} value={name}>
+                  {name}
+                </option>
+              ))}
+            </select>
+          </label>
+        </div>
         <ScrollTable label="Agent roster">
           <thead>
             <tr>
               <th className={th}>Agent</th>
+              <th className={th}>Vessel identity</th>
+              <th className={th}>Likeness</th>
               <th className={th}>Chart</th>
               <th className={th}>Seeded</th>
               <th className={th}>alchm.kitchen</th>
@@ -204,10 +300,60 @@ export function AgentsView({ data }: { data: AgentsPayload }) {
               return (
                 <tr key={agent.agentId}>
                   <td className={td}>
-                    <span className="font-semibold text-zinc-100">{agent.name}</span>
+                    <Link
+                      className="font-semibold text-zinc-100 hover:text-indigo-300 hover:underline"
+                      href={`/agent/${encodeURIComponent(agent.agentId)}`}
+                    >
+                      {agent.name}
+                    </Link>
                     <span className="block font-mono text-[10px] text-zinc-400">
                       {agent.agentId}
                     </span>
+                    <Link
+                      className="mt-1 inline-block text-xs text-indigo-300 hover:underline"
+                      href={`/admin/leveling?agent=${encodeURIComponent(agent.agentId)}`}
+                    >
+                      Progression →
+                    </Link>
+                  </td>
+                  <td className={td}>
+                    {agent.vessel ? (
+                      <>
+                        <span className="block font-medium text-zinc-200">
+                          {agent.vessel.faction} ·{' '}
+                          <span className="capitalize">{agent.vessel.era}</span>
+                        </span>
+                        <span className="block text-xs text-zinc-400">
+                          {agent.vessel.archetype ?? 'Archetype requires a non-placeholder chart'}
+                        </span>
+                        <span className="mt-1 block text-[10px] text-zinc-500">
+                          {agent.vessel.archetype ? 'Natal archetype · ' : ''}
+                          {agent.vessel.provenance} provenance
+                        </span>
+                      </>
+                    ) : (
+                      <Unknown reason={CATALOG_UNREPORTED} />
+                    )}
+                  </td>
+                  <td className={td}>
+                    {agent.vessel ? (
+                      <>
+                        <Badge
+                          glyph={agent.vessel.likeness === 'painted' ? '◉' : '◇'}
+                          label={
+                            agent.vessel.likeness === 'painted'
+                              ? 'Painted portrait'
+                              : 'Procedural cameo'
+                          }
+                          tone="muted"
+                        />
+                        <span className="mt-1 block text-[10px] text-zinc-400">
+                          {agent.vessel.hasModel ? '3D asset declared' : 'No 3D asset declared'}
+                        </span>
+                      </>
+                    ) : (
+                      <Unknown reason={CATALOG_UNREPORTED} />
+                    )}
                   </td>
                   <td className={td}>
                     <Badge glyph={chart.glyph} label={chart.label} tone={chart.tone} />
@@ -259,6 +405,13 @@ export function AgentsView({ data }: { data: AgentsPayload }) {
                 </tr>
               )
             })}
+            {shown.length === 0 && (
+              <tr>
+                <td className={`${td} text-center text-zinc-400`} colSpan={10}>
+                  No agents match these filters.
+                </td>
+              </tr>
+            )}
           </tbody>
         </ScrollTable>
         <p className="mt-2 text-[11px] text-zinc-400">
@@ -277,7 +430,7 @@ export function AgentsPage() {
   return (
     <AdminFrame
       title="Agents"
-      description="The roster in code against the database, each agent's chart provenance, its link to alchm.kitchen, its wallet, and what it did this week."
+      description="Vessel identities, likenesses and progression links alongside chart provenance, database provisioning, alchm.kitchen sync and weekly activity."
       updated={data ? `Read ${formatAgo(data.generatedAt)}` : undefined}
     >
       <LoadState loaded={loaded} onRetry={refresh} />

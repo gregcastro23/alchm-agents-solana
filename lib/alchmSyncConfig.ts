@@ -16,13 +16,25 @@ let cachedConfig: { baseUrl: string; secret: string } | null = null
 
 export function loadAlchmSyncConfig(): { baseUrl: string; secret: string } {
   if (cachedConfig) return cachedConfig
-  const url = process.env.ALCHM_KITCHEN_SYNC_URL || process.env.ALCHM_KITCHEN_API_BASE_URL
-  const secret = process.env.ALCHM_KITCHEN_SYNC_SECRET
-  if (!url || !secret) {
+  const url =
+    process.env.ALCHM_KITCHEN_SYNC_URL ||
+    process.env.ALCHM_KITCHEN_API_BASE_URL ||
+    process.env.NEXT_PUBLIC_ALCHM_KITCHEN_URL ||
+    'https://alchm.kitchen'
+  const secret =
+    process.env.ALCHM_KITCHEN_SYNC_SECRET ||
+    process.env.INTERNAL_API_SECRET ||
+    process.env.WHATTOEATNEXT_API_KEY ||
+    ''
+  if (!secret) {
     throw new Error(
-      'ALCHM_KITCHEN_SYNC_URL (or ALCHM_KITCHEN_API_BASE_URL) and ALCHM_KITCHEN_SYNC_SECRET are required.'
+      'ALCHM_KITCHEN_SYNC_SECRET (or INTERNAL_API_SECRET / WHATTOEATNEXT_API_KEY) is required.'
     )
   }
   cachedConfig = { baseUrl: url.replace(/\/$/, ''), secret }
   return cachedConfig
+}
+
+export function __resetAlchmSyncConfig(): void {
+  cachedConfig = null
 }

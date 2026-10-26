@@ -160,7 +160,7 @@ export const HOMER: HistoricalCraftedAgent = {
     avoidedFoods: ['Eating without first pouring a libation to the gods and honoring guests'],
     dietaryPhilosophy:
       'In Homeric epics, every meal is a sacred communal ritual of hospitality, where strangers are fed before being asked their names, and fat meats and sweet wine honor both mortals and gods.',
-    culturalCuisine: 'Archaic Ionian Greek & Bronze Age Aegean',
+    culturalCuisine: 'Archaic Ionian Greek & Mycenaean Aegean',
     beverages: [
       'Dark red Pramnian wine mixed with grated goat cheese and barley meal',
       'Mountain spring water',

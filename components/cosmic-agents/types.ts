@@ -313,6 +313,46 @@ export interface SystemEvent extends BaseEvent {
   affectedAgent?: string
 }
 
+export type EsmsToken = 'Spirit' | 'Essence' | 'Matter' | 'Substance'
+
+export interface TriplicateTradeEvent extends BaseEvent {
+  type: 'triplicate-trade'
+  tradeId: string
+  makerName: string
+  takerName: string
+  gaveToken: EsmsToken
+  gaveAmount: number
+  receivedToken: EsmsToken
+  receivedAmount: number
+  resonanceBonusPct: number
+  aspectDescription: string
+  aspectName?: string
+  transitCatalyst?: string
+}
+
+export interface CircleBoardResonanceWindow {
+  windowKey: string
+  expiresAt: string
+  makerId: string
+  takerId: string
+  bonusPct: number
+  harmonicAspect: string
+  transitCatalyst: string
+}
+
+export interface TriplicateTradeSummary {
+  id: string
+  timestamp: string
+  makerName: string
+  takerName: string
+  gaveToken: EsmsToken
+  gaveAmount: number
+  receivedToken: EsmsToken
+  receivedAmount: number
+  resonanceBonusPct: number
+  aspectDescription: string
+}
+
 export type FeedEvent =
   | StreamingEvent
   | JingDuelEvent
@@ -326,3 +366,4 @@ export type FeedEvent =
   | SigilEvent
   | EvolutionEvent
   | SystemEvent
+  | TriplicateTradeEvent

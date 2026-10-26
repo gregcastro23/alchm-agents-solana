@@ -57,7 +57,9 @@ render-frontend.env
 # Python & virtualenv
 backend/venv/
 backend/venv-x86_64/
+backend/.venv/
 venv/
+.venv/
 __pycache__/
 *.pyc
 .pytest_cache/

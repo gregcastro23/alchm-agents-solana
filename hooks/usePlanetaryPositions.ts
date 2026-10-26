@@ -12,12 +12,17 @@ import {
   getAlchemicalQuantitiesAction,
 } from '@/lib/actions/backend-actions'
 import { getCurrentPlanetaryPositions } from '@/lib/calculate-transits'
+import { normalizeSkyPositions, type SkySource } from '@/lib/agents/council/sky-snapshot'
 
 export interface PlanetaryPosition {
   planet: string
   sign: string
   degree: number
   retrograde?: boolean
+  longitude?: number
+  speed?: number
+  source?: SkySource
+  asOf?: string
 }
 
 export interface AlchemicalQuantities {
@@ -110,16 +115,23 @@ export function usePlanetaryPositions(options: UsePlanetaryPositionsOptions = {}
     try {
       setData(prev => ({ ...prev, loading: true, error: null }))
 
+      const requestedAt = new Date()
       const [posData, alchmData] = await Promise.all([
-        getPlanetaryPositionsAction(),
-        getAlchemicalQuantitiesAction(true),
+        getPlanetaryPositionsAction(requestedAt.toISOString()),
+        getAlchemicalQuantitiesAction(true, requestedAt.toISOString()),
       ])
 
       const posPayload = posData as {
         error?: string
         planetary_positions?: Record<
           string,
-          { sign?: string; degree?: number; isRetrograde?: boolean }
+          {
+            sign?: string
+            degree?: number
+            isRetrograde?: boolean
+            exactLongitude?: number
+            longitudeSpeed?: number
+          }
         >
       }
       const alchmPayload = alchmData as {
@@ -138,24 +150,18 @@ export function usePlanetaryPositions(options: UsePlanetaryPositionsOptions = {}
       if (posPayload.error) throw new Error(posPayload.error)
       if (alchmPayload.error) throw new Error(alchmPayload.error)
 
-      let planetaryPositions: PlanetaryPosition[] = Object.entries(
-        posPayload?.planetary_positions || {}
-      ).map(([name, body]) => ({
-        planet: name,
-        sign: body?.sign ?? '',
-        degree: typeof body?.degree === 'number' ? body.degree : 0,
-        retrograde: Boolean(body?.isRetrograde),
-      }))
-
-      if (planetaryPositions.length === 0) {
-        const liveFallback = getCurrentPlanetaryPositions(new Date())
-        planetaryPositions = Object.entries(liveFallback).map(([name, body]) => ({
-          planet: name,
-          sign: body.sign,
-          degree: body.degree,
-          retrograde: body.retrograde,
-        }))
-      }
+      const rawPositions = posPayload?.planetary_positions || {}
+      const snapshot = Object.keys(rawPositions).length
+        ? normalizeSkyPositions(rawPositions, {
+            source: 'unverified',
+            asOf: requestedAt.toISOString(),
+          })
+        : normalizeSkyPositions(
+            getCurrentPlanetaryPositions(requestedAt, { requireComplete: true })
+          )
+      const planetaryPositions: PlanetaryPosition[] = Object.entries(snapshot).map(
+        ([planet, body]) => ({ planet, ...body })
+      )
 
       const alchmQuantities: AlchemicalQuantities = {
         spirit: Number(alchmPayload?.spirit_score ?? 0),
@@ -174,7 +180,7 @@ export function usePlanetaryPositions(options: UsePlanetaryPositionsOptions = {}
       const rawMonica =
         monicaInput === null || monicaInput === undefined ? Number.NaN : Number(monicaInput)
       setData({
-        timestamp: new Date().toISOString(),
+        timestamp: requestedAt.toISOString(),
         planetaryPositions,
         alchmQuantities,
         monicaConstant: Number.isFinite(rawMonica) ? rawMonica : null,
@@ -190,18 +196,18 @@ export function usePlanetaryPositions(options: UsePlanetaryPositionsOptions = {}
           (error as Error)?.message || error
         )
       }
-      const liveFallback = getCurrentPlanetaryPositions(new Date())
+      const fallbackAt = new Date()
+      const liveFallback = getCurrentPlanetaryPositions(fallbackAt)
       const fallbackPositions: PlanetaryPosition[] = Object.entries(liveFallback).map(
         ([name, body]) => ({
           planet: name,
-          sign: body.sign,
-          degree: body.degree,
-          retrograde: body.retrograde,
+          ...body,
         })
       )
       setData(prev => ({
         ...prev,
         planetaryPositions: fallbackPositions,
+        timestamp: fallbackAt.toISOString(),
         loading: false,
         lastUpdated: new Date(),
         error: null,

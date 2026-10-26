@@ -48,7 +48,10 @@ export async function syncEventToAlchm(params: {
   const delivery = await deliverToWten({
     endpoint: 'economy/sync-event',
     url: `${baseUrl}/api/economy/sync-event`,
-    headers: { 'X-Sync-Secret': secret },
+    headers: {
+      'X-Sync-Secret': secret,
+      Authorization: `Bearer ${secret}`,
+    },
     body: params,
     eventId: params.idempotencyKey,
   })

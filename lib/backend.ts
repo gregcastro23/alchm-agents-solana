@@ -672,7 +672,7 @@ export const backend = {
         {
           method: 'POST',
           body: JSON.stringify(req),
-          auth: false,
+          auth: true,
         }
       ),
 
@@ -693,7 +693,7 @@ export const backend = {
       }>('/api/multi_agent_chat', {
         method: 'POST',
         body: JSON.stringify(req),
-        auth: false,
+        auth: true,
       }),
   },
   moment: {

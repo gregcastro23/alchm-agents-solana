@@ -193,7 +193,7 @@ export async function GET(_req: NextRequest) {
       const evolutionState = evolutionStates.find(state => state.agentId === rec.agentId)
       return {
         ...rec,
-        currentLevel: evolutionState?.currentLevel || 'bronze',
+        currentLevel: evolutionState?.currentLevel || 'copper',
         totalPower: evolutionState?.totalPower || 0,
         interactionCount: evolutionState?.interactionCount || 0,
         lastInteraction: evolutionState?.lastInteraction || null,

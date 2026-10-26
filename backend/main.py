@@ -1,4 +1,6 @@
 from fastapi import FastAPI, HTTPException, Header, Depends, Request
+from fastapi.responses import JSONResponse
+from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
 from typing import List, Optional, Dict, Any
 import hashlib
@@ -9,7 +11,7 @@ import re
 import threading
 import uvicorn
 import math
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, timezone
 import asyncio
 import time
 from collections import deque
@@ -29,8 +31,22 @@ import recipe_metrics
 import tilt_skillet_generation
 import alchm_mcp
 import pii_scrubber
+try:
+    import oidc
+except Exception as _oidc_import_error:  # a broken issuer must not take the whole API down with it
+    oidc = None
+    print(f"[oidc] issuer failed to import, /oidc/* and /.well-known/* are not served: {_oidc_import_error}", flush=True)
+import duel_brain
+import oracle_brain
+import pillar_brain
+from body_limit import BodyLimitMiddleware
+from client_ip import client_ip
 from feed_emitter import emit_feed_event
 from secure_compare import bearer_token, secret_matches
+from mcp_probe import tool_response_succeeded
+from chat_access import ChatAccessError, cap_chat_tier, resolve_chat_principal
+from chat_privacy import should_publish_chat
+from chat_sessions import scoped_session_id
 
 AI_DISCLAIMER_TEXT = (
     "Planetary Agent responses and cosmic recipes are synthesized using Large Language Models (LLMs) "
@@ -60,9 +76,15 @@ sync_rate_limiter = SlidingWindowRateLimiter(limit=60, window=60.0)
 KINETICS_STATE = {}
 KINETICS_STATE_LOCK = threading.Lock()
 
-# Initialize database
-models.Base.metadata.create_all(bind=database.engine)
-database.ensure_postgres_runtime_schema()
+# Initialize database (resilient to remote quota exhaustion / transient outages)
+try:
+    models.Base.metadata.create_all(bind=database.engine)
+    database.ensure_postgres_runtime_schema()
+except Exception as _db_init_err:
+    print(
+        f"[database] Warning: database schema init skipped (degraded mode / over quota): {_db_init_err}",
+        flush=True,
+    )
 
 from contextlib import asynccontextmanager
 
@@ -109,9 +131,24 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
+# OIDC issuer for Pentacles SSO (discovery, JWKS, kitchen-session → id token).
+# SpacetimeDB validates Pentacles tokens against https://api.agents.alchm.kitchen,
+# so these routes must live at this origin. The signing key is read lazily from
+# OIDC_SIGNING_KEY_PEM: a deployment without it still boots, and only the
+# key-dependent routes answer 503.
+if oidc is not None:
+    app.include_router(oidc.router)
+
+try:
+    import ephemeris_service
+    app.include_router(ephemeris_service.router, prefix="/api/planets", tags=["Swiss Ephemeris"])
+except Exception as _e:
+    ephemeris_service = None  # _planetary_positions_for answers 503 rather than invent positions
+    print(f"[ephemeris] Swiss Ephemeris router failed to load: {_e}", flush=True)
+
 
 # Configuration
-ALCHM_KITCHEN_URL = os.getenv("ALCHM_KITCHEN_URL", "https://whattoeatnext-production.up.railway.app")
+ALCHM_KITCHEN_URL = os.getenv("ALCHM_KITCHEN_URL", "https://alchm.kitchen")
 INTERNAL_API_SECRET = os.getenv("INTERNAL_API_SECRET")
 if not INTERNAL_API_SECRET:
     # Fail closed: no committed default. Internal/admin endpoints (mcp-summary,
@@ -534,31 +571,50 @@ ZODIAC_SIGNS = [
     "Pisces",
 ]
 
-PLANETARY_PERIODS_DAYS = {
-    "Sun": 365.25,
-    "Moon": 27.321661,
-    "Mercury": 87.969,
-    "Venus": 224.701,
-    "Mars": 686.98,
-    "Jupiter": 4332.59,
-    "Saturn": 10759.22,
-    "Uranus": 30685.4,
-    "Neptune": 60189.0,
-    "Pluto": 90560.0,
-}
+PLANETARY_BODIES = (
+    "Sun",
+    "Moon",
+    "Mercury",
+    "Venus",
+    "Mars",
+    "Jupiter",
+    "Saturn",
+    "Uranus",
+    "Neptune",
+    "Pluto",
+)
 
-PLANETARY_OFFSETS = {
-    "Sun": 28.0,
-    "Moon": 91.0,
-    "Mercury": 74.0,
-    "Venus": 132.0,
-    "Mars": 201.0,
-    "Jupiter": 16.0,
-    "Saturn": 301.0,
-    "Uranus": 64.0,
-    "Neptune": 359.0,
-    "Pluto": 277.0,
-}
+# Swiss Ephemeris in Moshier mode (no data files) is valid for this Julian-day span,
+# roughly 3000 BC to 3000 AD — the same limit lib/swiss-ephemeris-service.ts documents.
+EPHEMERIS_JD_MIN = 625000.5
+EPHEMERIS_JD_MAX = 2818000.5
+POSITIONS_SOURCE = "swiss-ephemeris"
+
+
+class EphemerisUnavailable(RuntimeError):
+    """Swiss Ephemeris could not produce a position.
+
+    Surfaces as HTTP 503. Position endpoints must NEVER substitute an
+    approximation silently: until 2026-10 this module served a circular-orbit
+    model whose arbitrary phase offsets put the Sun at 11° Aquarius on a day it
+    stood at 22° Libra, and the Pentacles Oracle injected that into every
+    question's context.
+    """
+
+
+@app.exception_handler(EphemerisUnavailable)
+async def _ephemeris_unavailable_handler(_request: Request, exc: EphemerisUnavailable):
+    return JSONResponse(
+        status_code=503,
+        content={"error": "ephemeris_unavailable", "message": str(exc)},
+    )
+
+
+def _naive_utc(value: datetime) -> datetime:
+    """The ephemeris is evaluated in UT: convert an aware datetime, read a naive one as UTC."""
+    if value.tzinfo is not None:
+        return value.astimezone(timezone.utc).replace(tzinfo=None)
+    return value
 
 
 def _request_datetime(payload: Dict[str, Any]) -> datetime:
@@ -569,9 +625,15 @@ def _request_datetime(payload: Dict[str, Any]) -> datetime:
     raw_date = payload.get("date")
     if isinstance(raw_date, str) and raw_date.strip():
         try:
-            return datetime.fromisoformat(raw_date.replace("Z", "+00:00")).replace(tzinfo=None)
+            parsed = datetime.fromisoformat(raw_date.replace("Z", "+00:00"))
         except ValueError:
             pass
+        else:
+            # Convert to UTC before dropping tzinfo: "…T06:00:00+05:00" is 01:00 UTC,
+            # and the ephemeris is evaluated in UT.
+            if parsed.tzinfo is not None:
+                parsed = parsed.astimezone(timezone.utc).replace(tzinfo=None)
+            return parsed
     return datetime(
         int(payload.get("year") or now.year),
         int(payload.get("month") or now.month),
@@ -582,27 +644,56 @@ def _request_datetime(payload: Dict[str, Any]) -> datetime:
 
 
 def _planetary_positions_for(dt: datetime) -> Dict[str, Dict[str, Any]]:
-    epoch = datetime(2000, 1, 1, 12, 0)
-    elapsed_days = (dt - epoch).total_seconds() / 86400
-    positions: Dict[str, Dict[str, Any]] = {}
+    """Geocentric apparent tropical positions of the ten bodies at ``dt`` (naive UTC).
 
-    for planet, period in PLANETARY_PERIODS_DAYS.items():
-        longitude = (PLANETARY_OFFSETS[planet] + (elapsed_days / period) * 360) % 360
-        sign_index = int(longitude // 30)
-        degree_float = longitude % 30
+    Computed with Swiss Ephemeris (Moshier mode, no data files) through
+    ``ephemeris_service``. Measured against an independent VSOP87/ELP2000
+    ephemeris at six instants from 1990 to 2030 it agrees to within 0.0025°
+    (Pluto; every other body within 0.0005°), including the retrograde flag.
+
+    Raises ``EphemerisUnavailable`` (HTTP 503) if the library is missing or a body
+    cannot be computed, and ``HTTPException`` 422 for a date outside the Moshier
+    span. It never returns an approximation.
+    """
+    if ephemeris_service is None:
+        raise EphemerisUnavailable("Swiss Ephemeris is not available on this deployment.")
+
+    hour = dt.hour + dt.minute / 60.0 + dt.second / 3600.0 + dt.microsecond / 3600000000.0
+    jd = ephemeris_service.swe.julday(dt.year, dt.month, dt.day, hour, ephemeris_service.swe.GREG_CAL)
+    if not EPHEMERIS_JD_MIN <= jd <= EPHEMERIS_JD_MAX:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Date {dt.date().isoformat()} is outside the supported ephemeris range (3000 BC – 3000 AD).",
+        )
+
+    positions: Dict[str, Dict[str, Any]] = {}
+    for planet in PLANETARY_BODIES:
+        try:
+            raw = ephemeris_service.calculate_single_planet(ephemeris_service.PLANETS[planet.lower()], jd)
+        except Exception as exc:
+            raise EphemerisUnavailable(f"Swiss Ephemeris failed for {planet}: {exc}") from exc
+
+        # exactLongitude, sign, degree and minute all derive from the SAME rounded value, so a
+        # body at 359.99996° is "Aries 0°00′ / 0.0", never "Pisces 29°59′ / 0.0".
+        exact = round(raw["longitude"] % 360.0, 4)
+        if exact >= 360.0:
+            exact = 0.0
+        speed = raw["speed"]
+        degree_float = exact % 30.0
         degree = int(degree_float)
-        minute = int(round((degree_float - degree) * 60))
-        speed = 360 / period
+        minute = min(59, int((degree_float - degree) * 60.0))  # zodiacal degrees truncate, never round up
+        retrograde = speed < 0
         positions[planet] = {
-            "sign": ZODIAC_SIGNS[sign_index],
+            "sign": ZODIAC_SIGNS[int(exact // 30)],
             "degree": degree,
             "minute": minute,
-            "exactLongitude": round(longitude, 4),
-            "isRetrograde": False,
-            "retrogradeSymbol": "",
+            "exactLongitude": exact,
+            "isRetrograde": retrograde,
+            "retrogradeSymbol": "℞" if retrograde else "",
             "longitudeSpeed": round(speed, 6),
             "arcminutesPerDay": round(speed * 60, 4),
             "speedDisplay": f"{round(speed, 3)}°/day",
+            "source": POSITIONS_SOURCE,
         }
 
     return positions
@@ -632,7 +723,7 @@ def _require_complete_chart(custom_planets: Dict[str, Any]) -> Dict[str, Any]:
     omitting them outright.
     """
     normalized = utils.ensure_planetary_positions_dict(custom_planets)
-    missing = [body for body in PLANETARY_PERIODS_DAYS if body not in normalized]
+    missing = [body for body in PLANETARY_BODIES if body not in normalized]
     if missing:
         raise HTTPException(
             status_code=422,
@@ -668,6 +759,7 @@ async def planetary_positions(request: Dict[str, Any]):
             "minute": dt.minute,
         },
         "planetary_positions": _planetary_positions_for(dt),
+        "source": POSITIONS_SOURCE,
     }
 
 
@@ -683,15 +775,17 @@ async def current_planetary_positions():
             "minute": dt.minute,
         },
         "planetary_positions": _planetary_positions_for(dt),
+        "source": POSITIONS_SOURCE,
     }
 
 
 @app.post("/api/planetary/positions/bulk")
 async def bulk_planetary_positions(request: schemas.BulkPositionsRequest):
     samples = []
-    current = request.startDate
+    current = _naive_utc(request.startDate)
+    end = _naive_utc(request.endDate)
     step = timedelta(hours=max(request.intervalHours, 0.25))
-    while current <= request.endDate and len(samples) < 500:
+    while current <= end and len(samples) < 500:
         samples.append({
             "timestamp": current.isoformat(),
             "positions": {
@@ -707,7 +801,7 @@ async def bulk_planetary_positions(request: schemas.BulkPositionsRequest):
         })
         current += step
 
-    return {"samples": samples, "count": len(samples), "degraded": True}
+    return {"samples": samples, "count": len(samples), "degraded": False, "source": POSITIONS_SOURCE}
 
 
 @app.post("/api/alchemical/quantities")
@@ -871,10 +965,507 @@ def agents_search(
     }
 
 
+# --- Pentacles brain: Word Duel, Jing Arena and Oracle (public, rate-limited) ---
+#
+# Consumed by the Pentacles feeders (gregcastro23/Pentacles feeder/brain.ts):
+#   POST <base><path>, Content-Type: application/json, NO auth header; one
+#   attempt here, one at the Vercel fallback, then the feeder's own local logic.
+#   Any network error, non-2xx status, non-JSON body or contract-violating body
+#   counts as a failure and triggers the fallback — so when this brain cannot
+#   answer it must answer NON-2xx, never 200 with stub text.
+#
+# History: these routes were restored from gregcastro23/alchm-agents-app
+# (0473bf7, bac55c1 — dropped by a force-push) after the Railway service was
+# repointed at this repo and they vanished (404/405 in production). See
+# duel_brain.py (byte-identical to 0473bf7) and oracle_brain.py (new).
+#
+# Static paths cannot collide with GET/PUT/DELETE /api/agents/{agent_id}: those
+# match the path but not the method, and Starlette prefers a full match over a
+# partial one regardless of registration order. Without these routes the same
+# partial match is what produced the 405 seen in production.
+#
+# The routes must stay public (the feeder sends no credentials), so the LLM-backed
+# ones sit behind a per-caller + global sliding-window gate in the style of the
+# /api/generate-recipe limiter. Limits are env-configurable and generous enough
+# for a single Pentacles feeder IP: its Oracle is capped at 60 questions an hour,
+# and word duels / jings arrive in bursts.
+
+
+# The real requests are a few hundred bytes (25 candidate words, a 7-letter rack).
+BRAIN_MAX_BODY_BYTES = 16 * 1024
+# duel_brain's own bounds, enforced here at the boundary because the routes are public.
+BRAIN_MAX_CANDIDATES = 50
+BRAIN_MAX_WORD_LENGTH = 15
+BRAIN_MAX_RACK_TILES = 26
+BRAIN_MAX_ID_LENGTH = 100
+BRAIN_PATHS = frozenset({"/api/agents/oracle", "/api/agents/jing", "/api/agents/word-duel"})
+# Outermost, so an oversized body is refused before FastAPI reads any of it (see body_limit.py).
+app.add_middleware(BodyLimitMiddleware, paths=BRAIN_PATHS, max_bytes=BRAIN_MAX_BODY_BYTES)
+_RACK_STRING = re.compile(r"[A-Za-z]{1,26}")
+_PLAYER_WORD = re.compile(r"[A-Za-z]{1,15}")
+
+
+def _env_positive_int(name: str, default: int) -> int:
+    try:
+        value = int(os.getenv(name, ""))
+        return value if value > 0 else default
+    except (TypeError, ValueError):
+        return default
+
+
+class _CallerGate:
+    """Per-caller (keyed IP hash) plus global sliding-window gate for a public route."""
+
+    MAX_CALLERS = 10_000
+
+    def __init__(
+        self,
+        route: str,
+        *,
+        per_caller_env: str,
+        per_caller_default: int,
+        global_env: str,
+        global_default: int,
+        window_s: float,
+    ):
+        self.route = route
+        self.window_s = window_s
+        self.per_caller_limit = _env_positive_int(per_caller_env, per_caller_default)
+        self.global_limiter = SlidingWindowRateLimiter(
+            limit=_env_positive_int(global_env, global_default), window=window_s
+        )
+        self.callers: Dict[str, SlidingWindowRateLimiter] = {}
+
+    def check(self, http_request: Request) -> None:
+        ip_hash = _caller_ip_hash(http_request)
+        limiter = self.callers.get(ip_hash)
+        if limiter is None:
+            if len(self.callers) >= self.MAX_CALLERS:
+                self.callers.clear()
+            limiter = SlidingWindowRateLimiter(limit=self.per_caller_limit, window=self.window_s)
+            self.callers[ip_hash] = limiter
+        if not limiter.is_allowed() or not self.global_limiter.is_allowed():
+            print(f"brain_rate_limited route={self.route} ip_hash={ip_hash}", flush=True)
+            raise HTTPException(
+                status_code=429,
+                detail="Too Many Requests",
+                headers={"Retry-After": str(int(min(self.window_s, 60)))},
+            )
+
+
+_oracle_gate = _CallerGate(
+    "oracle",
+    per_caller_env="BRAIN_ORACLE_PER_CALLER_PER_HOUR",
+    per_caller_default=120,  # the feeder caps itself at 60/hour
+    global_env="BRAIN_ORACLE_GLOBAL_PER_HOUR",
+    global_default=400,
+    window_s=3600.0,
+)
+_word_duel_gate = _CallerGate(
+    "word-duel",
+    per_caller_env="BRAIN_WORD_DUEL_PER_CALLER_PER_MIN",
+    per_caller_default=60,  # every call may reach a model, and in production the one that answers is paid
+    global_env="BRAIN_WORD_DUEL_GLOBAL_PER_MIN",
+    global_default=300,
+    window_s=60.0,
+)
+_jing_gate = _CallerGate(
+    "jing",
+    per_caller_env="BRAIN_JING_PER_CALLER_PER_MIN",
+    per_caller_default=120,
+    global_env="BRAIN_JING_GLOBAL_PER_MIN",
+    global_default=600,
+    window_s=60.0,
+)
+
+
+def _oracle_rate_gate(http_request: Request) -> None:
+    _oracle_gate.check(http_request)
+
+
+def _word_duel_rate_gate(http_request: Request) -> None:
+    _word_duel_gate.check(http_request)
+
+
+def _jing_rate_gate(http_request: Request) -> None:
+    _jing_gate.check(http_request)
+
+
+_pillar_gate = _CallerGate(
+    "pillar",
+    per_caller_env="BRAIN_PILLAR_PER_CALLER_PER_MIN",
+    per_caller_default=120,
+    global_env="BRAIN_PILLAR_GLOBAL_PER_MIN",
+    global_default=600,
+    window_s=60.0,
+)
+
+
+def _pillar_rate_gate(http_request: Request) -> None:
+    _pillar_gate.check(http_request)
+
+
+
+def _clean_rack(rack: Any) -> Optional[Any]:
+    """A bounded rack, or None. duel_brain expands a {letter: count} map to a string
+    of that many letters, so an unbounded count is a one-request memory exhaustion."""
+    if isinstance(rack, str):
+        return rack if _RACK_STRING.fullmatch(rack) else None
+    if isinstance(rack, dict):
+        total = 0
+        for letter, count in rack.items():
+            if not (isinstance(letter, str) and len(letter) == 1 and letter.isascii() and letter.isalpha()):
+                return None
+            if isinstance(count, bool) or not isinstance(count, int) or not 0 <= count <= BRAIN_MAX_RACK_TILES:
+                return None
+            total += count
+        return rack if 0 < total <= BRAIN_MAX_RACK_TILES else None
+    return None
+
+
+def _clean_candidates(candidates: List[Any]) -> List[str]:
+    """First BRAIN_MAX_CANDIDATES words. Caller-supplied scores are dropped: they are never trusted."""
+    words: List[str] = []
+    for item in candidates[:BRAIN_MAX_CANDIDATES]:
+        word = item.get("word") if isinstance(item, dict) else item
+        if isinstance(word, str) and 0 < len(word.strip()) <= BRAIN_MAX_WORD_LENGTH:
+            words.append(word.strip())
+    return words
+
+
+def _clean_duel_context(context: Dict[str, Any]) -> Dict[str, Any]:
+    """Only the fields duel_brain reads, type- and size-checked: playerWord is interpolated
+    into the model prompt, so free text from a public caller must not reach it."""
+    clean: Dict[str, Any] = {}
+    player_word = context.get("playerWord")
+    if isinstance(player_word, str) and _PLAYER_WORD.fullmatch(player_word):
+        clean["playerWord"] = player_word
+    for key, upper in (("playerScore", 10_000), ("round", 1_000), ("seasonDegree", 360)):
+        value = context.get(key)
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and 0 <= value <= upper:
+            clean[key] = value
+    agent_id = context.get("agentId")
+    if isinstance(agent_id, str) and 0 < len(agent_id) <= BRAIN_MAX_ID_LENGTH:
+        clean["agentId"] = agent_id
+    return clean
+
+
+def _brain_error(status_code: int, error: str, **extra: Any) -> JSONResponse:
+    return JSONResponse(status_code=status_code, content={"success": False, "error": error, **extra})
+
+
+@app.post("/api/agents/word-duel", dependencies=[Depends(_word_duel_rate_gate)])
+async def agents_word_duel(
+    request: schemas.WordDuelRequest, db: Session = Depends(database.get_db)
+):
+    """In-character Word Duel move brain.
+
+    Request: { planet, rack, candidates: string[] | [{word,score}], context?,
+               agentId?, sessionId?, userId?, source? }
+    Response: { success, planet, move: { word, rationale, score, source,
+                provider?, model?, latencyMs }, timestamp }
+
+    The played word is ALWAYS one of the supplied candidates (a model's pick is
+    re-validated against them), and ``move.score`` is always recomputed here with
+    the shared scorer — the Pentacles reducer trusts it and does not re-check the
+    word, so neither a model's claim nor the caller's score is ever echoed.
+    Errors: 400 (planet/rack), 422 (candidates missing, or empty — there is no
+    legal word to play, so the caller must yield locally), 500.
+    """
+    try:
+        planet = request.planet
+        if not duel_brain.is_planet(planet):
+            return _brain_error(400, "Invalid or missing planet. Must be one of the ten spheres.")
+
+        rack = _clean_rack(request.rack)
+        if rack is None:
+            return _brain_error(
+                400, "Invalid or missing rack. Must be 1-26 letters, or a {letter:count} map of at most 26 tiles."
+            )
+
+        # Thin brain: the caller MUST supply candidates (PA owns no dictionary).
+        if not isinstance(request.candidates, list):
+            return _brain_error(
+                422,
+                "Missing candidates[]. Send the legal words from your solver (string[] or {word,score}[]).",
+            )
+
+        context = _clean_duel_context(request.context) if isinstance(request.context, dict) else None
+        agent_id = request.agentId if isinstance(request.agentId, str) else None
+        if agent_id is not None and not 0 < len(agent_id) <= BRAIN_MAX_ID_LENGTH:
+            agent_id = None
+        if not agent_id and context and isinstance(context.get("agentId"), str):
+            agent_id = context["agentId"]
+
+        # Optional persona channeling — a known historical agent lends its voice.
+        agent_channel = None
+        if agent_id:
+            try:
+                row = await run_in_threadpool(crud.get_agent, db, agent_id=agent_id)
+                if row:
+                    agent_channel = {
+                        "agentId": row.agentId,
+                        "name": row.name,
+                        "title": row.title,
+                        "personalityCore": row.personalityCore or {},
+                    }
+            except Exception as lookup_err:
+                print(f"[word-duel] agent lookup skipped: {lookup_err}", flush=True)
+
+        move = await duel_brain.choose_word_move(
+            planet=planet,
+            rack=rack,
+            candidates=_clean_candidates(request.candidates),
+            context=context,
+            agent=agent_channel,
+        )
+        if move.get("source") == "yield" or not move.get("word"):
+            # No legal candidate survived. A 200 with word "" would be a body the
+            # feeder rejects as contract-violating; say so explicitly instead.
+            return _brain_error(
+                422,
+                "no_legal_candidates",
+                message="No candidate word can be played from this rack; yield the turn.",
+            )
+        # Match JSON.stringify: absent (undefined) optional keys are omitted.
+        move = {k: v for k, v in move.items() if v is not None}
+
+        return {
+            "success": True,
+            "planet": planet,
+            "move": move,
+            "timestamp": duel_brain.now_iso_z(),
+        }
+    except Exception as error:
+        print(f"[word-duel] Error handling duel move: {error}", flush=True)
+        return _brain_error(500, "Internal server error.")
+
+
+@app.post("/api/agents/jing", dependencies=[Depends(_jing_rate_gate)])
+async def agents_jing(
+    request: schemas.JingDuelRequest, db: Session = Depends(database.get_db)
+):
+    """In-character Jing Arena counter brain.
+
+    Given a planet and the player's OPENING move, returns the move that planet
+    plays to counter it (the winning reply on the fixed counter graph) plus a
+    one-line voice. Deterministic unless agentId names a known agent (then an
+    LLM voice is attempted, with the counter voice kept as fallback).
+
+    Request:  { planet, opening, agentId?, source? }
+    Response: { success, planet, move, voice, element, source, timestamp }
+    """
+    try:
+        planet = request.planet
+        if not duel_brain.is_planet(planet):
+            return _brain_error(400, "Invalid or missing planet. Must be one of the ten spheres.")
+        opening = request.opening
+        if not duel_brain.is_jing_move(opening):
+            return _brain_error(
+                400, "Invalid or missing opening. Must be Meltdown|Freeze|TectonicRoot|Vacuum|Erode."
+            )
+
+        persona_block = None
+        agent_name = None
+        agent_id = request.agentId if isinstance(request.agentId, str) else None
+        if agent_id and len(agent_id) <= BRAIN_MAX_ID_LENGTH:
+            try:
+                row = await run_in_threadpool(crud.get_agent, db, agent_id=agent_id)
+                if row:
+                    persona_block = prompts.get_agent_system_prompt(row.__dict__)
+                    agent_name = row.name
+            except Exception as lookup_err:
+                print(f"[jing] agent lookup skipped: {lookup_err}", flush=True)
+
+        result = await duel_brain.choose_jing_move(
+            planet, opening, persona_block=persona_block, agent_name=agent_name
+        )
+        return {
+            "success": True,
+            "planet": planet,
+            "move": result["move"],
+            "voice": result["voice"],
+            "element": result["element"],
+            "source": "counter",
+            "timestamp": duel_brain.now_iso_z(),
+        }
+    except Exception as error:
+        print(f"[jing] Error handling jing move: {error}", flush=True)
+        return _brain_error(500, "Internal server error.")
+
+
+@app.post("/api/agents/oracle", dependencies=[Depends(_oracle_rate_gate)])
+async def agents_oracle(request: schemas.OracleRequest):
+    """The Pentacles Oracle: a game-aware answer to a player's question.
+
+    Request:  { question: str (trimmed, 1..500 bytes), context?: str }
+              context is derived data only — the live-sky block plus the zone /
+              faction summary the feeder builds; it never carries birth data.
+    Response: { answer, provider, model, timestamp } — provider/model name the
+              link of the fallback chain that answered. Which links exist follows
+              the same tiering as /api/chat: the free chain (Groq → Cerebras →
+              Qwen → Gemini → OpenRouter, then OpenAI last-ditch) unless the
+              deploy's HISTORICAL_AGENT_DEFAULT_TIER is paid, in which case
+              Anthropic leads. Links without an API key are skipped.
+    Errors:   400 bad question/context; 503 when no provider answered in time.
+              There is deliberately no stub answer: the feeder treats any non-2xx
+              as "try the fallback", but would publish a 200 body to the player.
+    """
+    try:
+        try:
+            question, context = oracle_brain.parse_request(request.question, request.context)
+        except oracle_brain.OracleInputError as bad_input:
+            return _brain_error(400, str(bad_input))
+
+        tier = _resolve_tier(None)
+        result = await oracle_brain.answer(
+            question,
+            context,
+            tier=tier,
+            anthropic_model=ANTHROPIC_TIER_MODEL.get(tier),
+        )
+        if result is None:
+            return _brain_error(503, "No LLM provider available to channel the oracle.")
+        return {
+            "answer": result.text,
+            "provider": result.provider,
+            "model": result.model,
+            "timestamp": duel_brain.now_iso_z(),
+        }
+    except Exception as error:
+        print(f"[oracle] Error handling oracle question: {error}", flush=True)
+        return _brain_error(500, "Internal server error.")
+
+
+@app.post("/api/agents/pillar", dependencies=[Depends(_pillar_rate_gate)])
+async def agents_pillar(request: schemas.PillarDuelRequest):
+    """Fourteen Alchemical Pillars Arena companion brain.
+
+    Given a planet agent, an opponent opening pillar (name or id 1..14), and sky sect,
+    evaluates the alchemical circuit best response from the agent's legal hand,
+    returning the chosen pillar, power ratio, magnitude, and characterful voice line.
+
+    Request:  { planet, opening, sky?, challengerChart?, challengerPools?, agentPools?, source? }
+    Response: { success, planet, pillar, pillarId, voice, source, willWin, winner, powerRatio, magnitude, timestamp }
+    """
+    try:
+        planet = request.planet
+        if not pillar_brain.is_planetary_agent(planet):
+            return _brain_error(
+                400,
+                "Invalid or missing planet agent. Must be one of the ten planetary spheres.",
+            )
+
+        opening = request.opening
+        opening_spec = None
+        if isinstance(opening, int) and not isinstance(opening, bool):
+            opening_spec = pillar_brain.pillar_by_id(opening)
+        elif isinstance(opening, str):
+            opening_spec = pillar_brain.pillar_by_name(opening)
+
+        if not opening_spec:
+            return _brain_error(
+                400,
+                f'Invalid opening pillar "{opening}". Must be one of the Fourteen Alchemical Pillars.',
+            )
+
+        sky_sect = "nocturnal" if str(request.sky or "").lower() == "nocturnal" else "diurnal"
+
+        challenger_chart = None
+        if isinstance(request.challengerChart, dict) and isinstance(request.challengerChart.get("signs"), list):
+            challenger_chart = request.challengerChart
+
+        challenger_pools = None
+        if isinstance(request.challengerPools, list) and len(request.challengerPools) == 4:
+            try:
+                challenger_pools = [float(x) for x in request.challengerPools]
+            except (ValueError, TypeError):
+                challenger_pools = None
+
+        agent_pools = None
+        if isinstance(request.agentPools, list) and len(request.agentPools) == 4:
+            try:
+                agent_pools = [float(x) for x in request.agentPools]
+            except (ValueError, TypeError):
+                agent_pools = None
+
+        duel = pillar_brain.answer_pillar_duel(
+            agent_planet=planet,
+            opening_pillar_id=opening_spec["id"],
+            challenger_chart=challenger_chart,
+            challenger_pools=challenger_pools,
+            sky=sky_sect,
+            agent_pools=agent_pools,
+        )
+
+        return {
+            "success": True,
+            "planet": planet,
+            "pillar": duel["chosenPillar"]["name"],
+            "pillarId": duel["chosenPillar"]["id"],
+            "voice": duel["voice"],
+            "source": "best-response",
+            "willWin": duel["willWin"],
+            "winner": duel["outcome"]["winner"],
+            "powerRatio": duel["outcome"]["ratioB"],
+            "magnitude": duel["outcome"]["magnitudeB"],
+            "timestamp": pillar_brain.now_iso_z(),
+        }
+    except Exception as error:
+        print(f"[pillar] Error handling agent pillar move: {error}", flush=True)
+        return _brain_error(500, "Internal server error.")
+
+
 # --- Chat Orchestration ---
 
+def _chat_principal(db, user_id=None, authorization=None, x_api_key=None, service_token=None):
+    import mcp_invocation_log
+
+    # Direct in-process calls do not receive FastAPI's resolved Header defaults.
+    authorization = authorization if isinstance(authorization, str) else None
+    x_api_key = x_api_key if isinstance(x_api_key, str) else None
+    service_token = service_token if isinstance(service_token, str) else None
+    try:
+        return resolve_chat_principal(
+            api_key=x_api_key or bearer_token(authorization),
+            service_token=service_token,
+            claimed_user_id=user_id,
+            service_secret=INTERNAL_API_SECRET,
+            resolve_key=lambda key: mcp_invocation_log.resolve_api_key_sync(db, key),
+            unlinked_dev_key=os.getenv("DESKTOP_DEV_API_KEY") or "dev-desktop-token",
+        )
+    except ChatAccessError as exc:
+        raise HTTPException(status_code=exc.status_code, detail=str(exc)) from exc
+
+
+@app.get("/api/mcp/identity")
+async def mcp_identity(
+    authorization: Optional[str] = Header(None),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    db: Session = Depends(database.get_db),
+):
+    principal = _chat_principal(db, authorization=authorization, x_api_key=x_api_key)
+    return {"apiKeyId": principal.api_key_id, "userId": principal.user_id, "authTier": principal.auth_tier}
+
+
 @app.post("/api/chat", response_model=schemas.ChatResponse)
-async def chat(request: schemas.ChatRequest, db: Session = Depends(database.get_db)):
+async def chat(
+    request: schemas.ChatRequest,
+    db: Session = Depends(database.get_db),
+    authorization: Optional[str] = Header(None),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    service_token: Optional[str] = Header(None, alias="INTERNAL_API_SECRET"),
+):
+    principal = _chat_principal(db, request.userId, authorization, x_api_key, service_token)
+    request.userId = principal.user_id
+    request.modelTier = cap_chat_tier(request.modelTier, principal)
+    try:
+        request.sessionId = scoped_session_id(
+            request.agentId, principal.session_owner, request.sessionId,
+            os.getenv("CHAT_SESSION_SIGNING_SECRET") or INTERNAL_API_SECRET,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="Invalid or unowned conversation handle") from exc
     # 1. Resolve agent (still needed for RAG filter and DB recording)
     db_agent = crud.get_agent(db, agent_id=request.agentId)
     if not db_agent:
@@ -919,7 +1510,7 @@ async def chat(request: schemas.ChatRequest, db: Session = Depends(database.get_
                 if sign_candidate == "Scorpius":
                     sign_candidate = "Scorpio"
                 
-                if planet_candidate in PLANETARY_PERIODS_DAYS and sign_candidate in ZODIAC_SIGNS:
+                if planet_candidate in PLANETARY_BODIES and sign_candidate in ZODIAC_SIGNS:
                     is_planetary = True
                     planet_opt = planet_candidate
                     sign_opt = sign_candidate
@@ -1357,7 +1948,8 @@ async def chat(request: schemas.ChatRequest, db: Session = Depends(database.get_
         chat_metadata["targetName"] = str(target_name)[:120]
         chat_metadata["withAgent"] = str(target_name)[:120]
 
-    emit_feed_event(request.agentId, "agent_chat", chat_metadata)
+    if should_publish_chat(request.context):
+        emit_feed_event(request.agentId, "agent_chat", chat_metadata)
 
     return {
         "text": text,
@@ -1396,8 +1988,23 @@ STAR_AGENT_NAMES = {
 }
 
 @app.post("/api/multi_agent_chat", response_model=schemas.MultiAgentChatResponse)
-async def multi_agent_chat(request: schemas.MultiAgentChatRequest, db: Session = Depends(database.get_db)):
-    session_id = request.sessionId or f"council-session-{datetime.utcnow().timestamp()}"
+async def multi_agent_chat(
+    request: schemas.MultiAgentChatRequest,
+    db: Session = Depends(database.get_db),
+    authorization: Optional[str] = Header(None),
+    x_api_key: Optional[str] = Header(None, alias="X-API-Key"),
+    service_token: Optional[str] = Header(None, alias="INTERNAL_API_SECRET"),
+):
+    principal = _chat_principal(db, request.userId, authorization, x_api_key, service_token)
+    request.userId = principal.user_id
+    request.modelTier = cap_chat_tier(request.modelTier, principal)
+    try:
+        session_id = scoped_session_id(
+            "council", principal.session_owner, request.sessionId,
+            os.getenv("CHAT_SESSION_SIGNING_SECRET") or INTERNAL_API_SECRET,
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="Invalid or unowned conversation handle") from exc
     agent_ids = request.agentIds or ["sirius", "arcturus", "vega", "polaris"]
     tier = _resolve_tier(request.modelTier)
     anthropic_model = ANTHROPIC_TIER_MODEL.get(tier)
@@ -1488,8 +2095,7 @@ _RECIPE_LIMITER_MAX_KEYS = 10_000
 
 def _caller_ip_hash(http_request: Request) -> str:
     """Keyed hash of the caller IP — enough to correlate abuse, not to recover the IP."""
-    forwarded = http_request.headers.get("x-forwarded-for", "")
-    ip = forwarded.split(",")[0].strip() or (http_request.client.host if http_request.client else "unknown")
+    ip = client_ip(http_request)
     key = (os.getenv("LOG_HASH_SALT") or INTERNAL_API_SECRET or "asol").encode("utf-8")
     return hmac.new(key, ip.encode("utf-8"), hashlib.sha256).hexdigest()[:16]
 
@@ -1961,7 +2567,7 @@ async def get_agent_kinetics(
     current_pos = _planetary_positions_for(now)
     
     current_planet = planet or getattr(db_agent, 'symbol', 'Sun') or "Sun"
-    if current_planet not in PLANETARY_OFFSETS:
+    if current_planet not in PLANETARY_BODIES:
         current_planet = "Sun"
         
     with KINETICS_STATE_LOCK:
@@ -2194,11 +2800,9 @@ async def synthetic_mcp_probe(
     except Exception as exc:
         results["feed_error"] = str(exc)
 
-    success = "chat_error" not in results and "feed_error" not in results
-    if success and (not results.get("chat") or results.get("chat", {}).get("error")):
-        success = False
-    if success and (not results.get("feed") or results.get("feed", {}).get("error")):
-        success = False
+    # MCP execution failures live in result.isError, even when the JSON-RPC
+    # request itself succeeds. Missing or malformed replies also fail the probe.
+    success = all(tool_response_succeeded(results.get(name)) for name in ("chat", "feed"))
 
     # Piggyback retention on the 30-min probe: prune mcp_invocations older than the
     # retention window so the table doesn't grow unbounded (nothing else calls this).

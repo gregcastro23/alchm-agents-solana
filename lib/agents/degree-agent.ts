@@ -9,6 +9,7 @@
 import type { UnifiedAgent, PlanetaryConfig } from '@/lib/unified-agent-types'
 import { convertLegacyAgentConfig } from '@/lib/planetary-config-helper'
 import { unifiedAgentFactory } from '@/lib/unified-agent-factory'
+import { getHistoricalAgent } from '@/lib/agents/historical'
 
 export interface TransitAgentDetail {
   id: string
@@ -86,12 +87,23 @@ export function normalizeTransitAgents(
 
     const provided = byId.get(id)
     const parsed = parseDegreeAgentId(id)
+    const hist = getHistoricalAgent(id)
 
     if (parsed) {
       seen.add(parsed.id)
       out.push({
         ...parsed,
         name: provided?.name || `${parsed.planet} in ${parsed.sign} ${parsed.degree}°`,
+      })
+    } else if (hist) {
+      seen.add(id)
+      const sunSign = (hist.consciousness?.natalChart as any)?.planets?.Sun?.sign || 'Aries'
+      out.push({
+        id,
+        planet: 'Sun',
+        sign: sunSign,
+        degree: 0,
+        name: provided?.name || hist.name,
       })
     } else if (provided?.planet && provided?.sign && provided?.degree != null) {
       // Non-canonical id but the caller supplied enough detail to use it.
@@ -112,13 +124,17 @@ export function normalizeTransitAgents(
 }
 
 /**
- * Build full UnifiedAgents (type `planetary`, with `planetaryData`) for a set of
- * degree-agent details, so /api/unified-multi-agent-chat renders the rich planetary
- * prompt rather than the generic fallback. convertLegacyAgentConfig fills
- * dignity/element/color/symbol from the shared planet maps + dignity tables.
+ * Build full UnifiedAgents for a set of transit/council agent details.
+ * Supports both historical figures (rich CraftedAgent persona) and planetary-degree agents.
  */
 export function buildTransitUnifiedAgents(agents: TransitAgentDetail[]): UnifiedAgent[] {
   return agents.map(a => {
+    const hist = getHistoricalAgent(a.id)
+    if (hist) {
+      const unified = unifiedAgentFactory.createFromHistorical(hist)
+      return a.name ? { ...unified, name: a.name } : unified
+    }
+
     const config: PlanetaryConfig = convertLegacyAgentConfig({
       planet: a.planet,
       sign: a.sign,

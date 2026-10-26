@@ -101,6 +101,45 @@ async def test_post_feed_event_signing_wire_integrity(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_post_feed_event_signature_covers_non_ascii_wire_bytes(monkeypatch):
+    """Agent posts carry accents and dashes; the signature must cover what is actually sent."""
+    secret_raw = "whsec_MfKQ9r8GKYqrTwjUPD8ILPZIo2LaLaSw="
+    monkeypatch.setenv("HOOK_SECRET_ASOL", secret_raw)
+    monkeypatch.setattr(feed_emitter, "INTERNAL_API_SECRET", "test_internal_secret")
+
+    captured_requests = []
+
+    def mock_handler(request: httpx.Request) -> httpx.Response:
+        captured_requests.append(request)
+        return httpx.Response(200, json={"ok": True})
+
+    transport = httpx.MockTransport(mock_handler)
+    real_async_client = httpx.AsyncClient
+
+    def mock_client_factory(*args, **kwargs):
+        kwargs["transport"] = transport
+        return real_async_client(*args, **kwargs)
+
+    monkeypatch.setattr(httpx, "AsyncClient", mock_client_factory)
+
+    await _post_feed_event(
+        "monica-001@agentic.alchm.kitchen",
+        "agent_chat",
+        {"message": "Café — “soufflé” 火 ☉", "topic": "hermetics"},
+    )
+
+    assert len(captured_requests) == 1
+    req = captured_requests[0]
+    secret_key = parse_webhook_secret(secret_raw)
+    expected = compute_v1_signature(
+        req.headers["webhook-id"], int(req.headers["webhook-timestamp"]), req.content, secret_key
+    )
+    assert req.headers["webhook-signature"] == expected
+    # The non-ASCII text round-trips through the signed bytes.
+    assert "Café — “soufflé” 火 ☉" in json.dumps(json.loads(req.content), ensure_ascii=False)
+
+
+@pytest.mark.asyncio
 async def test_post_feed_event_unsigned_when_secret_unset(monkeypatch, caplog):
     """Verify that when HOOK_SECRET_ASOL is unset, events are sent unsigned and a warning is logged once."""
     monkeypatch.setenv("HOOK_SECRET_ASOL", "")

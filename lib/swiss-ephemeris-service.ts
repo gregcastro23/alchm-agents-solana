@@ -21,23 +21,22 @@
  *
  * WHICH BACKEND, AND WHY IT MATTERS
  * ---------------------------------
- * Swiss Ephemeris lives on the NODE backend, mounted at `/api/planets`
- * (`backend/src/index.ts`). It is NOT on the Python FastAPI backend: a grep of
- * `backend/*.py` for `swisseph` returns nothing, and that backend's
- * `/api/planetary/positions` serves `_planetary_positions_for`
- * (`backend/main.py`), which is a circular-orbit approximation —
- * `(offset + elapsed_days / period * 360) % 360`, with `isRetrograde` hardcoded
- * to False. Real motion is neither circular nor never-retrograde.
+ * This client talks to the NODE backend, mounted at `/api/planets`
+ * (`backend/src/index.ts`), through `NEXT_PUBLIC_EPHEMERIS_BACKEND_URL`.
  *
- * This client therefore talks to `NEXT_PUBLIC_EPHEMERIS_BACKEND_URL` directly
- * and NOT through `lib/planetary-api-client.ts`, which is bound to
- * `NEXT_PUBLIC_BACKEND_URL` (the Python backend). Routing this module through
- * that client stamped `source: 'swiss-ephemeris'` on circular-orbit output —
- * a false provenance claim, which is worse than an unlabelled number because it
- * asserts an authority the value does not have. The two backends do not even
+ * History: until 2026-10 the Python FastAPI backend's `/api/planetary/positions`
+ * served `_planetary_positions_for` (`backend/main.py`), a circular-orbit model —
+ * `(offset + elapsed_days / period * 360) % 360`, with `isRetrograde` hardcoded to
+ * False and arbitrary phase offsets (it put the Sun at 11° Aquarius on a day it
+ * stood at 22° Libra). Routing this module through `lib/planetary-api-client.ts`
+ * (bound to `NEXT_PUBLIC_BACKEND_URL`, the Python backend) therefore stamped
+ * `source: 'swiss-ephemeris'` on circular-orbit output — a false provenance
+ * claim, which is worse than an unlabelled number because it asserts an
+ * authority the value does not have. The Python endpoints now use Swiss
+ * Ephemeris too and stamp their own `source`, but the two backends still do not
  * agree on field names (`longitude`/`speed` here versus
- * `exactLongitude`/`longitudeSpeed` there), so the mismatch also produced
- * silent NaNs.
+ * `exactLongitude`/`longitudeSpeed` there), so this client keeps its own route:
+ * the mismatch produced silent NaNs.
  *
  * WHAT THIS CLIENT WILL NOT DO
  * ----------------------------
@@ -58,7 +57,9 @@ import type { EphemerisSource } from '@/lib/enhanced-astronomical-calculator'
  * result to a circular-orbit approximation while keeping the Swiss label.
  */
 const EPHEMERIS_BACKEND_URL =
-  process.env.NEXT_PUBLIC_EPHEMERIS_BACKEND_URL || 'http://localhost:3001'
+  process.env.NEXT_PUBLIC_EPHEMERIS_BACKEND_URL ||
+  process.env.NEXT_PUBLIC_BACKEND_URL ||
+  'http://localhost:3001'
 
 /** The subset of `backend/src/services/swiss-ephemeris.ts:PlanetaryPosition` we consume. */
 interface RawSwissPosition {
@@ -89,13 +90,18 @@ function asSwissPosition(value: unknown): RawSwissPosition | null {
 }
 
 /** POST to the Swiss Ephemeris backend, returning its validated `data` payload. */
-async function postEphemeris(path: string, body: unknown): Promise<Record<string, unknown>> {
+async function postEphemeris(
+  path: string,
+  body: unknown,
+  options?: { signal?: AbortSignal }
+): Promise<Record<string, unknown>> {
   let response: Response
   try {
     response = await fetch(`${EPHEMERIS_BACKEND_URL}/api/planets${path}`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
+      signal: options?.signal,
     })
   } catch (error) {
     throw new EphemerisUnavailableError(
@@ -142,7 +148,7 @@ export class EphemerisUnavailableError extends Error {
 export interface SwissEphemPlanetPosition {
   planet: string
   sign: string
-  degree: number // 0-29.9999 within sign
+  degree: number // [0, 30) within sign, retaining the backend's precision
   longitude: number // 0-360 absolute longitude
   latitude: number
   distance: number
@@ -177,12 +183,12 @@ function longitudeToSignDegree(longitude: number): { sign: string; degree: numbe
   // Calculate sign index (0-11)
   const signIndex = Math.floor(normalizedLongitude / 30)
 
-  // Calculate degree within sign (0-29.9999)
+  // Calculate degree within sign without rounding or clamping cusp precision.
   const degree = normalizedLongitude % 30
 
   return {
     sign: ZODIAC_SIGNS[signIndex],
-    degree: Math.max(0, Math.min(29.9999, degree)),
+    degree,
   }
 }
 
@@ -200,14 +206,19 @@ function longitudeToSignDegree(longitude: number): { sign: string; degree: numbe
 export async function getAllPlanetaryPositions(
   date: Date,
   latitude: number = 0,
-  longitude: number = 0
+  longitude: number = 0,
+  options?: { signal?: AbortSignal }
 ): Promise<Record<string, SwissEphemPlanetPosition>> {
   const hasCoordinates = latitude !== 0 || longitude !== 0
 
-  const backendPositions = await postEphemeris('/positions', {
-    date: date.toISOString(),
-    ...(hasCoordinates ? { latitude, longitude } : {}),
-  })
+  const backendPositions = await postEphemeris(
+    '/positions',
+    {
+      date: date.toISOString(),
+      ...(hasCoordinates ? { latitude, longitude } : {}),
+    },
+    options
+  )
 
   const positions: Record<string, SwissEphemPlanetPosition> = {}
 

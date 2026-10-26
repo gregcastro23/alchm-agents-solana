@@ -82,13 +82,19 @@ def test_mcp_stdio_roundtrip(mock_backend_server):
             return json.loads(line.strip())
 
         # 1. Speak initialize
-        init_res = send_request("initialize", req_id=101)
+        init_res = send_request("initialize", {
+            "protocolVersion": "2025-06-18", "capabilities": {},
+            "clientInfo": {"name": "pytest", "version": "1"},
+        }, req_id=101)
         assert init_res["id"] == 101
         assert "result" in init_res
         assert init_res["result"]["serverInfo"]["name"] == "planetary-agents-mcp-server"
         assert init_res["result"]["serverInfo"]["version"] == "1.1.0"
         assert "resources" in init_res["result"]["capabilities"]
         assert "prompts" in init_res["result"]["capabilities"]
+
+        proc.stdin.write(json.dumps({"jsonrpc": "2.0", "method": "notifications/initialized"}) + "\n")
+        proc.stdin.flush()
 
         # 2. Speak tools/list
         list_res = send_request("tools/list", req_id=102)
@@ -99,7 +105,8 @@ def test_mcp_stdio_roundtrip(mock_backend_server):
         assert "list_planetary_agents" in tool_names
         assert "play_agent_word_duel" in tool_names
         assert "play_jing_arena_move" in tool_names
-        assert len(tools) >= 8
+        assert len(tools) == 9
+        assert all(tool["outputSchema"]["type"] == "object" for tool in tools)
 
         # 3. Speak resources/list
         res_list = send_request("resources/list", req_id=103)
@@ -131,7 +138,7 @@ def test_mcp_stdio_roundtrip(mock_backend_server):
         # Check tool response text
         content = call_res["result"]["content"][0]["text"]
         payload = json.loads(content)
-        print("DEBUG MCP STDIO PAYLOAD:", payload)
+        assert call_res["result"]["structuredContent"] == payload
         assert "Subprocess stdio response successful" in payload.get("text", "")
 
     finally:

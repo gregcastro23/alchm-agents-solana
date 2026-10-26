@@ -10,7 +10,7 @@ export interface KineticProfile {
     Air: number
     Earth: number
   }
-  powerThresholds: number[] // XP levels [bronze, silver, gold, platinum]
+  powerThresholds: number[] // XP levels [copper, silver, gold, platinum]
   evolutionRate: number // 1.0 = normal, >1.0 = faster evolution
   specialAbilities: string[] // Unique capabilities unlocked at higher levels
   // Extended kinetic properties for detailed analysis
@@ -543,11 +543,11 @@ export function calculateKineticState(
   if (!profile) return null
 
   // Determine evolution level
-  let evolutionLevel: 'bronze' | 'silver' | 'gold' | 'platinum' | 'transcendent' = 'bronze'
+  let evolutionLevel: 'copper' | 'silver' | 'gold' | 'platinum' | 'transcendent' = 'copper'
   let thresholdIndex = 0
   for (let i = 0; i < profile.powerThresholds.length; i++) {
     if (currentPower >= profile.powerThresholds[i]) {
-      evolutionLevel = ['bronze', 'silver', 'gold', 'platinum'][i] as any
+      evolutionLevel = ['copper', 'silver', 'gold', 'platinum'][i] as any
       thresholdIndex = i
     }
   }

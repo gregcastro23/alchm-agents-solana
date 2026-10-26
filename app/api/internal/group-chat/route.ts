@@ -89,7 +89,7 @@ export async function POST(request: NextRequest) {
   const normalized = normalizeTransitAgents(rawIds, detail).slice(0, MAX_AGENTS)
   if (normalized.length < 2) {
     return NextResponse.json(
-      { error: 'A group chat requires at least 2 valid planetary-degree agents' },
+      { error: 'A group chat requires at least 2 valid agents' },
       { status: 400 }
     )
   }

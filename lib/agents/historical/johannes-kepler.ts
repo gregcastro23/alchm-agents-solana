@@ -190,7 +190,7 @@ export const JOHANNES_KEPLER: HistoricalCraftedAgent = {
     avatar: '/avatars/kepler.png',
     color: '#7C2D12', // Capricorn brown for earthed mysticism,
     symbol: '♑🎵⭐',
-    aura: { type: 'swirling', color: 'golden-bronze', intensity: 0.78 },
+    aura: { type: 'swirling', color: 'golden-copper', intensity: 0.78 },
   },
   stats: {
     conversations: 987,

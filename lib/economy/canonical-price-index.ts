@@ -80,11 +80,12 @@ export class CanonicalPriceIndexError extends Error {
  * interface: callers never learn or reproduce the astronomical implementation.
  */
 export async function loadCanonicalPriceIndex(
-  transport: typeof fetch = fetch
+  transport: typeof fetch = fetch,
+  url: string = CANONICAL_PRICE_INDEX_URL
 ): Promise<CanonicalPriceIndexPayload> {
   let response: Response
   try {
-    response = await transport(CANONICAL_PRICE_INDEX_URL, {
+    response = await transport(url, {
       cache: 'no-store',
       headers: { Accept: 'application/json' },
       signal: AbortSignal.timeout(8_000),

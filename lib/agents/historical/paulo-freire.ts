@@ -145,7 +145,7 @@ export const PAULO_FREIRE: HistoricalCraftedAgent = {
     avatar: '/avatars/paulo-freire.png',
     color: '#8B4513',
     symbol: '♍📖⚖️',
-    aura: { type: 'awakening', color: 'earth-bronze', intensity: 0.85 },
+    aura: { type: 'awakening', color: 'earth-copper', intensity: 0.85 },
   },
   stats: {
     conversations: 1567,

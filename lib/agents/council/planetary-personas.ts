@@ -1,17 +1,8 @@
 /**
  * System-prompt personas for the ten council delegates.
  *
- * There is no planetary `CraftedAgent` anywhere in the repo — `STAR_AGENTS`
- * holds only the four fixed stars, and `buildAgentContext('sun')` returns
- * `null`. That null is why `/api/agents/council-voice` routed every planet to
- * `greg-castro-1991`: a null context makes `generateVoicedText` skip the model
- * entirely and return the canned fallback, so mapping the keys to nonexistent
- * agent ids would have silenced the council rather than freeing it.
- *
- * These blocks are supplied to `generateVoicedText` via `systemOverride`
- * instead, which needs no DB row and no agent registry entry. Temperament is
- * seeded from `PLANETARY_TRAITS` so the council and the Word Duel strategy
- * engine keep reading the same table.
+ * Dynamic voice overlays composed with canonical planetary CraftedAgent
+ * definitions. Temperament shares PLANETARY_TRAITS with the duel engine.
  */
 
 import { PLANETARY_TRAITS, type Planet } from '@/lib/agents/planetary-traits'
@@ -234,7 +225,7 @@ ${voice.contests}
 You tend to resist the framing of ${voice.tensionWith.join(' and ')}, and to build on ${voice.affinityWith.join(' and ')}. Resist and build openly — name the delegate.
 
 ## Never
-${voice.avoids} Never describe yourself in the third person. Never explain astrology to the room; the room is astrology.
+${voice.avoids} Speak as the planetary delegate. Explain the relevant astrology to curious observers in ordinary language.
 
 1. Speak with poignant, articulate depth in one well-developed paragraph. Follow the length and focus targets provided in the turn brief.
 2. Embody your dignity: let your current condition (${ctx.dignity || 'peregrine'}) saturate the posture and authority of your claims. Do NOT recite your dignity label or degree coordinates aloud in your dialogue unless the exact numerical boundary is essential to your argument.

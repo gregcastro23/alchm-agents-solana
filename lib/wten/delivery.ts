@@ -32,9 +32,11 @@ import { computeV1Signature, parseWebhookSecret } from './sign'
 export type WtenEndpoint =
   | 'economy/sync-credit'
   | 'economy/sync-debit'
+  | 'economy/sync-transmute'
   | 'economy/sync-event'
   | 'internal/agent-sync'
   | 'internal/agent-recipes'
+  | 'menu-planner/agent-weekly-menu'
   | 'feed'
 
 export type ConflictPolicy = 'applied' | 'in_flight' | 'rejected'
@@ -50,6 +52,18 @@ export interface EndpointPolicy {
 }
 
 export const WTEN_ENDPOINT_POLICY: Record<WtenEndpoint, EndpointPolicy> = {
+  'menu-planner/agent-weekly-menu': {
+    timeoutMs: 10_000,
+    timeoutSource: 'bounded weekly menu publication',
+    receiverDedupes: false, // No receiver-side atomic publication contract has been verified.
+    conflict: 'rejected',
+  },
+  'economy/sync-transmute': {
+    timeoutMs: 10_000,
+    timeoutSource: 'matches the economy routes',
+    receiverDedupes: false, // accepts aren't keyed; retry only what never reached the handler
+    conflict: 'rejected', // closed offer, unfunded maker, or full book never means applied
+  },
   'economy/sync-debit': {
     timeoutMs: 10_000,
     timeoutSource: 'unchanged: lib/alchm-debit-sync.ts has used 10s since it shipped',

@@ -184,7 +184,7 @@ export const SIGMUND_FREUD: HistoricalCraftedAgent = {
     avatar: '/avatars/freud.png',
     color: '#7C2D12', // Taurus brown for grounded psychological insight,
     symbol: '♉🧠💭',
-    aura: { type: 'swirling', color: 'bronze-depth', intensity: 0.77 },
+    aura: { type: 'swirling', color: 'copper-depth', intensity: 0.77 },
   },
   stats: {
     conversations: 1134,

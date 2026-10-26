@@ -5,6 +5,8 @@ import { NextRequest } from 'next/server'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@/lib/auth', () => ({ auth: vi.fn() }))
+// Assembly/authorization tests do not query a live Pentacles deployment.
+vi.mock('@/lib/spacetime/config', () => ({ getSpacetimeConfig: () => null }))
 vi.mock('@/lib/db', () => ({
   prisma: {
     users: { findUnique: vi.fn() },
@@ -28,6 +30,11 @@ import {
   type KitchenVesselLedger,
 } from '@/lib/vessel/summary'
 import { decodeSqlResult, foldDuels, identityHex } from '@/lib/vessel/spacetime-stats'
+import {
+  ALL_VESSEL_STAT_KEYS,
+  type VesselProgression,
+  type VesselStats,
+} from '@/lib/vessel/progression'
 
 const WALLET = 'AhNRjjyhJ4dR6ZSvWyJNSpbJFbFnxhkRdUNMY31fJ3S5'
 const ME = 'a'.repeat(64)
@@ -156,6 +163,45 @@ const allOk = {
 }
 
 describe('assembleVesselState', () => {
+  it('does not infer permanent progression from treasury or activity counters', () => {
+    const vessel = assembleVesselState({
+      walletAddress: WALLET,
+      kitchen,
+      agents: { duelsRecorded: 500, recentClashes: [] },
+      pentacles: null,
+      usdRail: null,
+      sources: allOk,
+    })
+    expect(vessel.progression).toBeNull()
+  })
+
+  it('preserves authoritative progression when treasury sources are unavailable', () => {
+    const progression: VesselProgression = {
+      version: 1,
+      totalXp: 40_000,
+      level: 21,
+      xpToNextLevel: 4_100,
+      baseOverall: 60,
+      trainedOverall: 62.42,
+      currentOverall: null,
+      status: 'unavailable',
+      asOf: null,
+      reasons: ['Current sky unavailable'],
+      statDeltas: Object.fromEntries(ALL_VESSEL_STAT_KEYS.map(key => [key, 0])) as VesselStats,
+    }
+    const vessel = assembleVesselState({
+      walletAddress: WALLET,
+      kitchen: null,
+      agents: null,
+      pentacles: null,
+      usdRail: null,
+      sources: { ...allOk, kitchenLedger: { ok: false, detail: 'down' } },
+      progression,
+    })
+    expect(vessel.progression).toEqual(progression)
+    expect(vessel.progression?.currentOverall).toBeNull()
+  })
+
   it('includes onchain Token-2022 atoms and slot when present', () => {
     const vessel = assembleVesselState({
       walletAddress: WALLET,
@@ -225,6 +271,7 @@ describe('assembleVesselState', () => {
     expect(vessel.streams.staking.streakDays).toBeNull()
     expect(vessel.streams.jingDuels.agentDuelsRecorded).toBeNull()
     expect(vessel.streams.pentaclesMelee.arenaTokens).toBeNull()
+    expect(vessel.progression).toBeNull()
   })
 })
 

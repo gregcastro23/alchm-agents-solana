@@ -15,7 +15,7 @@
 
 import { deliverToWten, stableEventId } from './wten/delivery'
 
-const DEFAULT_WTEN_BASE = 'https://whattoeatnext-production.up.railway.app'
+const DEFAULT_WTEN_BASE = 'https://alchm.kitchen'
 
 export interface SyncAgentToWtenResult {
   wtenUserId: string
@@ -38,11 +38,20 @@ let cachedConfig: { baseUrl: string; syncSecret: string; internalSecret: string 
 
 function loadConfig(): { baseUrl: string; syncSecret: string; internalSecret: string } {
   if (cachedConfig) return cachedConfig
-  const syncSecret = process.env.ALCHM_KITCHEN_SYNC_SECRET || ''
-  const internalSecret = process.env.INTERNAL_API_SECRET || syncSecret
+  const syncSecret =
+    process.env.ALCHM_KITCHEN_SYNC_SECRET ||
+    process.env.INTERNAL_API_SECRET ||
+    process.env.WHATTOEATNEXT_API_KEY ||
+    ''
+  const internalSecret =
+    process.env.INTERNAL_API_SECRET ||
+    process.env.ALCHM_KITCHEN_SYNC_SECRET ||
+    process.env.WHATTOEATNEXT_API_KEY ||
+    ''
   const baseUrl = (
     process.env.ALCHM_KITCHEN_SYNC_URL ||
     process.env.WTEN_API_BASE_URL ||
+    process.env.NEXT_PUBLIC_ALCHM_KITCHEN_URL ||
     DEFAULT_WTEN_BASE
   ).replace(/\/$/, '')
   cachedConfig = { baseUrl, syncSecret, internalSecret }
@@ -77,7 +86,10 @@ export async function syncAgentToWten(
   const delivery = await deliverToWten({
     endpoint: 'internal/agent-sync',
     url: `${baseUrl}/api/internal/agent-sync`,
-    headers: { 'X-Sync-Secret': syncSecret },
+    headers: {
+      'X-Sync-Secret': syncSecret,
+      Authorization: `Bearer ${syncSecret}`,
+    },
     body,
     eventId: stableEventId(`agent-sync:${email}`, body),
   })
@@ -190,6 +202,7 @@ export async function getAgentWeeklyMenu(
     method: 'GET',
     headers: {
       Authorization: `Bearer ${internalSecret}`,
+      'X-Sync-Secret': internalSecret,
       Accept: 'application/json',
     },
   })
@@ -211,26 +224,38 @@ export async function getAgentWeeklyMenu(
  * Create or update a weekly menu for an agent.
  * Attunes Authorization to "Bearer ${secret}".
  */
-export async function postAgentWeeklyMenu(menu: WeeklyMenu): Promise<WeeklyMenuResponse> {
+export async function postAgentWeeklyMenu(
+  menu: WeeklyMenu,
+  eventId: string
+): Promise<WeeklyMenuResponse> {
   const { baseUrl, internalSecret } = loadConfig()
   if (!internalSecret) {
     throw new Error('INTERNAL_API_SECRET or ALCHM_KITCHEN_SYNC_SECRET is required.')
   }
   const url = `${baseUrl}/api/menu-planner/agent-weekly-menu`
 
-  const res = await fetch(url, {
-    method: 'POST',
+  // Publication is reserved in our durable ledger before this call. Until WTEN
+  // guarantees atomic feed deduplication, an ambiguous attempt must not retry.
+  const delivery = await deliverToWten({
+    endpoint: 'menu-planner/agent-weekly-menu',
+    url,
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${internalSecret}`,
+      'X-Sync-Secret': internalSecret,
     },
-    body: JSON.stringify(menu),
+    body: menu,
+    eventId,
+    maxAttempts: 1,
   })
 
-  if (!res.ok) {
-    const text = await res.text().catch(() => '(unreadable)')
-    throw new Error(`postAgentWeeklyMenu failed (${res.status}): ${text}`)
+  if (!delivery.ok) {
+    throw new Error('Weekly menu publication could not be confirmed')
   }
 
-  return (await res.json()) as WeeklyMenuResponse
+  const result = delivery.body as WeeklyMenuResponse | null
+  if (result?.success !== true || typeof result.menu?.id !== 'string') {
+    throw new Error('Weekly menu publication returned an invalid response')
+  }
+  return result
 }

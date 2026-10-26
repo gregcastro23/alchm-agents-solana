@@ -6,9 +6,15 @@ import { Check } from 'lucide-react'
 import type { CraftedAgent } from '@/lib/agent-types'
 import { ELEMENT_METADATA } from '@/lib/element-metadata'
 import { useFreeAgents } from '@/hooks/use-free-agents'
+import {
+  computeAgentProgression,
+  type AgentProgressionProfile,
+} from '@/lib/agents/leveling-service'
+import { VesselProgressionDisplay } from '@/components/vessel/vessel-progression-display'
 
 interface StitchAgentCardProps {
   agent: CraftedAgent
+  progression?: AgentProgressionProfile | null
   isSelected?: boolean
   onToggleSelection?: (agentId: string) => void
   variant?: 'card' | 'list'
@@ -16,12 +22,14 @@ interface StitchAgentCardProps {
 
 export function StitchAgentCard({
   agent,
+  progression,
   isSelected = false,
   onToggleSelection,
   variant = 'card',
 }: StitchAgentCardProps) {
   const element = agent.consciousness?.dominantElement || 'Air'
   const meta = ELEMENT_METADATA[element as keyof typeof ELEMENT_METADATA] || ELEMENT_METADATA.Air
+  const progressionData = progression !== undefined ? progression : computeAgentProgression(agent)
 
   const { isFree } = useFreeAgents()
   const agentIsFree = isFree(agent.id)
@@ -104,7 +112,10 @@ export function StitchAgentCard({
               </div>
             </div>
 
-            {/* Level */}
+            {/* Two-Level Progression Badges (Vessel Level & Current Overall) */}
+            <VesselProgressionDisplay progression={progressionData} variant="card-badge" />
+
+            {/* Consciousness Modality */}
             <span className="text-[10px] font-mono-label text-muted-text uppercase flex items-center gap-1.5 bg-black/30 px-2 py-1 rounded border border-border-gold/10">
               <span className={`w-1.5 h-1.5 rounded-full ${meta.bg}`}></span>
               {agent.consciousness?.level || 'Active'}
@@ -199,15 +210,15 @@ export function StitchAgentCard({
               </div>
             </div>
 
-            <div className="flex justify-between items-center pt-md border-t border-border-gold/20">
+            <div className="flex flex-wrap justify-between items-center gap-2 pt-md border-t border-border-gold/20">
+              {/* Two-Level Progression Badges */}
+              <VesselProgressionDisplay progression={progressionData} variant="card-badge" />
+
               <span className="text-[10px] font-mono-label text-muted-text uppercase flex items-center gap-1.5">
                 <span
                   className={`w-2 h-2 rounded-full ${meta.bg} shadow-[0_0_5px_rgba(255,255,255,0.4)]`}
                 ></span>
                 {agent.consciousness?.level || 'Active'}
-              </span>
-              <span className="material-symbols-outlined text-muted-text group-hover:text-primary-gold group-hover:translate-x-1 transition-all duration-300">
-                arrow_right_alt
               </span>
             </div>
           </div>

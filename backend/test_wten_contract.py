@@ -152,8 +152,8 @@ async def test_feed_post_sends_the_event_id(monkeypatch):
         async def __aexit__(self, *args):
             return False
 
-        async def post(self, url, json=None, headers=None):
-            captured.update(url=url, json=json, headers=headers)
+        async def post(self, url, json=None, content=None, headers=None):
+            captured.update(url=url, json=json, content=content, headers=headers)
             return FakeResponse()
 
     monkeypatch.setattr(feed_emitter, "INTERNAL_API_SECRET", "test-secret")
@@ -163,4 +163,8 @@ async def test_feed_post_sends_the_event_id(monkeypatch):
 
     expected = feed_emitter.feed_event_id("galileo@agentic.alchm.kitchen", "agent_chat", metadata)
     assert captured["headers"]["Idempotency-Key"] == expected
-    assert captured["json"]["idempotencyKey"] == expected
+    # The emitter sends the exact bytes it signed (`content=`), not a re-serialized `json=`.
+    import json as _json
+
+    sent = captured["json"] if captured["json"] is not None else _json.loads(captured["content"])
+    assert sent["idempotencyKey"] == expected

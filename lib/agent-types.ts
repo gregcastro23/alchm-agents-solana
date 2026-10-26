@@ -1,6 +1,10 @@
 // Agent Types for Consciousness Crafting System
 // The Philosopher's Stone - Gallery & Agent Management
 
+import type { VesselAppearanceProfile } from './agents/vessel-appearance-manifest'
+
+export type { VesselAppearanceProfile }
+
 export interface Coordinates {
   lat: number
   lon: number
@@ -545,8 +549,13 @@ export interface CraftedAgent {
   // Specialized Abilities
   abilities: Abilities
 
-  // Visual Representation
-  appearance: Appearance
+  // Visual Representation & Vessel Likeness. The legacy `Appearance` (avatar, color, symbol, aura)
+  // that the UI reads, optionally carrying the Pentacles likeness manifest's fields. It is an
+  // intersection, not a union: a union hid `.color`/`.avatar` from every consumer and made the
+  // whole field optional, which broke `tsc` and `next build` after #65.
+  appearance: Appearance & Partial<VesselAppearanceProfile>
+  avatarModelUrl?: string
+  headMeshUrl?: string
 
   // Interaction Metrics
   stats: AgentStats

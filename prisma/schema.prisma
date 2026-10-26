@@ -8,6 +8,25 @@ datasource db {
   directUrl = env("DIRECT_URL")
 }
 
+/// One public planetary council edition per UTC day and prompt version.
+/// A lease prevents simultaneous cron calls from generating duplicate episodes.
+model council_daily_editions {
+  id          String    @id
+  editionId   String?   @unique
+  day         String
+  promptVersion String
+  status      String    @default("generating")
+  payload     Json?
+  leaseToken  String?
+  leaseUntil  DateTime?
+  attempts    Int       @default(0)
+  publishedAt DateTime?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  @@index([status, day])
+}
+
 model AIPersonality {
   id                     String                @id @default(cuid())
   userId                 String
@@ -1844,5 +1863,4 @@ model wten_deliveries {
   @@index([eventId])
   @@map("wten_deliveries")
 }
-
 

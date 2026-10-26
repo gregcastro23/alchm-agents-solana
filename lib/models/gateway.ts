@@ -3,7 +3,7 @@
  *
  * When AI_GATEWAY_API_KEY is set, ALL providers are routed through the Vercel
  * AI Gateway (https://ai-gateway.vercel.sh/v1) using the OpenAI-compatible API.
- * Model IDs must be prefixed with the provider name, e.g. "anthropic/claude-sonnet-4-6".
+ * Model IDs use the Gateway catalog's creator/model names, e.g. "anthropic/claude-sonnet-4.6".
  *
  * When the key is NOT set, each provider falls back to its native SDK using
  * its own direct API key.
@@ -19,7 +19,7 @@ export const GATEWAY_BASE_URL = 'https://ai-gateway.vercel.sh/v1'
 
 // ─── Gateway detection ────────────────────────────────────────────────────────
 // OIDC token is auto-provisioned by Vercel in CI/CD builds.
-// For local dev, set AI_GATEWAY_API_KEY (starts with "vgk_").
+// For local dev, set AI_GATEWAY_API_KEY (starts with "vck_").
 const GATEWAY_API_KEY = process.env.AI_GATEWAY_API_KEY || process.env.VERCEL_OIDC_TOKEN
 export const isGatewayEnabled = !!GATEWAY_API_KEY
 
@@ -54,7 +54,7 @@ export const gatewayGoogle = isGatewayEnabled
 
 /**
  * Groq — Llama 3.3 70B, Llama 3.1 8B, Mixtral
- * Gateway model prefix: "groq/<modelId>"
+ * Gateway uses the model creator, e.g. "meta/llama-3.3-70b".
  */
 export const gatewayGroq = isGatewayEnabled
   ? createOpenAI({ apiKey: GATEWAY_API_KEY, baseURL: GATEWAY_BASE_URL })

@@ -30,7 +30,9 @@ import {
   Y_MIN,
   Y_MAX,
 } from '@/lib/economy-config'
-import { EconomyService } from '@/lib/services/economyService'
+import { EconomyService, type TokenBalances } from '@/lib/services/economyService'
+import { loadCanonicalPriceIndex } from '@/lib/economy/canonical-price-index'
+import { circleStep } from '@/lib/services/agent-circle-trading'
 import { pastBudget } from '@/lib/cron/registry'
 import { syncDebitToAlchm } from '@/lib/alchm-debit-sync'
 import { syncCreditToAlchm } from '@/lib/alchm-credit-sync'
@@ -276,6 +278,31 @@ function natalLongitude(sign: unknown, degree: number | null, stored: unknown): 
 // Service
 // ---------------------------------------------------------------------------
 
+type ActionPrices = Record<TokenType, number>
+
+const BALANCE_AXIS = {
+  Spirit: 'spirit',
+  Essence: 'essence',
+  Matter: 'matter',
+  Substance: 'substance',
+} as const
+
+function canAffordAction(
+  balances: TokenBalances,
+  cost: Partial<Record<TokenType, number>>,
+  prices: ActionPrices | null
+): boolean {
+  if (!prices) {
+    return TOKEN_TYPES.every(token => balances[BALANCE_AXIS[token]] >= (cost[token] ?? 0))
+  }
+  const balanceValue = TOKEN_TYPES.reduce(
+    (sum, token) => sum + balances[BALANCE_AXIS[token]] * prices[token],
+    0
+  )
+  const costValue = TOKEN_TYPES.reduce((sum, token) => sum + (cost[token] ?? 0) * prices[token], 0)
+  return balanceValue >= costValue
+}
+
 export class AgentActionService {
   private hourCalc = new PlanetaryHourCalculator()
 
@@ -510,7 +537,7 @@ export class AgentActionService {
    * weather and return activation results. If an agent's score exceeds
    * `AGENT_ACTIVATION_THRESHOLD`, they are flagged for action.
    */
-  async evaluateAgentActivations(): Promise<ActivationResult[]> {
+  async evaluateAgentActivations(prices: ActionPrices | null = null): Promise<ActivationResult[]> {
     const agenticUsers = await this.getActiveAgenticUsers()
     const now = new Date()
 
@@ -548,29 +575,15 @@ export class AgentActionService {
 
         if (specializedAction) {
           const cost = AGENT_OPERATION_COSTS[specializedAction.operationKey] || {}
-          if (
-            balances.spirit >= (cost.Spirit || 0) &&
-            balances.essence >= (cost.Essence || 0) &&
-            balances.matter >= (cost.Matter || 0) &&
-            balances.substance >= (cost.Substance || 0)
-          ) {
+          if (canAffordAction(balances, cost, prices)) {
             hasEnoughBalance = true
           }
         } else {
           const feedPostCost = AGENT_OPERATION_COSTS['agent_feed_post'] || {}
           const transmutationCost = AGENT_OPERATION_COSTS['agent_transmutation'] || {}
 
-          const canAffordFeed =
-            balances.spirit >= (feedPostCost.Spirit || 0) &&
-            balances.essence >= (feedPostCost.Essence || 0) &&
-            balances.matter >= (feedPostCost.Matter || 0) &&
-            balances.substance >= (feedPostCost.Substance || 0)
-
-          const canAffordTransmutation =
-            balances.spirit >= (transmutationCost.Spirit || 0) &&
-            balances.essence >= (transmutationCost.Essence || 0) &&
-            balances.matter >= (transmutationCost.Matter || 0) &&
-            balances.substance >= (transmutationCost.Substance || 0)
+          const canAffordFeed = canAffordAction(balances, feedPostCost, prices)
+          const canAffordTransmutation = canAffordAction(balances, transmutationCost, prices)
 
           if (canAffordFeed || canAffordTransmutation) {
             hasEnoughBalance = true
@@ -709,23 +722,18 @@ export class AgentActionService {
    * if the remote debit fails, the action is recorded with status
    * `debit_failed` and not executed.
    *
-   * Action selection logic:
-   *  - If the agent has more Spirit+Essence than Matter+Substance →
-   *    **Feed Post** (insight action, costs 2 Spirit + 1 Essence)
-   *  - Otherwise → **Token Transmutation** (costs 3 Matter + 2 Substance)
+   * Prefer a feed post when the treasury can cover its value at the live index.
+   * Without a live index, retain the per-axis affordability check.
    */
   async executeAgentAction(
-    activation: ActivationResult
+    activation: ActivationResult,
+    prices: ActionPrices | null = null
   ): Promise<{ success: boolean; actionType: string; error?: string }> {
     const { userId, agentEmail, agentName } = activation
 
     try {
       // Fetch current balances (local pre-check for action type selection)
       const balances = await EconomyService.getBalances(userId)
-
-      // Determine action type by dominant token pool OR agent identity
-      const spiritEssence = balances.spirit + balances.essence
-      const matterSubstance = balances.matter + balances.substance
 
       let actionType: string
       let operationKey: string
@@ -738,11 +746,7 @@ export class AgentActionService {
         operationKey = specializedAction.operationKey
       } else {
         const feedPostCost = AGENT_OPERATION_COSTS['agent_feed_post'] || {}
-        const canAffordFeed =
-          balances.spirit >= (feedPostCost.Spirit || 0) &&
-          balances.essence >= (feedPostCost.Essence || 0) &&
-          balances.matter >= (feedPostCost.Matter || 0) &&
-          balances.substance >= (feedPostCost.Substance || 0)
+        const canAffordFeed = canAffordAction(balances, feedPostCost, prices)
 
         // Prefer feed post to increase feed activity
         if (canAffordFeed) {
@@ -949,10 +953,25 @@ export class AgentActionService {
   }
 
   /**
-   * Full tick: evaluate all agents, execute actions for activated ones.
+   * Full tick: evaluate agents, execute activated actions, then optionally trade.
    */
   async runTick(options: { deadlineMs?: number } = {}): Promise<TickSummary> {
-    const activations = await this.evaluateAgentActivations()
+    // One validated WTEN quote per tick, shared by both gates and every agent.
+    // Never substitute local or guessed prices when the index is unavailable.
+    let prices: ActionPrices | null = null
+    const kitchen = process.env.ALCHM_KITCHEN_SYNC_URL || process.env.ALCHM_KITCHEN_API_BASE_URL
+    if (kitchen && !pastBudget(options.deadlineMs)) {
+      try {
+        const index = await loadCanonicalPriceIndex(
+          fetch,
+          `${kitchen.replace(/\/$/, '')}/api/economy/price-index`
+        )
+        prices = Object.fromEntries(index.tokens.map(t => [t.token, t.index])) as ActionPrices
+      } catch {
+        console.warn('[AgentActionService] WTEN index unavailable; using per-axis affordability')
+      }
+    }
+    const activations = await this.evaluateAgentActivations(prices)
     const summary: TickSummary = {
       evaluatedCount: activations.length,
       activatedCount: 0,
@@ -972,7 +991,7 @@ export class AgentActionService {
         continue
       }
 
-      const result = await this.executeAgentAction(activation)
+      const result = await this.executeAgentAction(activation, prices)
       if (result.success) {
         summary.actionsExecuted++
       } else {
@@ -980,6 +999,15 @@ export class AgentActionService {
           userId: activation.userId,
           error: result.error ?? 'Action execution failed',
         })
+      }
+    }
+
+    if (process.env.AGENT_CIRCLE_TRADING === '1') {
+      // Every evaluated agent can trade, including one too lopsided to act.
+      // Share the action loop's cron budget; do not start new work after it.
+      for (const agent of activations) {
+        if (pastBudget(options.deadlineMs)) break
+        await circleStep(agent)
       }
     }
 
