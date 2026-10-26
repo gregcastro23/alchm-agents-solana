@@ -21,6 +21,7 @@ import { prisma } from '@/lib/db'
 import { ConsciousnessClient } from '@/lib/api-client/consciousness-client'
 import { ChartSynthesizer } from '@/lib/consciousness/chart-synthesizer'
 import { AgentGenerator } from '@/lib/consciousness/agent-generator'
+import { toPersistedAura } from '@/lib/agents/forged-privacy'
 import { calculateKalchm } from '@/lib/thermodynamics/kalchm'
 import type { CraftedAgent, BirthData, ConsciousnessLevel } from '@/lib/agent-types'
 import type { PersonalityParameters } from '@/components/consciousness/advanced-personality-tuner'
@@ -415,7 +416,10 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
       avatar: '/avatars/user-created/default.png',
       color: '#8B5CF6',
       symbol: '🔮',
-      aura: generatedAgent.synthesis,
+      // Scalars only. `generatedAgent.synthesis` carries `sourceCharts` (the owner's complete
+      // birth chart, again) and is served publicly by GET /api/agents, so it is not stored.
+      // The chart has its own column, `natalChart`, which the readers treat as private.
+      aura: toPersistedAura(generatedAgent.synthesis),
       natalChart: birthChart,
       monicaCreationStory: `Created through the Philosopher's Stone with purpose: ${body.purpose || 'consciousness exploration'}`,
       spiritScore: synthesis.consciousness.spirit,

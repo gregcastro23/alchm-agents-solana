@@ -2,6 +2,7 @@ import 'server-only'
 
 import { getHistoricalAgent } from '@/lib/agents/historical'
 import { HistoricalAgentsService, dbAgentToCraftedAgent } from '@/lib/historical-agents-db'
+import { agentRowFacts, type AgentRowFacts } from '@/lib/agents/forged-privacy-profile'
 import type { CraftedAgent } from '@/lib/agent-types'
 
 /**
@@ -25,10 +26,23 @@ import type { CraftedAgent } from '@/lib/agent-types'
  */
 import { deriveSacredStats } from '@/lib/agents/persona/derive-sacred-stats'
 
-export async function resolveAnyAgent(id: string): Promise<CraftedAgent | null> {
+/**
+ * A resolved agent plus where it came from. `row` carries the handful of columns that decide
+ * whether the agent is a person's private data (see `forged-privacy-profile.ts`); it is `null` for the
+ * canonical in-memory figures, which are public. The chart and birth data are in `agent`, not in
+ * `row`: the verdict can travel without them.
+ */
+export interface ResolvedAgentRecord {
+  agent: CraftedAgent
+  origin: 'canonical' | 'database'
+  row: AgentRowFacts | null
+}
+
+export async function resolveAnyAgentRecord(id: string): Promise<ResolvedAgentRecord | null> {
   if (!id || !id.trim()) return null
 
   let agent: CraftedAgent | null = null
+  let row: AgentRowFacts | null = null
 
   // 1. Canonical fast path (no DB).
   const canonical = getHistoricalAgent(id)
@@ -37,21 +51,24 @@ export async function resolveAnyAgent(id: string): Promise<CraftedAgent | null> 
   } else {
     // 2. DB-backed agents (planetary / moon / crafted), same slug as the feed.
     try {
-      let row = await HistoricalAgentsService.getAgent(id)
+      let dbRow = await HistoricalAgentsService.getAgent(id)
 
-      if (!row) {
+      if (!dbRow) {
         const lower = id.trim().toLowerCase()
         if (lower !== id) {
-          row = await HistoricalAgentsService.getAgent(lower)
+          dbRow = await HistoricalAgentsService.getAgent(lower)
         }
         // 3. A feed link may carry an email-derived slug missing the `planetary-`
         //    prefix (e.g. `mars-aries-12` instead of `planetary-mars-aries-12`).
-        if (!row && !lower.startsWith('planetary-')) {
-          row = await HistoricalAgentsService.getAgent(`planetary-${lower}`)
+        if (!dbRow && !lower.startsWith('planetary-')) {
+          dbRow = await HistoricalAgentsService.getAgent(`planetary-${lower}`)
         }
       }
 
-      if (row) agent = dbAgentToCraftedAgent(row as any)
+      if (dbRow) {
+        agent = dbAgentToCraftedAgent(dbRow as any)
+        row = agentRowFacts(dbRow as unknown as Record<string, unknown>)
+      }
     } catch (err) {
       console.error(`[resolveAnyAgent] DB lookup failed for "${id}":`, err)
     }
@@ -65,8 +82,12 @@ export async function resolveAnyAgent(id: string): Promise<CraftedAgent | null> 
         console.warn(`[resolveAnyAgent] Failed to derive sacred stats for "${id}":`, err)
       }
     }
-    return agent
+    return { agent, origin: row ? 'database' : 'canonical', row }
   }
 
   return null
+}
+
+export async function resolveAnyAgent(id: string): Promise<CraftedAgent | null> {
+  return (await resolveAnyAgentRecord(id))?.agent ?? null
 }

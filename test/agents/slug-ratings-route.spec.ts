@@ -400,6 +400,155 @@ describe('GET /api/agents/[slug]/ratings', () => {
     })
   })
 
+  describe('what reaches the anonymous feed stream', () => {
+    // GET /api/feed/stream has no auth and replays the last ratings to every new subscriber, so
+    // anything this route publishes is public. The route computed the payload with the caller's
+    // wallet entitlement and published it regardless: a creator's (or the secret holder's) read
+    // put the creator's private ESMS wallet on the stream.
+    const WALLET_NUMBERS = [...Object.values(CREATOR_WALLET), ...Object.values(OTHER_WALLET)].map(
+      String
+    )
+
+    async function anonymousStreamReplay(): Promise<string> {
+      const { GET } = await import('@/app/api/feed/stream/route')
+      const abort = new AbortController()
+      const res = await GET(
+        new Request('http://localhost:3000/api/feed/stream', { signal: abort.signal })
+      )
+      const reader = res.body!.getReader()
+      const decoder = new TextDecoder()
+      let text = ''
+      for (;;) {
+        const next = await Promise.race([
+          reader.read(),
+          new Promise<'idle'>(resolve => setTimeout(() => resolve('idle'), 30)),
+        ])
+        if (next === 'idle' || next.done) break
+        text += decoder.decode(next.value)
+      }
+      abort.abort()
+      return text
+    }
+
+    const publishedFor = (key: string) =>
+      feedMessages.filter(
+        m =>
+          (m.event === 'agent_rating' && (m.data as { key: string }).key === key) ||
+          (m.event === 'resonance_surge' && (m.data as { agentId: string }).agentId === key)
+      )
+
+    const expectNothingAboutForged = async () => {
+      expect(feedStreamBus.getRecentRatings().map(r => r.key)).not.toContain(FORGED)
+      expect(publishedFor(FORGED)).toEqual([])
+      const replay = await anonymousStreamReplay()
+      expect(replay).not.toContain(FORGED)
+      expect(replay).not.toContain('Moonwalker')
+      for (const n of WALLET_NUMBERS) expect(replay).not.toContain(n)
+    }
+
+    it('the creator reads their own wallet over HTTP and the stream learns nothing', async () => {
+      h.session.current = { user: { id: CREATOR } }
+      const res = await h.get(FORGED)
+      expect(res.status).toBe(200)
+      const body = await res.json()
+      expect(body.esms).toEqual(CREATOR_WALLET)
+      expect(body.esmsSource).toBe('database')
+
+      await expectNothingAboutForged()
+    })
+
+    it('the holder of INTERNAL_API_SECRET reads the wallet over HTTP and the stream learns nothing', async () => {
+      const res = await h.get(FORGED, { authorization: `Bearer ${SECRET}` })
+      expect((await res.json()).esms).toEqual(CREATOR_WALLET)
+
+      await expectNothingAboutForged()
+    })
+
+    it('an anonymous read of a forged vessel does not write the live stream about a person either', async () => {
+      const res = await h.get(FORGED)
+      expect((await res.json()).degraded?.esms).toBe('owner wallet is private')
+
+      await expectNothingAboutForged()
+    })
+
+    it('a signed-in stranger does not write the stream about a forged vessel', async () => {
+      h.session.current = { user: { id: OTHER_USER } }
+      await h.get(FORGED)
+
+      await expectNothingAboutForged()
+    })
+
+    it('no sequence of reads of a forged vessel leaves a wallet in the replay or on the wire', async () => {
+      await h.get(FORGED)
+      h.session.current = { user: { id: CREATOR } }
+      await h.get(FORGED)
+      h.session.current = null
+      await h.get(FORGED, { authorization: `Bearer ${SECRET}` })
+      await h.get(FORGED)
+
+      await expectNothingAboutForged()
+    })
+
+    it('a roster vessel is still published, and no credential changes what is published', async () => {
+      await h.get('isaac-newton')
+      const anonymous = feedStreamBus.getRecentRatings().find(r => r.key === 'isaac-newton')
+      expect(anonymous).toBeDefined()
+
+      feedStreamBus.resetForTesting()
+      unsub()
+      unsub = feedStreamBus.subscribe(m => feedMessages.push(m))
+      h.session.current = { user: { id: CREATOR } }
+      await h.get('isaac-newton', { authorization: `Bearer ${SECRET}` })
+      const entitled = feedStreamBus.getRecentRatings().find(r => r.key === 'isaac-newton')
+
+      expect(entitled).toBeDefined()
+      expect(entitled!.esms).toEqual(anonymous!.esms)
+      expect(entitled!.esmsSource).toBe(anonymous!.esmsSource)
+
+      const replay = await anonymousStreamReplay()
+      expect(replay).toContain('event: agent_rating')
+      expect(replay).toContain('"key":"isaac-newton"')
+      for (const n of WALLET_NUMBERS) expect(replay).not.toContain(n)
+    })
+
+    it('a fixture pilot (user-avatar-neo) is a roster vessel and is still published', async () => {
+      await h.get('user-avatar-neo')
+      expect(publishedFor('user-avatar-neo').length).toBeGreaterThan(0)
+    })
+  })
+
+  describe('caching: a forged vessel answer depends on who asks', () => {
+    // vercel.json gives every /api/* response `s-maxage=60`.
+    it('is private and uncacheable for the creator, the secret holder and everyone else', async () => {
+      const callers: Array<() => Promise<Response>> = [
+        async () => h.get(FORGED),
+        async () => {
+          h.session.current = { user: { id: CREATOR } }
+          return h.get(FORGED)
+        },
+        async () => {
+          h.session.current = null
+          return h.get(FORGED, { authorization: `Bearer ${SECRET}` })
+        },
+      ]
+      for (const call of callers) {
+        const res = await call()
+        expect(res.status).toBe(200)
+        expect(res.headers.get('cache-control')).toBe('private, no-store')
+        expect(res.headers.get('cdn-cache-control')).toBe('no-store')
+        expect(res.headers.get('vary')).toContain('Authorization')
+        expect(res.headers.get('vary')).toContain('Cookie')
+        expect(res.headers.get('access-control-allow-origin')).toBe('*')
+      }
+    })
+
+    it('leaves a roster vessel exactly as it was', async () => {
+      const res = await h.get('isaac-newton')
+      expect(res.headers.get('cache-control')).toBe('no-cache, no-transform')
+      expect(res.headers.get('vary')).toBeNull()
+    })
+  })
+
   describe('validation and error handling', () => {
     it('returns 404 when agent is unknown', async () => {
       const res = await h.get('non-existent-agent-xyz')

@@ -25,7 +25,11 @@ async function main() {
     try {
       const response = await fetch('http://127.0.0.1:8000/api/agents', {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        // POST /api/agents is service-only; start the local backend with the same INTERNAL_API_SECRET.
+        headers: {
+          'Content-Type': 'application/json',
+          INTERNAL_API_SECRET: process.env.INTERNAL_API_SECRET ?? '',
+        },
         body: JSON.stringify(payload),
       })
       if (response.ok) {

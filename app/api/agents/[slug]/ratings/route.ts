@@ -67,7 +67,13 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
 
     const contract = asContractPayload(payload)
 
-    if (contract) {
+    // /api/feed/stream is anonymous and replays the last ratings to every new subscriber, so
+    // only a payload that holds nothing private may be put on it. That is a roster vessel read
+    // under the 'deny' wallet policy: a canonical figure's holdings are public, and no
+    // credential changed what this payload says. Never a forged vessel (its ESMS wallet is its
+    // creator's, and even the baseline would let an anonymous GET write the live stream about a
+    // person's vessel), and never a payload computed for an entitled caller.
+    if (contract && vessel.origin === 'roster' && creatorWallet === 'deny') {
       feedStreamBus.recordAgentRating(contract)
       if (contract.surge.active) {
         feedStreamBus.recordResonanceSurge({
@@ -79,7 +85,19 @@ export async function GET(request: NextRequest, { params }: { params: Promise<{ 
       }
     }
 
-    return NextResponse.json(contract ?? payload, { headers: CORS_HEADERS })
+    // A forged vessel's answer depends on who asks (the creator and the secret holder get the
+    // wallet), and vercel.json gives every /api/* response `s-maxage=60`: it must not be shared.
+    const headers =
+      vessel.origin === 'forged'
+        ? {
+            ...CORS_HEADERS,
+            'Cache-Control': 'private, no-store',
+            'CDN-Cache-Control': 'no-store',
+            Vary: 'Authorization, Cookie, X-Internal-Secret',
+          }
+        : CORS_HEADERS
+
+    return NextResponse.json(contract ?? payload, { headers })
   } catch (error) {
     if (error instanceof AgentLookupUnavailable) {
       console.error('[slug-ratings] agent lookup unavailable:', error.message)

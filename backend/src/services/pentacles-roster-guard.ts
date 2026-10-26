@@ -23,9 +23,9 @@ export const NOT_CANONICAL_REASON =
 export const USER_CREATED_MARKER_REASON =
   'carries a user-created marker despite a canonical id: refusing to seed'
 
-// The same markers `app/api/agents/route.ts#formatAgentRow` uses for `isUserCreated`. The
-// controller image cannot import from `lib/` or `app/`, so they are repeated here and the
-// root spec pins them to that route's source.
+// The same markers `lib/agents/forged-privacy.ts#isUserCreatedAgentRow` uses (the one definition
+// the API routes share). The controller image cannot import from `lib/` or `app/`, so they are
+// repeated here and the root spec pins them to that function's behaviour.
 const USER_CREATED_CRAFTED_BY = 'philosopher-stone-user'
 const USER_CREATED_ERAS: ReadonlySet<string> = new Set(['user_created', 'MONICA_SPECIAL'])
 
