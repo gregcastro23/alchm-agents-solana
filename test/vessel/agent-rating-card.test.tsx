@@ -31,20 +31,20 @@ const sky = deriveLiveSky(
   new Date('2026-10-15T05:43:00Z')
 )
 
-/** What the route would send for Newton, through the route's own builder and a JSON round trip. */
-function newtonPayload(): RatedVesselPayload {
-  const vessel = ratableFromRoster(getHistoricalAgent('isaac-newton')!)
+/** What the route would send for an agent, through the route's own builder and a JSON round trip. */
+function rosterPayload(
+  agentId: string,
+  balances = { spirit: 12, essence: 3, matter: 60, substance: 0.7 }
+): RatedVesselPayload {
+  const vessel = ratableFromRoster(getHistoricalAgent(agentId)!)
   const payload = buildRatedAgentPayload({
     vessel,
-    balances: {
-      agentId: vessel.agentId,
-      balances: { spirit: 12, essence: 3, matter: 60, substance: 0.7 },
-      esmsSource: 'database',
-    },
+    balances: { agentId: vessel.agentId, balances, esmsSource: 'database' },
     sky,
   })
   return JSON.parse(JSON.stringify(payload))
 }
+const newtonPayload = () => rosterPayload('isaac-newton')
 
 const fetchMock = () => vi.mocked(global.fetch)
 /** A fresh Response per call: a body can be read once. */
@@ -204,6 +204,47 @@ describe('AgentRatingCard', () => {
     expect(init?.signal?.aborted).toBe(false)
     unmount()
     expect(init?.signal?.aborted).toBe(true)
+  })
+
+  it('shows a harmony read from no chart as missing, not as a neutral 0.00', async () => {
+    // Plato's chart is a placeholder: the route reads no harmony and sends harmonyOffset 0.
+    const plato = rosterPayload('plato')
+    expect(plato.isPlaceholder).toBe(true)
+    expect(plato.surge!.harmonyOffset).toBe(0)
+    expect(plato.sealProgress.every(seal => seal.natalAffinity === null)).toBe(true)
+    answer(plato)
+    render(<AgentRatingCard agentId="plato" />)
+    const card = await screen.findByRole('region', { name: /Pentacle Vessel Rating for/ })
+    expect(card).toHaveTextContent('Natal harmony — (no sourced chart)')
+    expect(card).not.toHaveTextContent('Natal harmony 0.00')
+  })
+
+  it('prints a measured harmony when the chart was read', async () => {
+    const payload = newtonPayload()
+    answer(payload)
+    render(<AgentRatingCard agentId="isaac-newton" />)
+    const card = await screen.findByRole('region', { name: /Pentacle Vessel Rating for/ })
+    const offset = payload.surge!.harmonyOffset
+    expect(card).toHaveTextContent(`Natal harmony ${offset > 0 ? '+' : ''}${offset.toFixed(2)}`)
+  })
+
+  it('never prints a balance at a gate it has not reached', async () => {
+    // 1.999 Spirit is under Silver's gate of 2: it must not read "2.00" beside "needs holdings".
+    const payload = rosterPayload('isaac-newton', {
+      spirit: 1.999,
+      essence: 9.996,
+      matter: 249.6,
+      substance: 0.4999,
+    })
+    answer(payload)
+    render(<AgentRatingCard agentId="isaac-newton" />)
+    const card = await screen.findByRole('region', { name: /Pentacle Vessel Rating for/ })
+    for (const text of ['1.99 Spirit', '9.99 Essence', '249 Matter', '0.49 Substance']) {
+      expect(card).toHaveTextContent(text)
+    }
+    for (const text of ['2.00 Spirit', '10.00 Essence', '250 Matter', '0.50 Substance']) {
+      expect(card).not.toHaveTextContent(text)
+    }
   })
 
   it('server-renders the loading state, without fetching', () => {

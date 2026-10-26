@@ -21,7 +21,9 @@ import type { RatedVesselPayload } from '@/lib/agents/rating/vessel-payload'
  * The fetch carries the session cookie, so a vessel's creator sees their own wallet and everyone
  * else the route's baseline with the reason. Mount it only where the viewer may see the whole
  * agent: the payload also carries chart-derived fields (`sealProgress[].natalAffinity`,
- * `surge.harmonyOffset`) that the profile page's restricted view withholds.
+ * `surge.harmonyOffset`) that the profile page's restricted view withholds. That keeps the page
+ * from showing them to a stranger; it does not protect them — the route itself still serves them
+ * to any caller, so withholding them belongs in the route.
  */
 
 export interface AgentRatingCardProps {
@@ -137,7 +139,8 @@ const RatingCardSchema = z.object({
       heat: z.number(),
       reactivity: z.number(),
       statBoosts: z.record(Stat, z.number()),
-      harmonyOffset: z.number(),
+      // Nullable so a route that one day says "not computed" outright needs no card change.
+      harmonyOffset: z.number().nullable(),
     })
     .nullable(),
   sky: z.object({ source: z.enum(keysOf(SKY_SOURCE_LABEL)), at: z.string() }).nullable(),
@@ -484,7 +487,7 @@ function SealsColumn({ payload: p }: { payload: RatingCardPayload }) {
 
       <ul className="mt-3 space-y-2.5">
         {p.sealProgress.map(seal => (
-          <li key={seal.id} className="rounded-lg border border-border-gold/15 bg-black/30 p-2.5">
+          <li key={seal.id} className="rounded-lg border border-border-gold/20 bg-black/30 p-2.5">
             <div className="flex items-start justify-between gap-2">
               <div className="min-w-0">
                 <p className="truncate text-sm text-ivory-text">{seal.name}</p>
@@ -533,9 +536,15 @@ function nextStep(seal: RatingCardPayload['sealProgress'][number]): string {
   return `Next: ${seal.nextTier}${blocked ? ` — needs ${blocked}` : ''}${ceiling}`
 }
 
+/**
+ * Truncated, never rounded: the gates compare the raw balance, so 1.999 must not print as 2.00
+ * beside "needs holdings" for a gate of 2. The epsilon keeps an exact 2 from flooring to 1.99.
+ */
 function formatBalance(value: number): string {
   if (!Number.isFinite(value)) return '—'
-  return value >= 100 ? value.toFixed(0) : value >= 10 ? value.toFixed(1) : value.toFixed(2)
+  const decimals = value >= 100 ? 0 : value >= 10 ? 1 : 2
+  const factor = 10 ** decimals
+  return (Math.floor(value * factor + 1e-9) / factor).toFixed(decimals)
 }
 
 // ─── Resonance Surge ─────────────────────────────────────────────────────────
@@ -546,6 +555,10 @@ const RING_LENGTH = 2 * Math.PI * RING.radius
 function SurgeColumn({ payload: p }: { payload: RatingCardPayload }) {
   const surge = p.surge
   const best = p.zoneSynergies.find(zone => zone.zoneId === p.bestZoneId)
+  // The route sends harmonyOffset 0 when there was no usable chart to compare with the sky — the
+  // same chart test that leaves every natalAffinity null (or 0, for a chart with no classical
+  // body). A 0 then means "not computed", so it is shown as missing, not as a neutral harmony.
+  const harmonyRead = p.sealProgress.some(seal => (seal.natalAffinity ?? 0) > 0)
 
   return (
     <div className={TILE}>
@@ -613,7 +626,9 @@ function SurgeColumn({ payload: p }: { payload: RatingCardPayload }) {
                 {MONICA_LABEL[surge.monicaState]}
               </p>
               <p className="font-mono-data text-[11px] text-muted-text">
-                Natal harmony {formatSigned(surge.harmonyOffset)}
+                {harmonyRead && surge.harmonyOffset !== null
+                  ? `Natal harmony ${formatSigned(surge.harmonyOffset)}`
+                  : 'Natal harmony — (no sourced chart)'}
               </p>
             </div>
           </div>
@@ -628,7 +643,7 @@ function SurgeColumn({ payload: p }: { payload: RatingCardPayload }) {
       )}
 
       {best && (
-        <p className="mt-3 border-t border-border-gold/15 pt-2 font-mono-data text-[11px] text-muted-text">
+        <p className="mt-3 border-t border-border-gold/20 pt-2 font-mono-data text-[11px] text-muted-text">
           Strongest zone: <span className="text-ivory-text">{best.label}</span> ({best.element}) ·
           ECR {best.synergy.toFixed(1)}
         </p>

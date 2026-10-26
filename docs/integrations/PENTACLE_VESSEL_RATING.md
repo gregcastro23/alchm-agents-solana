@@ -169,9 +169,12 @@ X-Internal-Secret`: its answer depends on who asks, and `vercel.json` gives ever
 from the browser on `/agent/[id]`, with the session cookie, so a vessel's creator sees their own
 wallet. The page mounts it only for a view that is not restricted (a roster figure, the
 creator, an admin): the payload carries chart-derived fields — `sealProgress[].natalAffinity`,
-`surge.harmonyOffset` — that a stranger's restricted view withholds. It validates what it reads
+`surge.harmonyOffset` — that a stranger's restricted view withholds. That gate is the page's
+only: this route still serves those fields to any caller for a forged vessel, so it keeps a
+stranger's page from showing them, not the data from being read. It validates what it reads
 with zod against `RatedVesselPayload` (a drift guard fails `tsc`), and shows a missing sky as
-missing and a baseline wallet as a baseline, never as a calm ring or real holdings.
+missing, a baseline wallet as a baseline and a harmony read from no chart as "—", never as a
+calm ring, real holdings or a neutral harmony.
 
 ### `GET /api/agents/rating?roster=true`
 

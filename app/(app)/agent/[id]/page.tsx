@@ -324,7 +324,8 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
 
         {/* Pentacle Vessel Rating, read live by the client (GET /api/agents/rating). Not in a
             restricted view: that payload carries chart-derived fields (natal affinity, natal
-            harmony) the projection withholds, so a stranger's page must not render it. */}
+            harmony) the projection withholds, so a stranger's page must not render it. The route
+            still serves them to any caller; this only keeps the page from displaying them. */}
         {!restricted && <AgentRatingCard agentId={agent.id} />}
 
         {/* 3-Column Codex Layout */}
