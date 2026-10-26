@@ -2,12 +2,18 @@
 
 import type { ReactNode } from 'react'
 import { RecipeLatencyReportSchema, type RecipeLatencyPayload } from '@/lib/admin/page-schemas'
+import {
+  RecipeActivityReportSchema,
+  type RecipeActivityPayload,
+} from '@/lib/admin/recipe-activity-schema'
 import { cn } from '@/lib/utils'
 import { AdminFrame } from './AdminFrame'
 import {
   AlertList,
+  Badge,
   Card,
   LoadState,
+  Read,
   ScrollTable,
   SourceNotice,
   formatAgo,
@@ -25,6 +31,154 @@ function Stat({ label, children, note }: { label: string; children: ReactNode; n
       <dd className="mt-1 text-lg font-semibold text-zinc-50">{children}</dd>
       {note && <p className="mt-0.5 text-[11px] text-zinc-400">{note}</p>}
     </div>
+  )
+}
+
+export function RecipeActivityView({ data }: { data: RecipeActivityPayload }) {
+  return (
+    <>
+      <AlertList alerts={data.alerts} />
+      <Card
+        title="Catalog coverage"
+        subtitle="The bundled recipe snapshot available to agents in this deployment. Metadata completeness does not verify recipe quality or dietary safety."
+      >
+        <Read section={data.catalog}>
+          {catalog => (
+            <>
+              <dl className="grid grid-cols-2 gap-3 md:grid-cols-4">
+                <Stat
+                  label="Catalog recipes"
+                  note={`${catalog.ingredientLines.toLocaleString('en-US')} ingredient lines · ${catalog.instructionSteps.toLocaleString('en-US')} instruction steps`}
+                >
+                  {catalog.recipes.toLocaleString('en-US')}
+                </Stat>
+                <Stat label="Cuisine / meal tags" note={`of ${catalog.recipes} recipes`}>
+                  {catalog.withCuisine.toLocaleString('en-US')} /{' '}
+                  {catalog.withMealType.toLocaleString('en-US')}
+                </Stat>
+                <Stat label="Elemental metadata" note={`of ${catalog.recipes} recipes`}>
+                  {catalog.withElements.toLocaleString('en-US')}
+                </Stat>
+                <Stat label="Nutrition metadata" note={`of ${catalog.recipes} recipes`}>
+                  {catalog.withNutrition.toLocaleString('en-US')}
+                </Stat>
+              </dl>
+              {catalog.cuisines.length > 0 && (
+                <p className="mt-3 break-words text-xs text-zinc-300">
+                  <span className="text-zinc-400">Largest cuisine groups: </span>
+                  {catalog.cuisines
+                    .slice(0, 8)
+                    .map(cuisine => `${cuisine.name} (${cuisine.recipes})`)
+                    .join(' · ')}
+                </p>
+              )}
+              <p className="mt-3 text-[11px] text-zinc-400">
+                Loaded through the catalog validator: unique IDs, names, ingredients and
+                instructions are required. This snapshot does not measure the live WTEN catalog.
+              </p>
+            </>
+          )}
+        </Read>
+      </Card>
+
+      <Card
+        title="Agent recipe activity · 7 days"
+        subtitle={`Local agent_action_events created since ${new Date(data.windowStart).toLocaleString()}. Only recipe_alteration and catalog_review sources are counted.`}
+      >
+        <Read section={data.activity7d}>
+          {activity => (
+            <dl className="grid grid-cols-2 gap-3 md:grid-cols-3">
+              <Stat label="Recorded events">{activity.events.toLocaleString('en-US')}</Stat>
+              <Stat label="Recipe alterations">{activity.alterations.toLocaleString('en-US')}</Stat>
+              <Stat label="Catalog reviews">{activity.catalogReviews.toLocaleString('en-US')}</Stat>
+              <Stat label="Feed acknowledged">
+                {activity.feedAcknowledged.toLocaleString('en-US')}
+              </Stat>
+              <Stat label="Feed not acknowledged">
+                {activity.feedUnacknowledged.toLocaleString('en-US')}
+              </Stat>
+              <Stat label="Feed acknowledgement unknown">
+                {activity.feedUnknown.toLocaleString('en-US')}
+              </Stat>
+            </dl>
+          )}
+        </Read>
+        <p className="mt-3 text-[11px] text-zinc-400">
+          Feed acknowledgement is the recorded feedPublished boolean. False can include delivery
+          being disabled; absent values are unknown. Local status does not confirm publication.
+          Recipe comment delivery is not recorded here and remains unknown.
+        </p>
+      </Card>
+
+      <Card
+        title="Recent recipe activity"
+        subtitle="Latest 20 local records in the same 7-day window; attempts without a saved event are not visible."
+      >
+        <Read section={data.recent}>
+          {rows =>
+            rows.length === 0 ? (
+              <p className="text-sm text-zinc-300">
+                No recorded recipe activity in the last 7 days.
+              </p>
+            ) : (
+              <ScrollTable label="Recent agent recipe activity">
+                <thead>
+                  <tr>
+                    <th className={th}>Created</th>
+                    <th className={th}>Agent</th>
+                    <th className={th}>Recipe / source</th>
+                    <th className={th}>Substitutions</th>
+                    <th className={th}>Instruction review</th>
+                    <th className={th}>Local status</th>
+                    <th className={th}>Feed acknowledgement</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {rows.map(row => (
+                    <tr key={row.id}>
+                      <td className={td} title={new Date(row.createdAt).toLocaleString()}>
+                        {formatAgo(row.createdAt)}
+                      </td>
+                      <td className={cn(td, 'font-mono')}>{row.agentId}</td>
+                      <td className={td}>
+                        <span>{row.recipeName ?? row.recipeId ?? 'Recipe not recorded'}</span>
+                        <span className="block text-[11px] text-zinc-400">
+                          {row.source === 'recipe_alteration' ? 'Alteration' : 'Catalog review'}
+                        </span>
+                      </td>
+                      <td className={td}>
+                        {num(row.substitutions, 'Substitutions were not recorded for this event.')}
+                      </td>
+                      <td className={td}>
+                        {row.instructionReviewRequired === true
+                          ? 'Required'
+                          : row.instructionReviewRequired === false
+                            ? 'Not flagged'
+                            : 'Not recorded'}
+                      </td>
+                      <td className={td}>{row.status}</td>
+                      <td className={td}>
+                        <Badge
+                          glyph={row.feedPublished === true ? '✓' : '○'}
+                          label={
+                            row.feedPublished === true
+                              ? 'Acknowledged'
+                              : row.feedPublished === false
+                                ? 'Not acknowledged'
+                                : 'Unknown'
+                          }
+                          tone={row.feedPublished === true ? 'ok' : 'muted'}
+                        />
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </ScrollTable>
+            )
+          }
+        </Read>
+      </Card>
+    </>
   )
 }
 
@@ -161,6 +315,11 @@ export function RecipesView({ data }: { data: RecipeLatencyPayload }) {
 }
 
 export function RecipesPage() {
+  const activity = useValidatedPoll(
+    '/api/admin/recipe-activity',
+    RecipeActivityReportSchema,
+    60_000
+  )
   const { loaded, refresh } = useValidatedPoll(
     '/api/admin/recipe-latency',
     RecipeLatencyReportSchema,
@@ -168,12 +327,26 @@ export function RecipesPage() {
   )
   const data =
     loaded.state === 'ok' ? loaded.data : loaded.state === 'error' ? loaded.stale : undefined
+  const activityData =
+    activity.loaded.state === 'ok'
+      ? activity.loaded.data
+      : activity.loaded.state === 'error'
+        ? activity.loaded.stale
+        : undefined
   return (
     <AdminFrame
-      title="Recipe generation"
-      description="Latency and failures of /api/generate-recipe, which WTEN's hourly prewarm calls with a 45-second budget per recipe."
-      updated={data ? `Read ${formatAgo(data.generatedAt)}` : undefined}
+      title="Recipes & agent activity"
+      description="Catalog coverage, persisted agent alterations and reviews, and generation latency against WTEN's 45-second prewarm budget."
+      updated={
+        activityData
+          ? `Activity read ${formatAgo(activityData.generatedAt)}${data ? ` · Latency read ${formatAgo(data.generatedAt)}` : ''}`
+          : data
+            ? `Latency read ${formatAgo(data.generatedAt)}`
+            : undefined
+      }
     >
+      <LoadState loaded={activity.loaded} onRetry={activity.refresh} />
+      {activityData && <RecipeActivityView data={activityData} />}
       <LoadState loaded={loaded} onRetry={refresh} />
       {data && <RecipesView data={data} />}
     </AdminFrame>

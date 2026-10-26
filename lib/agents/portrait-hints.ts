@@ -38,7 +38,7 @@ const PORTRAIT_HINTS: Record<string, string> = {
   'eleanor-roosevelt':
     'mature stateswoman with swept-back hair, kind determined eyes, long face, pearls or simple formal dress',
   'emily-dickinson':
-    'young 19th-century poet with center-parted auburn hair, pale complexion, direct reserved gaze, and plain white dress',
+    'Romantic poet with center-parted chignon bun (dickinson-parted-bun), Victorian pearl shawl (victorian-shawl), delicate lace tippet, holding the Herbarium Lantern with quill',
   'frida-kahlo':
     'Mexican painter with strong brows, braided dark hair with flowers, vivid jewelry, and direct self-possessed gaze',
   'fyodor-dostoevsky':
@@ -60,7 +60,7 @@ const PORTRAIT_HINTS: Record<string, string> = {
   'isaac-asimov':
     '20th-century writer with thick sideburns, glasses, broad face, dark hair, and confident conversational expression',
   'isaac-newton':
-    'elder English scientist with long white hair, serious eyes, formal dark coat, and 17th-century scholar presence',
+    'Enlightenment natural philosopher in crimson/charcoal tailcoat, Baroque curled wig (newton-curls), high cravat, holding the refractive Prism Octahedron splitting light rays into spectral bands',
   'jane-austen':
     'Regency-era English woman with brown curled hair under bonnet or cap, soft oval face, light dress, and composed intelligent gaze',
   'jean-jacques-rousseau':
@@ -76,7 +76,7 @@ const PORTRAIT_HINTS: Record<string, string> = {
   'lao-tzu':
     'elder Daoist sage with long white beard, deeply calm eyes, flowing robe, and weathered contemplative face',
   'leonardo-da-vinci':
-    'elder Renaissance polymath with long white hair, flowing white beard, deep-set eyes, and painter-engineer robes',
+    'Renaissance polymath in indigo/gold cloak (renaissance-drape), velvet beret with flowing beard (da-vinci-beret-beard), renaissance collar, holding the interlocking golden rings of the Vitruvian Gyroscope',
   'lewis-carroll':
     'Victorian mathematician and author with neat dark hair, trimmed facial hair, reserved expression, and formal black coat',
   machiavelli:
@@ -138,6 +138,33 @@ const PORTRAIT_HINTS: Record<string, string> = {
     'young classical composer with powdered wig, delicate face, bright eyes, and ornate 18th-century embroidered coat',
   'vincent-van-gogh':
     'red-haired Dutch painter with short beard, angular face, intense eyes, blue coat or work jacket, and restless expression',
+  'user-avatar-neo':
+    'Astral sovereign adept with sovereign crest crown (sovereign-crest), obsidian and gold alchemical vestments, astral gorget collar, wielding the celestial Solar Astrolabe',
+}
+
+import {
+  type VesselAppearanceProfile,
+  resolveAgentAppearance,
+  createVesselPortraitSvg,
+} from './vessel-appearance-manifest'
+
+export { resolveAgentAppearance, createVesselPortraitSvg }
+
+export function getHistoricalVesselAppearance(
+  agentId: string,
+  faction?: number,
+  archetype?: string | { title: string }
+): VesselAppearanceProfile {
+  return resolveAgentAppearance(agentId, faction, archetype)
+}
+
+export function getHistoricalPortraitSvgDataUri(
+  agentId: string,
+  faction?: number,
+  archetype?: string | { title: string }
+): string {
+  const appearance = resolveAgentAppearance(agentId, faction, archetype)
+  return appearance.portraitSvgDataUri ?? createVesselPortraitSvg(appearance)
 }
 
 function normalizeId(id: string | undefined | null): string | null {

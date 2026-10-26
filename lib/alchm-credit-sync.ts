@@ -59,7 +59,10 @@ export async function syncCreditToAlchm(params: {
   const delivery = await deliverToWten({
     endpoint: 'economy/sync-credit',
     url: `${baseUrl}/api/economy/sync-credit`,
-    headers: { 'X-Sync-Secret': secret },
+    headers: {
+      'X-Sync-Secret': secret,
+      Authorization: `Bearer ${secret}`,
+    },
     body: params,
     eventId: params.idempotencyKey,
   })

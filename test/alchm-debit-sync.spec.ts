@@ -39,6 +39,23 @@ describe('alchm.kitchen debit sync contract', () => {
     expect(fetch).toHaveBeenCalledOnce()
   })
 
+  it('sends both X-Sync-Secret and Authorization: Bearer headers', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({ ok: true, transactionGroupId: 'tx-1', userId: 'remote-user-1' }),
+        { status: 200 }
+      )
+    )
+
+    await syncDebitToAlchm(payload)
+
+    expect(fetch).toHaveBeenCalledOnce()
+    const callArgs = vi.mocked(fetch).mock.calls[0]
+    const headers = (callArgs[1] as any)?.headers ?? {}
+    expect(headers['X-Sync-Secret']).toBe('sync-secret')
+    expect(headers['Authorization']).toBe('Bearer sync-secret')
+  })
+
   it('fails closed when the remote service rejects the sync secret', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
       new Response(JSON.stringify({ error: 'Unauthorized' }), { status: 401 })

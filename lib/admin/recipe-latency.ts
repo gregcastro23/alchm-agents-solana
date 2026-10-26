@@ -34,7 +34,7 @@ export interface RecipeLatencyReport {
   alerts: AdminAlert[]
 }
 
-export const WTEN_PREWARM_BUDGET_MS = 45_000
+export const WTEN_PREWARM_BUDGET_MS = 28_000
 
 const BACKEND_URL = () =>
   (
@@ -68,8 +68,8 @@ export function recipeAlerts(
       id: 'recipes:latency:p95-over-wten-budget',
       severity: 'warning',
       source: 'infrastructure',
-      title: 'Recipe generation p95 exceeds WTEN’s 45s prewarm budget',
-      detail: `p95 ${(summary.p95Ms / 1000).toFixed(1)}s over ${summary.generated} generations; WTEN abandons calls after 45s.`,
+      title: 'Recipe generation p95 exceeds WTEN’s 28s prewarm budget',
+      detail: `p95 ${(summary.p95Ms / 1000).toFixed(1)}s over ${summary.generated} generations; WTEN abandons calls after 28s.`,
       href: '/admin/recipes',
     })
   }

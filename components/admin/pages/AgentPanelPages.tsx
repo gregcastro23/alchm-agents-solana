@@ -6,7 +6,9 @@
  */
 
 import { useState } from 'react'
+import { useSearchParams } from 'next/navigation'
 import { z } from 'zod'
+import { LevelingReportSchema } from '@/lib/admin/leveling-schema'
 import CosmicLevelingPanel from '@/components/admin/panels/CosmicLevelingPanel'
 import GroupChatSessionsPanel from '@/components/admin/panels/GroupChatSessionsPanel'
 import JingArenaPanel from '@/components/admin/panels/JingArenaPanel'
@@ -32,26 +34,27 @@ export function CouncilsPage() {
   )
 }
 
-const LevelingSchema = z.object({ success: z.literal(true) }).passthrough()
-
 export function LevelingPage() {
+  const params = useSearchParams()
   const { loaded, refresh } = useValidatedPoll(
     '/api/admin/leveling-summary',
-    LevelingSchema,
-    300_000
+    LevelingReportSchema,
+    60_000
   )
+  const data =
+    loaded.state === 'ok' ? loaded.data : loaded.state === 'error' ? loaded.stale : undefined
   return (
     <AdminFrame
-      title="Cosmic leveling"
-      description="Agent levels, EV training and who is training with whom."
+      title="Vessel progression"
+      description="Permanent Vessel Level and Alchm EXP, baseline capability, and current ratings under the sky. Legacy level and EV records remain available for comparison."
+      updated={readAt(data?.generatedAt)}
     >
       <LoadState loaded={loaded} onRetry={refresh} />
-      {loaded.state !== 'error' && (
-        <CosmicLevelingPanel
-          leveling={loaded.state === 'ok' ? (loaded.data as never) : null}
-          loading={loaded.state === 'loading'}
-        />
-      )}
+      <CosmicLevelingPanel
+        leveling={data ?? null}
+        loading={loaded.state === 'loading'}
+        initialAgentId={params?.get('agent') ?? ''}
+      />
     </AdminFrame>
   )
 }

@@ -19,6 +19,8 @@ export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: CORS_HEADERS })
 }
 
+import { resolveAgentAppearance } from '@/lib/agents/vessel-appearance-manifest'
+
 export async function GET(_req: NextRequest, { params }: { params: Promise<{ id: string }> }) {
   const { id } = await params
   const agent = getHistoricalAgent(id)
@@ -27,5 +29,14 @@ export async function GET(_req: NextRequest, { params }: { params: Promise<{ id:
     return NextResponse.json({ error: 'Agent not found' }, { status: 404, headers: CORS_HEADERS })
   }
 
-  return NextResponse.json(agent, { headers: CORS_HEADERS })
+  const appearance = resolveAgentAppearance(agent.id)
+  const enrichedAgent = {
+    ...agent,
+    // The legacy fields the UI reads (avatar, color, symbol, aura) plus the likeness manifest's.
+    appearance: { ...agent.appearance, ...appearance },
+    avatarModelUrl: agent.avatarModelUrl ?? appearance.avatarModelUrl,
+    headMeshUrl: agent.headMeshUrl ?? appearance.headMeshUrl,
+  }
+
+  return NextResponse.json(enrichedAgent, { headers: CORS_HEADERS })
 }

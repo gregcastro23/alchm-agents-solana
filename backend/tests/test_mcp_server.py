@@ -7,7 +7,7 @@ import mcp_invocation_log
 
 @pytest.mark.asyncio
 async def test_chat_with_planetary_agent_happy_path(monkeypatch):
-    async def fake_backend_chat(agent_name, message, conversation_history=None, context=None, model_tier=None, sky_state=None):
+    async def fake_backend_chat(agent_name, message, conversation_history=None, context=None, model_tier=None, sky_state=None, session_id=None, execution_context=None):
         return {
             "agentName": agent_name,
             "agentId": "socrates",
@@ -108,7 +108,7 @@ async def test_synthesize_culinary_debate_happy_path(monkeypatch):
     async def fake_recipe(prompt, dominant_element=None, cuisine=None, dietary=None):
         return {"recipes": [{"name": "Fiery Soup"}]}
 
-    async def fake_backend_chat(agent_name, message, conversation_history=None, context=None, model_tier=None, sky_state=None):
+    async def fake_backend_chat(agent_name, message, conversation_history=None, context=None, model_tier=None, sky_state=None, session_id=None, execution_context=None):
         return {
             "agentName": agent_name,
             "agentId": planetary_agents_mcp_server._agent_id(agent_name),
@@ -263,7 +263,7 @@ async def test_trigger_chart_specific_jing_duel(monkeypatch):
         }
 
     # Mock backend chat response
-    async def fake_backend_chat(agent_name, message, conversation_history=None, context=None, model_tier=None, sky_state=None):
+    async def fake_backend_chat(agent_name, message, conversation_history=None, context=None, model_tier=None, sky_state=None, session_id=None, execution_context=None):
         return {
             "agentName": agent_name,
             "agentId": planetary_agents_mcp_server._agent_id(agent_name),
@@ -472,7 +472,26 @@ async def test_mcp_resources_protocol(monkeypatch):
     jing_text = res_read_jing["result"]["contents"][0]["text"]
     jing_json = json.loads(jing_text)
     assert "Meltdown" in jing_json["moves"]
-    assert jing_json["moves"]["Meltdown"]["counters"] == "TectonicRoot"
+    # The wrong table (Meltdown "counters" TectonicRoot, "counteredBy" Freeze) was pinned here once.
+    assert jing_json["moves"]["Meltdown"]["counteredBy"] == "Vacuum"
+    assert jing_json["moves"]["Meltdown"]["counters"] == ["Freeze"]
+
+
+def test_jing_counter_resource_matches_the_canonical_graph():
+    import duel_brain
+
+    matrix = planetary_agents_mcp_server._jing_counter_matrix()
+
+    assert planetary_agents_mcp_server.JING_WINNING_COUNTER == duel_brain.WINNING_COUNTER
+    assert {m: v["counteredBy"] for m, v in matrix["moves"].items()} == duel_brain.WINNING_COUNTER
+    # Each move beats exactly the openings whose winning counter it is: Vacuum beats two, TectonicRoot none.
+    assert matrix["moves"]["Vacuum"]["counters"] == ["Meltdown", "Erode"]
+    assert matrix["moves"]["TectonicRoot"]["counters"] == []
+    # Every move is counteredBy exactly one other, and never itself.
+    assert all(v["counteredBy"] != m for m, v in matrix["moves"].items())
+    assert sum(len(v["counters"]) for v in matrix["moves"].values()) == 5
+    assert matrix["moves"]["Erode"]["element"] == "Silt"
+    assert set(matrix["elements"]) == {v["element"] for v in matrix["moves"].values()}
 
 
 @pytest.mark.asyncio

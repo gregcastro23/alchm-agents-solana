@@ -12,7 +12,12 @@ import { PlanetaryHourCalculator } from '@/lib/planetary-hour'
 import { deliverToWten, stableEventId } from '@/lib/wten/delivery'
 
 function getInternalApiSecret(): string {
-  return process.env.INTERNAL_API_SECRET || ''
+  return (
+    process.env.INTERNAL_API_SECRET ||
+    process.env.ALCHM_KITCHEN_SYNC_SECRET ||
+    process.env.WHATTOEATNEXT_API_KEY ||
+    ''
+  )
 }
 
 const ALCHM_KITCHEN_BASE_URL =
@@ -301,10 +306,14 @@ export class RecipeAlterationService {
     // cannot confirm that the recipe interaction was saved.
     if (syncToWten) {
       try {
+        const secret = getInternalApiSecret()
         const delivery = await deliverToWten({
           endpoint: 'feed',
           url: `${ALCHM_KITCHEN_BASE_URL}/api/feed`,
-          headers: { Authorization: `Bearer ${getInternalApiSecret()}` },
+          headers: {
+            Authorization: `Bearer ${secret}`,
+            'X-Sync-Secret': secret,
+          },
           body: {
             agentEmail,
             agentDisplayName: agent.name,
@@ -313,6 +322,8 @@ export class RecipeAlterationService {
             metadataPayload,
           },
           eventId: idempotencyKey,
+          maxAttempts: 1,
+          deadline: Date.now() + 5_000,
         })
 
         if (delivery.ok && (delivery.body as any)?.success === true) {

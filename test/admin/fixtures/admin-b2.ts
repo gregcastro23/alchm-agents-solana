@@ -19,9 +19,45 @@ export function agentsFixture(opts: { syncFails?: boolean } = {}): AgentsPayload
   return AgentsReportSchema.parse({
     generatedAt: NOW,
     code: [
-      { agentId: 'ada-lovelace', name: 'Ada Lovelace', chart: 'computed' },
-      { agentId: 'hypatia', name: 'Hypatia', chart: 'placeholder' },
-      { agentId: 'rumi', name: 'Rumi', chart: 'missing' },
+      {
+        agentId: 'ada-lovelace',
+        name: 'Ada Lovelace',
+        chart: 'computed',
+        vessel: {
+          faction: 'Mercury',
+          era: 'modern',
+          archetype: 'Polymath Craftsman',
+          provenance: 'historical',
+          likeness: 'painted',
+          hasModel: false,
+        },
+      },
+      {
+        agentId: 'hypatia',
+        name: 'Hypatia',
+        chart: 'placeholder',
+        vessel: {
+          faction: 'Venus',
+          era: 'ancient',
+          archetype: null,
+          provenance: 'placeholder',
+          likeness: 'procedural',
+          hasModel: false,
+        },
+      },
+      {
+        agentId: 'rumi',
+        name: 'Rumi',
+        chart: 'missing',
+        vessel: {
+          faction: 'Venus',
+          era: 'romantic',
+          archetype: null,
+          provenance: 'historical',
+          likeness: 'procedural',
+          hasModel: true,
+        },
+      },
     ],
     db: {
       ok: true,

@@ -46,7 +46,7 @@ describe('loadRecipeLatency', () => {
     expect(RecipeLatencyReportSchema.safeParse(report).success).toBe(true)
   })
 
-  it('flags a p95 over WTEN’s 45s budget', async () => {
+  it('flags a p95 over WTEN’s 28s budget', async () => {
     vi.stubEnv('INTERNAL_API_SECRET', 'x')
     const report = await loadRecipeLatency({ fetchImpl: fetchReturning(200, liveBody) })
     expect(report.alerts.map(a => a.id)).toContain('recipes:latency:p95-over-wten-budget')
@@ -78,7 +78,7 @@ describe('Recipes page', () => {
     expect(screen.getByText('21s')).toBeInTheDocument()
     expect(screen.getAllByText('48s').length).toBeGreaterThan(0)
     expect(screen.getByText('gemini')).toBeInTheDocument()
-    expect(screen.getByText(/exceeds WTEN’s 45s prewarm budget/)).toBeInTheDocument()
+    expect(screen.getByText(/exceeds WTEN’s 28s prewarm budget/)).toBeInTheDocument()
   })
 
   it('an unreadable source renders "—" with its reason, never 0', async () => {

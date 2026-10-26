@@ -4,11 +4,9 @@ bridge concurrency, child env sanitization, and telemetry drain.
 
 import asyncio
 import json
-import os
 import sys
 import time
-from typing import Any, Dict
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 

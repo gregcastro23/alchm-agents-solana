@@ -138,7 +138,10 @@ export async function syncDebitToAlchm(payload: SyncDebitPayload): Promise<SyncD
   const delivery = await deliverToWten({
     endpoint: 'economy/sync-debit',
     url: `${baseUrl}/api/economy/sync-debit`,
-    headers: { 'X-Sync-Secret': secret },
+    headers: {
+      'X-Sync-Secret': secret,
+      Authorization: `Bearer ${secret}`,
+    },
     body: payload,
     eventId: payload.idempotencyKey,
   })
