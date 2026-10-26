@@ -6,7 +6,10 @@ import { Check } from 'lucide-react'
 import type { CraftedAgent } from '@/lib/agent-types'
 import { ELEMENT_METADATA } from '@/lib/element-metadata'
 import { useFreeAgents } from '@/hooks/use-free-agents'
-import { computeAgentProgression, type AgentProgressionProfile } from '@/lib/agents/leveling-service'
+import {
+  computeAgentProgression,
+  type AgentProgressionProfile,
+} from '@/lib/agents/leveling-service'
 import { VesselProgressionDisplay } from '@/components/vessel/vessel-progression-display'
 
 interface StitchAgentCardProps {
@@ -26,8 +29,7 @@ export function StitchAgentCard({
 }: StitchAgentCardProps) {
   const element = agent.consciousness?.dominantElement || 'Air'
   const meta = ELEMENT_METADATA[element as keyof typeof ELEMENT_METADATA] || ELEMENT_METADATA.Air
-  const progressionData =
-    progression !== undefined ? progression : computeAgentProgression(agent)
+  const progressionData = progression !== undefined ? progression : computeAgentProgression(agent)
 
   const { isFree } = useFreeAgents()
   const agentIsFree = isFree(agent.id)

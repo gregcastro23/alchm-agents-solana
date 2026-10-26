@@ -41,7 +41,10 @@ describe('alchm.kitchen debit sync contract', () => {
 
   it('sends both X-Sync-Secret and Authorization: Bearer headers', async () => {
     vi.mocked(fetch).mockResolvedValueOnce(
-      new Response(JSON.stringify({ ok: true, transactionGroupId: 'tx-1', userId: 'remote-user-1' }), { status: 200 })
+      new Response(
+        JSON.stringify({ ok: true, transactionGroupId: 'tx-1', userId: 'remote-user-1' }),
+        { status: 200 }
+      )
     )
 
     await syncDebitToAlchm(payload)
