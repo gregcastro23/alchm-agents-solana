@@ -390,11 +390,17 @@ def test_user_created_predicate_matches_the_next_route(era, crafted_by, expected
 
 
 def test_the_predicate_is_the_same_definition_as_the_next_route():
-    # app/api/agents/route.ts formatAgentRow is the other half of this contract.
-    source = (_BACKEND_DIR.parent / "app" / "api" / "agents" / "route.ts").read_text()
-    assert "agent.historicalEra === 'user_created'" in source
-    assert "agent.craftedBy === 'philosopher-stone-user'" in source
-    assert "agent.historicalEra === 'MONICA_SPECIAL'" in source
+    # The one TypeScript definition is lib/agents/forged-privacy.ts#isUserCreatedAgentRow, and
+    # app/api/agents/route.ts formatAgentRow is its caller. Pin both halves: the markers live in
+    # the definition, and the route delegates to it instead of growing a second copy.
+    root = _BACKEND_DIR.parent
+    definition = (root / "lib" / "agents" / "forged-privacy.ts").read_text()
+    assert "row.historicalEra === 'user_created'" in definition
+    assert "FORGED_CRAFTED_BY = 'philosopher-stone-user'" in definition
+    assert "row.craftedBy === FORGED_CRAFTED_BY" in definition
+    assert "row.historicalEra === 'MONICA_SPECIAL'" in definition
+    route = (root / "app" / "api" / "agents" / "route.ts").read_text()
+    assert "isUserCreatedAgentRow(agent)" in route
     assert agent_privacy.USER_CREATED_ERAS == {"user_created", "MONICA_SPECIAL"}
     assert agent_privacy.USER_CREATED_CRAFTER == "philosopher-stone-user"
 
