@@ -1,52 +1,44 @@
-import { describe, expect, it, mock } from 'bun:test'
-import path from 'path'
+import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest'
 
-mock.module('server-only', () => ({}))
+// (test/setup.ts already stubs 'server-only'.)
 
 // Prevent any network fetch from stalling tests
 const originalFetch = globalThis.fetch
-globalThis.fetch = async () => {
-  throw new Error('network disabled in test')
-}
+beforeAll(() => {
+  globalThis.fetch = async () => {
+    throw new Error('network disabled in test')
+  }
+})
+afterAll(() => {
+  globalThis.fetch = originalFetch
+})
 
-const mockPrisma = {
-  historical_agents: {
-    findUnique: async () => null,
-    findMany: async () => [],
-    findFirst: async () => null,
+const { mockPrisma } = vi.hoisted(() => ({
+  mockPrisma: {
+    historical_agents: {
+      findUnique: async () => null,
+      findMany: async () => [],
+      findFirst: async () => null,
+    },
+    users: {
+      findUnique: async () => null,
+      findFirst: async () => null,
+    },
+    created_agents: {
+      findFirst: async () => null,
+    },
+    tokenBalance: {
+      findUnique: async () => null,
+    },
+    token_balances: {
+      findUnique: async () => null,
+    },
   },
-  users: {
-    findUnique: async () => null,
-    findFirst: async () => null,
-  },
-  created_agents: {
-    findFirst: async () => null,
-  },
-  tokenBalance: {
-    findUnique: async () => null,
-  },
-  token_balances: {
-    findUnique: async () => null,
-  },
-}
-
-const dbResolved = require.resolve('../../lib/db')
-mock.module('@/lib/db', () => ({ prisma: mockPrisma }))
-mock.module(dbResolved, () => ({ prisma: mockPrisma }))
-
-mock.module('@/lib/auth', () => ({
-  auth: async () => null,
 }))
-mock.module(require.resolve('../../lib/auth'), () => ({ auth: async () => null }))
 
-const liveSkyResolved = require.resolve('../../lib/agents/rating/live-sky')
-mock.module('@/lib/agents/rating/live-sky', () => ({
-  resolveLiveSky: async () => {
-    throw new Error('live sky unavailable in test')
-  },
-  SkyUnavailableError: class SkyUnavailableError extends Error {},
-}))
-mock.module(liveSkyResolved, () => ({
+vi.mock('@/lib/db', () => ({ prisma: mockPrisma }))
+vi.mock('@/lib/auth', () => ({ auth: async () => null }))
+vi.mock('@/lib/agents/rating/live-sky', () => ({
   resolveLiveSky: async () => {
     throw new Error('live sky unavailable in test')
   },

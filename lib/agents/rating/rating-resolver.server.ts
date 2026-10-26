@@ -7,6 +7,7 @@
 import 'server-only'
 import type { NextRequest } from 'next/server'
 import { getHistoricalAgent } from '@/lib/agents/historical'
+import { computeAgentProgression } from '@/lib/agents/leveling-service'
 import {
   EsmsValueError,
   USER_AVATAR_ID_PREFIX,
@@ -254,5 +255,7 @@ export async function ratedPayload(
     balances,
     sky: skyResult.sky,
     skyError: skyResult.error,
+    // A vessel the roster does not know (a forged one) comes back 'unavailable' with null numbers.
+    progression: computeAgentProgression(ledgerIdOf(vessel)),
   })
 }

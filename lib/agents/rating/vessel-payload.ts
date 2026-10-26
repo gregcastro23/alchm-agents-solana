@@ -32,6 +32,7 @@ import type { CraftedAgent } from '@/lib/agent-types'
 import { deriveSacredStats } from '@/lib/agents/persona/derive-sacred-stats'
 import { getRulingPlanet } from '@/lib/astrological-data'
 import { ZODIAC_SIGNS } from '@/lib/staking/elements'
+import type { AgentProgressionProfile } from '../leveling-service'
 import { FIXTURE_AGENTS, type RatedAgentPayload } from '../rating-contract'
 import {
   CANONICAL_ROSTER_71,
@@ -390,6 +391,87 @@ export interface BuildPayloadInput {
   sky: LiveSky | null
   /** Why `sky` is `null`. */
   skyError?: string
+  /**
+   * The vessel's two-level progression (`computeAgentProgression`). When given, the contract's
+   * progression fields (`vesselLevel`, `totalXp`, `currentOverall`, ...) ride in the payload; a
+   * profile that could not be computed carries `progressionStatus: 'unavailable'` and null
+   * numbers, so an unread level is never shown as a level of 1.
+   */
+  progression?: AgentProgressionProfile | null
+}
+
+/** The twelve planetary stats the contract's `planetaryStats` carries, in its order. */
+const PLANETARY_STAT_KEYS = [
+  'solarAgency',
+  'lunarReceptivity',
+  'mercurialVelocity',
+  'venusianCoherence',
+  'martialImpetus',
+  'jovianExpansion',
+  'saturnianStructure',
+  'chironicAdaptation',
+  'uranianSurprisal',
+  'neptunianResonance',
+  'plutonicIntegration',
+  'kineticAlignment',
+] as const
+
+/**
+ * The contract's optional progression fields (`RatedAgentPayload.vesselLevel` ... `esmsAxisAttribution`)
+ * from a progression profile. Pure; `ratingAsOf` and `progressionReasons` are the profile's
+ * `asOf` and `reasons`.
+ */
+export function progressionFields(
+  progression: AgentProgressionProfile
+): Pick<
+  RatedAgentPayload,
+  | 'vesselLevel'
+  | 'totalXp'
+  | 'xpToNextLevel'
+  | 'levelBoost'
+  | 'baseOverall'
+  | 'trainedOverall'
+  | 'currentOverall'
+  | 'transitDelta'
+  | 'progressionStatus'
+  | 'ratingAsOf'
+  | 'progressionReasons'
+  | 'expBreakdown'
+  | 'trainingEvidence'
+  | 'planetaryStats'
+  | 'statDeltas'
+  | 'esmsAxisAttribution'
+> {
+  const stats = progression.stats as Record<string, number> | null
+  const planetaryStats = stats
+    ? (Object.fromEntries(PLANETARY_STAT_KEYS.map(key => [key, stats[key]])) as Record<
+        string,
+        number
+      >)
+    : null
+  return {
+    vesselLevel: progression.vesselLevel,
+    totalXp: progression.totalXp,
+    xpToNextLevel: progression.xpToNextLevel,
+    levelBoost: progression.levelBoost,
+    baseOverall: progression.baseOverall,
+    trainedOverall: progression.trainedOverall,
+    currentOverall: progression.currentOverall,
+    transitDelta: progression.transitDelta,
+    progressionStatus: progression.progressionStatus,
+    ratingAsOf: progression.asOf,
+    progressionReasons: progression.reasons,
+    expBreakdown: progression.expBreakdown as Record<string, number> | null,
+    // The contract still types this as { status: 'verified' | ..., verifiedItems } while the
+    // experience ledger (#69) emits { status: 'verified-manifests' | 'unknown', importedConversations }.
+    // The ledger's own shape is what the API has served since #69, so it is passed through as-is
+    // rather than re-labelled; `rating-contract.ts` is where the type should catch up.
+    trainingEvidence:
+      progression.trainingEvidence as unknown as RatedAgentPayload['trainingEvidence'],
+    planetaryStats,
+    statDeltas: progression.statDeltas as Record<string, number> | null,
+    esmsAxisAttribution: progression.esmsAxisAttribution ?? null,
+  }
 }
 
 export function buildRatedAgentPayload({
@@ -397,6 +479,7 @@ export function buildRatedAgentPayload({
   balances,
   sky,
   skyError,
+  progression,
 }: BuildPayloadInput): RatedVesselPayload {
   const rating = rateStats(vessel.stats)
   const sealProgress = evaluateSeals({
@@ -451,6 +534,7 @@ export function buildRatedAgentPayload({
           monica: sky.monica,
         }
       : null,
+    ...(progression ? progressionFields(progression) : {}),
     ...(Object.keys(degraded).length > 0 ? { degraded } : {}),
   }
 }
@@ -458,9 +542,9 @@ export function buildRatedAgentPayload({
 /**
  * The payload as the contract's own `RatedAgentPayload` (what `feedStreamBus.recordAgentRating`
  * takes), or `null` when there is no surge to put in it — a payload built from no sky is never
- * published as if it had one. Extension fields ride along. Nothing in this repo calls it yet: the
- * route does not publish to the feed (a public GET must not write to a live stream), and it is the
- * adapter for delegating the contract's own `[slug]/ratings` route to `buildRatedAgentPayload`.
+ * published as if it had one. Extension fields ride along. The `[slug]/ratings` route uses it to
+ * publish to the feed; `GET /api/agents/rating` does not (a public GET must not write to a live
+ * stream).
  */
 export function asContractPayload(payload: RatedVesselPayload): RatedAgentPayload | null {
   return payload.surge === null ? null : { ...payload, surge: payload.surge }

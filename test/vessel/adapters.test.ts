@@ -1,4 +1,4 @@
-import { describe, expect, it } from 'bun:test'
+import { describe, expect, it } from 'vitest'
 import { ALL_VESSEL_STAT_KEYS, type VesselStats } from '../../lib/vessel/progression'
 import { createExperienceLedger, applyExperienceEvent } from '../../lib/vessel/experience'
 import {

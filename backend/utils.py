@@ -110,81 +110,83 @@ def get_planetary_sect_element(planet: str, diurnal: bool) -> str:
 
 def get_planetary_dignity(planet: str, sign: str) -> int:
     """
-    Canonical classical & modern essential dignity score in [-3, +3], aligned with
-    SIGN_RULERS in lib/vessel/progression.ts and JEPA Domicile > Exaltation precedence:
-    Domicile: +3 | Exaltation: +2 | Detriment: -2 | Fall: -3 | Peregrine: 0
+    Essential-dignity score for the ESMS dignity multiplier and `ruler_dignity` labels.
+
+    Scale: Domicile +1 (Mercury in Virgo +3), Exaltation +2, Detriment -1, Fall -2
+    (Mercury in Pisces -3). This table is mirrored by `planetary_dignity` in
+    `pa-rust-backend/src/astro/constants.rs` and by the `Dignity Effect` tables in
+    `backend/src/services/alchemizer-service.ts`; change all three together or none. It is
+    NOT the +-3 scale of `lib/vessel/progression.ts` (SIGN_RULERS), which is a separate
+    rating input: moving this table onto that scale (#70) silently shifted every Kalchm the
+    Python engine produced and inverted `main.py`'s detriment/fall labels.
     """
     dignity_map = {
         "Sun": {
-            "leo": 3,
+            "leo": 1,
             "aries": 2,
-            "aquarius": -2,
-            "libra": -3,
+            "aquarius": -1,
+            "libra": -2,
         },
         "Moon": {
-            "cancer": 3,
+            "cancer": 1,
             "taurus": 2,
-            "capricorn": -2,
-            "scorpio": -3,
+            "capricorn": -1,
+            "scorpio": -2,
         },
         "Mercury": {
-            "gemini": 3,
+            "gemini": 1,
             "virgo": 3,
-            "sagittarius": -2,
+            "sagittarius": 1,
             "pisces": -3,
         },
         "Venus": {
-            "libra": 3,
-            "taurus": 3,
+            "libra": 1,
+            "taurus": 1,
             "pisces": 2,
-            "aries": -2,
-            "scorpio": -2,
-            "virgo": -3,
+            "aries": -1,
+            "scorpio": -1,
+            "virgo": -2,
         },
         "Mars": {
-            "aries": 3,
-            "scorpio": 3,
+            "aries": 1,
+            "scorpio": 1,
             "capricorn": 2,
-            "taurus": -2,
-            "libra": -2,
-            "cancer": -3,
+            "taurus": -1,
+            "libra": -1,
+            "cancer": -2,
         },
         "Jupiter": {
-            "pisces": 3,
-            "sagittarius": 3,
+            "pisces": 1,
+            "sagittarius": 1,
             "cancer": 2,
-            "gemini": -2,
-            "virgo": -2,
-            "capricorn": -3,
+            "gemini": -1,
+            "virgo": -1,
+            "capricorn": -2,
         },
         "Saturn": {
-            "aquarius": 3,
-            "capricorn": 3,
+            "aquarius": 1,
+            "capricorn": 1,
             "libra": 2,
-            "cancer": -2,
-            "leo": -2,
-            "aries": -3,
+            "cancer": -1,
+            "leo": -1,
+            "aries": -2,
         },
         "Uranus": {
-            "aquarius": 3,
+            "aquarius": 1,
             "scorpio": 2,
-            "leo": -2,
             "taurus": -3,
         },
         "Neptune": {
-            "pisces": 3,
-            "leo": 2,
-            "virgo": -2,
-            "aquarius": -3,
+            "pisces": 1,
+            "cancer": 2,
+            "virgo": -1,
+            "capricorn": -2,
         },
         "Pluto": {
-            "scorpio": 3,
-            "taurus": -2,
-            "leo": -3,
-        },
-        "Chiron": {
-            "virgo": 3,
-            "sagittarius": 2,
+            "scorpio": 1,
+            "leo": 2,
+            "taurus": -1,
+            "aquarius": -2,
         },
     }
     planet_map = dignity_map.get(planet)

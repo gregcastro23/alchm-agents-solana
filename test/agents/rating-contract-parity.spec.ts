@@ -5,6 +5,7 @@ import ts from 'typescript'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { feedStreamBus } from '@/lib/agents/feed-stream-bus'
 import { HISTORICAL_AGENTS, getHistoricalAgent } from '@/lib/agents/historical'
+import { computeAgentProgression } from '@/lib/agents/leveling-service'
 import { deriveSacredStats } from '@/lib/agents/persona/derive-sacred-stats'
 import * as barrel from '@/lib/agents/rating'
 import type { LiveSky } from '@/lib/agents/rating/live-sky'
@@ -1901,6 +1902,8 @@ function pilotPayload(key: (typeof PILOTS)[number], sky: LiveSky | null = SKY_AC
     vessel,
     balances: { agentId: key, balances: esms, esmsSource: 'database' },
     sky,
+    // What the shared resolver (ratedPayload) passes: the roster agent's two-level progression.
+    progression: computeAgentProgression(resolveVesselAlias(key) ?? key),
   })
   return { vessel, payload, esms }
 }
@@ -1908,6 +1911,28 @@ function pilotPayload(key: (typeof PILOTS)[number], sky: LiveSky | null = SKY_AC
 /** The keys a contract payload carries (the fixture's keys minus its portraitUrl). */
 const CONTRACT_KEYS = Object.keys(contract.FIXTURE_AGENTS[0]).filter(key => key !== 'portraitUrl')
 const EXTENSION_KEYS = ['bestZoneId', 'esmsSource', 'scale', 'sealProgress', 'sky', 'zoneSynergies']
+/**
+ * The contract's optional progression fields (vesselLevel ... esmsAxisAttribution). The fixtures
+ * carry only six of them; a payload built with a progression profile carries all sixteen.
+ */
+const PROGRESSION_KEYS = [
+  'vesselLevel',
+  'totalXp',
+  'xpToNextLevel',
+  'levelBoost',
+  'baseOverall',
+  'trainedOverall',
+  'currentOverall',
+  'transitDelta',
+  'progressionStatus',
+  'ratingAsOf',
+  'progressionReasons',
+  'expBreakdown',
+  'trainingEvidence',
+  'planetaryStats',
+  'statDeltas',
+  'esmsAxisAttribution',
+]
 
 /** Compile-time: the contract's own payload type, as a consumer such as the feed bus sees it. */
 const acceptsContractPayload = (payload: RatedAgentPayload): string => payload.key
@@ -1929,7 +1954,7 @@ describe('the payload is the contract payload, for the four contract pilots', ()
       Object.keys(payload)
         .filter(k => !optional.includes(k))
         .sort()
-    ).toEqual([...CONTRACT_KEYS, ...EXTENSION_KEYS].sort())
+    ).toEqual([...new Set([...CONTRACT_KEYS, ...EXTENSION_KEYS, ...PROGRESSION_KEYS])].sort())
     for (const retired of ['agentId', 'name', 'esmsBalances', 'spread']) {
       expect(payload).not.toHaveProperty(retired)
     }
