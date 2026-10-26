@@ -201,10 +201,10 @@ since #68): live sky, ledger, wallet policy and progression are identical. Diffe
 lower-cased first and retried as given; there is no rate limit; errors are `{ error }` (`400`,
 `404`, `422`, `503`, `500`); a roster vessel answers `Cache-Control: no-cache, no-transform`, a
 forged one `private, no-store` plus `CDN-Cache-Control: no-store` and
-`Vary: Authorization, Cookie, X-Internal-Secret`. A roster vessel read under the `'deny'` wallet
-policy, with a sky, is published to `/api/feed/stream` (`recordAgentRating`, and
-`recordResonanceSurge` while the surge is active); a forged vessel, or a read made with a
-credential, is never published.
+`Vary: Authorization, Cookie, X-Internal-Secret`. A roster vessel with a sky is always published to
+`/api/feed/stream` (`recordAgentRating`, and `recordResonanceSurge` while the surge is active): its
+wallet policy is always `'deny'`, so a credential neither changes its payload nor stops the publish.
+A forged vessel is never published, with or without a credential.
 
 ## Zone contests
 
@@ -221,11 +221,14 @@ the contract's `clampStat`) and the contract's per-tier Seal multiplier for the 
   agents: `power` is the archetype primary of 46 of them (18 distinct titles), and mean alignment
   awards Gold on charisma and intuition to 9 and 12 agents against 2 and 1 under a roster-measured
   alignment. The `it.fails` diagnostics in `test/agents/rating-contract-parity.spec.ts` go red the
-  day re-measured numbers land. **It is not a one-file change.** Measured on a scratch copy (rating
-  means 81.5 / 76.0 / 75.5 / 75.0 / 77.0 / 73.0 / 74.0, baselines their rounding): about 70 tests
-  across six specs pin today's numbers, and `FIXTURE_AGENTS` must be recomputed; 42 of 72 roster
-  vessels change archetype title or primary; Crucible Finisher's ceiling rises from Gold to Astral
-  (a perfect `power` aligns to 93.5); and a forged vessel whose title moves changes its look,
+  day re-measured numbers land. **It is not a one-file change.** Measured on a scratch copy with the
+  roster's own numbers — rating means 81.5 / 76.0 / 75.5 / 75.0 / 77.0 / 73.0 / 74.5 (unrounded
+  81.6 / 76.1 / 75.7 / 74.8 / 76.9 / 73.0 / 74.6), baselines their rounding (82 / 76 / 76 / 75 / 77
+  / 73 / 75), and `GLOBAL_ROSTER_MEAN` 68 → 76 (the mean of the means, as the parity spec requires):
+  about 70 tests across six specs pin today's numbers, and `FIXTURE_AGENTS` must be recomputed; 42
+  of 72 roster vessels change archetype title or primary; Crucible Finisher's ceiling rises from
+  Gold to Astral (a perfect `power` aligns to 99 − 81.5 + 76 = 93.5); and a forged vessel whose
+  title moves changes its look,
   which is seeded from the title. Pentacles keeps its own hand-synced copy of the contract
   (`src/lib/agents/rating-contract.ts`, no version field) and recomputes `relativeAdvantage`,
   `archetype` and Seal tiers locally from ASOL's ratings, so an ASOL-only re-pin would make the two
@@ -237,8 +240,10 @@ the contract's `clampStat`) and the contract's per-tier Seal multiplier for the 
   (median 0.013), so the +16 / +12 / +8 boosts never fire. When both ramps saturate (both positions 1,
   meter 100) the contract's `heat >= reactivity` tie goes to `inferno`.
 - **A forged vessel's `faction` is the ruler of its natal Sun sign, and its look is drawn from that
-  faction** (and its archetype), so `GET /api/agents/rating` reveals the creator's Sun sign. The Sun
-  sign is public by design anyway: an anonymous view of a forged vessel keeps only the Sun sign and
+  faction** (and its archetype), so `GET /api/agents/rating` reveals the ruler of the creator's Sun
+  sign — the sign itself, except that Venus covers Taurus and Libra, Mercury covers Gemini and
+  Virgo, and Sun is also the fallback when there is no chart. The Sun sign is public by design
+  anyway: an anonymous view of a forged vessel keeps only the Sun sign and
   the place name (`GET /api/agents` → `projectPublicNatalChart` / `projectPublicBirthData`; see
   `docs/integrations/FORGED_VESSEL_PRIVACY.md`).
 - Seeded `planetary-*` / `moon-phase-*` rows rated through the forged path are labelled provenance `user`.
@@ -354,10 +359,11 @@ $$R_{\text{dignity}} = \text{clamp}_{[-15, +15]}\left(0.60 \cdot \Delta\Phi_{\te
 | **Relation to Max LevelBoost ($+12$)**                 | Subordinate ($\max 8 < 12$) | Can overtake level gap ($\max 15 > 12$) |
 
 The legacy column cannot be re-checked (that engine is gone), and no test pins the illustrative
-rows. Measured on the progression sky (`getCurrentSkySnapshot`), 1500 dates 2020–2035 across the
-roster's 60 `computed`/`authored` charts with neutral stats: per-agent RMS of $R_{\text{dignity}}$
-2.3–2.9 (pooled 2.6), extremes $-9.1$ / $+10.2$; $|R| \ge 4$ in about 12% of samples, $\ge 8$ in
-about 0.1%, and $\ge 12$ never.
+rows. Measured on the progression sky (`getCurrentSkySnapshot`) at 1500 evenly spaced dates from
+2020-01-01 to 2035-01-01, across the roster's 60 `computed`/`authored` charts with neutral stats
+(Sacred 62, Planetary 50) and a power/charisma character: per-agent RMS of $R_{\text{dignity}}$
+2.0–3.2 (p10–p90 2.3–2.9, pooled 2.6), extremes $-9.1$ / $+10.2$; $|R| \ge 4$ in about 12% of
+samples, $\ge 8$ in about 0.1%, and $\ge 12$ never.
 
 ---
 
