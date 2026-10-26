@@ -6,6 +6,9 @@ from datetime import datetime
 # Configuration
 # Point to your local backend during development, or the Railway URL in production
 BACKEND_URL = os.getenv("BACKEND_URL", "http://localhost:8000")
+# POST /api/agents is service-only: the backend must be started with the same
+# INTERNAL_API_SECRET this script reads from its own environment.
+INTERNAL_API_SECRET = os.getenv("INTERNAL_API_SECRET", "")
 
 async def seed_agents():
     # Load demo agents from the TS implementation (simplified extraction)
@@ -42,7 +45,11 @@ async def seed_agents():
                 if "birthDate" not in agent:
                     agent["birthDate"] = datetime.utcnow().isoformat()
                 
-                response = await client.post(f"{BACKEND_URL}/api/agents", json=agent)
+                response = await client.post(
+                    f"{BACKEND_URL}/api/agents",
+                    json=agent,
+                    headers={"INTERNAL_API_SECRET": INTERNAL_API_SECRET},
+                )
                 if response.status_code == 200:
                     print(f"✓ Seeded {agent['name']}")
                 else:

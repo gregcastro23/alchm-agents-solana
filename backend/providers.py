@@ -26,6 +26,8 @@ from typing import Any, Dict, List, Optional
 import anthropic
 from openai import AsyncOpenAI
 
+import public_errors
+
 # Substring heuristic for "this provider is rate-limited or out of credit".
 # Same terms apply to every provider — they all surface 429s with similar text.
 QUOTA_ERROR_TERMS = (
@@ -573,9 +575,18 @@ async def health_check(cfg: ProviderConfig, timeout_s: float = 5.0) -> Dict[str,
         return {"ok": True, "latency_ms": latency_ms, "error": None, "model": cfg.model}
     except Exception as e:
         latency_ms = int((time.perf_counter() - t0) * 1000)
+        # /api/providers/health is anonymous. Report the class of failure only
+        # (public_errors.PUBLIC_ERROR_CODES); the SDK's message -- which can carry
+        # a request id or the masked tail of a key -- goes to the log.
+        code = public_errors.public_error_code(e)
+        print(
+            f"provider_health_error provider={cfg.name} code={code} "
+            f"error={(str(e) or type(e).__name__)[:200]}",
+            flush=True,
+        )
         return {
             "ok": False,
             "latency_ms": latency_ms,
-            "error": str(e)[:200],
+            "error": code,
             "model": cfg.model,
         }

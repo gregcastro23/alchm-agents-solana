@@ -1,4 +1,4 @@
-from fastapi import FastAPI, HTTPException, Header, Depends, Request
+from fastapi import FastAPI, HTTPException, Header, Depends, Request, Response
 from fastapi.responses import JSONResponse
 from starlette.concurrency import run_in_threadpool
 from sqlalchemy.orm import Session
@@ -39,6 +39,8 @@ except Exception as _oidc_import_error:  # a broken issuer must not take the who
 import duel_brain
 import oracle_brain
 import pillar_brain
+import agent_privacy
+import public_errors
 from body_limit import BodyLimitMiddleware
 from client_ip import client_ip
 from feed_emitter import emit_feed_event
@@ -163,6 +165,72 @@ if not INTERNAL_API_SECRET:
         "will reject ALL requests until it is configured.",
         flush=True,
     )
+
+
+# --- Service callers (the Next app) ---------------------------------------------
+#
+# lib/backend.ts sends INTERNAL_API_SECRET in a header literally named
+# `INTERNAL_API_SECRET`; the admin proxies send `X-Internal-Secret`, and WTEN sends
+# `Authorization: Bearer`. All three are compared in constant time (secure_compare).
+# A service caller reads user-created agents in full and may write agents. Everyone
+# else reads the allow-list projection (agent_privacy) and cannot write.
+#
+# `INTERNAL_API_SECRET` above is a random per-boot token when the env var is unset, so
+# nothing can match it; the explicit `_internal_secret_configured()` checks below make
+# that failure mode a 503 / public projection instead of an accident of the fallback.
+
+# Rows per page. A caller that does not hold the secret is capped well below the table
+# size (the list used to be uncapped: ?limit=100000 returned every row); the ceiling for
+# a service caller only bounds one request and is above the whole table.
+PUBLIC_AGENTS_PAGE_MAX = 100
+SERVICE_AGENTS_PAGE_MAX = 5000
+
+
+def _internal_secret_configured() -> bool:
+    return bool(os.getenv("INTERNAL_API_SECRET"))
+
+
+def caller_is_service(
+    authorization: Optional[str] = Header(None),
+    x_internal_secret: Optional[str] = Header(None, alias="X-Internal-Secret"),
+    service_token: Optional[str] = Header(None, alias="INTERNAL_API_SECRET"),
+) -> bool:
+    """True when the request presents INTERNAL_API_SECRET in any of the three headers."""
+    if not _internal_secret_configured():
+        return False
+    # Every candidate is compared (no short-circuit between them).
+    matches = [
+        secret_matches(candidate, INTERNAL_API_SECRET)
+        for candidate in (bearer_token(authorization), x_internal_secret, service_token)
+    ]
+    return any(matches)
+
+
+def require_service_caller(is_service: bool = Depends(caller_is_service)) -> bool:
+    """Gate for routes only the Next app may call: 503 when unset, 401 when missing/wrong."""
+    if not _internal_secret_configured():
+        raise HTTPException(status_code=503, detail="Service authentication is not configured")
+    if not is_service:
+        raise HTTPException(status_code=401, detail="Unauthorized")
+    return True
+
+
+# The body of these GETs depends on which header the caller presented, so no shared cache
+# may store one caller's answer and replay it to another.
+_CALLER_DEPENDENT_VARY = "Authorization, X-Internal-Secret, INTERNAL_API_SECRET"
+
+
+def _mark_caller_dependent(response: Response) -> None:
+    response.headers["Cache-Control"] = "private, no-store"
+    response.headers["Vary"] = _CALLER_DEPENDENT_VARY
+
+
+def _page_bounds(skip: int, limit: int, is_service: bool) -> tuple:
+    """Clamp a caller-supplied page; a negative value must not reach SQL (SQLite reads LIMIT -1 as 'all')."""
+    cap = SERVICE_AGENTS_PAGE_MAX if is_service else PUBLIC_AGENTS_PAGE_MAX
+    return max(skip, 0), max(0, min(limit, cap))
+
+
 FRONTEND_URL = os.getenv("PLANETARY_AGENTS_FRONTEND_URL", "http://localhost:3000")
 
 # Cost-tiered model selection for historical agent chat.
@@ -454,7 +522,8 @@ async def _build_alchm_mcp_context(
             results.append({"tool": "get_live_sky_transits", "data": live_sky})
             metadata["tools"].append("get_live_sky_transits")
         except Exception as exc:
-            metadata["errors"].append(f"get_live_sky_transits: {str(exc)[:180]}")
+            metadata["errors"].append(f"get_live_sky_transits: {public_errors.public_error_code(exc)}")
+            print(f"alchm_mcp_context_error tool=get_live_sky_transits error={str(exc)[:180]}", flush=True)
 
     if ingredients:
         preloaded_scan = (
@@ -474,7 +543,8 @@ async def _build_alchm_mcp_context(
                 metadata["tools"].append("alchemize_ingredients")
                 metadata["ingredients"] = ingredients
             except Exception as exc:
-                metadata["errors"].append(f"alchemize_ingredients: {str(exc)[:180]}")
+                metadata["errors"].append(f"alchemize_ingredients: {public_errors.public_error_code(exc)}")
+                print(f"alchm_mcp_context_error tool=alchemize_ingredients error={str(exc)[:180]}", flush=True)
 
     if _should_fetch_recipe_candidates(request, ingredients):
         preloaded_recipes = (
@@ -502,7 +572,8 @@ async def _build_alchm_mcp_context(
                 results.append({"tool": "generate_cosmic_recipe", "data": recipes})
                 metadata["tools"].append("generate_cosmic_recipe")
             except Exception as exc:
-                metadata["errors"].append(f"generate_cosmic_recipe: {str(exc)[:180]}")
+                metadata["errors"].append(f"generate_cosmic_recipe: {public_errors.public_error_code(exc)}")
+                print(f"alchm_mcp_context_error tool=generate_cosmic_recipe error={str(exc)[:180]}", flush=True)
 
     return _format_alchm_mcp_block(results), metadata
 
@@ -866,10 +937,24 @@ async def alchemical_quantities(request: Dict[str, Any]):
 
 # --- Agent Management ---
 
-@app.get("/api/agents", response_model=List[schemas.Agent])
-def read_agents(skip: int = 0, limit: int = 100, db: Session = Depends(database.get_db)):
+# The /api/agents routes return plain dicts (response_model=None) built by
+# agent_privacy.agent_view: a caller holding INTERNAL_API_SECRET gets the full
+# schemas.Agent record, everyone else gets schemas.PublicAgent for a user-created row
+# (a person's forged vessel) and the full record for canonical / planetary agents.
+# Every route that returns a row goes through agent_view, so list, get, create and
+# update cannot drift apart.
+@app.get("/api/agents", response_model=None)
+def read_agents(
+    response: Response,
+    skip: int = 0,
+    limit: int = 100,
+    db: Session = Depends(database.get_db),
+    is_service: bool = Depends(caller_is_service),
+):
+    _mark_caller_dependent(response)
+    skip, limit = _page_bounds(skip, limit, is_service)
     agents = crud.get_agents(db, skip=skip, limit=limit)
-    return agents
+    return [agent_privacy.agent_view(agent, entitled=is_service) for agent in agents]
 
 @app.get("/api/agents/diet-profiles")
 def get_diet_profiles():
@@ -913,28 +998,46 @@ def get_diet_profiles():
         
     return {"success": True, "profiles": profiles}
 
-@app.get("/api/agents/{agent_id}", response_model=schemas.Agent)
-def read_agent(agent_id: str, db: Session = Depends(database.get_db)):
+@app.get("/api/agents/{agent_id}", response_model=None)
+def read_agent(
+    agent_id: str,
+    response: Response,
+    db: Session = Depends(database.get_db),
+    is_service: bool = Depends(caller_is_service),
+):
+    _mark_caller_dependent(response)
     db_agent = crud.get_agent(db, agent_id=agent_id)
     if db_agent is None:
         raise HTTPException(status_code=404, detail="Agent not found")
-    return db_agent
+    return agent_privacy.agent_view(db_agent, entitled=is_service)
 
-@app.post("/api/agents", response_model=schemas.Agent)
-def create_agent(agent: schemas.AgentCreate, db: Session = Depends(database.get_db)):
+# Writes are service-only (Depends(require_service_caller)): until now POST / PUT /
+# DELETE were open to anyone on the internet -- PUT rewrote a vessel's name, title and
+# avatar (which is its persona prompt), DELETE removed a vessel or a canonical figure,
+# and POST was an existence oracle that let anyone plant rows in the shared table.
+# Ownership ("only the creator may edit or delete their vessel") is the Next route's
+# decision; this service only knows that the caller is the Next app.
+@app.post("/api/agents", response_model=None)
+def create_agent(
+    agent: schemas.AgentCreate,
+    db: Session = Depends(database.get_db),
+    is_service: bool = Depends(require_service_caller),
+):
     db_agent = crud.get_agent(db, agent_id=agent.agentId)
     if db_agent:
         raise HTTPException(status_code=400, detail="Agent ID already registered")
-    return crud.create_agent(db=db, agent=agent)
+    created = crud.create_agent(db=db, agent=agent)
+    return agent_privacy.agent_view(created, entitled=is_service)
 
 
-@app.put("/api/agents/{agent_id}", response_model=schemas.Agent)
+@app.put("/api/agents/{agent_id}", response_model=None)
 def update_agent_endpoint(
     agent_id: str,
     agent_update: schemas.AgentUpdate,
     db: Session = Depends(database.get_db),
+    is_service: bool = Depends(require_service_caller),
 ):
-    """Partial update for a historical agent.
+    """Partial update for a historical agent. Service callers only.
 
     Only fields enumerated in `schemas.AgentUpdate` are mutable —
     intentionally narrow so callers can't accidentally rewrite a
@@ -944,12 +1047,12 @@ def update_agent_endpoint(
     updated = crud.update_agent(db, agent_id=agent_id, agent_update=agent_update)
     if updated is None:
         raise HTTPException(status_code=404, detail="Agent not found")
-    return updated
+    return agent_privacy.agent_view(updated, entitled=is_service)
 
 
-@app.delete("/api/agents/{agent_id}")
+@app.delete("/api/agents/{agent_id}", dependencies=[Depends(require_service_caller)])
 def delete_agent_endpoint(agent_id: str, db: Session = Depends(database.get_db)):
-    """Remove a historical agent record.
+    """Remove a historical agent record. Service callers only.
 
     Note that this only removes the SQL row — ChromaDB chunks for the
     agent remain until /api/rag/cache?agentId=... is invalidated. The
@@ -970,6 +1073,10 @@ def agents_stats(db: Session = Depends(database.get_db)):
     FastAPI routes nest by prefix and `/api/agents/{agent_id}` would
     otherwise greedily eat the `stats` literal. The Next.js client
     layer keeps the natural `agents.stats()` naming.
+
+    Counts only -- no row is returned, so there is nothing to project; the
+    totals (including how many user-created vessels exist) are what the public
+    gallery already shows.
     """
     return crud.get_agent_stats(db)
 
@@ -985,6 +1092,11 @@ def agents_search(
     Lives under `/api/agents-search` for the same routing-collision
     reason as agents-stats above. For semantic search, use the
     existing `/api/rag/search` endpoint backed by ChromaDB.
+
+    Every row -- forged vessel or canonical figure -- is reduced to the same six
+    public identity fields below. That list is an allow-list: a field added to
+    the model does not appear here until it is added on purpose, and
+    test_agents_privacy.py pins the exact key set.
     """
     rows = crud.search_agents(db, query=q, limit=limit)
     return {
@@ -1902,8 +2014,10 @@ async def chat(
         # Structured, greppable signal — distinguishes "RAG errored" (e.g. a bad
         # embedding key -> 401) from "RAG returned nothing". Without it, rag_used
         # is false in both cases and a broken embedder stays invisible.
-        rag_error = str(e)
-        print(f"rag_error agentId={request.agentId} error={e}", flush=True)
+        # The response names the class of failure only; the exception text (which can
+        # carry an upstream message or a masked key) stays in the server log.
+        rag_error = public_errors.public_error_code(e)
+        print(f"rag_error agentId={request.agentId} code={rag_error} error={e}", flush=True)
 
     # 4. Alchm MCP — live sky, ingredient scans, and deterministic recipe candidates.
     mcp_block, mcp_metadata = await _build_alchm_mcp_context(request)
@@ -2303,8 +2417,35 @@ async def ingest_knowledge(
     )
     return {"success": True, "count": len(documents)}
 
+def _redacted_rag_result() -> Dict[str, Any]:
+    """A Chroma-shaped answer with no chunks, marked so it is not mistaken for 'no match'."""
+    return {"ids": [[]], "documents": [[]], "metadatas": [[]], "distances": [[]], "redacted": True}
+
+
 @app.get("/api/rag/search")
-async def search_knowledge(agent_id: str, query: str, db: Session = Depends(database.get_db)):
+async def search_knowledge(
+    agent_id: str,
+    query: str,
+    response: Response,
+    db: Session = Depends(database.get_db),
+    is_service: bool = Depends(caller_is_service),
+):
+    _mark_caller_dependent(response)
+    # The chunks in the 'historical-agents' collection are built from the WHOLE row
+    # (ingest._build_document), so a forged vessel's chunks hold its owner's own words:
+    # about-yourself, life story, poetry, values, stated purpose. Chroma metadata only
+    # records agentId/name/chunk_index, so the store cannot say which chunks are private;
+    # the DB row can. Without the secret, only an agent that exists and is NOT a person's
+    # vessel is searchable. That also covers chunks left behind by a deleted vessel (no
+    # row to vouch for them). A DB failure here is a 503, never an empty 200.
+    if not is_service:
+        try:
+            lookup = crud.get_agent(db, agent_id)
+        except Exception as exc:
+            print(f"[rag/search] agent lookup failed: {type(exc).__name__}: {str(exc)[:300]}", flush=True)
+            raise HTTPException(status_code=503, detail="Agent lookup unavailable")
+        if lookup is None or agent_privacy.is_user_created(lookup):
+            return _redacted_rag_result()
     try:
         return rag.vector_store.query(
             collection_name="historical-agents",
@@ -2313,6 +2454,7 @@ async def search_knowledge(agent_id: str, query: str, db: Session = Depends(data
             where={"agentId": agent_id}
         )
     except Exception as exc:
+        print(f"[rag/search] vector query failed: {type(exc).__name__}: {str(exc)[:300]}", flush=True)
         agent = crud.get_agent(db, agent_id)
         if not agent:
             raise HTTPException(status_code=404, detail="Agent not found")
@@ -2346,7 +2488,7 @@ async def search_knowledge(agent_id: str, query: str, db: Session = Depends(data
             "metadatas": [[{"agentId": agent_id, "source": "lexical-db-fallback"}]],
             "distances": [[distance]],
             "degraded": True,
-            "error": str(exc),
+            "error": public_errors.public_error_code(exc),
         }
 
 
@@ -2415,8 +2557,28 @@ async def rebuild_rag(x_internal_secret: Optional[str] = Header(None)):
     return {"status": "rebuilding", "message": "Re-ingestion started in background. Check Railway logs for progress."}
 
 
+MOMENT_RECOMMENDATIONS_MAX = 100
+# The score components (kinetic / aspect / consciousness / monica) are linear functions of
+# a row's stored ESMS scores and Kalchm / Monica constants, so for a person's vessel they
+# let a reader recover those scalars. Callers without the secret get the verdict only.
+_MOMENT_PUBLIC_KEYS = ("agentId", "score", "description")
+
+
+def _moment_score_view(score: Dict[str, Any], agent: Any, is_service: bool) -> Dict[str, Any]:
+    if is_service or agent is None or not agent_privacy.is_user_created(agent):
+        return score
+    return {key: score[key] for key in _MOMENT_PUBLIC_KEYS if key in score}
+
+
 @app.get("/api/moment-recommendations")
-async def get_moment_recommendations(limit: int = 5, db: Session = Depends(database.get_db)):
+async def get_moment_recommendations(
+    response: Response,
+    limit: int = 5,
+    db: Session = Depends(database.get_db),
+    is_service: bool = Depends(caller_is_service),
+):
+    _mark_caller_dependent(response)
+    limit = max(0, min(limit, MOMENT_RECOMMENDATIONS_MAX))
     agents = crud.get_all_agents(db)
     if not agents:
         return {"recommendations": [], "summary": "No agents found"}
@@ -2449,7 +2611,7 @@ async def get_moment_recommendations(limit: int = 5, db: Session = Depends(datab
                 "name": agent.name,
                 "title": agent.title
             },
-            "synergy": score
+            "synergy": _moment_score_view(score, agent, is_service),
         })
         
     scored_agents.sort(key=lambda x: x["synergy"]["score"], reverse=True)
@@ -2459,10 +2621,16 @@ async def get_moment_recommendations(limit: int = 5, db: Session = Depends(datab
     }
 
 @app.post("/api/moment-recommendations")
-async def post_moment_recommendations(request: Dict[str, Any], db: Session = Depends(database.get_db)):
+async def post_moment_recommendations(
+    request: Dict[str, Any],
+    db: Session = Depends(database.get_db),
+    is_service: bool = Depends(caller_is_service),
+):
     agent_ids = request.get("agentIds", [])
     if not agent_ids:
         return {"scores": []}
+    if isinstance(agent_ids, list):
+        agent_ids = agent_ids[:MOMENT_RECOMMENDATIONS_MAX]
         
     alchm_data = request.get("alchmData", {})
     # Fall back to the real computed sky when the caller doesn't supply one.
@@ -2473,7 +2641,7 @@ async def post_moment_recommendations(request: Dict[str, Any], db: Session = Dep
         agent = crud.get_agent(db, agent_id)
         mc = agent.monicaConstant if agent and getattr(agent, 'monicaConstant', None) is not None else None
         score = utils.calculate_enhanced_moment_score(agent_id, current_planets, alchm_data, mc, agent=agent)
-        scores.append(score)
+        scores.append(_moment_score_view(score, agent, is_service))
         
     return {"scores": scores}
 
@@ -2858,7 +3026,14 @@ async def synthetic_mcp_probe(
     }
 
 @app.get("/api/admin/mcp-status")
-async def admin_mcp_status(db: Session = Depends(database.get_db)):
+async def admin_mcp_status(
+    x_internal_secret: Optional[str] = Header(None, alias="X-Internal-Secret"),
+    db: Session = Depends(database.get_db),
+):
+    """Latest synthetic-probe rows. Gated like its siblings (mcp-summary): the rows carry
+    the raw error text of failed probes (upstream hosts, ports, users)."""
+    _require_admin_secret(x_internal_secret)
+
     from sqlalchemy import select, desc
     from models import MCPInvocation
 
@@ -2898,7 +3073,8 @@ async def admin_mcp_status(db: Session = Depends(database.get_db)):
             "latest_probes": serializable_rows
         }
     except Exception as exc:
-        raise HTTPException(status_code=500, detail=f"Database lookup failed: {exc}")
+        print(f"[admin/mcp-status] lookup failed: {type(exc).__name__}: {str(exc)[:300]}", flush=True)
+        raise HTTPException(status_code=500, detail="Database lookup failed")
 
 
 # ---------------------------------------------------------------------------
