@@ -1,6 +1,6 @@
 {
   "installCommand": "bun install",
-  "buildCommand": "bun run prisma:generate && bun run build",
+  "buildCommand": "bun run prisma:generate && NODE_OPTIONS=\"$NODE_OPTIONS --max-old-space-size=4096\" bun run build",
   "framework": "nextjs",
   "regions": ["iad1"],
   "git": {

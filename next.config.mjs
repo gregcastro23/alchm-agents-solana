@@ -47,6 +47,16 @@ const nextConfig = {
   ],
 
   experimental: {
+    // Vercel builds this on a 4-core / 8 GB machine. Because of the custom `webpack()` below, Next
+    // turns its build worker OFF by default, so the server, edge and client compilations share one
+    // process whose heap only grows: measured, it passes 8 GB mid-compile and the build is
+    // SIGKILLed. In a worker each compilation runs in its own process that exits when it is done.
+    // vercel.json's buildCommand also caps each process's heap at 4 GB: with a higher ceiling V8
+    // lets the server compile grow to 8.1 GB before collecting, and at 4 GB it peaks near 6.4 GB total.
+    // test/ops/vercel-build-memory.spec.ts holds both in place.
+    webpackBuildWorker: true,
+    // Trades a little build time for a lower webpack peak (Next 15+).
+    webpackMemoryOptimizations: true,
     // Note: entries match import specifiers literally — globs are not expanded.
     optimizePackageImports: ['lucide-react', 'recharts', 'react-hook-form', 'd3', '@ai-sdk/openai'],
     // Server actions configuration
