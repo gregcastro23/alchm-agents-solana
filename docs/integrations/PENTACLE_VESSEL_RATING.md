@@ -27,7 +27,7 @@ The **Pentacle Vessel Rating Scale** runs 25–99. A Sacred 7 stat (0–100) map
 
 - **OVR** = `(top₁·1.6 + top₂·1.3 + mean(other five)) / 3.9`, rounded — an ordered weighted average, so it
   is monotone in every stat;
-- **relativeAdvantage** = rating − the contract's pinned roster baseline (63, 62, 64, 61, 62, 63, 62);
+- **relativeAdvantage** = rating − the contract's pinned roster baseline (83, 76, 76, 76, 77, 74, 75);
 - **archetype** `{ title, primary, secondary }` from the two largest advantages, titled by the contract's
   matrix (`power` + `charisma` is "Dominant Commander").
 
