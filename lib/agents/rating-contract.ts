@@ -109,19 +109,46 @@ export const RATING_BOUNDS = {
   MAX_PLANETARY_STAT_DELTA: 24,
 } as const
 
-/** Pinned 71-agent roster baseline ratings and means */
+/**
+ * Roster baselines on the 25–99 rating scale, measured 2026-10-27 over the 72
+ * `HISTORICAL_AGENTS` (`deriveSacredStats` → `toRating`):
+ *
+ * - `mean` is each stat's mean rating. `computeMeanAlignedRating` shifts a rating
+ *   by it, so a stat whose whole roster sits high (power) does not out-earn the
+ *   others at the Seal gates. The means sit on a 0.5 grid and sum to a multiple
+ *   of 3.5, so `GLOBAL_ROSTER_MEAN` is exactly 76.0 and `rating − mean + 76`
+ *   is exact binary arithmetic: a rating that lands on a gate clears it. (The
+ *   live means are 81.6 / 76.1 / 75.7 / 74.8 / 76.9 / 73.0 / 74.6; each pin is
+ *   within 0.3, charisma rounded down so the sum comes out even.)
+ * - `baseline` is each stat's low median rating (the lower of the two middle
+ *   ratings, so it is a rating a vessel can actually have and an advantage is
+ *   exactly 0 on it). `computeRelativeAdvantage` measures against it, so the
+ *   archetype names the stat furthest above a typical vessel.
+ *
+ * The previous pins (power 76.5 / 63, …) were near the 0–100 *stat* means rather
+ * than the rating means; against them `power` was the archetype primary of 46 of
+ * 72 agents. The calibration checks in `test/agents/rating-contract-parity.spec.ts`
+ * re-measure the roster and fail when these drift.
+ *
+ * LOCKSTEP: Pentacles keeps a hand-synced copy of this contract
+ * (`src/lib/agents/rating-contract.ts`) and recomputes relative advantage,
+ * archetype and Seal tiers locally from ASOL's ratings. Change these numbers
+ * only together with that copy, or the two will name and tier the same vessel
+ * differently without any error.
+ */
 export const ROSTER_BASELINE_RATINGS: Record<SacredStatKey, { mean: number; baseline: number }> =
   Object.freeze({
-    power: { mean: 76.5, baseline: 63 },
-    resonance: { mean: 67.0, baseline: 62 },
-    wisdom: { mean: 68.5, baseline: 64 },
-    charisma: { mean: 64.5, baseline: 61 },
-    intuition: { mean: 66.0, baseline: 62 },
-    adaptability: { mean: 67.5, baseline: 63 },
-    vitality: { mean: 66.0, baseline: 62 },
+    power: { mean: 81.5, baseline: 83 },
+    resonance: { mean: 76.0, baseline: 76 },
+    wisdom: { mean: 75.5, baseline: 76 },
+    charisma: { mean: 74.5, baseline: 76 },
+    intuition: { mean: 77.0, baseline: 77 },
+    adaptability: { mean: 73.0, baseline: 74 },
+    vitality: { mean: 74.5, baseline: 75 },
   })
 
-export const GLOBAL_ROSTER_MEAN = 68.0
+/** The mean of the seven `mean`s above (the parity spec holds it to that). */
+export const GLOBAL_ROSTER_MEAN = 76.0
 
 /** Seal stat gating thresholds */
 export const SEAL_STAT_GATES: Record<SealTier, number> = Object.freeze({
@@ -459,19 +486,19 @@ export const FIXTURE_AGENTS: RatedAgentPayload[] = [
       vitality: 88,
     },
     relativeAdvantage: {
-      power: 21.0,
-      resonance: 20.0,
-      wisdom: 34.0,
-      charisma: 11.0,
-      intuition: 27.0,
-      adaptability: 13.0,
-      vitality: 26.0,
+      power: 1.0,
+      resonance: 6.0,
+      wisdom: 22.0,
+      charisma: -4.0,
+      intuition: 12.0,
+      adaptability: 2.0,
+      vitality: 13.0,
     },
     ovr: 90,
     archetype: {
       title: 'Celestial Mechanist',
       primary: 'wisdom',
-      secondary: 'intuition',
+      secondary: 'vitality',
     },
     esms: {
       spirit: 45.2,
@@ -512,9 +539,9 @@ export const FIXTURE_AGENTS: RatedAgentPayload[] = [
         resonance: 4,
         wisdom: 12,
         charisma: 4,
-        intuition: 8,
+        intuition: 4,
         adaptability: 4,
-        vitality: 4,
+        vitality: 8,
       },
     },
     appearance: resolveAgentAppearance('isaac-newton'),
@@ -543,13 +570,13 @@ export const FIXTURE_AGENTS: RatedAgentPayload[] = [
       vitality: 79,
     },
     relativeAdvantage: {
-      power: 15.0,
-      resonance: 26.0,
-      wisdom: 32.0,
-      charisma: 24.0,
-      intuition: 32.0,
-      adaptability: 34.0,
-      vitality: 17.0,
+      power: -5.0,
+      resonance: 12.0,
+      wisdom: 20.0,
+      charisma: 9.0,
+      intuition: 17.0,
+      adaptability: 23.0,
+      vitality: 4.0,
     },
     ovr: 94,
     archetype: {
@@ -619,13 +646,13 @@ export const FIXTURE_AGENTS: RatedAgentPayload[] = [
       vitality: 68,
     },
     relativeAdvantage: {
-      power: 2.0,
-      resonance: 30.0,
-      wisdom: 22.0,
-      charisma: 17.0,
-      intuition: 37.0,
-      adaptability: 11.0,
-      vitality: 6.0,
+      power: -18.0,
+      resonance: 16.0,
+      wisdom: 10.0,
+      charisma: 2.0,
+      intuition: 22.0,
+      adaptability: 0.0,
+      vitality: -7.0,
     },
     ovr: 90,
     archetype: {
@@ -703,19 +730,19 @@ export const FIXTURE_AGENTS: RatedAgentPayload[] = [
       vitality: 85,
     },
     relativeAdvantage: {
-      power: 19.0,
-      resonance: 18.0,
-      wisdom: 15.0,
-      charisma: 23.0,
-      intuition: 19.0,
-      adaptability: 20.0,
-      vitality: 23.0,
+      power: -1.0,
+      resonance: 4.0,
+      wisdom: 3.0,
+      charisma: 8.0,
+      intuition: 4.0,
+      adaptability: 9.0,
+      vitality: 10.0,
     },
     ovr: 84,
     archetype: {
       title: 'Apex Sovereign',
-      primary: 'charisma',
-      secondary: 'vitality',
+      primary: 'vitality',
+      secondary: 'adaptability',
     },
     esms: {
       spirit: 62.0,
@@ -755,10 +782,10 @@ export const FIXTURE_AGENTS: RatedAgentPayload[] = [
         power: 4,
         resonance: 4,
         wisdom: 4,
-        charisma: 12,
+        charisma: 4,
         intuition: 4,
-        adaptability: 4,
-        vitality: 8,
+        adaptability: 8,
+        vitality: 12,
       },
     },
     appearance: resolveAgentAppearance('user-avatar-neo'),

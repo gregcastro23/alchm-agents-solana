@@ -101,11 +101,11 @@ describe('AgentRatingCard', () => {
   it('says where a Seal tops out rather than offering a tier it can never reach', async () => {
     const payload = newtonPayload()
     const power = payload.sealProgress.find(s => s.stat === 'power')!
-    expect(power.maxTier).toBe('Gold') // the contract's documented ceiling for power
+    expect(power.maxTier).toBe('Astral') // the contract's documented ceiling for power
     answer(payload)
     render(<AgentRatingCard agentId="isaac-newton" />)
     const card = await screen.findByRole('region', { name: /Pentacle Vessel Rating for/ })
-    expect(card).toHaveTextContent('tops out at Gold')
+    expect(card).toHaveTextContent('tops out at Astral')
   })
 
   it('names the active surge and its boosts', async () => {

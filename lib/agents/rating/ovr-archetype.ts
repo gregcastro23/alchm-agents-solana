@@ -16,13 +16,11 @@
  *
  * ## What the contract's constants do to the roster
  *
- * The contract's pinned `ROSTER_BASELINE_RATINGS` are used as given. Measured over the 72
- * `HISTORICAL_AGENTS` (2026-10-19) they are NOT the roster's rating-scale means or medians (for
- * `power` the contract says mean 76.5 / baseline 63, the roster's mean rating is 81.6 and its
- * median 83), so `computeRelativeAdvantage` names `power` the primary stat of 46 of 72 agents
- * and the roster shares 18 distinct titles. That is a property of the contract's numbers, not of
- * this module: re-measuring them is a one-file change in `rating-contract.ts`, and the
- * calibration diagnostics in the parity spec flip as soon as it lands.
+ * The contract's `ROSTER_BASELINE_RATINGS` are the roster's own rating-scale means and low
+ * medians (re-measured 2026-10-27 over the 72 `HISTORICAL_AGENTS`), so no stat dominates the
+ * archetype: the largest primary share is intuition's 19 of 72, with 23 distinct titles. Before
+ * that, pins near the 0–100 stat means made `power` the primary of 46 of 72 (18 titles). The
+ * calibration checks in the parity spec re-measure the roster and fail if the pins drift.
  *
  * It is deliberately NOT `calculateOverall` from `lib/sacred-7-stats.ts`, which is the plain
  * mean of all 19 stats and feeds other surfaces.

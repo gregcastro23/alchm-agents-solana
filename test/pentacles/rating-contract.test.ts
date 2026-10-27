@@ -102,10 +102,10 @@ describe('Vessel Rating & Resonance Surge Contract', () => {
   describe('Relative Advantage & Archetype Title Resolution', () => {
     it('computes relative advantage deltas against roster baseline', () => {
       const stats = {
-        power: 73,
-        resonance: 62,
-        wisdom: 84,
-        charisma: 61,
+        power: 93,
+        resonance: 76,
+        wisdom: 96,
+        charisma: 76,
         intuition: 72,
         adaptability: 63,
         vitality: 72,

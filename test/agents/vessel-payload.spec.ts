@@ -2677,10 +2677,10 @@ describe('vessel ids and the look a vessel gets', () => {
         vitalityScore: 85,
       })
     )!
-    expect(rateStats(power.stats).archetype.title).toBe('Juggernaut Anchor')
+    expect(rateStats(power.stats).archetype.title).toBe('Ironbound Guardian')
     expect(power.faction).toBe(3) // same chart, same faction
     expect(power.appearance).toEqual(
-      resolveAgentAppearance('agent-seeded-0007', 3, 'Juggernaut Anchor')
+      resolveAgentAppearance('agent-seeded-0007', 3, 'Ironbound Guardian')
     )
     expect(power.appearance).not.toEqual(
       ratableFromForgedRow(persistedRow({ agentId: 'agent-seeded-0007' }))!.appearance
@@ -2936,20 +2936,20 @@ describe('buildRatedAgentPayload, value by value', () => {
     expect(payload.ratings).toEqual(RATINGS)
     // OVR = (92·1.6 + 84·1.3 + mean(77, 73, 66, 55, 47)=63.6) / 3.9 = 320 / 3.9 = 82.05
     expect(payload.ovr).toBe(82)
-    // rating minus the contract's baseline 63 / 62 / 64 / 61 / 62 / 63 / 62
+    // rating minus the contract's baseline 83 / 76 / 76 / 76 / 77 / 74 / 75
     expect(payload.relativeAdvantage).toEqual({
-      power: 21,
-      resonance: -7,
-      wisdom: 9,
-      charisma: 5,
-      intuition: 30,
-      adaptability: -16,
-      vitality: 15,
+      power: 1,
+      resonance: -21,
+      wisdom: -3,
+      charisma: -10,
+      intuition: 15,
+      adaptability: -27,
+      vitality: 2,
     })
     expect(payload.archetype).toEqual({
-      title: 'Prescient Ingressor',
+      title: 'Eternal Vigilant',
       primary: 'intuition',
-      secondary: 'power',
+      secondary: 'vitality',
     })
   })
 
@@ -2975,12 +2975,14 @@ describe('buildRatedAgentPayload, value by value', () => {
       vitality: 88,
     })
     expect(built.ovr).toBe(82)
-    expect(built.relativeAdvantage.power).toBe(32)
-    expect(built.relativeAdvantage.wisdom).toBe(-9)
+    // power 95 − 83 = +12, vitality 88 − 75 = +13: vitality leads, power second.
+    expect(built.relativeAdvantage.power).toBe(12)
+    expect(built.relativeAdvantage.vitality).toBe(13)
+    expect(built.relativeAdvantage.wisdom).toBe(-21)
     expect(built.archetype).toEqual({
-      title: 'Juggernaut Anchor',
-      primary: 'power',
-      secondary: 'vitality',
+      title: 'Ironbound Guardian',
+      primary: 'vitality',
+      secondary: 'power',
     })
   })
 
@@ -3094,9 +3096,9 @@ describe('buildRatedAgentPayload, value by value', () => {
       ])
     })
 
-    it('says which Seals can never reach Celestial: power tops out at Gold, the rest can reach it', () => {
+    it('says which Seals can never reach Celestial: power tops out at Astral, the rest can reach it', () => {
       expect(payload.sealProgress.map(p => p.maxTier)).toEqual([
-        'Gold', // Crucible Finisher: a perfect power aligns to 90.5, short of Astral's 91
+        'Astral', // Crucible Finisher: a perfect power aligns to 93.5, short of Celestial's 96
         'Celestial',
         'Celestial',
         'Celestial',
@@ -3108,7 +3110,7 @@ describe('buildRatedAgentPayload, value by value', () => {
 
     it('pins the standing of the intuition and power Seals', () => {
       const progress = (stat: string) => payload.sealProgress.find(p => p.stat === stat)!
-      // intuition 90 → rating 92 → aligned 92 − 66 + 68 = 94: Astral (91) with 60 spirit (50),
+      // intuition 90 → rating 92 → aligned 92 − 77 + 76 = 91: Astral (91) with 60 spirit (50),
       // short of Celestial on stat (96), balance (250) and the chart (3 Fire bodies of 4).
       expect(progress('intuition')).toMatchObject({
         id: 'seal-intuition',
@@ -3119,11 +3121,11 @@ describe('buildRatedAgentPayload, value by value', () => {
         blockedBy: ['stat', 'esms', 'natal'],
         maxTier: 'Celestial',
         statRating: 92,
-        alignedRating: 94,
+        alignedRating: 91,
         balance: 60,
         natalAffinity: 3,
       })
-      // power 80 → rating 84 → aligned 84 − 76.5 + 68 = 75.5: Copper (74) with 30 substance;
+      // power 80 → rating 84 → aligned 84 − 81.5 + 76 = 78.5: Copper (74) with 30 substance;
       // Silver needs 80 on stat.
       expect(progress('power')).toMatchObject({
         id: 'seal-power',
@@ -3132,16 +3134,16 @@ describe('buildRatedAgentPayload, value by value', () => {
         tier: 'Copper',
         nextTier: 'Silver',
         blockedBy: ['stat'],
-        maxTier: 'Gold',
+        maxTier: 'Astral',
         statRating: 84,
-        alignedRating: 75.5,
+        alignedRating: 78.5,
         balance: 30,
         natalAffinity: 2,
       })
       expect(progress('resonance')).toMatchObject({
         tier: null,
         nextTier: 'Copper',
-        alignedRating: 56,
+        alignedRating: 55,
       })
     })
 
@@ -3151,10 +3153,10 @@ describe('buildRatedAgentPayload, value by value', () => {
         balances: resolved({ balances: { spirit: 0, essence: 0, matter: 0, substance: 1000 } }),
       })
       expect(peak.sealProgress.find(p => p.stat === 'power')).toMatchObject({
-        tier: 'Gold',
+        tier: 'Astral',
         nextTier: null,
         blockedBy: [],
-        maxTier: 'Gold',
+        maxTier: 'Astral',
       })
     })
 
@@ -3193,7 +3195,7 @@ describe('buildRatedAgentPayload, value by value', () => {
 
   describe('surge', () => {
     const surgeOf = (liveSky: LiveSky) => build(liveSky).surge!
-    const BASE_BOOST = { power: 8, resonance: 4, wisdom: 4, charisma: 4, intuition: 12, adaptability: 4, vitality: 4 } // prettier-ignore
+    const BASE_BOOST = { power: 4, resonance: 4, wisdom: 4, charisma: 4, intuition: 12, adaptability: 4, vitality: 8 } // prettier-ignore
 
     it('is built from the live sky, the vessel’s chart against it, the sky’s Monica and the vessel’s archetype', () => {
       const surge = surgeOf(neutralHot)
@@ -3201,7 +3203,7 @@ describe('buildRatedAgentPayload, value by value', () => {
         calculateResonanceSurge({
           thermodynamics: neutralHot.thermodynamics,
           monica: neutralHot.monica,
-          archetype: { primary: 'intuition', secondary: 'power' },
+          archetype: { primary: 'intuition', secondary: 'vitality' },
           natalChart: CHART,
           sky: neutralHot.bodies,
         })
@@ -3228,16 +3230,16 @@ describe('buildRatedAgentPayload, value by value', () => {
       const power = build(neutralHot, {
         vessel: { ...vessel, stats: { ...STATS, power: 95, vitality: 85, intuition: 40 } },
       })
-      expect(power.archetype.primary).toBe('power')
-      expect(power.archetype.secondary).toBe('vitality')
+      expect(power.archetype.primary).toBe('vitality')
+      expect(power.archetype.secondary).toBe('power')
       expect(power.surge!.statBoosts).toEqual({
-        power: 12,
+        power: 8,
         resonance: 4,
         wisdom: 4,
         charisma: 4,
         intuition: 4,
         adaptability: 4,
-        vitality: 8,
+        vitality: 12,
       })
     })
 
@@ -3289,13 +3291,13 @@ describe('buildRatedAgentPayload, value by value', () => {
         monica: 1.618,
         monicaState: 'equilibrium',
         statBoosts: {
-          power: 12,
+          power: 8,
           resonance: 8,
           wisdom: 8,
           charisma: 8,
           intuition: 16,
           adaptability: 8,
-          vitality: 8,
+          vitality: 12,
         },
       })
       // An inactive surge does not upgrade, whatever the Monica.
@@ -3343,11 +3345,11 @@ describe('buildRatedAgentPayload, value by value', () => {
     // Worked on paper from the ratings above and the zone weights: zone 3 has weights
     // 25 / 20 / 5 / 5 / 5 / 5 / 35 and no Essence Seal, so calm it is
     // .25·84 + .20·55 + .05·(73 + 66 + 92 + 47) + .35·77 = 72.85. Zone 2 (Fire) takes the Astral
-    // Spirit Seal's ×1.28 on 75.2 → 96.26. An active inferno adds +8 / +4 / +4 / +4 / +12 / +4 / +4
-    // (intuition clamped at 99), which makes zone 3 .25·92 + .20·59 + .05·(77 + 70 + 99 + 51) +
-    // .35·81 = 78.
+    // Spirit Seal's ×1.28 on 75.2 → 96.26. An active inferno adds +4 / +4 / +4 / +4 / +12 / +4 / +8
+    // (intuition clamped at 99), which makes zone 3 .25·88 + .20·59 + .05·(77 + 70 + 99 + 51) +
+    // .35·85 = 78.4.
     const CALM = [79.33, 75.97, 96.26, 72.85, 82.69, 75.29, 70.77, 96.58, 88.19, 71.2, 69.4]
-    const ACTIVE = [84.74, 81.8, 103.36, 78, 88.78, 80.33, 76.02, 103.55, 94.34, 76.3, 74.27]
+    const ACTIVE = [85.16, 81.38, 102.85, 78.4, 88.78, 80.54, 75.81, 103.3, 94.34, 76.3, 74.27]
 
     it('pins every zone’s synergy for the calm vessel and for the vessel under an active surge', () => {
       expect(calm.zoneSynergies.map(z => z.synergy)).toEqual(CALM)
@@ -3367,13 +3369,13 @@ describe('buildRatedAgentPayload, value by value', () => {
       // Found by searching stat vectors: calm, these stats put zone 10 first; under the active
       // inferno (resonance leads, so it takes +12, power +8, the rest +4) zone 3 takes the lead.
       const stats: CoreStats = {
-        power: 78,
-        resonance: 85,
-        wisdom: 18,
-        charisma: 47,
-        intuition: 34,
-        adaptability: 71,
-        vitality: 18,
+        power: 77,
+        resonance: 83,
+        wisdom: 59,
+        charisma: 22,
+        intuition: 18,
+        adaptability: 28,
+        vitality: 0,
       }
       const lit = build(neutralHot, { vessel: { ...vessel, stats } })
       const quiet = build(null, { vessel: { ...vessel, stats } })
@@ -3722,7 +3724,7 @@ describe('summarizeVessel, field by field', () => {
       faction: 5,
       factionName: 'Jupiter',
       ovr: 82,
-      archetype: { title: 'Prescient Ingressor', primary: 'intuition', secondary: 'power' },
+      archetype: { title: 'Eternal Vigilant', primary: 'intuition', secondary: 'vitality' },
       era: 'enlightenment',
       crownStyle: 'newton-curls',
       signatureRelic: 'prism-octahedron',

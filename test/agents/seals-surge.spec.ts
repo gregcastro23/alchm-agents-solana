@@ -63,15 +63,15 @@ const TIERS = ['Copper', 'Silver', 'Gold', 'Astral', 'Celestial'] as const
 
 /** The contract's pinned league means (rating-scale numbers) and the common level they align to. */
 const LITERAL_MEANS: Record<Stat, number> = {
-  power: 76.5,
-  resonance: 67.0,
-  wisdom: 68.5,
-  charisma: 64.5,
-  intuition: 66.0,
-  adaptability: 67.5,
-  vitality: 66.0,
+  power: 81.5,
+  resonance: 76.0,
+  wisdom: 75.5,
+  charisma: 74.5,
+  intuition: 77.0,
+  adaptability: 73.0,
+  vitality: 74.5,
 }
-const LITERAL_GLOBAL_MEAN = 68.0
+const LITERAL_GLOBAL_MEAN = 76.0
 
 const GATES: ReadonlyArray<{ tier: SealTier; rating: number; balance: number }> = [
   { tier: 'Copper', rating: 74, balance: 0.5 },
@@ -362,8 +362,8 @@ describe('the contract vocabulary, pinned as literals', () => {
     })
   })
 
-  it('pins the roster means 76.5 / 67.0 / 68.5 / 64.5 / 66.0 / 67.5 / 66.0 and the common level 68.0', () => {
-    expect(GLOBAL_ROSTER_MEAN).toBe(68.0)
+  it('pins the roster means 81.5 / 76.0 / 75.5 / 74.5 / 77.0 / 73.0 / 74.5 and the common level 76.0', () => {
+    expect(GLOBAL_ROSTER_MEAN).toBe(76.0)
     expect(
       Object.fromEntries(STATS.map(stat => [stat, ROSTER_BASELINE_RATINGS[stat].mean]))
     ).toEqual(LITERAL_MEANS)
@@ -445,31 +445,31 @@ describe('Seal catalog', () => {
 // ─── Mean alignment (the contract's function, re-exported) ───────────────────
 
 describe('mean-aligned rating', () => {
-  it('rates a stat at its own contract mean as the common level 68, for every stat', () => {
+  it('rates a stat at its own contract mean as the common level 76, for every stat', () => {
     for (const stat of STATS) {
-      expect(computeMeanAlignedRating(stat, LITERAL_MEANS[stat]), stat).toBe(68)
+      expect(computeMeanAlignedRating(stat, LITERAL_MEANS[stat]), stat).toBe(76)
     }
   })
 
-  it('shifts a rating one-for-one by (68 − mean): power down, the lower-mean stats up', () => {
-    // aligned = rating − mean + 68, written out per stat for a rating of 99 and of 50.
+  it('shifts a rating one-for-one by (76 − mean): power and intuition down, resonance level, the rest up', () => {
+    // aligned = rating − mean + 76, written out per stat for a rating of 99 and of 50.
     const AT_99: Record<Stat, number> = {
-      power: 90.5,
-      resonance: 100,
-      wisdom: 98.5,
-      charisma: 102.5,
-      intuition: 101,
-      adaptability: 99.5,
-      vitality: 101,
+      power: 93.5,
+      resonance: 99,
+      wisdom: 99.5,
+      charisma: 100.5,
+      intuition: 98,
+      adaptability: 102,
+      vitality: 100.5,
     }
     const AT_50: Record<Stat, number> = {
-      power: 41.5,
-      resonance: 51,
-      wisdom: 49.5,
-      charisma: 53.5,
-      intuition: 52,
-      adaptability: 50.5,
-      vitality: 52,
+      power: 44.5,
+      resonance: 50,
+      wisdom: 50.5,
+      charisma: 51.5,
+      intuition: 49,
+      adaptability: 53,
+      vitality: 51.5,
     }
     for (const stat of STATS) {
       expect(computeMeanAlignedRating(stat, 99), `${stat} at 99`).toBe(AT_99[stat])
@@ -477,32 +477,32 @@ describe('mean-aligned rating', () => {
     }
   })
 
-  it('documents the cost: a perfect power rating aligns to 90.5 — Gold’s tier, short of Astral’s 91', () => {
+  it('documents the cost: a perfect power rating aligns to 93.5 — Astral’s tier, short of Celestial’s 96', () => {
     const ceiling = computeMeanAlignedRating('power', 99)
-    expect(ceiling).toBe(90.5)
-    expect(ceiling).toBeGreaterThanOrEqual(86)
-    expect(ceiling).toBeLessThan(91)
+    expect(ceiling).toBe(93.5)
+    expect(ceiling).toBeGreaterThanOrEqual(91)
+    expect(ceiling).toBeLessThan(96)
     for (const stat of STATS.filter(s => s !== 'power')) {
       expect(computeMeanAlignedRating(stat, 99), stat).toBeGreaterThanOrEqual(96)
     }
   })
 
   it('only aligns the gate comparison: statRating stays on the raw 25–99 scale', () => {
-    // power 90 → 25 + 66.6 = 91.6 → 92; aligned 92 − 76.5 + 68 = 83.5.
+    // power 90 → 25 + 66.6 = 91.6 → 92; aligned 92 − 81.5 + 76 = 86.5.
     const seal = bySeal(
       evaluateSeals({ stats: stats(50, { power: 90 }), esmsBalances: holdings(1000) }),
       'power'
     )
     expect(seal.statRating).toBe(92)
-    expect(seal.alignedRating).toBe(83.5)
+    expect(seal.alignedRating).toBe(86.5)
     expect(seal.alignedRating).toBeLessThan(seal.statRating)
-    const resonance = bySeal(
-      evaluateSeals({ stats: stats(50, { resonance: 90 }), esmsBalances: holdings(1000) }),
-      'resonance'
+    const adaptability = bySeal(
+      evaluateSeals({ stats: stats(50, { adaptability: 90 }), esmsBalances: holdings(1000) }),
+      'adaptability'
     )
-    expect(resonance.statRating).toBe(92)
-    expect(resonance.alignedRating).toBe(93) // 92 − 67 + 68
-    expect(resonance.alignedRating).toBeGreaterThan(resonance.statRating)
+    expect(adaptability.statRating).toBe(92)
+    expect(adaptability.alignedRating).toBe(95) // 92 − 73 + 76
+    expect(adaptability.alignedRating).toBeGreaterThan(adaptability.statRating)
   })
 })
 
@@ -544,7 +544,7 @@ describe('evaluateSeals', () => {
 
   it('hand-computed golden rows: tier, next tier, blockers and aligned rating', () => {
     // Each row is worked out by hand from the literals: rating = round(25 + stat · 0.74),
-    // aligned = rating − mean + 68; the balance is that of the Seal's own token.
+    // aligned = rating − mean + 76; the balance is that of the Seal's own token.
     const rows: Array<{
       stat: Stat
       value: number
@@ -555,79 +555,79 @@ describe('evaluateSeals', () => {
       next: SealTier | null
       blocked: Array<'stat' | 'esms' | 'natal'>
     }> = [
-      // power 90 → rating 92 → aligned 83.5: Silver on stat; 3 Substance clears Silver (2), not Gold (10).
+      // power 90 → rating 92 → aligned 86.5: Gold on stat; 3 Substance clears Silver (2), not Gold (10).
       {
         stat: 'power',
         value: 90,
         balance: 3,
         rating: 92,
-        aligned: 83.5,
+        aligned: 86.5,
         tier: 'Silver',
         next: 'Gold',
-        blocked: ['stat', 'esms'],
+        blocked: ['esms'],
       },
-      // wisdom 80 → 84 → 83.5 (84 − 68.5 + 68): Silver; Matter exactly 10 clears Gold's balance.
+      // wisdom 80 → 84 → 84.5 (84 − 75.5 + 76): Silver; Matter exactly 10 clears Gold's balance.
       {
         stat: 'wisdom',
         value: 80,
         balance: 10,
         rating: 84,
-        aligned: 83.5,
+        aligned: 84.5,
         tier: 'Silver',
         next: 'Gold',
         blocked: ['stat'],
       },
-      // charisma 60 → 69 → 72.5 (69 − 64.5 + 68): under Copper's 74; Essence 0.5 is exactly Copper's.
+      // charisma 60 → 69 → 70.5 (69 − 74.5 + 76): under Copper's 74; Essence 0.5 is exactly Copper's.
       {
         stat: 'charisma',
         value: 60,
         balance: 0.5,
         rating: 69,
-        aligned: 72.5,
+        aligned: 70.5,
         tier: null,
         next: 'Copper',
         blocked: ['stat'],
       },
-      // adaptability 100 → 99 → 99.5: 49.99 Spirit is a cent short of Astral's 50 → Gold.
+      // adaptability 100 → 99 → 102 (99 − 73 + 76): 49.99 Spirit is a cent short of Astral's 50 → Gold.
       {
         stat: 'adaptability',
         value: 100,
         balance: 49.99,
         rating: 99,
-        aligned: 99.5,
+        aligned: 102,
         tier: 'Gold',
         next: 'Astral',
         blocked: ['esms'],
       },
-      // vitality 0 → 25 → 27 (25 − 66 + 68): nothing, and the stat is the only thing missing.
+      // vitality 0 → 25 → 26.5 (25 − 74.5 + 76): nothing, and the stat is the only thing missing.
       {
         stat: 'vitality',
         value: 0,
         balance: 1000,
         rating: 25,
-        aligned: 27,
+        aligned: 26.5,
         tier: null,
         next: 'Copper',
         blocked: ['stat'],
       },
-      // intuition 97 → 97 → 99: 12 Spirit clears Gold, short of Astral's 50.
+      // intuition 97 → 97 → 96 (97 − 77 + 76): 12 Spirit clears Gold, short of Astral's 50.
       {
         stat: 'intuition',
         value: 97,
         balance: 12,
         rating: 97,
-        aligned: 99,
+        aligned: 96,
         tier: 'Gold',
         next: 'Astral',
         blocked: ['esms'],
       },
-      // resonance 75 → 81 → 82 (81 − 67 + 68): Silver; Essence 1000 is plenty; the stat is short of Gold.
+      // resonance 75 → 81 → 81 (81 − 76 + 76): Silver; Essence 1000 is plenty; the stat is short of Gold.
       {
         stat: 'resonance',
         value: 75,
         balance: 1000,
         rating: 81,
-        aligned: 82,
+        aligned: 81,
         tier: 'Silver',
         next: 'Gold',
         blocked: ['stat'],
@@ -660,9 +660,9 @@ describe('evaluateSeals', () => {
       expect(r.natalAffinity, r.id).toBeNull()
       if (r.stat === 'power') {
         // Crucible Finisher's mean sits so far above the others that a perfect power rating
-        // aligns to 90.5: Gold is the most it can ever show, so there is no next tier.
-        expect(r.tier, r.id).toBe('Gold')
-        expect(r.maxTier, r.id).toBe('Gold')
+        // aligns to 93.5: Astral is the most it can ever show, so there is no next tier.
+        expect(r.tier, r.id).toBe('Astral')
+        expect(r.maxTier, r.id).toBe('Astral')
         expect(r.nextTier, r.id).toBeNull()
         expect(r.blockedBy, r.id).toEqual([])
       } else {
@@ -697,7 +697,7 @@ describe('evaluateSeals', () => {
       expect(bySeal(results, stat).tier, stat).toBe('Astral')
     }
     expect(bySeal(results, 'power').natalAffinity).toBe(1)
-    expect(bySeal(results, 'power').tier).toBe('Gold')
+    expect(bySeal(results, 'power').tier).toBe('Astral')
   })
 
   it('does not let a placeholder or unattributed chart unlock Celestial, and reports no affinity', () => {
@@ -859,14 +859,14 @@ describe('evaluateSeals', () => {
 
 describe('Seal tiers against an independent oracle', () => {
   it('has a sane oracle: it matches a hand-computed row and reaches every tier a Seal can show', () => {
-    // power 90, 3 Substance: Silver, blocked on stat and esms (see the golden rows above).
+    // power 90, 3 Substance: Silver, blocked on esms alone (see the golden rows above).
     expect(oracleRow('power', 90, holdings(3), null)).toMatchObject({
       statRating: 92,
-      alignedRating: 83.5,
+      alignedRating: 86.5,
       tier: 'Silver',
       nextTier: 'Gold',
-      blockedBy: ['stat', 'esms'],
-      maxTier: 'Gold',
+      blockedBy: ['esms'],
+      maxTier: 'Astral',
     })
     for (const seal of LITERAL_SEALS) {
       const seen = new Set<string>()
@@ -879,8 +879,8 @@ describe('Seal tiers against an independent oracle', () => {
           )
         }
       }
-      // null plus every tier the Seal can show: Gold tops out power, Celestial the other six.
-      expect(seen.size, seal.stat).toBe(seal.stat === 'power' ? 4 : 6)
+      // null plus every tier the Seal can show: Astral tops out power, Celestial the other six.
+      expect(seen.size, seal.stat).toBe(seal.stat === 'power' ? 5 : 6)
       expect(seen.has('Celestial'), seal.stat).toBe(seal.stat !== 'power')
     }
   })
@@ -997,13 +997,13 @@ describe('Seal tiers against an independent oracle', () => {
 // ─── Gate boundaries: >= and not > ───────────────────────────────────────────
 
 describe('gate boundaries', () => {
-  // Resonance, intuition and vitality have whole-number offsets from the common level (+1, +2,
-  // +2), so a whole rating can sit exactly ON a stat gate. The other four have .5 offsets and
+  // Resonance, intuition and adaptability have whole-number offsets from the common level (0, −1,
+  // +3), so a whole rating can sit exactly ON a stat gate. The other four have .5 offsets and
   // can only straddle one.
   const EXACT: Array<{ stat: Stat; offset: number }> = [
-    { stat: 'resonance', offset: 1 },
-    { stat: 'intuition', offset: 2 },
-    { stat: 'vitality', offset: 2 },
+    { stat: 'resonance', offset: 0 },
+    { stat: 'intuition', offset: -1 },
+    { stat: 'adaptability', offset: 3 },
   ]
 
   for (const { stat, offset } of EXACT) {
@@ -1041,24 +1041,24 @@ describe('gate boundaries', () => {
   }
 
   it('straddles a stat gate for the .5-offset stats: 0.5 over clears, 0.5 under does not', () => {
-    // wisdom aligns as rating − 0.5: rating 87 → 86.5 clears Gold's 86, rating 86 → 85.5 does not.
+    // wisdom aligns as rating + 0.5: rating 86 → 86.5 clears Gold's 86, rating 85 → 85.5 does not.
     const wisdom = (value: number) =>
       bySeal(evaluateSeals({ stats: stats(value), esmsBalances: holdings(1000) }), 'wisdom')
-    expect(wisdom(statForRating(87)).alignedRating).toBe(86.5)
-    expect(wisdom(statForRating(87)).tier).toBe('Gold')
-    expect(wisdom(statForRating(86)).alignedRating).toBe(85.5)
-    expect(wisdom(statForRating(86)).tier).toBe('Silver')
-    // charisma aligns as rating + 3.5: rating 71 → 74.5 clears Copper's 74; rating 70 → 73.5 does not.
+    expect(wisdom(statForRating(86)).alignedRating).toBe(86.5)
+    expect(wisdom(statForRating(86)).tier).toBe('Gold')
+    expect(wisdom(statForRating(85)).alignedRating).toBe(85.5)
+    expect(wisdom(statForRating(85)).tier).toBe('Silver')
+    // charisma aligns as rating + 1.5: rating 73 → 74.5 clears Copper's 74; rating 72 → 73.5 does not.
     const charisma = (value: number) =>
       bySeal(evaluateSeals({ stats: stats(value), esmsBalances: holdings(1000) }), 'charisma')
-    expect(charisma(statForRating(70)).alignedRating).toBe(73.5)
-    expect(charisma(statForRating(70)).tier).toBeNull()
-    expect(charisma(statForRating(71)).alignedRating).toBe(74.5)
-    expect(charisma(statForRating(71)).tier).toBe('Copper')
+    expect(charisma(statForRating(72)).alignedRating).toBe(73.5)
+    expect(charisma(statForRating(72)).tier).toBeNull()
+    expect(charisma(statForRating(73)).alignedRating).toBe(74.5)
+    expect(charisma(statForRating(73)).tier).toBe('Copper')
   })
 
   it('clears an ESMS gate exactly at the gate and not one cent below it, for every gate', () => {
-    // Intuition at stat 100 aligns to 101, past every stat gate; Spirit alone varies.
+    // Intuition at stat 100 aligns to 98, past every stat gate; Spirit alone varies.
     for (const gate of GATES.filter(g => g.tier !== 'Celestial')) {
       const at = bySeal(
         evaluateSeals({ stats: stats(100), esmsBalances: holdings(0, { spirit: gate.balance }) }),
@@ -1122,7 +1122,7 @@ describe('gate boundaries', () => {
   })
 })
 
-// With the contract's real means no stat's aligned ceiling (99 − mean + 68) is a whole number
+// With the contract's real means no stat's aligned ceiling (99 − mean + 76) is a whole number
 // that equals a gate, so `maxTier`'s "gate ≤ ceiling" cannot be told from "gate < ceiling"
 // through the real contract. This block replaces only `computeMeanAlignedRating` with a plain
 // shift (aligned = rating + shift), which puts the ceiling exactly on, just under and far
@@ -1244,7 +1244,7 @@ describe('the Celestial natal rule', () => {
         }
       }
     }
-    // Substance rides on power alone, which tops out at Gold: the rule has no Seal to bind there,
+    // Substance rides on power alone, which tops out at Astral: the rule has no Seal to bind there,
     // and the other three tokens each have at least one.
     expect(LITERAL_SEALS.filter(s => s.token === 'substance' && s.stat !== 'power')).toEqual([])
     for (const token of ['spirit', 'essence', 'matter'] as const) {
@@ -1383,7 +1383,7 @@ describe('the Celestial natal rule', () => {
 
 describe('maxTier and nextTier', () => {
   const LITERAL_MAX_TIER: Record<Stat, SealTier> = {
-    power: 'Gold',
+    power: 'Astral',
     resonance: 'Celestial',
     wisdom: 'Celestial',
     charisma: 'Celestial',
@@ -1392,7 +1392,7 @@ describe('maxTier and nextTier', () => {
     vitality: 'Celestial',
   }
 
-  it('pins every Seal’s maxTier: Gold for Crucible Finisher, Celestial for the other six', () => {
+  it('pins every Seal’s maxTier: Astral for Crucible Finisher, Celestial for the other six', () => {
     const results = evaluateSeals({ stats: stats(50), esmsBalances: holdings(0) })
     expect(Object.fromEntries(results.map(r => [r.stat, r.maxTier]))).toEqual(LITERAL_MAX_TIER)
   })
@@ -1421,28 +1421,28 @@ describe('maxTier and nextTier', () => {
     }
   })
 
-  it('leaves a perfect, fully funded power vessel at Gold with nothing above it', () => {
+  it('leaves a perfect, fully funded power vessel at Astral with nothing above it', () => {
     for (const natalChart of [null, chartWithAffinity('substance', 10)]) {
       const crucible = bySeal(
         evaluateSeals({ stats: stats(100), esmsBalances: holdings(1000), natalChart }),
         'power'
       )
-      expect(crucible.tier).toBe('Gold')
-      expect(crucible.maxTier).toBe('Gold')
+      expect(crucible.tier).toBe('Astral')
+      expect(crucible.maxTier).toBe('Astral')
       expect(crucible.nextTier).toBeNull()
       expect(crucible.blockedBy).toEqual([])
-      expect(crucible.alignedRating).toBe(90.5)
+      expect(crucible.alignedRating).toBe(93.5)
     }
   })
 
-  it('gives power a next tier one rung short of its cap (Silver → Gold)', () => {
-    // power 90 → aligned 83.5: Silver, with Gold the next and last tier it can show.
+  it('gives power a next tier one rung short of its cap (Gold → Astral)', () => {
+    // power 90 → aligned 86.5: Gold, with Astral the next and last tier it can show.
     const crucible = bySeal(
       evaluateSeals({ stats: stats(50, { power: 90 }), esmsBalances: holdings(1000) }),
       'power'
     )
-    expect(crucible.tier).toBe('Silver')
-    expect(crucible.nextTier).toBe('Gold')
+    expect(crucible.tier).toBe('Gold')
+    expect(crucible.nextTier).toBe('Astral')
     expect(crucible.blockedBy).toEqual(['stat'])
   })
 
@@ -1482,7 +1482,7 @@ describe('maxTier and nextTier', () => {
   })
 
   it('lists every blocker, in the order stat, esms, natal', () => {
-    // Intuition 90 rates 92 and aligns to 94: Astral on the stat, but short of Celestial's 96.
+    // Intuition 90 rates 92 and aligns to 91, exactly Astral's gate, short of Celestial's 96.
     // 100 Spirit clears Astral's 50 and is short of Celestial's 250; and there is no chart.
     const astral = bySeal(
       evaluateSeals({
@@ -1492,7 +1492,7 @@ describe('maxTier and nextTier', () => {
       'intuition'
     )
     expect(astral.statRating).toBe(92)
-    expect(astral.alignedRating).toBe(94)
+    expect(astral.alignedRating).toBe(91)
     expect(astral.tier).toBe('Astral')
     expect(astral.nextTier).toBe('Celestial')
     expect(astral.blockedBy).toEqual(['stat', 'esms', 'natal'])
@@ -1570,8 +1570,8 @@ describe('earnedSeals', () => {
       id: 'seal-power',
       name: 'Crucible Finisher',
       category: 'substance',
-      tier: 'Gold',
-      multiplier: 1.18,
+      tier: 'Astral',
+      multiplier: 1.28,
     })
     expect(byStat.resonance).toMatchObject({
       id: 'seal-resonance',

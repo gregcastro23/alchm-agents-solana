@@ -1196,7 +1196,7 @@ describe('evaluateSeals equals the contract tier, plus ASOL Celestial rule', () 
     expect(CELESTIAL_MIN_NATAL_AFFINITY).toBe(4)
   })
 
-  it('stops Crucible Finisher at Gold: a perfect power aligns to 90.5, short of the Astral gate', () => {
+  it('stops Crucible Finisher at Astral: a perfect power aligns to 93.5, short of the Celestial gate', () => {
     const balances: EsmsBalances = { spirit: 1e6, essence: 1e6, matter: 1e6, substance: 1e6 }
     const open = chartWith('Air', 10, 'computed') // substance is power's token
     const [power] = evaluateSeals({
@@ -1206,9 +1206,9 @@ describe('evaluateSeals equals the contract tier, plus ASOL Celestial rule', () 
     })
     expect(power).toMatchObject({
       stat: 'power',
-      tier: 'Gold',
-      alignedRating: 90.5,
-      maxTier: 'Gold',
+      tier: 'Astral',
+      alignedRating: 93.5,
+      maxTier: 'Astral',
       nextTier: null,
       blockedBy: [],
       statRating: 99,
@@ -1220,7 +1220,7 @@ describe('evaluateSeals equals the contract tier, plus ASOL Celestial rule', () 
     })) {
       if (seal.stat !== 'power') expect(seal.maxTier).toBe('Celestial')
     }
-    expect(90.5).toBeLessThan(contract.SEAL_STAT_GATES.Astral)
+    expect(93.5).toBeLessThan(contract.SEAL_STAT_GATES.Celestial)
   })
 
   it('reports alignedRating as the contract alignment of the rating, to 2 dp', () => {
@@ -1298,10 +1298,10 @@ describe('evaluateSeals equals the contract tier, plus ASOL Celestial rule', () 
       id: 'seal-power',
       name: 'Crucible Finisher',
       category: 'substance',
-      tier: 'Gold',
+      tier: 'Astral',
       description: 'Channels raw material pressure into irresistible decisive force.',
       statKey: 'power',
-      multiplier: 1.18,
+      multiplier: 1.28,
     })
   })
 
@@ -3611,22 +3611,21 @@ describe('calibration diagnostics: the contract pinned roster numbers vs the liv
     expect(contract.GLOBAL_ROSTER_MEAN).toBeCloseTo(mean, 10)
   })
 
-  // DIAGNOSTIC, expected to FAIL today: the contract's per-stat means (76.5 / 67.0 / ...) are not
-  // the live roster's mean RATING on the 25-99 scale (power: 81.6 live, 76.5 pinned; every stat is
-  // at least 5 off). They are being used as given. WHEN THIS STARTS FAILING, re-measured baselines
-  // landed in rating-contract.ts: delete the `.fails`.
-  it.fails('every contract stat mean is within 2 of the live roster mean rating', () => {
+  // The contract's per-stat means are the live roster's mean RATING on the 25-99 scale, re-measured
+  // 2026-10-27. Before that they sat near the 0-100 stat means (power 76.5 pinned against 81.6
+  // live; every stat at least 5 off). If this fails, the roster or the derivation moved:
+  // re-measure and re-pin ROSTER_BASELINE_RATINGS.
+  it('every contract stat mean is within 2 of the live roster mean rating', () => {
     const off = STAT_ORDER.filter(
       stat => Math.abs(contract.ROSTER_BASELINE_RATINGS[stat].mean - LIVE.means[stat]) > 2
     )
     expect(off).toEqual([])
   })
 
-  // DIAGNOSTIC, expected to FAIL today: because of the numbers above, `power` is the archetype
-  // primary of 46 of 72 agents (64%) and the roster shares 18 distinct titles. A baseline that is
-  // the roster's own would spread the primaries. WHEN THIS STARTS FAILING, the baselines were
-  // re-measured: delete the `.fails`.
-  it.fails('no stat is the archetype primary of more than 40% of the roster', () => {
+  // Against the old baselines `power` was the archetype primary of 46 of 72 agents (64%), with 18
+  // distinct titles. Against the roster's own low medians the largest share is intuition's 19
+  // (26%), with 23 titles.
+  it('no stat is the archetype primary of more than 40% of the roster', () => {
     const share = Math.max(...STAT_ORDER.map(stat => LIVE.primaries[stat])) / LIVE.size
     expect(share).toBeLessThanOrEqual(0.4)
   })
@@ -3657,8 +3656,8 @@ describe("contract self-consistency (about #65's fixtures, not about this PR)", 
   })
 
   // DIAGNOSTIC, expected to FAIL today: Newton's fixture title is 'Celestial Mechanist' where
-  // resolveArchetype names wisdom:intuition 'Illuminated Sage', and Neo's is 'Apex Sovereign'
-  // where it names charisma:vitality 'Indomitable Leader'. WHEN THIS STARTS FAILING, the fixtures
+  // resolveArchetype names wisdom:vitality 'Ancient Pillar', and Neo's is 'Apex Sovereign'
+  // where it names vitality:adaptability 'Adaptive Fortress'. WHEN THIS STARTS FAILING, the fixtures
   // were corrected in rating-contract.ts: delete the `.fails`.
   it.fails("the fixtures' archetype titles are the ones resolveArchetype returns", () => {
     const off = contract.FIXTURE_AGENTS.filter(

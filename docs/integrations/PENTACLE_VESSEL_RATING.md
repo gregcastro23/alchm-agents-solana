@@ -57,9 +57,10 @@ Tiers: **Copper < Silver < Gold < Astral < Celestial**. A tier needs both gates:
 | Astral    | 91             | 50                          | 1.28               |
 | Celestial | 96             | 250                         | 1.40               |
 
-The **aligned rating** is the contract's `computeMeanAlignedRating`: `rating − stat mean + 68.0`, using
-its pinned means (76.5 / 67.0 / 68.5 / 64.5 / 66.0 / 67.5 / 66.0), so a gate sits a similar distance
-above "typical" for every stat. Ratings and OVR stay on the raw scale.
+The **aligned rating** is the contract's `computeMeanAlignedRating`: `rating − stat mean + 76.0`, using
+its pinned means (81.5 / 76.0 / 75.5 / 74.5 / 77.0 / 73.0 / 74.5 — the roster's mean ratings on a 0.5
+grid, so the arithmetic is exact and a rating that lands on a gate clears it), so a gate sits a similar
+distance above "typical" for every stat. Ratings and OVR stay on the raw scale.
 
 **What ASOL adds.** Celestial also needs at least 4 of the 10 classical bodies natally in the token's
 element (`placeholder` and `unattributed` charts count as none). It is implemented through the
@@ -68,9 +69,9 @@ contract's. `payload.seals` is the contract's list of **earned** seals (`buildCa
 `payload.sealProgress` is every Seal's standing: `tier`, `nextTier`, `blockedBy` (`stat` / `esms` /
 `natal`), `maxTier`, `statRating`, `alignedRating`, `balance`, `natalAffinity`.
 
-**`maxTier`.** With the contract's means a perfect `power` aligns to `99 − 76.5 + 68 = 90.5`, short of
-the Astral gate (91): Crucible Finisher tops out at **Gold** (`maxTier: "Gold"`, `nextTier: null` once
-reached). The other six reach Celestial.
+**`maxTier`.** With the contract's means a perfect `power` aligns to `99 − 81.5 + 76 = 93.5`, short of
+the Celestial gate (96): Crucible Finisher tops out at **Astral** (`maxTier: "Astral"`, `nextTier: null`
+once reached). The other six reach Celestial.
 
 ## Resonance Surge
 
@@ -229,26 +230,20 @@ the contract's `clampStat`) and the contract's per-tier Seal multiplier for the 
 
 ## Known limits
 
-- **The contract's pinned numbers are not the live roster's.** `ROSTER_BASELINE_RATINGS` means are close
-  to the roster's 0–100 stat means, not its 25–99 rating means (for `power`: pinned 76.5, roster mean
-  rating 81.6), and its `baseline` of 63 is far below the roster median (83). Measured over the 72
-  agents: `power` is the archetype primary of 46 of them (18 distinct titles), and mean alignment
-  awards Gold on charisma and intuition to 9 and 12 agents against 2 and 1 under a roster-measured
-  alignment. The `it.fails` diagnostics in `test/agents/rating-contract-parity.spec.ts` go red the
-  day re-measured numbers land. **It is not a one-file change.** Measured on a scratch copy with the
-  roster's own numbers — rating means 81.5 / 76.0 / 75.5 / 75.0 / 77.0 / 73.0 / 74.5 (unrounded
-  81.6 / 76.1 / 75.7 / 74.8 / 76.9 / 73.0 / 74.6), baselines their rounding (82 / 76 / 76 / 75 / 77
-  / 73 / 75), and `GLOBAL_ROSTER_MEAN` 68 → 76 (the mean of the means, as the parity spec requires):
-  about 70 tests across six specs pin today's numbers, and `FIXTURE_AGENTS` must be recomputed; 42
-  of 72 roster vessels change archetype title or primary; Crucible Finisher's ceiling rises from
-  Gold to Astral (a perfect `power` aligns to 99 − 81.5 + 76 = 93.5); and a forged vessel whose
-  title moves changes its look,
-  which is seeded from the title. Pentacles keeps its own hand-synced copy of the contract
-  (`src/lib/agents/rating-contract.ts`, no version field) and recomputes `relativeAdvantage`,
-  `archetype` and Seal tiers locally from ASOL's ratings, so an ASOL-only re-pin would make the two
-  disagree silently. It needs a product decision (mean or median baseline; whether the 12
-  placeholder charts count) and a release coordinated with Pentacles — or Pentacles taking ASOL's
-  archetype and tiers instead of recomputing them.
+- **The contract's roster numbers must move in lockstep with Pentacles.** `ROSTER_BASELINE_RATINGS`
+  were re-measured on 2026-10-27 from the 72 `HISTORICAL_AGENTS` on the 25–99 rating scale: `mean` is
+  each stat's mean rating on a 0.5 grid (81.5 / 76.0 / 75.5 / 74.5 / 77.0 / 73.0 / 74.5; unrounded 81.6 /
+  76.1 / 75.7 / 74.8 / 76.9 / 73.0 / 74.6, charisma rounded down so `GLOBAL_ROSTER_MEAN` is exactly 76.0),
+  `baseline` each stat's low median (83 / 76 / 76 / 76 / 77 / 74 / 75). The old pins sat near the 0–100
+  stat means and made `power` the archetype primary of 46 of 72 agents (18 titles); now the largest
+  primary share is intuition's 19 (23 titles). Against the old pins, 52 of 72 roster vessels change
+  archetype title or primary, 144 stat-gate Seal tiers change across 65 vessels, and Crucible
+  Finisher's ceiling rises from Gold to Astral; a forged vessel whose title moves changes its look.
+  The measurement includes the 12 placeholder charts; without them the pins would sit about 0.4–1
+  point lower on the means and 1–2 on the medians. Pentacles keeps its own hand-synced copy of the
+  contract (`src/lib/agents/rating-contract.ts`, no version field) and recomputes `relativeAdvantage`,
+  `archetype` and Seal tiers locally from ASOL's ratings, so these numbers must ship in the same
+  release as that copy — or Pentacles must take ASOL's archetype and tiers instead of recomputing them.
 - **`equilibrium` is not reachable on the live sky.** The contract requires Monica within 0.001 of 1.618
   (exact Kalchm equilibrium); over 4000 epochs 2020–2035 the live sky's Monica spans −0.004…0.149
   (median 0.013), so the +16 / +12 / +8 boosts never fire. When both ramps saturate (both positions 1,

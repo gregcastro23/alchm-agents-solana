@@ -186,8 +186,8 @@ export interface SealProgress {
    * The highest tier this Seal's stat can ever reach: the rating gates are compared with the
    * mean-aligned rating, and a perfect stat (rating 99) aligns to a different ceiling per stat
    * (`99 − mean + GLOBAL_ROSTER_MEAN`). With the contract's means a perfect `power` aligns to
-   * 90.5, short of the Astral gate (91), so Crucible Finisher tops out at Gold; every other Seal
-   * can reach Celestial.
+   * 93.5, short of the Celestial gate (96), so Crucible Finisher tops out at Astral; every other
+   * Seal can reach Celestial.
    */
   maxTier: SealTier
   /** The raw 25–99 rating — what the radar shows. */

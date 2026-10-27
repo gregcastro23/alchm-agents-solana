@@ -46,13 +46,13 @@ const STAT_ORDER: readonly CoreStatKey[] = [
 
 /** `ROSTER_BASELINE_RATINGS[k].baseline` from the contract. */
 const BASELINE: Record<CoreStatKey, number> = {
-  power: 63,
-  resonance: 62,
-  wisdom: 64,
-  charisma: 61,
-  intuition: 62,
-  adaptability: 63,
-  vitality: 62,
+  power: 83,
+  resonance: 76,
+  wisdom: 76,
+  charisma: 76,
+  intuition: 77,
+  adaptability: 74,
+  vitality: 75,
 }
 
 /** `ARCHETYPE_TITLE_MATRIX` from the contract's source text, keyed `primary:secondary`. */
@@ -481,21 +481,21 @@ describe('rateStats: literal vectors', () => {
     const result = rateStats(flat(50))
     expect(result.ratings).toEqual(flatRatings(62))
     expect(result.ovr).toBe(62)
-    // 62 minus the baselines 63, 62, 64, 61, 62, 63, 62.
+    // 62 minus the baselines 83, 76, 76, 76, 77, 74, 75.
     expect(result.relativeAdvantage).toEqual({
-      power: -1,
-      resonance: 0,
-      wisdom: -2,
-      charisma: 1,
-      intuition: 0,
-      adaptability: -1,
-      vitality: 0,
+      power: -21,
+      resonance: -14,
+      wisdom: -14,
+      charisma: -14,
+      intuition: -15,
+      adaptability: -12,
+      vitality: -13,
     })
-    // charisma leads (+1); resonance, intuition and vitality tie at 0, so stat order picks resonance.
+    // adaptability has the lowest baseline, so it leads (-12); vitality is next (-13).
     expect(result.archetype).toEqual({
-      title: 'Resonant Herald',
-      primary: 'charisma',
-      secondary: 'resonance',
+      title: 'Unshakable Survivor',
+      primary: 'adaptability',
+      secondary: 'vitality',
     })
   })
 
@@ -504,18 +504,18 @@ describe('rateStats: literal vectors', () => {
     expect(result.ratings).toEqual(flatRatings(25))
     expect(result.ovr).toBe(25)
     expect(result.relativeAdvantage).toEqual({
-      power: -38,
-      resonance: -37,
-      wisdom: -39,
-      charisma: -36,
-      intuition: -37,
-      adaptability: -38,
-      vitality: -37,
+      power: -58,
+      resonance: -51,
+      wisdom: -51,
+      charisma: -51,
+      intuition: -52,
+      adaptability: -49,
+      vitality: -50,
     })
     expect(result.archetype).toEqual({
-      title: 'Resonant Herald',
-      primary: 'charisma',
-      secondary: 'resonance',
+      title: 'Unshakable Survivor',
+      primary: 'adaptability',
+      secondary: 'vitality',
     })
   })
 
@@ -524,23 +524,23 @@ describe('rateStats: literal vectors', () => {
     expect(result.ratings).toEqual(flatRatings(99))
     expect(result.ovr).toBe(99)
     expect(result.relativeAdvantage).toEqual({
-      power: 36,
-      resonance: 37,
-      wisdom: 35,
-      charisma: 38,
-      intuition: 37,
-      adaptability: 36,
-      vitality: 37,
+      power: 16,
+      resonance: 23,
+      wisdom: 23,
+      charisma: 23,
+      intuition: 22,
+      adaptability: 25,
+      vitality: 24,
     })
-    expect(result.archetype.primary).toBe('charisma')
-    expect(result.archetype.secondary).toBe('resonance')
+    expect(result.archetype.primary).toBe('adaptability')
+    expect(result.archetype.secondary).toBe('vitality')
   })
 
   it('matches a hand-computed specialist', () => {
     // stats power 90, resonance 40, wisdom 70, the rest 50
     //   -> ratings power 92, resonance 55, wisdom 77, the other four 62
     //   -> OVR (92*1.6 + 77*1.3 + mean(62, 62, 62, 62, 55)) / 3.9 = 307.9 / 3.9 = 78.95 -> 79
-    //   -> advantages power +29, wisdom +13, charisma +1, resonance -7
+    //   -> advantages power +9, wisdom +1, adaptability -12, resonance -21
     const result = rateStats(flat(50, { power: 90, resonance: 40, wisdom: 70 }))
     expect(result.ratings).toEqual({
       power: 92,
@@ -553,13 +553,13 @@ describe('rateStats: literal vectors', () => {
     })
     expect(result.ovr).toBe(79)
     expect(result.relativeAdvantage).toEqual({
-      power: 29,
-      resonance: -7,
-      wisdom: 13,
-      charisma: 1,
-      intuition: 0,
-      adaptability: -1,
-      vitality: 0,
+      power: 9,
+      resonance: -21,
+      wisdom: 1,
+      charisma: -14,
+      intuition: -15,
+      adaptability: -12,
+      vitality: -13,
     })
     expect(result.archetype).toEqual({
       title: 'Celestial Mechanist',
@@ -592,12 +592,12 @@ describe('rateStats: literal vectors', () => {
   })
 
   it('names the title from advantage over the baseline, not from the tallest bar', () => {
-    // power 80 is the tallest rating (advantage +17); charisma 79 is lower (advantage +18) because
-    // its baseline is lower (61 against 63). Charisma therefore leads.
-    const result = rateStats(statsForRatings(flatRatings(50, { power: 80, charisma: 79 })))
+    // power 86 is the tallest rating (advantage +3); charisma 80 is lower (advantage +4) because
+    // its baseline is lower (76 against 83). Charisma therefore leads.
+    const result = rateStats(statsForRatings(flatRatings(50, { power: 86, charisma: 80 })))
     expect(result.ratings.power).toBeGreaterThan(result.ratings.charisma)
-    expect(result.relativeAdvantage.power).toBe(17)
-    expect(result.relativeAdvantage.charisma).toBe(18)
+    expect(result.relativeAdvantage.power).toBe(3)
+    expect(result.relativeAdvantage.charisma).toBe(4)
     expect(result.archetype).toEqual({
       title: 'Apex Sovereign',
       primary: 'charisma',
@@ -846,8 +846,8 @@ describe('rateStats: archetype', () => {
   })
 
   it('breaks a tie for first place by stat order', () => {
-    // wisdom and vitality both +20 (ratings 84 and 82); everything else far lower.
-    const result = rateStats(statsForRatings(flatRatings(40, { wisdom: 84, vitality: 82 })))
+    // wisdom and vitality both +20 (ratings 96 and 95); everything else far lower.
+    const result = rateStats(statsForRatings(flatRatings(40, { wisdom: 96, vitality: 95 })))
     expect(result.relativeAdvantage.wisdom).toBe(20)
     expect(result.relativeAdvantage.vitality).toBe(20)
     expect(result.archetype).toEqual({
@@ -858,14 +858,14 @@ describe('rateStats: archetype', () => {
   })
 
   it('breaks a tie for second place by stat order', () => {
-    // power +30 leads; resonance, charisma and adaptability all +10, so resonance is second.
+    // power +14 leads; resonance, charisma and adaptability all +5, so resonance is second.
     const result = rateStats(
-      statsForRatings(flatRatings(40, { power: 93, resonance: 72, charisma: 71, adaptability: 73 }))
+      statsForRatings(flatRatings(40, { power: 97, resonance: 81, charisma: 81, adaptability: 79 }))
     )
-    expect(result.relativeAdvantage.power).toBe(30)
-    expect(result.relativeAdvantage.resonance).toBe(10)
-    expect(result.relativeAdvantage.charisma).toBe(10)
-    expect(result.relativeAdvantage.adaptability).toBe(10)
+    expect(result.relativeAdvantage.power).toBe(14)
+    expect(result.relativeAdvantage.resonance).toBe(5)
+    expect(result.relativeAdvantage.charisma).toBe(5)
+    expect(result.relativeAdvantage.adaptability).toBe(5)
     expect(result.archetype).toEqual({
       title: 'Kinetic Resonator',
       primary: 'power',
