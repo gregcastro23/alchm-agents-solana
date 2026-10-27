@@ -287,7 +287,23 @@ const Counts = z.record(z.string(), z.number())
 
 export const AgentsReportSchema = z.object({
   generatedAt: z.string(),
-  code: z.array(z.object({ agentId: z.string(), name: z.string(), chart: z.string() })),
+  code: z.array(
+    z.object({
+      agentId: z.string(),
+      name: z.string(),
+      chart: z.string(),
+      vessel: z
+        .object({
+          faction: z.string(),
+          era: z.string(),
+          archetype: z.string().nullable(),
+          provenance: z.enum(['historical', 'user', 'placeholder']),
+          likeness: z.enum(['painted', 'procedural']),
+          hasModel: z.boolean(),
+        })
+        .optional(),
+    })
+  ),
   db: sectionOf(
     z.object({
       historical: z.number(),

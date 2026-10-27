@@ -19,6 +19,8 @@ export interface VoicedGenerationOptions {
    * agent registry.
    */
   systemOverride?: string
+  /** Per-call timeout (ms). Defaults to 6,000ms. */
+  timeoutMs?: number
 }
 
 export interface StructuredVoiceOptions {
@@ -60,6 +62,7 @@ export async function generateVoicedText(
       system: systemPrompt,
       prompt: promptForAgent,
       maxOutputTokens: options.maxTokens ?? 320,
+      abortSignal: AbortSignal.timeout(options.timeoutMs ?? 6000),
     })
     const trimmed = (text || '').trim()
     return trimmed || options.fallback

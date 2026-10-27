@@ -18,8 +18,11 @@ import schemas
 
 
 COSMIC_RECIPE_AGENT_ID = "alchemical-chef"
-COSMIC_RECIPE_CACHE_TTL_SECONDS = float(os.getenv("COSMIC_RECIPE_CACHE_TTL_SECONDS", "60"))
-COSMIC_RECIPE_MAX_TOKENS = int(os.getenv("COSMIC_RECIPE_MAX_TOKENS", "2048"))
+COSMIC_RECIPE_CACHE_TTL_SECONDS = float(os.getenv("COSMIC_RECIPE_CACHE_TTL_SECONDS", "3600"))
+COSMIC_RECIPE_MAX_TOKENS = int(os.getenv("COSMIC_RECIPE_MAX_TOKENS", "1024"))
+COSMIC_RECIPE_PROVIDER_TIMEOUT_SECONDS = float(
+    os.getenv("COSMIC_RECIPE_PROVIDER_TIMEOUT_SECONDS", "12.0")
+)
 
 _CACHE: Dict[str, Tuple[float, schemas.CosmicRecipeResponse]] = {}
 _CACHE_LOCK = threading.Lock()
@@ -233,6 +236,7 @@ async def generate_cosmic_recipe(
             response_format={"type": "json_object"},
             temperature=0.35,
             structured_schema=schema,
+            per_call_timeout_s=COSMIC_RECIPE_PROVIDER_TIMEOUT_SECONDS,
         )
         t_llm_ms = (time.perf_counter() - t_llm_start) * 1000.0
 

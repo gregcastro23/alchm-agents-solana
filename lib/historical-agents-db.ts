@@ -3,7 +3,12 @@
 
 import { prisma } from './db'
 import { DEMO_AGENTS } from './demo-agents-data'
-import { ensureAgenticUserAndSync } from './agents/agentic-user-sync'
+import {
+  ensureAgenticUserAndSync,
+  provisionAgenticUser,
+  type EnsureAgenticUserInput,
+} from './agents/agentic-user-sync'
+import { isSyntheticAgentId } from './agents/forged-privacy'
 import {
   calculateXpGain,
   calculateEvGain,
@@ -19,7 +24,44 @@ import type {
   AgentConversation,
   AgentEvolution,
   AgentKnowledge,
+  Prisma,
 } from '@prisma/client'
+
+export interface CreateHistoricalAgentInput {
+  agentId: string
+  name: string
+  title: string
+  birthDate: Date
+  birthTime: string
+  birthLocation: { lat: number; lon: number; name: string }
+  consciousnessLevel: string
+  kalchmConstant: number
+  monicaConstant: number
+  dominantElement: string
+  dominantModality: string
+  signature: string
+  personalityCore: any
+  personalityShadows: any
+  personalityGifts: any
+  personalityChallenges: any
+  currentMood: string
+  evolutionStage: number
+  specialty: string
+  wisdomDomains: any
+  teachingStyle: string
+  resonanceType: string
+  uniquePower: string
+  avatar: string
+  color: string
+  symbol: string
+  aura: any
+  natalChart: any
+  monicaCreationStory?: string
+  spiritScore?: number
+  essenceScore?: number
+  matterScore?: number
+  substanceScore?: number
+}
 
 // Enhanced agent interface with database fields
 export interface EnhancedHistoricalAgent extends HistoricalAgent {
@@ -33,14 +75,9 @@ export interface EnhancedHistoricalAgent extends HistoricalAgent {
 }
 
 export function isSyntheticDegreeAgentId(id: string): boolean {
-  if (!id) return false
-  const lower = id.toLowerCase().trim()
-  return (
-    lower.startsWith('planetary-') ||
-    lower.startsWith('moon-phase-') ||
-    lower.startsWith('moon-agent-') ||
-    lower.startsWith('planetary_')
-  )
+  // One definition, shared with the privacy projection (lib/agents/forged-privacy.ts), which
+  // treats exactly these ids as public sky-generated agents and everything else as a person's.
+  return isSyntheticAgentId(id)
 }
 
 export function isHistoricalAgent(agent: { agentId: string; natalChart?: any }): boolean {
@@ -985,43 +1022,13 @@ export class HistoricalAgentsService {
   /**
    * Create a new agent and save to database
    */
-  static async createAgent(agentData: {
-    agentId: string
-    name: string
-    title: string
-    birthDate: Date
-    birthTime: string
-    birthLocation: { lat: number; lon: number; name: string }
-    consciousnessLevel: string
-    kalchmConstant: number
-    monicaConstant: number
-    dominantElement: string
-    dominantModality: string
-    signature: string
-    personalityCore: any
-    personalityShadows: any
-    personalityGifts: any
-    personalityChallenges: any
-    currentMood: string
-    evolutionStage: number
-    specialty: string
-    wisdomDomains: any
-    teachingStyle: string
-    resonanceType: string
-    uniquePower: string
-    avatar: string
-    color: string
-    symbol: string
-    aura: any
-    natalChart: any
-    monicaCreationStory?: string
-    spiritScore?: number
-    essenceScore?: number
-    matterScore?: number
-    substanceScore?: number
-  }): Promise<HistoricalAgent> {
+  static async createAgent(
+    agentData: CreateHistoricalAgentInput,
+    tx?: Prisma.TransactionClient
+  ): Promise<HistoricalAgent> {
     try {
-      const newAgent = await (prisma.historical_agents as any).create({
+      const db = tx ?? prisma
+      const newAgent = await db.historical_agents.create({
         data: {
           agentId: agentData.agentId,
           name: agentData.name,
@@ -1087,27 +1094,34 @@ export class HistoricalAgentsService {
       })
 
       console.log(`Successfully created agent: ${agentData.name} (${agentData.agentId})`)
-      try {
-        await ensureAgenticUserAndSync({
-          agentId: agentData.agentId,
-          name: agentData.name,
-          bio: agentData.monicaCreationStory || agentData.specialty,
-          birthDate: agentData.birthDate,
-          birthTime: agentData.birthTime,
-          birthLocation: agentData.birthLocation,
-          natalChart: agentData.natalChart,
-          monicaConstant: agentData.monicaConstant,
-          dominantElement: agentData.dominantElement,
-        })
-      } catch (error) {
-        console.warn(
-          `[HistoricalAgentsService] Agentic user sync failed for ${agentData.agentId}:`,
-          error
-        )
+      const provisioningInput: EnsureAgenticUserInput = {
+        agentId: agentData.agentId,
+        name: agentData.name,
+        bio: agentData.monicaCreationStory || agentData.specialty,
+        birthDate: agentData.birthDate,
+        birthTime: agentData.birthTime,
+        birthLocation: agentData.birthLocation,
+        natalChart: agentData.natalChart,
+        monicaConstant: agentData.monicaConstant,
+        dominantElement: agentData.dominantElement,
+      }
+      if (tx) {
+        // The caller owns commit/rollback and starts remote delivery afterwards.
+        await provisionAgenticUser(provisioningInput, tx)
+      } else {
+        try {
+          await ensureAgenticUserAndSync(provisioningInput)
+        } catch (error) {
+          console.warn(
+            `[HistoricalAgentsService] Agentic user sync failed for ${agentData.agentId}:`,
+            error
+          )
+        }
       }
       return newAgent
     } catch (error: any) {
       console.error('Failed to create agent:', error)
+      if (tx) throw error
       throw new Error(`Failed to create agent: ${error.message}`)
     }
   }

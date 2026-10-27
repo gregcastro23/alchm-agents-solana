@@ -91,8 +91,13 @@ export function AgentDetailModal({ agent, trigger, open, onOpenChange }: AgentDe
     }
   }
 
-  const formatBirthLocation = (location: Coordinates) => {
-    return `${location.name} (${location.lat.toFixed(1)}°, ${location.lon.toFixed(1)}°)`
+  const formatBirthLocation = (location?: Partial<Coordinates> | null) => {
+    if (!location) return 'Unknown'
+    const name = location.name || 'Unknown'
+    if (typeof location.lat === 'number' && typeof location.lon === 'number') {
+      return `${name} (${location.lat.toFixed(1)}°, ${location.lon.toFixed(1)}°)`
+    }
+    return name
   }
 
   const getConsciousnessDescription = (level?: string) => {
@@ -348,31 +353,41 @@ export function AgentDetailModal({ agent, trigger, open, onOpenChange }: AgentDe
             <CardContent className="space-y-3">
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="space-y-2">
-                  <div>
-                    <strong>Date:</strong> {agent.birthData.date.toLocaleDateString()}
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <strong>Time:</strong> {agent.birthData.time}
-                    {liveStats && !liveStats.birthTimeKnown && (
-                      <Badge
-                        variant="secondary"
-                        className="text-xs bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200"
-                      >
-                        Unknown
-                      </Badge>
-                    )}
-                    {liveStats && liveStats.birthTimeKnown && (
-                      <Badge
-                        variant="secondary"
-                        className="text-xs bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200"
-                      >
-                        Known
-                      </Badge>
-                    )}
-                  </div>
-                  <div>
-                    <strong>Location:</strong> {formatBirthLocation(agent.birthData.location)}
-                  </div>
+                  {agent.birthData?.date && (
+                    <div>
+                      <strong>Date:</strong>{' '}
+                      {(typeof agent.birthData.date === 'string'
+                        ? new Date(agent.birthData.date)
+                        : agent.birthData.date
+                      ).toLocaleDateString()}
+                    </div>
+                  )}
+                  {agent.birthData?.time && (
+                    <div className="flex items-center gap-2">
+                      <strong>Time:</strong> {agent.birthData.time}
+                      {liveStats && !liveStats.birthTimeKnown && (
+                        <Badge
+                          variant="secondary"
+                          className="text-xs bg-orange-100 dark:bg-orange-900 text-orange-800 dark:text-orange-200"
+                        >
+                          Unknown
+                        </Badge>
+                      )}
+                      {liveStats && liveStats.birthTimeKnown && (
+                        <Badge
+                          variant="secondary"
+                          className="text-xs bg-green-100 dark:bg-green-900 text-green-800 dark:text-green-200"
+                        >
+                          Known
+                        </Badge>
+                      )}
+                    </div>
+                  )}
+                  {agent.birthData?.location && (
+                    <div>
+                      <strong>Location:</strong> {formatBirthLocation(agent.birthData.location)}
+                    </div>
+                  )}
                 </div>
                 <div className="space-y-2">
                   <div>
@@ -506,43 +521,60 @@ export function AgentDetailModal({ agent, trigger, open, onOpenChange }: AgentDe
                 provenance travels with them. `computed` is the only value that
                 means "measured", so anything else is disclosed.
               */}
-              {agent.consciousness.natalChart.provenance !== 'computed' && (
-                <p className="text-xs text-muted-foreground">
-                  {agent.consciousness.natalChart.provenance === 'placeholder'
-                    ? 'Placeholder chart — not this figure’s birth sky. Shown for layout only.'
-                    : 'Approximate chart — hand-entered, not computed from an ephemeris.'}
-                </p>
-              )}
+              {agent.consciousness.natalChart?.provenance &&
+                agent.consciousness.natalChart.provenance !== 'computed' && (
+                  <p className="text-xs text-muted-foreground">
+                    {agent.consciousness.natalChart.provenance === 'placeholder'
+                      ? 'Placeholder chart — not this figure’s birth sky. Shown for layout only.'
+                      : 'Approximate chart — hand-entered, not computed from an ephemeris.'}
+                  </p>
+                )}
             </CardHeader>
             <CardContent>
               <div className="grid md:grid-cols-2 gap-4">
                 <div className="space-y-3">
                   <h4 className="font-medium">Major Planets</h4>
                   <div className="space-y-2 text-sm">
-                    <div>
-                      ☉ Sun: {agent.consciousness.natalChart.planets.Sun?.sign}{' '}
-                      {agent.consciousness.natalChart.planets.Sun?.degree.toFixed(1)}°
-                    </div>
-                    <div>
-                      ☽ Moon: {agent.consciousness.natalChart.planets.Moon?.sign}{' '}
-                      {agent.consciousness.natalChart.planets.Moon?.degree.toFixed(1)}°
-                    </div>
-                    <div>
-                      ☿ Mercury: {agent.consciousness.natalChart.planets.Mercury?.sign}{' '}
-                      {agent.consciousness.natalChart.planets.Mercury?.degree.toFixed(1)}°
-                    </div>
-                  </div>
-                </div>
-                <div className="space-y-3">
-                  <h4 className="font-medium">Key Aspects</h4>
-                  <div className="space-y-2 text-sm">
-                    {agent.consciousness.natalChart.aspects.slice(0, 3).map((aspect, index) => (
-                      <div key={index}>
-                        {aspect.planet1} {aspect.type} {aspect.planet2} ({aspect.orb.toFixed(1)}°)
+                    {agent.consciousness.natalChart?.planets?.Sun && (
+                      <div>
+                        ☉ Sun: {agent.consciousness.natalChart.planets.Sun.sign}
+                        {typeof agent.consciousness.natalChart.planets.Sun.degree === 'number'
+                          ? ` ${agent.consciousness.natalChart.planets.Sun.degree.toFixed(1)}°`
+                          : ''}
                       </div>
-                    ))}
+                    )}
+                    {agent.consciousness.natalChart?.planets?.Moon && (
+                      <div>
+                        ☽ Moon: {agent.consciousness.natalChart.planets.Moon.sign}
+                        {typeof agent.consciousness.natalChart.planets.Moon.degree === 'number'
+                          ? ` ${agent.consciousness.natalChart.planets.Moon.degree.toFixed(1)}°`
+                          : ''}
+                      </div>
+                    )}
+                    {agent.consciousness.natalChart?.planets?.Mercury && (
+                      <div>
+                        ☿ Mercury: {agent.consciousness.natalChart.planets.Mercury.sign}
+                        {typeof agent.consciousness.natalChart.planets.Mercury.degree === 'number'
+                          ? ` ${agent.consciousness.natalChart.planets.Mercury.degree.toFixed(1)}°`
+                          : ''}
+                      </div>
+                    )}
                   </div>
                 </div>
+                {Array.isArray(agent.consciousness.natalChart?.aspects) &&
+                  agent.consciousness.natalChart.aspects.length > 0 && (
+                    <div className="space-y-3">
+                      <h4 className="font-medium">Key Aspects</h4>
+                      <div className="space-y-2 text-sm">
+                        {agent.consciousness.natalChart.aspects.slice(0, 3).map((aspect, index) => (
+                          <div key={index}>
+                            {aspect.planet1} {aspect.type} {aspect.planet2}
+                            {typeof aspect.orb === 'number' ? ` (${aspect.orb.toFixed(1)}°)` : ''}
+                          </div>
+                        ))}
+                      </div>
+                    </div>
+                  )}
               </div>
             </CardContent>
           </Card>

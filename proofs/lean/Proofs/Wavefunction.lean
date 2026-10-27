@@ -313,5 +313,74 @@ theorem zero_energy_degeneracy_fixed (p : ElementalPotentialsFixed) (e : Element
   rw [h_zero]
   rfl
 
+/-! ### Stage 2 & Stage 5 Vessel Dignity Rating Wavefunction Coupling -/
+
+/-- Fixed-point clamping helper in basis points. -/
+def clampFixed (val lo hi : Int) : Int :=
+  if val < lo then lo else if val > hi then hi else val
+
+/-- Channel A: Ambient Alchemical Tide \psi_i(t) in [-SCALE, SCALE] ([-10000, 10000] bps).
+    Projects the 4D ESMS Wavefunction \Psi(t) \in [-2*SCALE, 2*SCALE]^4 onto planet i's
+    L1-normalized ESMS signature u_i = (uS, uE, uM, uSu).
+-/
+def ambientTideFixed (uS uE uM uSu psiS psiE psiM psiSu : Int) : Int :=
+  let raw := (uS * psiS + uE * psiE + uM * psiM + uSu * psiSu) / (2 * SCALE)
+  clampFixed raw (-SCALE) SCALE
+
+/-- Channel B: Dyadic Chord Reception Gain G_{i,j}(t) in [6500, 13500] bps ([0.65, 1.35]).
+    Modulates aspect energy between natal body i and transiting body j according to their
+    shared alchemical tide (\psi_i + \psi_j) / 2 and aspect polarity sign \in {-1, 0, 1}.
+-/
+def dyadicChordGainFixed (psiNatal psiTransit polaritySign : Int) : Int :=
+  let raw := SCALE + (3500 * (psiNatal + psiTransit) * polaritySign) / (2 * SCALE)
+  clampFixed raw 6500 13500
+
+/-- Stage 5: Scalar Celestial Dignity Rating \Delta R_dignity in [-15*SCALE, 15*SCALE] bps
+    ([-15.0, +15.0] OVR points), blending 60% uniform overall delta with 40% Sacred 7 OWA delta.
+-/
+def dignityRatingDeltaFixed (uniformDeltaBps owaSacredDeltaBps : Int) : Int :=
+  let blended := (6000 * uniformDeltaBps + 4000 * owaSacredDeltaBps) / SCALE
+  clampFixed blended (-15 * SCALE) (15 * SCALE)
+
+/-- Theorem 4 (Channel A Ambient Alchemical Tide Bounds):
+    For any planetary signature and 4D ESMS wavefunction, the Channel A ambient tide
+    is strictly bounded within [-SCALE, SCALE] ([-1.0, +1.0]).
+-/
+theorem ambientTideFixed_bounded (uS uE uM uSu psiS psiE psiM psiSu : Int) :
+    ambientTideFixed uS uE uM uSu psiS psiE psiM psiSu >= -SCALE ∧
+    ambientTideFixed uS uE uM uSu psiS psiE psiM psiSu <= SCALE := by
+  dsimp [ambientTideFixed, clampFixed]
+  have h_scale : SCALE = 10000 := rfl
+  split
+  · constructor <;> omega
+  · split <;> (constructor <;> omega)
+
+/-- Theorem 5 (Channel B Dyadic Chord Reception Gain Bounds & Polarity Preservation):
+    The dyadic chord reception gain G_{i,j}(t) is strictly bounded in [6500, 13500] bps
+    ([0.65, 1.35]) and strictly positive (> 0), guaranteeing that ESMS wavefunction
+    coupling never inverts a benefic aspect into a malefic aspect or vice versa.
+-/
+theorem dyadicChordGainFixed_bounded (psiNatal psiTransit polaritySign : Int) :
+    6500 <= dyadicChordGainFixed psiNatal psiTransit polaritySign ∧
+    dyadicChordGainFixed psiNatal psiTransit polaritySign <= 13500 ∧
+    dyadicChordGainFixed psiNatal psiTransit polaritySign > 0 := by
+  dsimp [dyadicChordGainFixed, clampFixed]
+  split
+  · refine ⟨by omega, by omega, by omega⟩
+  · split <;> refine ⟨by omega, by omega, by omega⟩
+
+/-- Theorem 6 (Stage 5 Scalar Dignity Rating \pm 15 OVR Window Bound):
+    The blended 60/40 OWA scalar dignity rating delta is strictly bounded in
+    [-15 * SCALE, 15 * SCALE] ([-150,000, +150,000] bps, or [-15.0, +15.0] OVR).
+-/
+theorem dignityRatingDeltaFixed_bounded (uniformDeltaBps owaSacredDeltaBps : Int) :
+    -15 * SCALE <= dignityRatingDeltaFixed uniformDeltaBps owaSacredDeltaBps ∧
+    dignityRatingDeltaFixed uniformDeltaBps owaSacredDeltaBps <= 15 * SCALE := by
+  dsimp [dignityRatingDeltaFixed, clampFixed]
+  have h_scale : SCALE = 10000 := rfl
+  split
+  · constructor <;> omega
+  · split <;> (constructor <;> omega)
+
 end Wavefunction
 

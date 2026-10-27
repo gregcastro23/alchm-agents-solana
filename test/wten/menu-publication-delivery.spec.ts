@@ -28,6 +28,7 @@ describe('WTEN weekly menu delivery', () => {
       headers: {
         'Content-Type': 'application/json',
         Authorization: 'Bearer publication-service-secret',
+        'X-Sync-Secret': 'publication-service-secret',
       },
       body: menu,
       eventId: 'weekly-menu-publication:source',

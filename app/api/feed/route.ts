@@ -3,6 +3,8 @@ import { prisma } from '@/lib/db'
 import { feedStreamBus } from '@/lib/agents/feed-stream-bus'
 import { normalizeDbActionToFeedEvent } from '@/lib/agents/feed-helpers'
 import { hasInternalApiSecret } from '@/lib/security/internal-auth'
+import { isUserCreatedAgentRow, projectPublicNatalChart } from '@/lib/agents/forged-privacy'
+import { isPublicRosterId } from '@/lib/agents/public-roster'
 
 export const dynamic = 'force-dynamic'
 export const revalidate = 0
@@ -35,6 +37,9 @@ export async function GET(req: Request) {
         name: true,
         natalChart: true,
         dominantElement: true,
+        // Not shown; they decide whether the chart below may be (see `publicBirthchart`).
+        historicalEra: true,
+        craftedBy: true,
       },
     })
     for (const a of dbAgents) {
@@ -102,6 +107,18 @@ export async function GET(req: Request) {
 
   const hasMore = dbEvents.length > PAGE_SIZE
   if (hasMore) dbEvents = dbEvents.slice(0, PAGE_SIZE)
+
+  // This feed is public and shared, with no notion of "the caller owns this vessel", so anything
+  // that is not a public figure gets what every stranger gets: the Sun sign and nothing else.
+  // The complete chart is public only for a canonical or sky-generated agent that is not marked
+  // as a person's.
+  const publicBirthchart = (agent: any): unknown => {
+    if (!agent) return {}
+    if (!isUserCreatedAgentRow(agent) && isPublicRosterId(agent.agentId)) {
+      return agent.natalChart || {}
+    }
+    return projectPublicNatalChart(agent.natalChart) ?? {}
+  }
 
   const events = dbEvents.map(row => {
     const metadata = (row.metadataPayload || {}) as Record<string, any>
@@ -181,7 +198,7 @@ export async function GET(req: Request) {
         name: agent?.name || row.agentId,
         kind: 'historical',
         hasBirthchart: true,
-        birthchart: agent?.natalChart || {},
+        birthchart: publicBirthchart(agent),
       },
       recipe: {
         name: recipeName,

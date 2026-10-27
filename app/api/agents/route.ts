@@ -2,8 +2,19 @@ import { NextRequest, NextResponse } from 'next/server'
 import { backend } from '@/lib/backend'
 import { DEMO_AGENTS } from '@/lib/demo-agents-data'
 import { HISTORICAL_AGENTS } from '@/lib/agents/historical'
+import { CANONICAL_AGENT_IDS, isPublicRosterId } from '@/lib/agents/public-roster'
 import { prisma } from '@/lib/db'
 import { HistoricalAgentsService } from '@/lib/historical-agents-db'
+import { hasPrivilegedInternalApiSecret } from '@/lib/security/internal-auth'
+import {
+  isUserCreatedAgentRow,
+  projectNumberRecord,
+  projectPublicAura,
+  projectPublicBirthData,
+  projectPublicNatalChart,
+  projectPublicPersonalityCore,
+  projectStringList,
+} from '@/lib/agents/forged-privacy'
 
 interface GetAgentsResponse {
   success: boolean
@@ -12,20 +23,122 @@ interface GetAgentsResponse {
   error?: string
 }
 
+interface AuthContext {
+  isServiceOrAdmin: boolean
+  creatorUserId: string | null
+  creatorAgentIds: Set<string>
+}
+
+async function resolveCreatorAgentIds(userId: string): Promise<Set<string>> {
+  const ids = new Set<string>()
+  try {
+    if (!prisma?.created_agents?.findMany) return ids
+    const vessels = await prisma.created_agents.findMany({
+      where: { creatorId: userId },
+      select: { id: true, blueprint: true, momentChart: true },
+    })
+    for (const v of vessels) {
+      if (v.id) ids.add(v.id)
+      const bp = v.blueprint as any
+      if (bp && typeof bp === 'object' && typeof bp.agentId === 'string' && bp.agentId) {
+        ids.add(bp.agentId)
+      }
+      const mc = v.momentChart as any
+      if (mc && typeof mc === 'object' && typeof mc.agentId === 'string' && mc.agentId) {
+        ids.add(mc.agentId)
+      }
+    }
+  } catch (err: any) {
+    console.warn('[agents] could not resolve creator vessels:', err?.message)
+  }
+  return ids
+}
+
+async function isDatabaseAdmin(user: {
+  id?: string | null
+  email?: string | null
+}): Promise<boolean> {
+  try {
+    const { requireAdmin } = await import('@/lib/admin-auth')
+    return (await requireAdmin(user)).ok
+  } catch {
+    // Fail closed: if the role cannot be verified, the caller is not an admin.
+    return false
+  }
+}
+
+async function resolveAuthContext(request: NextRequest): Promise<AuthContext> {
+  let isServiceOrAdmin = false
+  let creatorUserId: string | null = null
+  let creatorAgentIds = new Set<string>()
+
+  try {
+    if (hasPrivilegedInternalApiSecret(request)) {
+      isServiceOrAdmin = true
+    }
+  } catch {
+    // Fail closed
+  }
+
+  if (!isServiceOrAdmin) {
+    try {
+      const { auth } = await import('@/lib/auth')
+      const session = await auth()
+      if (session?.user) {
+        // `role` on the session is a claim (stamped at sign-in, or copied from the
+        // alchm.kitchen bridge). Entitlement comes from the database, the same way every
+        // /api/admin/* route decides it, so a stale or bridged claim cannot unlock birth data.
+        if (session.user.role === 'admin' && (await isDatabaseAdmin(session.user))) {
+          isServiceOrAdmin = true
+        } else if (session.user.id) {
+          creatorUserId = session.user.id
+          creatorAgentIds = await resolveCreatorAgentIds(session.user.id)
+        }
+      }
+    } catch {
+      // Unauthenticated or auth unavailable -> fail closed (anonymous)
+    }
+  }
+
+  return { isServiceOrAdmin, creatorUserId, creatorAgentIds }
+}
+
+function isAgentAuthorized(agent: any, auth: AuthContext): boolean {
+  if (auth.isServiceOrAdmin) return true
+  const agentId = agent.agentId || agent.id
+  if (agentId && auth.creatorAgentIds.has(agentId)) return true
+  if (auth.creatorUserId && agent.creatorId && agent.creatorId === auth.creatorUserId) return true
+  return false
+}
+
 // Maps a historical_agents row (Railway response or Prisma row — same table,
 // same field names) to the gallery's agent shape.
-function formatAgentRow(agent: any) {
+//
+// Every value built from a JSON column (or from the owner's own text) goes through an
+// allow-list projection for a caller who is not entitled to the row: see
+// lib/agents/forged-privacy.ts. `forcePrivate` marks a row that must be treated as a
+// person's even though nothing on it says so (a Railway row, which carries no `craftedBy`).
+function formatAgentRow(agent: any, isAuthorized = false, forcePrivate = false) {
+  const isUserCreated = isUserCreatedAgentRow(agent)
+  const redact = (isUserCreated || forcePrivate) && !isAuthorized
+
+  const birthData = redact
+    ? projectPublicBirthData(agent.birthLocation)
+    : {
+        date: agent.birthDate,
+        time: agent.birthTime,
+        location: agent.birthLocation,
+      }
+
+  const natalChart = redact ? projectPublicNatalChart(agent.natalChart) : agent.natalChart
+
   return {
     id: agent.agentId,
     name: agent.name,
     title: agent.title,
-    birthData: {
-      date: agent.birthDate,
-      time: agent.birthTime,
-      location: agent.birthLocation,
-    },
+    birthData,
     consciousness: {
-      natalChart: agent.natalChart,
+      natalChart,
       monicaConstant: agent.monicaConstant ?? null,
       level: agent.consciousnessLevel || 'Novice',
       dominantElement: agent.dominantElement || 'Earth',
@@ -33,16 +146,22 @@ function formatAgentRow(agent: any) {
       signature: agent.signature || 'Standard',
     },
     personality: {
-      core: agent.personalityCore || {},
-      shadows: agent.personalityShadows || [],
-      gifts: agent.personalityGifts || [],
-      challenges: agent.personalityChallenges || [],
+      core: redact
+        ? projectPublicPersonalityCore(agent.personalityCore)
+        : agent.personalityCore || {},
+      shadows: redact
+        ? projectStringList(agent.personalityShadows)
+        : agent.personalityShadows || [],
+      gifts: redact ? projectStringList(agent.personalityGifts) : agent.personalityGifts || [],
+      challenges: redact
+        ? projectStringList(agent.personalityChallenges)
+        : agent.personalityChallenges || [],
       currentMood: agent.currentMood || 'Neutral',
       evolutionStage: agent.evolutionStage || 0,
     },
     abilities: {
       specialty: agent.specialty,
-      wisdomDomains: agent.wisdomDomains || [],
+      wisdomDomains: redact ? projectStringList(agent.wisdomDomains) : agent.wisdomDomains || [],
       teachingStyle: agent.teachingStyle || 'Standard',
       resonanceType: agent.resonanceType || 'Standard',
       uniquePower: agent.uniquePower || '',
@@ -51,7 +170,7 @@ function formatAgentRow(agent: any) {
       avatar: agent.avatar,
       color: agent.color,
       symbol: agent.symbol,
-      aura: agent.aura,
+      aura: redact ? projectPublicAura(agent.aura) : agent.aura,
     },
     stats: {
       conversations: agent.conversations,
@@ -81,17 +200,45 @@ function formatAgentRow(agent: any) {
     // also hydrates these directly from Neon via /api/agents/leveling).
     level: agent.level,
     xp: agent.xp,
-    evolutionValues: agent.evolutionValues,
+    evolutionValues: redact ? projectNumberRecord(agent.evolutionValues) : agent.evolutionValues,
     evTotal: agent.evTotal,
-    ivSnapshot: agent.ivSnapshot,
-    isUserCreated:
-      agent.historicalEra === 'user_created' || agent.craftedBy === 'philosopher-stone-user',
+    ivSnapshot: redact ? projectNumberRecord(agent.ivSnapshot) : agent.ivSnapshot,
+    isUserCreated,
     craftedBy: agent.craftedBy || 'philosopher-stone',
     historicalEra: agent.historicalEra,
   }
 }
 
+// The answer varies by caller (a creator, an admin, or a holder of INTERNAL_API_SECRET gets
+// more than a stranger), so a shared cache must never serve one caller's answer to another.
+// vercel.json gives every /api/* response `s-maxage=60`: an entitled body must say it is
+// private and uncacheable itself. Whether Vercel applies vercel.json's `Cache-Control` over
+// the one a function sets could not be checked offline, so `CDN-Cache-Control: no-store` rides
+// along: Vercel documents it as taking precedence over `Cache-Control` for its own CDN, and
+// it is a different header name, so vercel.json's rule cannot overwrite it. Verify on a
+// deployed preview: docs/integrations/FORGED_VESSEL_PRIVACY.md.
+const VARY_BY_CALLER = 'Authorization, Cookie, X-Internal-Secret'
+
+/** True when this caller may receive data the public projection withholds. */
+function isEntitledCaller(auth: AuthContext): boolean {
+  return auth.isServiceOrAdmin || auth.creatorUserId !== null
+}
+
+function respond(
+  body: GetAgentsResponse,
+  auth: AuthContext,
+  init: { status?: number } = {}
+): NextResponse<GetAgentsResponse> {
+  const headers: Record<string, string> = { Vary: VARY_BY_CALLER }
+  if (isEntitledCaller(auth)) {
+    headers['Cache-Control'] = 'private, no-store'
+    headers['CDN-Cache-Control'] = 'no-store'
+  }
+  return NextResponse.json(body, { status: init.status, headers })
+}
+
 export async function GET(request: NextRequest): Promise<NextResponse<GetAgentsResponse>> {
+  const authContext = await resolveAuthContext(request)
   const { searchParams } = new URL(request.url)
   const category = searchParams.get('category') || 'historical'
 
@@ -101,15 +248,21 @@ export async function GET(request: NextRequest): Promise<NextResponse<GetAgentsR
       const limit = parseInt(searchParams.get('limit') || '100')
       const offset = parseInt(searchParams.get('offset') || '0')
       const dbAgents = await HistoricalAgentsService.getPlanetaryDegreeAgents({ limit, offset })
-      const agents = dbAgents.map(formatAgentRow)
-      return NextResponse.json({ success: true, agents, total: agents.length })
+      const agents = dbAgents.map(a => formatAgentRow(a, isAgentAuthorized(a, authContext)))
+      return respond({ success: true, agents, total: agents.length }, authContext)
     } catch (error: any) {
-      return NextResponse.json({
-        success: false,
-        agents: [],
-        total: 0,
-        error: `Failed to fetch planetary agents: ${error.message}`,
-      })
+      // The datastore's own message (a query excerpt, a source path, a host) stays in the log.
+      console.error('[agents] planetary roster fetch failed:', error?.message)
+      return respond(
+        {
+          success: false,
+          agents: [],
+          total: 0,
+          error: 'Planetary agents are temporarily unavailable',
+        },
+        authContext,
+        { status: 503 }
+      )
     }
   }
 
@@ -119,15 +272,25 @@ export async function GET(request: NextRequest): Promise<NextResponse<GetAgentsR
       const limit = parseInt(searchParams.get('limit') || '100')
       const offset = parseInt(searchParams.get('offset') || '0')
       const dbAgents = await backend.agents.list({ skip: offset, limit })
-      const agents = dbAgents.map(formatAgentRow)
-      return NextResponse.json({ success: true, agents, total: agents.length })
+      // A Railway row carries no `craftedBy`, and the era it is stamped with is whatever the
+      // writer chose (a person created through POST /api/agents gets `modern_pre1950`). So here
+      // public means "a canonical figure or a sky-generated agent"; everything else is a
+      // person's until proven otherwise.
+      const agents = dbAgents.map(a =>
+        formatAgentRow(a, isAgentAuthorized(a, authContext), !isPublicRosterId(a.agentId))
+      )
+      return respond({ success: true, agents, total: agents.length }, authContext)
     } catch (error: any) {
-      return NextResponse.json({
-        success: true,
-        agents: DEMO_AGENTS,
-        total: DEMO_AGENTS.length,
-        error: `Backend error, falling back to demo data: ${error.message}`,
-      })
+      console.error('[agents] backend roster fetch failed, serving demo data:', error?.message)
+      return respond(
+        {
+          success: true,
+          agents: DEMO_AGENTS,
+          total: DEMO_AGENTS.length,
+          error: 'Backend unavailable, falling back to demo data',
+        },
+        authContext
+      )
     }
   }
 
@@ -158,19 +321,14 @@ export async function GET(request: NextRequest): Promise<NextResponse<GetAgentsR
       orderBy: { createdAt: 'desc' },
       take: 500,
     })
-    userCreated = rows.map(formatAgentRow)
+    userCreated = rows.map(a => formatAgentRow(a, isAgentAuthorized(a, authContext)))
   } catch (error: any) {
     console.warn('User-created roster fetch failed (canonical roster only):', error.message)
   }
 
-  const canonicalIds = new Set(canonical.map(a => a.id))
-  const allAgents = [...canonical, ...userCreated.filter(a => !canonicalIds.has(a.id))]
+  const allAgents = [...canonical, ...userCreated.filter(a => !CANONICAL_AGENT_IDS.has(a.id))]
 
-  return NextResponse.json({
-    success: true,
-    agents: allAgents,
-    total: allAgents.length,
-  })
+  return respond({ success: true, agents: allAgents, total: allAgents.length }, authContext)
 }
 
 export async function POST(request: NextRequest): Promise<NextResponse> {

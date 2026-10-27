@@ -6,30 +6,24 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Download, Monitor } from 'lucide-react'
-import { HISTORICAL_AGENTS } from '@/lib/agents/historical'
-import { resolveAnyAgent } from '@/lib/agents/resolve-any-agent'
 import { classifyAgent } from '@/lib/agents/agent-type-model'
 import { getSpriteView } from '@/lib/agents/sprite-view'
 import { SkySpriteProfile } from '@/components/agent-profile/SkySpriteProfile'
 import { AgentAvatarControl } from '@/components/agent-profile/AgentAvatarControl'
-import {
-  getAgentActions,
-  getAgentInteractions,
-  getAgentArtifacts,
-  getAgentBalances,
-} from '@/lib/agents/activity-surfaces'
+import { loadAgentProfile, loadAgentProfileMetadata } from '@/lib/agents/agent-profile.server'
 import { AgentActivity } from '@/components/agent-profile/AgentActivity'
 import type { CraftedAgent, Element } from '@/lib/agent-types'
+import { VesselProgressionDisplay } from '@/components/vessel/vessel-progression-display'
+import { AgentRatingCard } from '@/components/vessel/agent-rating-card'
 
-// Pre-render the 71 canonical agents at build time; resolve everything else
-// (the ~3,637 planetary/moon + DB-only crafted agents) on demand. Without
-// dynamicParams this route 404'd for ~98% of agents.
-export const dynamicParams = true
-export const revalidate = 3600
-
-export async function generateStaticParams() {
-  return HISTORICAL_AGENTS.map(a => ({ id: a.id }))
-}
+// Rendered per request, never from the static/ISR cache. A forged vessel is a person's private
+// data, and who may see its chart is decided from the session cookie (see
+// `lib/agents/agent-profile.server.ts`). A statically generated or revalidated page is one HTML
+// shared by every viewer, so it can carry nothing viewer-specific; and calling `auth()` from a
+// route that is also prerendered fails every non-prebuilt id at runtime with
+// DYNAMIC_SERVER_USAGE (observed on Next 15.5 with `revalidate` + `generateStaticParams`).
+// The cost is that the roster and sky-sprite profiles are no longer CDN-cached.
+export const dynamic = 'force-dynamic'
 
 export async function generateMetadata({
   params,
@@ -37,15 +31,9 @@ export async function generateMetadata({
   params: Promise<{ id: string }>
 }): Promise<Metadata> {
   const { id } = await params
-  const agent = await resolveAnyAgent(id)
-  if (!agent) return { title: 'Agent profile not found' }
-  return {
-    title: `${agent.name} — ${agent.title}`,
-    description:
-      agent.personality?.core?.essence ||
-      agent.synthesis ||
-      `${agent.name}: ${agent.specialization ?? agent.era ?? 'Historical agent'}`,
-  }
+  const meta = await loadAgentProfileMetadata(id)
+  if (!meta) return { title: 'Agent profile not found' }
+  return meta
 }
 
 const ELEMENT_TINT: Record<Element, string> = {
@@ -103,6 +91,17 @@ function getCardNumberLabel(card: any): string {
   return numberNames[card.number] || String(card.number)
 }
 
+// Stored JSON is untrusted: a forged vessel's `traits` is an object on the live forge path and a
+// string[] on the other, and `.map` on the object threw before anything else on the page rendered.
+function asList<T = any>(value: unknown): T[] | undefined {
+  return Array.isArray(value) ? (value as T[]) : undefined
+}
+
+// A stored chart can be malformed; a missing degree prints a dash instead of taking the page down.
+function formatDegree(degree: unknown): string {
+  return typeof degree === 'number' && Number.isFinite(degree) ? degree.toFixed(1) : '—'
+}
+
 function getZodiacSign(degrees: number): string {
   const signs = [
     'Aries',
@@ -133,8 +132,12 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
     if (spriteView) return <SkySpriteProfile view={spriteView} />
   }
 
-  const agent = await resolveAnyAgent(id)
-  if (!agent) notFound()
+  // The server decides how much of the agent this viewer may be told, before anything is
+  // serialised: `view.agent` is the whole agent only for a public figure, the vessel's creator or
+  // an admin, and an allow-list projection otherwise. Never read the agent from anywhere else.
+  const view = await loadAgentProfile(id)
+  if (!view) notFound()
+  const { agent, progression, restricted } = view
 
   const accent = agent.appearance?.color || '#7c3aed'
   const tint =
@@ -142,18 +145,10 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
     'from-violet-500/30 to-fuchsia-500/10'
 
   const planets = agent.consciousness?.natalChart?.planets ?? {}
-  const aspects = agent.consciousness?.natalChart?.aspects ?? []
 
-  // Activity surfaces, fetched server-side. The /api/agents/[slug]/* routes are
-  // bearer-gated (INTERNAL_API_SECRET), so we call the underlying functions
-  // directly and keep the secret off the client. Each degrades to empty.
-  const noParams = new URLSearchParams()
-  const [actionsRes, interactionsRes, artifactsRes, balances] = await Promise.all([
-    getAgentActions(agent.id, noParams).catch(() => ({ actions: [] as any[] })),
-    getAgentInteractions(agent.id, noParams).catch(() => ({ interactions: [] as any[] })),
-    getAgentArtifacts(agent.id, noParams).catch(() => ({ artifacts: [] as any[] })),
-    getAgentBalances(agent.id).catch(() => null),
-  ])
+  // Activity surfaces come with the view (`loadAgentProfile`): action events and artifacts the agent
+  // authored, and its balances. Conversations are not among them, for any viewer.
+  const { actions, artifacts, balances } = view
   const alch = agent.consciousness?.alchemicalElements || {
     spirit: 0.5,
     essence: 0.5,
@@ -168,10 +163,11 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
   })
   const recommendedCards = tarotResult.cardRecommendations || []
 
-  // Resolve Rising Sign
+  // Resolve Rising Sign. Only from a chart the viewer may see: a restricted view carries the Sun
+  // sign and nothing else, and must not name a rising sign (or fall back to Aries) at all.
   const ascDegree =
     agent.consciousness?.natalChart?.ascendant || agent.consciousness?.natalChart?.houses?.ASC || 0
-  const risingSign = getZodiacSign(ascDegree)
+  const risingSign = restricted ? null : getZodiacSign(ascDegree)
 
   const element = agent.consciousness?.dominantElement || 'Air'
   const meta = ELEMENT_METADATA[element as keyof typeof ELEMENT_METADATA] || ELEMENT_METADATA.Air
@@ -183,8 +179,8 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
       <StitchProfileClient
         monicaConstant={agentMonica}
         dominantElement={element}
-        actions={(actionsRes as any).actions || []}
-        interactions={(interactionsRes as any).interactions || []}
+        actions={actions}
+        interactions={[]}
       />
 
       <div className="container relative z-10 py-xxl max-w-container-max mx-auto px-margin-mobile md:px-margin-desktop space-y-gutter">
@@ -250,9 +246,14 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
             <h1 className="font-hero-title text-hero-title text-primary-gold leading-tight mb-2 py-1">
               {agent.name}
             </h1>
-            <p className="font-mono-label text-mono-label text-muted-text uppercase tracking-widest mb-md">
+            <p className="font-mono-label text-mono-label text-muted-text uppercase tracking-widest mb-xs">
               {agent.title || 'Agent Codex'}
             </p>
+
+            {/* Two-Level Progression Badges */}
+            <div className="mb-md flex flex-wrap items-center justify-center md:justify-start gap-2">
+              <VesselProgressionDisplay progression={progression} variant="card-badge" />
+            </div>
 
             {agent.quotes && agent.quotes.length > 0 && (
               <blockquote className="border-l-2 border-primary-gold/40 pl-4 py-1 italic text-muted-text text-sm leading-relaxed max-w-2xl mx-auto md:mx-0">
@@ -313,6 +314,20 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
           </span>
         </section>
 
+        {/* Two-Level Vessel Progression System (Permanent Vessel Level & Dynamic Current Overall) */}
+        <VesselProgressionDisplay
+          progression={progression}
+          variant="full"
+          subjectName={agent.name}
+          defaultExpanded={true}
+        />
+
+        {/* Pentacle Vessel Rating, read live by the client (GET /api/agents/rating). Not in a
+            restricted view: that payload carries chart-derived fields (natal affinity, natal
+            harmony) the projection withholds, so a stranger's page must not render it. The route
+            still serves them to any caller; this only keeps the page from displaying them. */}
+        {!restricted && <AgentRatingCard agentId={agent.id} />}
+
         {/* 3-Column Codex Layout */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-gutter relative z-10">
           {/* Column 1: Consciousness Profile */}
@@ -341,9 +356,43 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
               <div className="space-y-sm border-t border-border-gold/10 pt-md">
                 <div className="flex justify-between items-center py-xs border-b border-border-gold/5 font-mono-data text-[12px]">
                   <span className="text-muted-text uppercase font-mono-label text-[10px]">
-                    Level
+                    Vessel Level
                   </span>
-                  <span className="text-ivory-text font-semibold">
+                  <span className="text-bright-gold font-bold">
+                    VL {progression.vesselLevel ?? 1} (Permanent)
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-xs border-b border-border-gold/5 font-mono-data text-[12px]">
+                  <span className="text-muted-text uppercase font-mono-label text-[10px]">
+                    Current Overall
+                  </span>
+                  <span className="text-ivory-text font-semibold flex items-center gap-1">
+                    {progression.currentOverall !== null ? (
+                      <>
+                        <span>{progression.currentOverall.toFixed(1)}</span>
+                        <span
+                          className={`text-[10px] ${
+                            progression.transitDelta && progression.transitDelta > 0
+                              ? 'text-emerald-400'
+                              : progression.transitDelta && progression.transitDelta < 0
+                                ? 'text-rose-400'
+                                : 'text-zinc-400'
+                          }`}
+                        >
+                          ({progression.transitDelta && progression.transitDelta > 0 ? '+' : ''}
+                          {progression.transitDelta?.toFixed(1) ?? '±0.0'})
+                        </span>
+                      </>
+                    ) : (
+                      <span className="text-zinc-500">Unavailable</span>
+                    )}
+                  </span>
+                </div>
+                <div className="flex justify-between items-center py-xs border-b border-border-gold/5 font-mono-data text-[12px]">
+                  <span className="text-muted-text uppercase font-mono-label text-[10px]">
+                    Consciousness Tier
+                  </span>
+                  <span className="text-ivory-text">
                     {agent.consciousness?.level || 'Transcendent'}
                   </span>
                 </div>
@@ -396,55 +445,70 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
                   {planets.Sun?.sign === 'Leo' ? 'wb_sunny' : 'stars'}
                 </span>
                 <span className="font-headline-md text-bright-gold mt-2 text-base leading-tight">
-                  Sun in {planets.Sun?.sign || 'Aries'}
+                  {restricted && !planets.Sun?.sign ? (
+                    'Sun sign not recorded'
+                  ) : (
+                    <>Sun in {planets.Sun?.sign || 'Aries'}</>
+                  )}
                 </span>
-                <span className="font-mono-label text-[9px] text-muted-text uppercase tracking-widest mt-1">
-                  Rising sign: {risingSign}
-                </span>
-              </div>
-
-              {/* Placement nodes plotted around circle */}
-              {Object.entries(planets)
-                .slice(0, 8)
-                .map(([planet, p]: [string, any], idx) => {
-                  const angle = (idx * (360 / 8) * Math.PI) / 180
-                  const x = 50 + 40 * Math.cos(angle)
-                  const y = 50 + 40 * Math.sin(angle)
-                  return (
-                    <div
-                      key={planet}
-                      className="absolute w-2 h-2 rounded-full bg-border-gold hover:bg-primary-gold cursor-help transition-all shadow-[0_0_5px_rgba(216,180,106,0.4)]"
-                      style={{
-                        left: `${x}%`,
-                        top: `${y}%`,
-                        transform: 'translate(-50%, -50%)',
-                      }}
-                      title={`${planet}: ${p.sign} ${p.degree.toFixed(1)}°`}
-                    />
-                  )
-                })}
-            </div>
-
-            {/* List of Placements */}
-            <div className="w-full space-y-xs overflow-y-auto max-h-[160px] custom-scrollbar pr-1 border-t border-border-gold/10 pt-md font-mono-data text-[11px] text-ivory-text/90">
-              <div className="grid grid-cols-3 text-muted-text font-mono-label text-[9px] uppercase tracking-wider pb-xs border-b border-border-gold/5">
-                <span>PLANET</span>
-                <span>SIGN</span>
-                <span className="text-right">DEGREE / HOUSE</span>
-              </div>
-              {Object.entries(planets).map(([planet, p]: [string, any]) => (
-                <div
-                  key={planet}
-                  className="grid grid-cols-3 py-0.5 border-b border-border-gold/5 last:border-0 hover:bg-white/[0.02] px-0.5 rounded transition-all"
-                >
-                  <span className="font-medium text-bright-gold">{planet}</span>
-                  <span>{p.sign}</span>
-                  <span className="text-right font-mono-data">
-                    {p.degree.toFixed(1)}° ({p.house || 1}H) {p.retrograde ? '℞' : ''}
+                {risingSign !== null && (
+                  <span className="font-mono-label text-[9px] text-muted-text uppercase tracking-widest mt-1">
+                    Rising sign: {risingSign}
                   </span>
-                </div>
-              ))}
+                )}
+              </div>
+
+              {/* Placement nodes plotted around circle (never for a restricted view) */}
+              {!restricted &&
+                Object.entries(planets)
+                  .slice(0, 8)
+                  .map(([planet, p]: [string, any], idx) => {
+                    const angle = (idx * (360 / 8) * Math.PI) / 180
+                    const x = 50 + 40 * Math.cos(angle)
+                    const y = 50 + 40 * Math.sin(angle)
+                    return (
+                      <div
+                        key={planet}
+                        className="absolute w-2 h-2 rounded-full bg-border-gold hover:bg-primary-gold cursor-help transition-all shadow-[0_0_5px_rgba(216,180,106,0.4)]"
+                        style={{
+                          left: `${x}%`,
+                          top: `${y}%`,
+                          transform: 'translate(-50%, -50%)',
+                        }}
+                        title={`${planet}: ${p.sign} ${formatDegree(p.degree)}°`}
+                      />
+                    )
+                  })}
             </div>
+
+            {restricted ? (
+              <p className="w-full border-t border-border-gold/10 pt-md font-mono-label text-[10px] uppercase tracking-wider text-muted-text">
+                {view.viewerDegraded
+                  ? 'Natal placements are shown to this vessel’s creator only. We could not confirm who is viewing, so only the Sun sign is shown.'
+                  : 'Natal placements are shown to this vessel’s creator only. Only the Sun sign is public.'}
+              </p>
+            ) : (
+              /* List of Placements */
+              <div className="w-full space-y-xs overflow-y-auto max-h-[160px] custom-scrollbar pr-1 border-t border-border-gold/10 pt-md font-mono-data text-[11px] text-ivory-text/90">
+                <div className="grid grid-cols-3 text-muted-text font-mono-label text-[9px] uppercase tracking-wider pb-xs border-b border-border-gold/5">
+                  <span>PLANET</span>
+                  <span>SIGN</span>
+                  <span className="text-right">DEGREE / HOUSE</span>
+                </div>
+                {Object.entries(planets).map(([planet, p]: [string, any]) => (
+                  <div
+                    key={planet}
+                    className="grid grid-cols-3 py-0.5 border-b border-border-gold/5 last:border-0 hover:bg-white/[0.02] px-0.5 rounded transition-all"
+                  >
+                    <span className="font-medium text-bright-gold">{planet}</span>
+                    <span>{p.sign}</span>
+                    <span className="text-right font-mono-data">
+                      {formatDegree(p.degree)}° ({p.house || 1}H) {p.retrograde ? '℞' : ''}
+                    </span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
 
           {/* Column 3: Tarot Deck recommendations */}
@@ -545,7 +609,7 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
                 Psychological Traits
               </span>
               <div className="flex flex-wrap gap-sm mt-md">
-                {agent.personality?.traits?.map((t: string, i: number) => (
+                {asList<string>(agent.personality?.traits)?.map((t: string, i: number) => (
                   <span
                     key={i}
                     className="px-2 py-0.5 rounded border border-border-gold/20 bg-[#0b0e19]/40 text-bright-gold font-mono-label text-[10px] uppercase"
@@ -573,7 +637,7 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
               Alchemical Gifts
             </span>
             <div className="space-y-sm pt-sm">
-              {agent.personality?.gifts?.map((g: any, i: number) => (
+              {asList(agent.personality?.gifts)?.map((g: any, i: number) => (
                 <div key={i} className="p-xs bg-[#0b0e19]/40 border border-border-gold/10 rounded">
                   <h5 className="font-semibold text-primary-gold text-[11px] uppercase mb-0.5">
                     {g.type}
@@ -595,7 +659,7 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
               Astral Shadows
             </span>
             <div className="space-y-sm pt-sm">
-              {agent.personality?.shadows?.map((s: any, i: number) => (
+              {asList(agent.personality?.shadows)?.map((s: any, i: number) => (
                 <div key={i} className="p-xs bg-[#0b0e19]/40 border border-border-gold/10 rounded">
                   <h5 className="font-semibold text-red-400 text-[11px] uppercase mb-0.5">
                     {s.type}
@@ -617,7 +681,7 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
               Growth Challenges
             </span>
             <div className="space-y-sm pt-sm">
-              {agent.personality?.challenges?.map((c: any, i: number) => (
+              {asList(agent.personality?.challenges)?.map((c: any, i: number) => (
                 <div key={i} className="p-xs bg-[#0b0e19]/40 border border-border-gold/10 rounded">
                   <h5 className="font-semibold text-orange-400 text-[11px] uppercase mb-0.5">
                     {c.type}
@@ -797,12 +861,18 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
                 ))}
             </div>
 
-            {/* Right: Planetary 12 Progress */}
+            {/* Right: Planetary 12 Progress. Each is one natal longitude in disguise (lib/agents/forged-privacy-profile.ts), so a restricted view does not get them. */}
             <div className="space-y-sm">
               <span className="font-mono-label text-[10px] text-primary-gold uppercase tracking-wider block mb-sm">
                 Planetary 12 Celestial Dynamics
               </span>
-              {agent.sacredStats &&
+              {restricted && (
+                <p className="font-mono-label text-[10px] uppercase tracking-wider text-muted-text">
+                  Celestial dynamics are shown to this vessel’s creator only.
+                </p>
+              )}
+              {!restricted &&
+                agent.sacredStats &&
                 Object.entries({
                   '☀️ Solar Agency': agent.sacredStats.solarAgency,
                   '🌙 Lunar Receptivity': agent.sacredStats.lunarReceptivity,
@@ -834,9 +904,11 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
           <AgentActivity
             agentName={agent.name}
             balances={balances}
-            interactions={(interactionsRes as any).interactions ?? []}
-            artifacts={(artifactsRes as any).artifacts ?? []}
-            actions={(actionsRes as any).actions ?? []}
+            interactions={[]}
+            discoursesWithheld
+            activityUnavailable={view.activityDegraded}
+            artifacts={artifacts}
+            actions={actions}
           />
         </section>
 

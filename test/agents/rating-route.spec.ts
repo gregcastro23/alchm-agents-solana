@@ -615,7 +615,30 @@ const CONTRACT_KEYS = [
 ]
 /** What only a live, server-side rating adds on top of the contract. */
 const EXTENSION_KEYS = ['scale', 'sealProgress', 'esmsSource', 'zoneSynergies', 'bestZoneId', 'sky']
-const ALL_KEYS = [...CONTRACT_KEYS, ...EXTENSION_KEYS]
+/**
+ * The contract's optional progression fields. `ratedPayload` always passes a progression profile,
+ * so every payload carries all sixteen; for a vessel the roster does not know (a forged one) they
+ * are present with null numbers and `progressionStatus: 'unavailable'`, never a level of 1.
+ */
+const PROGRESSION_KEYS = [
+  'vesselLevel',
+  'totalXp',
+  'xpToNextLevel',
+  'levelBoost',
+  'baseOverall',
+  'trainedOverall',
+  'currentOverall',
+  'transitDelta',
+  'progressionStatus',
+  'ratingAsOf',
+  'progressionReasons',
+  'expBreakdown',
+  'trainingEvidence',
+  'planetaryStats',
+  'statDeltas',
+  'esmsAxisAttribution',
+]
+const ALL_KEYS = [...CONTRACT_KEYS, ...EXTENSION_KEYS, ...PROGRESSION_KEYS]
 /** The names the payload carried before it conformed to the contract. */
 const RETIRED_KEYS = ['agentId', 'name', 'esmsBalances', 'spread']
 
@@ -2456,6 +2479,22 @@ describe('rating route end to end', () => {
     it('only ever caches the static roster listing', async () => {
       const res = await (await boot()).get('?roster=true')
       expect(res.headers.get('cache-control')).toBe('public, max-age=300')
+    })
+
+    it('tells the CDN a forged vessel’s answer is per viewer, anonymous or unlocked', async () => {
+      for (const res of [
+        await (await boot()).get(`?agentId=${FORGED}`),
+        await (await boot()).get(`?agentId=${FORGED}`, bearer),
+      ]) {
+        expect(res.status).toBe(200)
+        expect(res.headers.get('cache-control')).toBe('no-store')
+        expect(res.headers.get('cdn-cache-control')).toBe('no-store')
+        expect(res.headers.get('vary')).toBe('Authorization, Cookie, X-Internal-Secret')
+      }
+      // A roster vessel's answer is the same for everyone.
+      const roster = await (await boot()).get('?agentId=isaac-newton')
+      expect(roster.headers.get('cdn-cache-control')).toBeNull()
+      expect(roster.headers.get('vary')).toBeNull()
     })
 
     it('answers the preflight with 204, the read-only CORS set and no Authorization allowance', async () => {

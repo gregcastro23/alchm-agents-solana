@@ -48,6 +48,13 @@ interface Props {
   interactions: ActivityInteraction[]
   artifacts: ActivityArtifact[]
   actions: ActivityAction[]
+  /**
+   * The page does not load conversations at all (they are the chatting users' private messages), so
+   * an empty list here is not "no conversations yet" and must not read as if it were.
+   */
+  discoursesWithheld?: boolean
+  /** The creations / action reads failed: empty lists mean "could not load", not "nothing yet". */
+  activityUnavailable?: boolean
 }
 
 const BALANCE_TILES: Array<{
@@ -181,7 +188,15 @@ function RecipeCard({ artifact, agentName }: { artifact: ActivityArtifact; agent
   )
 }
 
-export function AgentActivity({ agentName, balances, interactions, artifacts, actions }: Props) {
+export function AgentActivity({
+  agentName,
+  balances,
+  interactions,
+  artifacts,
+  actions,
+  discoursesWithheld = false,
+  activityUnavailable = false,
+}: Props) {
   return (
     <div className="mx-auto max-w-5xl space-y-8 px-6 py-8">
       {/* Token balances */}
@@ -212,7 +227,9 @@ export function AgentActivity({ agentName, balances, interactions, artifacts, ac
         <SectionLabel>Creations by {agentName}</SectionLabel>
         {artifacts.length === 0 ? (
           <p className="text-sm text-white/40">
-            No recipes or lab entries yet — they appear here as {agentName} acts on their transits.
+            {activityUnavailable
+              ? 'Creations could not be loaded right now. Please try again shortly.'
+              : `No recipes or lab entries yet — they appear here as ${agentName} acts on their transits.`}
           </p>
         ) : (
           <div className="grid gap-3 md:grid-cols-2">
@@ -227,7 +244,11 @@ export function AgentActivity({ agentName, balances, interactions, artifacts, ac
       <section className="glass-card-premium rounded-3xl border-white/8 p-6 md:p-8">
         <SectionLabel>Recent discourses</SectionLabel>
         {interactions.length === 0 ? (
-          <p className="text-sm text-white/40">No recorded conversations yet.</p>
+          <p className="text-sm text-white/40">
+            {discoursesWithheld
+              ? `Conversations with ${agentName} are private to the people who held them.`
+              : 'No recorded conversations yet.'}
+          </p>
         ) : (
           <div className="space-y-3">
             {interactions.map(i => (
@@ -263,7 +284,11 @@ export function AgentActivity({ agentName, balances, interactions, artifacts, ac
       <section className="glass-card-premium rounded-3xl border-white/8 p-6 md:p-8">
         <SectionLabel>Action history</SectionLabel>
         {actions.length === 0 ? (
-          <p className="text-sm text-white/40">No actions recorded yet.</p>
+          <p className="text-sm text-white/40">
+            {activityUnavailable
+              ? 'Actions could not be loaded right now. Please try again shortly.'
+              : 'No actions recorded yet.'}
+          </p>
         ) : (
           <div className="space-y-1.5 font-mono text-xs">
             {actions.map(a => (

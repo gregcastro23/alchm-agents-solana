@@ -22,6 +22,7 @@ REQUIRED_MODULES = {
     "mcp_sdk_adapter.py",
     "alchm_mcp.py",
     "mcp_invocation_log.py",
+    "mcp_context.py",
     "database.py",
     "models.py",
     "secure_compare.py",

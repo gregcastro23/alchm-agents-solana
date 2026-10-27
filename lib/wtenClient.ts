@@ -15,7 +15,7 @@
 
 import { deliverToWten, stableEventId } from './wten/delivery'
 
-const DEFAULT_WTEN_BASE = 'https://whattoeatnext-production.up.railway.app'
+const DEFAULT_WTEN_BASE = 'https://alchm.kitchen'
 
 export interface SyncAgentToWtenResult {
   wtenUserId: string
@@ -38,11 +38,20 @@ let cachedConfig: { baseUrl: string; syncSecret: string; internalSecret: string 
 
 function loadConfig(): { baseUrl: string; syncSecret: string; internalSecret: string } {
   if (cachedConfig) return cachedConfig
-  const syncSecret = process.env.ALCHM_KITCHEN_SYNC_SECRET || ''
-  const internalSecret = process.env.INTERNAL_API_SECRET || syncSecret
+  const syncSecret =
+    process.env.ALCHM_KITCHEN_SYNC_SECRET ||
+    process.env.INTERNAL_API_SECRET ||
+    process.env.WHATTOEATNEXT_API_KEY ||
+    ''
+  const internalSecret =
+    process.env.INTERNAL_API_SECRET ||
+    process.env.ALCHM_KITCHEN_SYNC_SECRET ||
+    process.env.WHATTOEATNEXT_API_KEY ||
+    ''
   const baseUrl = (
     process.env.ALCHM_KITCHEN_SYNC_URL ||
     process.env.WTEN_API_BASE_URL ||
+    process.env.NEXT_PUBLIC_ALCHM_KITCHEN_URL ||
     DEFAULT_WTEN_BASE
   ).replace(/\/$/, '')
   cachedConfig = { baseUrl, syncSecret, internalSecret }
@@ -77,7 +86,10 @@ export async function syncAgentToWten(
   const delivery = await deliverToWten({
     endpoint: 'internal/agent-sync',
     url: `${baseUrl}/api/internal/agent-sync`,
-    headers: { 'X-Sync-Secret': syncSecret },
+    headers: {
+      'X-Sync-Secret': syncSecret,
+      Authorization: `Bearer ${syncSecret}`,
+    },
     body,
     eventId: stableEventId(`agent-sync:${email}`, body),
   })
@@ -190,6 +202,7 @@ export async function getAgentWeeklyMenu(
     method: 'GET',
     headers: {
       Authorization: `Bearer ${internalSecret}`,
+      'X-Sync-Secret': internalSecret,
       Accept: 'application/json',
     },
   })
@@ -229,6 +242,7 @@ export async function postAgentWeeklyMenu(
     headers: {
       'Content-Type': 'application/json',
       Authorization: `Bearer ${internalSecret}`,
+      'X-Sync-Secret': internalSecret,
     },
     body: menu,
     eventId,

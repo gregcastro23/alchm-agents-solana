@@ -7,7 +7,7 @@ import mcp_invocation_log
 
 @pytest.mark.asyncio
 async def test_chat_with_planetary_agent_happy_path(monkeypatch):
-    async def fake_backend_chat(agent_name, message, conversation_history=None, context=None, model_tier=None, sky_state=None):
+    async def fake_backend_chat(agent_name, message, conversation_history=None, context=None, model_tier=None, sky_state=None, session_id=None, execution_context=None):
         return {
             "agentName": agent_name,
             "agentId": "socrates",
@@ -108,7 +108,7 @@ async def test_synthesize_culinary_debate_happy_path(monkeypatch):
     async def fake_recipe(prompt, dominant_element=None, cuisine=None, dietary=None):
         return {"recipes": [{"name": "Fiery Soup"}]}
 
-    async def fake_backend_chat(agent_name, message, conversation_history=None, context=None, model_tier=None, sky_state=None):
+    async def fake_backend_chat(agent_name, message, conversation_history=None, context=None, model_tier=None, sky_state=None, session_id=None, execution_context=None):
         return {
             "agentName": agent_name,
             "agentId": planetary_agents_mcp_server._agent_id(agent_name),
@@ -263,7 +263,7 @@ async def test_trigger_chart_specific_jing_duel(monkeypatch):
         }
 
     # Mock backend chat response
-    async def fake_backend_chat(agent_name, message, conversation_history=None, context=None, model_tier=None, sky_state=None):
+    async def fake_backend_chat(agent_name, message, conversation_history=None, context=None, model_tier=None, sky_state=None, session_id=None, execution_context=None):
         return {
             "agentName": agent_name,
             "agentId": planetary_agents_mcp_server._agent_id(agent_name),

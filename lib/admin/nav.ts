@@ -29,7 +29,7 @@ export const ADMIN_NAV: Array<{ group: string; items: AdminNavItem[] }> = [
       { href: '/admin/agents', label: 'Roster & sync', ids: ['agents'] },
       { href: '/admin/chats', label: 'Chats & providers', ids: ['chats', 'providers'] },
       { href: '/admin/councils', label: 'Council convenings', ids: ['groupChats', 'councils'] },
-      { href: '/admin/leveling', label: 'Cosmic leveling', ids: ['leveling'] },
+      { href: '/admin/leveling', label: 'Vessel progression', ids: ['leveling'] },
       { href: '/admin/arenas', label: 'Arenas', ids: ['jing', 'scrabble', 'arenas'] },
       { href: '/admin/rag', label: 'RAG & knowledge', ids: ['rag'] },
     ],
@@ -55,7 +55,7 @@ export const ADMIN_NAV: Array<{ group: string; items: AdminNavItem[] }> = [
     items: [
       { href: '/admin/jobs', label: 'Jobs & crons', ids: ['jobs'] },
       { href: '/admin/wten', label: 'WTEN link', ids: ['wten-link', 'wten'] },
-      { href: '/admin/recipes', label: 'Recipe generation', ids: ['recipes'] },
+      { href: '/admin/recipes', label: 'Recipe operations', ids: ['recipes', 'recipe-activity'] },
       { href: '/admin/mcp', label: 'MCP invocations', ids: ['mcp'] },
       { href: '/admin/infrastructure', label: 'Infrastructure', ids: ['infrastructure'] },
     ],

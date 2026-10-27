@@ -688,9 +688,12 @@ async def test_feed_emitter_posts_to_wten_with_bearer_header(monkeypatch, caplog
         async def __aexit__(self, exc_type, exc, tb):
             return None
 
-        async def post(self, url, json, headers):
+        async def post(self, url, headers, json=None, content=None):
+            import json as _json
+
+            # The emitter sends the exact bytes it signed (`content=`); decode them back.
             captured["url"] = url
-            captured["json"] = json
+            captured["json"] = json if json is not None else _json.loads(content)
             captured["headers"] = headers
             return FakeResponse()
 

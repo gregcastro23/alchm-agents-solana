@@ -726,6 +726,24 @@ model created_agents {
   @@index([creatorId])
 }
 
+/// A successful keyed forge commits this record and all local creation writes
+/// together. Keys belong to the authenticated creator; responses are retained
+/// for retries after the caller loses the original successful response.
+model AgentCreationRequest {
+  id              String   @id @default(cuid())
+  creatorId       String
+  clientRequestId String
+  requestHash     String
+  agentId         String?
+  response        Json?
+  createdAt       DateTime @default(now())
+
+  // No users relation: bridged authenticated identities are accepted before a
+  // local user has necessarily been provisioned. Ownership is checked by auth.
+  @@unique([creatorId, clientRequestId], map: "agent_creation_requests_creator_request_key")
+  @@map("agent_creation_requests")
+}
+
 model historical_agents {
   id                     String                   @id @default(cuid())
   agentId                String                   @unique

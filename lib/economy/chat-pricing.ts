@@ -2,6 +2,9 @@ import type { Element } from '@/lib/agent-types'
 import { TOKEN_TYPES, type EsmsCost } from '@/lib/economy-config'
 import { buildAgentContext } from '@/lib/agents/persona/build-agent-context'
 import { deriveSacredStats } from '@/lib/agents/persona/derive-sacred-stats'
+import { computeDignityWaveharmonics } from '@/lib/vessel/esms-wavefunction'
+
+export { computeDignityWaveharmonics }
 
 export const CHAT_RESONANCE_DISCOUNT = 0.5
 export const CHAT_CLASH_MARKUP = 1.5
@@ -184,39 +187,6 @@ export function elementalPriceRelationship(
   if (!agent || !transit) return 'neutral'
   if (agent === transit) return 'resonance'
   return OPPOSING_ELEMENT[agent] === transit ? 'clash' : 'neutral'
-}
-
-/**
- * Compute the continuous Chart Dignity Wavefunction \Psi_a(t) for live sky transits.
- * Returns a value in [-1, +1] representing harmonic resonance or dissonance.
- */
-export function computeDignityWaveharmonics(currentAlchemy: unknown): Record<string, number> {
-  if (!currentAlchemy || typeof currentAlchemy !== 'object') {
-    return { Spirit: 0, Essence: 0, Matter: 0, Substance: 0 }
-  }
-
-  const effects = (currentAlchemy as Record<string, unknown>)['Alchemy Effects'] as
-    | Record<string, unknown>
-    | undefined
-  if (!effects) return { Spirit: 0, Essence: 0, Matter: 0, Substance: 0 }
-
-  const spiritVal = finiteNumber(effects['Total Spirit']) ?? 0
-  const essenceVal = finiteNumber(effects['Total Essence']) ?? 0
-  const matterVal = finiteNumber(effects['Total Matter']) ?? 0
-  const substanceVal = finiteNumber(effects['Total Substance']) ?? 0
-
-  const total =
-    Math.abs(spiritVal) + Math.abs(essenceVal) + Math.abs(matterVal) + Math.abs(substanceVal)
-  const halfTotal = total / 2
-  if (halfTotal <= 0) return { Spirit: 0, Essence: 0, Matter: 0, Substance: 0 }
-
-  // Waveharmonics normalized between -1 and +1
-  return {
-    Spirit: roundEsms(spiritVal / halfTotal),
-    Essence: roundEsms(essenceVal / halfTotal),
-    Matter: roundEsms(matterVal / halfTotal),
-    Substance: roundEsms(substanceVal / halfTotal),
-  }
 }
 
 export interface PerMessagePricingOptions {

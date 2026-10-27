@@ -1,20 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server'
-import { HISTORICAL_AGENTS, getHistoricalAgent } from '@/lib/agents/historical'
+import { HISTORICAL_AGENTS } from '@/lib/agents/historical'
 import {
-  resolveAgentEsmsBalances,
-  type CreatorWalletPolicy,
-} from '@/lib/agents/rating/esms-balance-resolver'
-import { prismaLedgerLoader } from '@/lib/agents/rating/esms-ledger-store.server'
-import { SkyUnavailableError, resolveLiveSky } from '@/lib/agents/rating/live-sky'
+  AGENT_ID,
+  AgentLookupUnavailable,
+  creatorWalletPolicy,
+  describeError,
+  ledgerIdOf,
+  ratedPayload,
+  readPushed,
+  rememberPushed,
+  resolveVessel,
+} from '@/lib/agents/rating/rating-resolver.server'
 import { ESMS_TOKENS, type EsmsHoldings } from '@/lib/agents/rating/seals-surge'
-import {
-  buildRatedAgentPayload,
-  ratableFromForgedRow,
-  ratableFromRoster,
-  resolveVesselAlias,
-  summarizeVessel,
-  type RatableVessel,
-} from '@/lib/agents/rating/vessel-payload'
+import { ratableFromRoster, summarizeVessel } from '@/lib/agents/rating/vessel-payload'
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit'
 import { bearerMatches } from '@/lib/security/secure-compare'
 
@@ -64,41 +62,24 @@ const READ_CORS = {
 }
 const NO_STORE = { 'Cache-Control': 'no-store' }
 const RETRY = { 'Retry-After': '60' }
+// A forged vessel's answer depends on who asks (its creator and the secret holder get the
+// wallet), and vercel.json gives every /api/* response `s-maxage=60`. Function headers win over
+// that, but the CDN is told directly too, as `GET /api/agents/[slug]/ratings` does: never shared.
+const PER_VIEWER = {
+  'CDN-Cache-Control': 'no-store',
+  Vary: 'Authorization, Cookie, X-Internal-Secret',
+}
 
 export async function OPTIONS() {
   return new NextResponse(null, { status: 204, headers: READ_CORS })
 }
 
-const AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/
 const MAX_POST_BYTES = 4 * 1024
 const MINUTE_MS = 60_000
-
-/** Pushed holdings stay authoritative this long (a feeder pushes on change; a GET is a read). */
-const PUSH_TTL_MS = 60_000
-const MAX_PUSHED = 5_000
-const pushed = new Map<string, { balances: EsmsHoldings; at: number }>()
 
 function envLimit(name: string, fallback: number): number {
   const parsed = Number.parseInt(process.env[name] ?? '', 10)
   return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
-}
-
-function readPushed(agentId: string, now = Date.now()): EsmsHoldings | null {
-  const entry = pushed.get(agentId)
-  if (!entry) return null
-  if (now - entry.at > PUSH_TTL_MS) {
-    pushed.delete(agentId)
-    return null
-  }
-  return entry.balances
-}
-
-function rememberPushed(agentId: string, balances: EsmsHoldings, now = Date.now()): void {
-  if (pushed.size >= MAX_PUSHED) {
-    for (const [key, value] of pushed) if (now - value.at > PUSH_TTL_MS) pushed.delete(key)
-    if (pushed.size >= MAX_PUSHED) pushed.clear()
-  }
-  pushed.set(agentId, { balances, at: now })
 }
 
 function json(
@@ -113,40 +94,27 @@ function json(
   })
 }
 
-/** Error class and driver code only: a message can carry a connection string or a path. */
-function describeError(error: unknown): string {
-  if (!(error instanceof Error)) return typeof error
-  const code = (error as { code?: unknown }).code
-  return typeof code === 'string' ? `${error.name} (${code})` : error.name
+function notRated(agentId: string, reason: 'unknown' | 'unratable', readable: boolean) {
+  return reason === 'unknown'
+    ? json({ success: false, error: `No agent "${agentId}" to rate.` }, 404, {}, readable)
+    : json(
+        { success: false, error: `Agent "${agentId}" has no stats or natal chart to rate.` },
+        422,
+        {},
+        readable
+      )
 }
 
-class AgentLookupUnavailable extends Error {}
-
-/** The ledger id a vessel's wallet and pushed holdings are keyed by (an alias folds into it). */
-function ledgerIdOf(vessel: RatableVessel): string {
-  return resolveVesselAlias(vessel.agentId) ?? vessel.agentId
-}
-
-/** Does the request carry the server-to-server secret? Fails closed when none is configured. */
-function hasInternalSecret(request: NextRequest): boolean {
-  const secret = process.env.INTERNAL_API_SECRET
-  return secret ? bearerMatches(request.headers.get('authorization'), secret) : false
-}
-
-/**
- * Who may read a forged vessel's creator wallet on a GET: a server holding the secret, or the
- * signed-in creator themselves. Anyone else, and any failure to find out, is denied.
- */
-async function creatorWalletPolicy(request: NextRequest): Promise<CreatorWalletPolicy> {
-  if (hasInternalSecret(request)) return 'allow'
-  try {
-    const { auth } = await import('@/lib/auth')
-    const userId = (await auth())?.user?.id
-    if (typeof userId === 'string' && userId !== '') return { userId }
-  } catch {
-    // No session is no entitlement; an auth outage must not open the wallet either.
+function badAgentId(raw: string | null, readable = true) {
+  if (raw === null || !AGENT_ID.test(raw)) {
+    return json(
+      { success: false, error: 'Invalid or missing agentId. Use 1-100 letters, digits, . _ -' },
+      400,
+      {},
+      readable
+    )
   }
-  return 'deny'
+  return null
 }
 
 /**
@@ -175,88 +143,6 @@ async function readBoundedText(request: NextRequest, max: number): Promise<strin
     offset += chunk.byteLength
   }
   return new TextDecoder().decode(joined)
-}
-
-type Lookup =
-  | { found: true; vessel: RatableVessel }
-  | { found: false; reason: 'unknown' | 'unratable' }
-
-/** Roster first (with the avatar alias), then a user-forged `historical_agents` row. */
-async function resolveVessel(agentId: string): Promise<Lookup> {
-  const alias = resolveVesselAlias(agentId)
-  const rostered = getHistoricalAgent(alias ?? agentId)
-  if (rostered) {
-    const requested = alias ? agentId : rostered.id
-    return { found: true, vessel: ratableFromRoster(rostered, requested) }
-  }
-  try {
-    const { prisma } = await import('@/lib/db')
-    const row = await prisma.historical_agents.findUnique({ where: { agentId } })
-    if (!row) return { found: false, reason: 'unknown' }
-    const vessel = ratableFromForgedRow(row)
-    return vessel ? { found: true, vessel } : { found: false, reason: 'unratable' }
-  } catch (error) {
-    throw new AgentLookupUnavailable(describeError(error))
-  }
-}
-
-function notRated(agentId: string, reason: 'unknown' | 'unratable', readable: boolean) {
-  return reason === 'unknown'
-    ? json({ success: false, error: `No agent "${agentId}" to rate.` }, 404, {}, readable)
-    : json(
-        { success: false, error: `Agent "${agentId}" has no stats or natal chart to rate.` },
-        422,
-        {},
-        readable
-      )
-}
-
-async function ratedPayload(
-  vessel: RatableVessel,
-  spacetime: EsmsHoldings | null,
-  creatorWallet: CreatorWalletPolicy
-) {
-  const [balances, skyResult] = await Promise.all([
-    resolveAgentEsmsBalances(ledgerIdOf(vessel), {
-      spacetime,
-      strict: false,
-      loadLedger: prismaLedgerLoader,
-      creatorWallet,
-      onDegraded: (stage, detail) =>
-        console.error(`[rating] esms ${stage} fell through: ${detail}`),
-    }),
-    resolveLiveSky().then(
-      sky => ({ sky, error: undefined }),
-      (error: unknown) => {
-        console.error(
-          '[rating] live sky unavailable:',
-          describeError(error instanceof SkyUnavailableError && error.cause ? error.cause : error)
-        )
-        return {
-          sky: null,
-          error: error instanceof SkyUnavailableError ? error.message : 'live sky unavailable',
-        }
-      }
-    ),
-  ])
-  return buildRatedAgentPayload({
-    vessel,
-    balances,
-    sky: skyResult.sky,
-    skyError: skyResult.error,
-  })
-}
-
-function badAgentId(raw: string | null, readable = true) {
-  if (raw === null || !AGENT_ID.test(raw)) {
-    return json(
-      { success: false, error: 'Invalid or missing agentId. Use 1-100 letters, digits, . _ -' },
-      400,
-      {},
-      readable
-    )
-  }
-  return null
 }
 
 export async function GET(request: NextRequest) {
@@ -298,7 +184,11 @@ export async function GET(request: NextRequest) {
       vessel.origin === 'roster' || creatorWallet === 'allow'
         ? readPushed(ledgerIdOf(vessel))
         : null
-    return json(await ratedPayload(vessel, live, creatorWallet), 200)
+    return json(
+      await ratedPayload(vessel, live, creatorWallet),
+      200,
+      vessel.origin === 'forged' ? PER_VIEWER : {}
+    )
   } catch (error) {
     if (error instanceof AgentLookupUnavailable) {
       console.error('[rating] agent lookup unavailable:', error.message)
