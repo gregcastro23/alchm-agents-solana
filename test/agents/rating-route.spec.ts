@@ -2927,28 +2927,28 @@ describe('rating route end to end', () => {
         adaptability: 93,
         vitality: 98,
       })
-      // Against the pinned roster baselines 83, 76, 76, 76, 77, 74, 75.
+      // Against the pinned roster baselines 81, 75, 75, 75, 75, 72, 74.
       expect(body.relativeAdvantage).toEqual({
-        power: 12,
-        resonance: 18,
-        wisdom: 19,
-        charisma: 20,
-        intuition: 20,
-        adaptability: 19,
-        vitality: 23,
+        power: 14,
+        resonance: 19,
+        wisdom: 20,
+        charisma: 21,
+        intuition: 22,
+        adaptability: 21,
+        vitality: 24,
       })
       expect(body.ovr).toBe(97)
-      // Vitality leads by 23; charisma and intuition tie at 20 and the stat order breaks it.
+      // Vitality leads by 24; intuition follows at 22.
       expect(body.archetype).toEqual({
-        title: 'Tenacious Champion',
+        title: 'Steadfast Bastion',
         primary: 'vitality',
-        secondary: 'charisma',
+        secondary: 'intuition',
       })
     })
 
     it('earns exactly the Seals the contract’s gates allow for that vessel and a rich wallet', async () => {
-      // Aligned rating = rating - roster mean + 76: 89.5, 94, 95.5, 97.5, 96, 96, 99.5. Power's
-      // 89.5 is Gold (86) and short of Astral (91); the rest clear Astral. Celestial's stat gate
+      // Aligned rating = rating - roster mean + 75.5: 90, 94, 95, 97, 96.5, 96, 99.5. Power's
+      // 90 is Gold (86) and short of Astral (91); the rest clear Astral. Celestial's stat gate
       // (96) is also cleared by charisma, intuition, adaptability and vitality, but the chart (Sun
       // Aries, Moon Leo, Mars Sagittarius) puts at most 3 bodies in any element, short of the 4 it must.
       const h = await boot()
@@ -3033,11 +3033,11 @@ describe('rating route end to end', () => {
         p.natalAffinity,
       ])
       expect(progress).toEqual([
-        ['power', 'substance', 'Gold', 'Astral', ['stat'], 'Astral', 95, 89.5, 4567.125, 0],
+        ['power', 'substance', 'Gold', 'Astral', ['stat'], 'Astral', 95, 90, 4567.125, 0],
         ['resonance', 'essence', 'Astral', 'Celestial', ['stat', 'natal'], 'Celestial', 94, 94, 2345.25, 0],
-        ['wisdom', 'matter', 'Astral', 'Celestial', ['stat', 'natal'], 'Celestial', 95, 95.5, 3456.75, 0],
-        ['charisma', 'essence', 'Astral', 'Celestial', ['natal'], 'Celestial', 96, 97.5, 2345.25, 0],
-        ['intuition', 'spirit', 'Astral', 'Celestial', ['natal'], 'Celestial', 97, 96, 1234.5, 3],
+        ['wisdom', 'matter', 'Astral', 'Celestial', ['stat', 'natal'], 'Celestial', 95, 95, 3456.75, 0],
+        ['charisma', 'essence', 'Astral', 'Celestial', ['natal'], 'Celestial', 96, 97, 2345.25, 0],
+        ['intuition', 'spirit', 'Astral', 'Celestial', ['natal'], 'Celestial', 97, 96.5, 1234.5, 3],
         ['adaptability', 'spirit', 'Astral', 'Celestial', ['natal'], 'Celestial', 93, 96, 1234.5, 3],
         ['vitality', 'matter', 'Astral', 'Celestial', ['natal'], 'Celestial', 98, 99.5, 3456.75, 0],
       ]) // prettier-ignore
@@ -3060,13 +3060,13 @@ describe('rating route end to end', () => {
           monicaState: 'convergent',
           heat: 1,
           harmonyOffset: 10,
-          // Vitality leads the archetype (+12), charisma follows (+8), the rest get +4.
+          // Vitality leads the archetype (+12), intuition follows (+8), the rest get +4.
           statBoosts: {
             power: 4,
             resonance: 4,
             wisdom: 4,
-            charisma: 8,
-            intuition: 4,
+            charisma: 4,
+            intuition: 8,
             adaptability: 4,
             vitality: 12,
           },
@@ -3105,10 +3105,10 @@ describe('rating route end to end', () => {
       })
 
       it.each([
-        [1.618, 'equilibrium', 'equilibrium', { vitality: 16, charisma: 12, power: 8 }],
-        [null, 'absent', 'inferno', { vitality: 12, charisma: 8, power: 4 }],
-        [0.5, 'convergent', 'inferno', { vitality: 12, charisma: 8, power: 4 }],
-        [-0.5, 'divergent', 'inferno', { vitality: 12, charisma: 8, power: 4 }],
+        [1.618, 'equilibrium', 'equilibrium', { vitality: 16, intuition: 12, power: 8 }],
+        [null, 'absent', 'inferno', { vitality: 12, intuition: 8, power: 4 }],
+        [0.5, 'convergent', 'inferno', { vitality: 12, intuition: 8, power: 4 }],
+        [-0.5, 'divergent', 'inferno', { vitality: 12, intuition: 8, power: 4 }],
       ])(
         'classifies Monica %j as %s: an active surge is %s with boosts %j',
         async (monica, monicaState, surgeType, boosts) => {
@@ -4211,7 +4211,7 @@ describe('rating route end to end', () => {
     })
 
     describe('Celestial, which also needs the chart’s blessing', () => {
-      /** Intuition's token is spirit (Fire). Chiron is no classical body and counts for nothing. */
+      /** Adaptability's token is spirit (Fire). Chiron is no classical body and counts for nothing. */
       const chartWith = (fire: number): Row => {
         const fireSigns = ['Aries', 'Leo', 'Sagittarius', 'Aries', 'Leo']
         const bodies = ['Sun', 'Moon', 'Mars', 'Jupiter', 'Uranus']
@@ -4223,33 +4223,36 @@ describe('rating route end to end', () => {
         for (let i = 0; i < fire; i++) planets[bodies[i]] = { sign: fireSigns[i], degree: 10 }
         return { planets }
       }
-      /** Intuition 97 rates 97 and aligns to 96 (97 - mean 77 + 76), exactly Celestial's gate. */
+      /**
+       * Adaptability 92 rates 93 and aligns to 96 (93 - mean 72.5 + 75.5), exactly Celestial's gate.
+       * (Intuition's mean sits half a point off the common level, so it can only straddle a gate.)
+       */
       const celestialFor = async (
         fire: number,
-        { score = 97, spirit = 250 }: { score?: number; spirit?: number } = {}
+        { score = 92, spirit = 250 }: { score?: number; spirit?: number } = {}
       ) => {
         const world = defaultWorld()
-        // Adaptability shares intuition's token (spirit); at 88 it rates 90 and aligns to 93, so
-        // intuition is the only Seal here that can reach Celestial.
+        // Intuition shares adaptability's token (spirit); at 88 it rates 90 and aligns to 89.5, so
+        // adaptability is the only Seal here that can reach Celestial.
         world.forged = [
           forgedRow(FORGED, {
             natalChart: chartWith(fire),
-            intuitionScore: score,
-            adaptabilityScore: 88,
+            adaptabilityScore: score,
+            intuitionScore: 88,
           }),
         ]
         const h = await boot({ world })
         const body = await view(
           await h.post({ agentId: FORGED, esms: { ...holdings(1000), spirit } })
         )
-        const intuition = body.sealProgress.find(p => p.stat === 'intuition') as ProgressView
-        return { body, intuition }
+        const adaptability = body.sealProgress.find(p => p.stat === 'adaptability') as ProgressView
+        return { body, adaptability }
       }
 
       it('is earned on the gate exactly: 4 bodies in the token’s element, aligned 96, 250 of the token', async () => {
-        const { body, intuition } = await celestialFor(4)
-        expect(intuition).toMatchObject({
-          statRating: 97,
+        const { body, adaptability } = await celestialFor(4)
+        expect(adaptability).toMatchObject({
+          statRating: 93,
           alignedRating: 96,
           balance: 250,
           natalAffinity: 4,
@@ -4257,8 +4260,8 @@ describe('rating route end to end', () => {
           nextTier: null,
           blockedBy: [],
         })
-        const seal = body.seals.find(s => s.statKey === 'intuition')
-        expect(seal).toMatchObject({ id: 'seal-intuition', tier: 'Celestial', multiplier: 1.4 })
+        const seal = body.seals.find(s => s.statKey === 'adaptability')
+        expect(seal).toMatchObject({ id: 'seal-adaptability', tier: 'Celestial', multiplier: 1.4 })
         expectContractConformant(body)
       })
 
@@ -4272,18 +4275,18 @@ describe('rating route end to end', () => {
         ],
         [
           'one rating point short of the stat gate',
-          () => celestialFor(4, { score: 96 }),
+          () => celestialFor(4, { score: 91 }),
           4,
           ['stat'],
         ],
       ] as const)('is held back %s, at Astral', async (_label, run, affinity, blockedBy) => {
-        const { body, intuition } = await run()
-        expect(intuition).toMatchObject({
+        const { body, adaptability } = await run()
+        expect(adaptability).toMatchObject({
           tier: 'Astral',
           nextTier: 'Celestial',
           natalAffinity: affinity,
         })
-        expect(intuition.blockedBy).toEqual(affinity < 4 ? [...blockedBy, 'natal'] : blockedBy)
+        expect(adaptability.blockedBy).toEqual(affinity < 4 ? [...blockedBy, 'natal'] : blockedBy)
         expect(body.seals.some(seal => seal.tier === 'Celestial')).toBe(false)
         expectContractConformant(body)
       })
@@ -4298,12 +4301,12 @@ describe('rating route end to end', () => {
 
       expect(power).toMatchObject({
         statRating: 99,
-        alignedRating: 93.5,
+        alignedRating: 94,
         tier: 'Astral',
         maxTier: 'Astral',
         nextTier: null,
       })
-      expect(SEAL_STAT_GATES.Celestial).toBe(96) // the premise: 93.5 < 96
+      expect(SEAL_STAT_GATES.Celestial).toBe(96) // the premise: 94 < 96
       for (const p of body.sealProgress.filter(p => p.stat !== 'power')) {
         expect([p.stat, p.maxTier]).toEqual([p.stat, 'Celestial'])
       }

@@ -1196,7 +1196,7 @@ describe('evaluateSeals equals the contract tier, plus ASOL Celestial rule', () 
     expect(CELESTIAL_MIN_NATAL_AFFINITY).toBe(4)
   })
 
-  it('stops Crucible Finisher at Astral: a perfect power aligns to 93.5, short of the Celestial gate', () => {
+  it('stops Crucible Finisher at Astral: a perfect power aligns to 94, short of the Celestial gate', () => {
     const balances: EsmsBalances = { spirit: 1e6, essence: 1e6, matter: 1e6, substance: 1e6 }
     const open = chartWith('Air', 10, 'computed') // substance is power's token
     const [power] = evaluateSeals({
@@ -1207,7 +1207,7 @@ describe('evaluateSeals equals the contract tier, plus ASOL Celestial rule', () 
     expect(power).toMatchObject({
       stat: 'power',
       tier: 'Astral',
-      alignedRating: 93.5,
+      alignedRating: 94,
       maxTier: 'Astral',
       nextTier: null,
       blockedBy: [],
@@ -1220,7 +1220,7 @@ describe('evaluateSeals equals the contract tier, plus ASOL Celestial rule', () 
     })) {
       if (seal.stat !== 'power') expect(seal.maxTier).toBe('Celestial')
     }
-    expect(93.5).toBeLessThan(contract.SEAL_STAT_GATES.Celestial)
+    expect(94).toBeLessThan(contract.SEAL_STAT_GATES.Celestial)
   })
 
   it('reports alignedRating as the contract alignment of the rating, to 2 dp', () => {
@@ -3580,22 +3580,32 @@ describe('stubbing the contract moves every result (the modules call it, they do
 
 // ─── 6. Calibration diagnostics ──────────────────────────────────────────────
 
-/** Measured over the live roster: the mean rating of each stat and each stat's primary count. */
+/**
+ * Measured over the live roster. The means are taken over the charts the contract pins were
+ * measured on (every one but the `placeholder` charts, whose numbers are declared not to be the
+ * person's); the primary counts over every roster vessel, since every one of them is rated.
+ */
 const LIVE = (() => {
+  const measured = ROSTER_RATED.filter(
+    r => r.agent.consciousness?.natalChart?.provenance !== 'placeholder'
+  )
   const means = {} as Record<SacredStatKey, number>
   const primaries = {} as Record<SacredStatKey, number>
   for (const stat of STAT_ORDER) {
     means[stat] =
-      ROSTER_RATED.reduce((sum, r) => sum + toRating(r.stats[stat], stat), 0) / ROSTER_RATED.length
+      measured.reduce((sum, r) => sum + toRating(r.stats[stat], stat), 0) / measured.length
     primaries[stat] = 0
   }
   for (const { stats } of ROSTER_RATED) primaries[rateStats(stats).archetype.primary]++
-  return { means, primaries, size: ROSTER_RATED.length }
+  return { means, primaries, measured: measured.length, size: ROSTER_RATED.length }
 })()
 
 describe('calibration diagnostics: the contract pinned roster numbers vs the live roster', () => {
   it('measures what it says it measures', () => {
     expect(LIVE.size).toBeGreaterThanOrEqual(70)
+    // Placeholders are excluded, not the roster: most of it is still measured.
+    expect(LIVE.measured).toBeGreaterThanOrEqual(55)
+    expect(LIVE.measured).toBeLessThan(LIVE.size)
     for (const stat of STAT_ORDER) {
       expect(LIVE.means[stat]).toBeGreaterThanOrEqual(25)
       expect(LIVE.means[stat]).toBeLessThanOrEqual(99)
@@ -3611,11 +3621,11 @@ describe('calibration diagnostics: the contract pinned roster numbers vs the liv
     expect(contract.GLOBAL_ROSTER_MEAN).toBeCloseTo(mean, 10)
   })
 
-  // The contract's per-stat means are the live roster's mean RATING on the 25-99 scale, re-measured
-  // 2026-10-27. Before that they sat near the 0-100 stat means (power 76.5 pinned against 81.6
-  // live; every stat at least 5 off). If this fails, the roster or the derivation moved:
-  // re-measure and re-pin ROSTER_BASELINE_RATINGS.
-  it('every contract stat mean is within 2 of the live roster mean rating', () => {
+  // The contract's per-stat means are the mean RATING on the 25-99 scale of the non-placeholder
+  // charts, re-measured 2026-10-27. Before that they sat near the 0-100 stat means (power 76.5
+  // pinned against 80.6 live; every stat at least 4 off). If this fails, the roster or the
+  // derivation moved: re-measure and re-pin ROSTER_BASELINE_RATINGS.
+  it('every contract stat mean is within 2 of the live mean rating', () => {
     const off = STAT_ORDER.filter(
       stat => Math.abs(contract.ROSTER_BASELINE_RATINGS[stat].mean - LIVE.means[stat]) > 2
     )
@@ -3623,8 +3633,8 @@ describe('calibration diagnostics: the contract pinned roster numbers vs the liv
   })
 
   // Against the old baselines `power` was the archetype primary of 46 of 72 agents (64%), with 18
-  // distinct titles. Against the roster's own low medians the largest share is intuition's 19
-  // (26%), with 23 titles.
+  // distinct titles. Against the low medians of the non-placeholder charts the largest share is
+  // intuition's 23 (32%), with 23 titles.
   it('no stat is the archetype primary of more than 40% of the roster', () => {
     const share = Math.max(...STAT_ORDER.map(stat => LIVE.primaries[stat])) / LIVE.size
     expect(share).toBeLessThanOrEqual(0.4)
@@ -3656,8 +3666,8 @@ describe("contract self-consistency (about #65's fixtures, not about this PR)", 
   })
 
   // DIAGNOSTIC, expected to FAIL today: Newton's fixture title is 'Celestial Mechanist' where
-  // resolveArchetype names wisdom:vitality 'Ancient Pillar', and Neo's is 'Apex Sovereign'
-  // where it names vitality:adaptability 'Adaptive Fortress'. WHEN THIS STARTS FAILING, the fixtures
+  // resolveArchetype names wisdom:intuition 'Illuminated Sage', and Neo's is 'Apex Sovereign'
+  // where it names adaptability:vitality 'Unshakable Survivor'. WHEN THIS STARTS FAILING, the fixtures
   // were corrected in rating-contract.ts: delete the `.fails`.
   it.fails("the fixtures' archetype titles are the ones resolveArchetype returns", () => {
     const off = contract.FIXTURE_AGENTS.filter(

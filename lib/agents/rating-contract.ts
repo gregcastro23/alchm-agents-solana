@@ -110,16 +110,18 @@ export const RATING_BOUNDS = {
 } as const
 
 /**
- * Roster baselines on the 25–99 rating scale, measured 2026-10-27 over the 72
- * `HISTORICAL_AGENTS` (`deriveSacredStats` → `toRating`):
+ * Roster baselines on the 25–99 rating scale, measured 2026-10-27 over the 60
+ * `HISTORICAL_AGENTS` whose natal chart is not a `placeholder` (`deriveSacredStats` →
+ * `toRating`). The 12 placeholder charts are excluded because their numbers are
+ * declared not to be the person's; they are still rated, just not measured.
  *
  * - `mean` is each stat's mean rating. `computeMeanAlignedRating` shifts a rating
  *   by it, so a stat whose whole roster sits high (power) does not out-earn the
  *   others at the Seal gates. The means sit on a 0.5 grid and sum to a multiple
- *   of 3.5, so `GLOBAL_ROSTER_MEAN` is exactly 76.0 and `rating − mean + 76`
+ *   of 3.5, so `GLOBAL_ROSTER_MEAN` is exactly 75.5 and `rating − mean + 75.5`
  *   is exact binary arithmetic: a rating that lands on a gate clears it. (The
- *   live means are 81.6 / 76.1 / 75.7 / 74.8 / 76.9 / 73.0 / 74.6; each pin is
- *   within 0.3, charisma rounded down so the sum comes out even.)
+ *   live means are 80.6 / 75.6 / 75.2 / 74.4 / 76.2 / 72.6 / 73.7; each pin is
+ *   within 0.32, wisdom and vitality rounded up so the sum comes out even.)
  * - `baseline` is each stat's low median rating (the lower of the two middle
  *   ratings, so it is a rating a vessel can actually have and an advantage is
  *   exactly 0 on it). `computeRelativeAdvantage` measures against it, so the
@@ -128,7 +130,7 @@ export const RATING_BOUNDS = {
  * The previous pins (power 76.5 / 63, …) were near the 0–100 *stat* means rather
  * than the rating means; against them `power` was the archetype primary of 46 of
  * 72 agents. The calibration checks in `test/agents/rating-contract-parity.spec.ts`
- * re-measure the roster and fail when these drift.
+ * re-measure the same 60 charts and fail when these drift.
  *
  * LOCKSTEP: Pentacles keeps a hand-synced copy of this contract
  * (`src/lib/agents/rating-contract.ts`) and recomputes relative advantage,
@@ -138,17 +140,17 @@ export const RATING_BOUNDS = {
  */
 export const ROSTER_BASELINE_RATINGS: Record<SacredStatKey, { mean: number; baseline: number }> =
   Object.freeze({
-    power: { mean: 81.5, baseline: 83 },
-    resonance: { mean: 76.0, baseline: 76 },
-    wisdom: { mean: 75.5, baseline: 76 },
-    charisma: { mean: 74.5, baseline: 76 },
-    intuition: { mean: 77.0, baseline: 77 },
-    adaptability: { mean: 73.0, baseline: 74 },
-    vitality: { mean: 74.5, baseline: 75 },
+    power: { mean: 80.5, baseline: 81 },
+    resonance: { mean: 75.5, baseline: 75 },
+    wisdom: { mean: 75.5, baseline: 75 },
+    charisma: { mean: 74.5, baseline: 75 },
+    intuition: { mean: 76.0, baseline: 75 },
+    adaptability: { mean: 72.5, baseline: 72 },
+    vitality: { mean: 74.0, baseline: 74 },
   })
 
 /** The mean of the seven `mean`s above (the parity spec holds it to that). */
-export const GLOBAL_ROSTER_MEAN = 76.0
+export const GLOBAL_ROSTER_MEAN = 75.5
 
 /** Seal stat gating thresholds */
 export const SEAL_STAT_GATES: Record<SealTier, number> = Object.freeze({
@@ -486,19 +488,19 @@ export const FIXTURE_AGENTS: RatedAgentPayload[] = [
       vitality: 88,
     },
     relativeAdvantage: {
-      power: 1.0,
-      resonance: 6.0,
-      wisdom: 22.0,
-      charisma: -4.0,
-      intuition: 12.0,
-      adaptability: 2.0,
-      vitality: 13.0,
+      power: 3.0,
+      resonance: 7.0,
+      wisdom: 23.0,
+      charisma: -3.0,
+      intuition: 14.0,
+      adaptability: 4.0,
+      vitality: 14.0,
     },
     ovr: 90,
     archetype: {
       title: 'Celestial Mechanist',
       primary: 'wisdom',
-      secondary: 'vitality',
+      secondary: 'intuition',
     },
     esms: {
       spirit: 45.2,
@@ -539,9 +541,9 @@ export const FIXTURE_AGENTS: RatedAgentPayload[] = [
         resonance: 4,
         wisdom: 12,
         charisma: 4,
-        intuition: 4,
+        intuition: 8,
         adaptability: 4,
-        vitality: 8,
+        vitality: 4,
       },
     },
     appearance: resolveAgentAppearance('isaac-newton'),
@@ -570,13 +572,13 @@ export const FIXTURE_AGENTS: RatedAgentPayload[] = [
       vitality: 79,
     },
     relativeAdvantage: {
-      power: -5.0,
-      resonance: 12.0,
-      wisdom: 20.0,
-      charisma: 9.0,
-      intuition: 17.0,
-      adaptability: 23.0,
-      vitality: 4.0,
+      power: -3.0,
+      resonance: 13.0,
+      wisdom: 21.0,
+      charisma: 10.0,
+      intuition: 19.0,
+      adaptability: 25.0,
+      vitality: 5.0,
     },
     ovr: 94,
     archetype: {
@@ -646,13 +648,13 @@ export const FIXTURE_AGENTS: RatedAgentPayload[] = [
       vitality: 68,
     },
     relativeAdvantage: {
-      power: -18.0,
-      resonance: 16.0,
-      wisdom: 10.0,
-      charisma: 2.0,
-      intuition: 22.0,
-      adaptability: 0.0,
-      vitality: -7.0,
+      power: -16.0,
+      resonance: 17.0,
+      wisdom: 11.0,
+      charisma: 3.0,
+      intuition: 24.0,
+      adaptability: 2.0,
+      vitality: -6.0,
     },
     ovr: 90,
     archetype: {
@@ -730,19 +732,19 @@ export const FIXTURE_AGENTS: RatedAgentPayload[] = [
       vitality: 85,
     },
     relativeAdvantage: {
-      power: -1.0,
-      resonance: 4.0,
-      wisdom: 3.0,
-      charisma: 8.0,
-      intuition: 4.0,
-      adaptability: 9.0,
-      vitality: 10.0,
+      power: 1.0,
+      resonance: 5.0,
+      wisdom: 4.0,
+      charisma: 9.0,
+      intuition: 6.0,
+      adaptability: 11.0,
+      vitality: 11.0,
     },
     ovr: 84,
     archetype: {
       title: 'Apex Sovereign',
-      primary: 'vitality',
-      secondary: 'adaptability',
+      primary: 'adaptability',
+      secondary: 'vitality',
     },
     esms: {
       spirit: 62.0,
@@ -784,8 +786,8 @@ export const FIXTURE_AGENTS: RatedAgentPayload[] = [
         wisdom: 4,
         charisma: 4,
         intuition: 4,
-        adaptability: 8,
-        vitality: 12,
+        adaptability: 12,
+        vitality: 8,
       },
     },
     appearance: resolveAgentAppearance('user-avatar-neo'),

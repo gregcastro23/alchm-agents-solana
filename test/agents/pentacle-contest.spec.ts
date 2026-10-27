@@ -717,7 +717,7 @@ describe('effectiveContestRating: arithmetic', () => {
         vitality: 88,
       }),
       [buildCanonicalSeal('wisdom', 'Celestial'), buildCanonicalSeal('intuition', 'Gold')],
-      surgeOf(true, contractBoosts('inferno', 'wisdom', 'vitality'))
+      surgeOf(true, contractBoosts('inferno', 'wisdom', 'intuition'))
     )
     const leonardo = vessel(
       flat(0, {
@@ -771,16 +771,16 @@ describe('effectiveContestRating: arithmetic', () => {
     })
 
     it('Newton: wisdom 98 + 12 clamps to 99, a Celestial matter Seal multiplies Spire N', () => {
-      // boosted: power 88, resonance 86, wisdom 99, charisma 76, intuition 93, adaptability 80, vitality 96.
-      // Spire N (Earth/matter): 88·.05 + 86·.10 + 99·.35 + 76·.05 + 93·.20 + 80·.15 + 96·.10 = 91.65
-      // × 1.40 = 128.31.
-      expect(effectiveContestRating(newton, 5)).toBe(128.31)
+      // boosted: power 88, resonance 86, wisdom 99, charisma 76, intuition 97, adaptability 80, vitality 92.
+      // Spire N (Earth/matter): 88·.05 + 86·.10 + 99·.35 + 76·.05 + 97·.20 + 80·.15 + 92·.10 = 92.05
+      // × 1.40 = 128.87.
+      expect(effectiveContestRating(newton, 5)).toBe(128.87)
       // Spire SE (Fire/spirit) holds the Gold intuition Seal: 88·.10 + 86·.05 + 99·.20 + 76·.10 +
-      // 93·.35 + 80·.15 + 96·.05 = 89.85, × 1.18 = 106.023.
-      expect(effectiveContestRating(newton, 7)).toBe(106.02)
+      // 97·.35 + 80·.15 + 92·.05 = 91.05, × 1.18 = 107.439.
+      expect(effectiveContestRating(newton, 7)).toBe(107.44)
       // House SW-WNW (Water/essence): no essence Seal, so the bare 88·.25 + 86·.20 + 99·.05 + 76·.05
-      // + 93·.05 + 80·.05 + 96·.35 = 90.2.
-      expect(effectiveContestRating(newton, 3)).toBe(90.2)
+      // + 97·.05 + 80·.05 + 92·.35 = 89.
+      expect(effectiveContestRating(newton, 3)).toBe(89)
     })
 
     it('Leonardo: an inactive surge adds nothing, two Celestial Seals multiply their own zones', () => {
