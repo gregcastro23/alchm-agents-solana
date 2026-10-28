@@ -11,6 +11,7 @@ import {
 } from '@/lib/agents/council/daily-council-types'
 import { DailyCouncilTurnSchema } from '@/lib/agents/council/daily-edition-schema'
 import { ASPECT_DEFINITIONS } from '@/lib/agents/council/aspect-dialogue-engine'
+import { ModeSwitcher } from './council-mode-switcher'
 
 const SPEAKER_STYLE: Record<CouncilSpeakerKey, { glyph: string; color: string }> = {
   gregory: { glyph: '✦', color: '#b8fc4b' },
@@ -364,11 +365,15 @@ function FollowUpQuestions({ edition }: { edition: DailyCouncilEdition }) {
 export interface DailyPlanetaryCouncilProps {
   compact?: boolean
   onOpenCouncil?: () => void
+  activeCouncilMode?: 'live' | 'solar-return'
+  onCouncilModeChange?: (mode: 'live' | 'solar-return') => void
 }
 
 export function DailyPlanetaryCouncil({
   compact = false,
   onOpenCouncil,
+  activeCouncilMode = 'live',
+  onCouncilModeChange,
 }: DailyPlanetaryCouncilProps) {
   const { edition, previousEdition, updates, status, loading, error, message, refresh } =
     useDailyPlanetaryCouncil()
@@ -388,9 +393,14 @@ export function DailyPlanetaryCouncil({
     >
       <div className={compact ? 'p-5' : 'p-5 sm:p-8'}>
         <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-2 font-mono-label text-[10px] uppercase tracking-widest text-[#b8fc4b]">
-            <Sparkles aria-hidden="true" className="h-4 w-4" />
-            {label} · Hosted by Gregory Castro
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2 font-mono-label text-[10px] uppercase tracking-widest text-[#b8fc4b]">
+              <Sparkles aria-hidden="true" className="h-4 w-4" />
+              {label} · Hosted by Gregory Castro
+            </div>
+            {!compact && onCouncilModeChange && (
+              <ModeSwitcher mode={activeCouncilMode} onModeChange={onCouncilModeChange} />
+            )}
           </div>
           <button
             type="button"
