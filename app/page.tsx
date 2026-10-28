@@ -35,6 +35,7 @@ import ResonantStarVaultsWidget from '@/components/staking/ResonantStarVaultsWid
 import { usePlanetaryPositions } from '@/hooks/usePlanetaryPositions'
 import { LivePlanetaryCouncilThread } from '@/components/landing/live-planetary-council-thread'
 import { DailyPlanetaryCouncil } from '@/components/landing/daily-planetary-council'
+import { SolarReturnCouncil } from '@/components/landing/solar-return-council'
 import FreeAgentsOfTheWeek from '@/components/landing/free-agents-of-the-week'
 import { useFreeAgents } from '@/hooks/use-free-agents'
 import {
@@ -813,7 +814,7 @@ export default function LandingPage() {
 
         {/* ==================== SHARED DAILY PLANETARY COUNCIL ==================== */}
         <section id="current-promotion" className="space-y-6">
-          <DailyPlanetaryCouncil />
+          <SolarReturnCouncil defaultMode="live" />
         </section>
 
         {/* ======================= PLANETARY AGENTS & SKY COUNCIL ======================= */}
