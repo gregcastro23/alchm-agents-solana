@@ -19,8 +19,10 @@ import {
 } from '@/lib/agents/rating/esms-balance-resolver'
 import { prismaLedgerLoader } from '@/lib/agents/rating/esms-ledger-store.server'
 import { SkyUnavailableError, resolveLiveSky } from '@/lib/agents/rating/live-sky'
+import type { RatedAgentPayload } from '@/lib/agents/rating-contract'
 import type { EsmsHoldings } from '@/lib/agents/rating/seals-surge'
 import {
+  asContractPayload,
   buildRatedAgentPayload,
   ratableFromForgedRow,
   ratableFromRoster,
@@ -28,6 +30,7 @@ import {
   type RatableVessel,
   type RatedVesselPayload,
 } from '@/lib/agents/rating/vessel-payload'
+import { getClientIp, rateLimit } from '@/lib/security/rate-limit'
 import { bearerMatches } from '@/lib/security/secure-compare'
 
 export const AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/
@@ -258,4 +261,78 @@ export async function ratedPayload(
     // A vessel the roster does not know (a forged one) comes back 'unavailable' with null numbers.
     progression: computeAgentProgression(ledgerIdOf(vessel)),
   })
+}
+
+/**
+ * Rate and read one resolved vessel for a GET: the creator-wallet policy for this caller, the
+ * pushed holdings a feeder left for it, then `ratedPayload`. `GET /api/agents/rating` and
+ * `GET /api/agents/[slug]/ratings` both read through here, so they cannot disagree about whose
+ * wallet may be read or which holdings win. Only a person's vessel has a private wallet; a
+ * roster agent's is public, so it is always read under `'deny'` and never needs a credential.
+ */
+export async function readRatedVessel(
+  request: NextRequest,
+  vessel: RatableVessel
+): Promise<{ payload: RatedVesselPayload; creatorWallet: CreatorWalletPolicy }> {
+  const creatorWallet =
+    vessel.origin === 'forged' ? await creatorWalletPolicy(request) : ('deny' as const)
+  const live =
+    vessel.origin === 'roster' || creatorWallet === 'allow' ? readPushed(ledgerIdOf(vessel)) : null
+  return { payload: await ratedPayload(vessel, live, creatorWallet), creatorWallet }
+}
+
+/**
+ * The rating that may be put on the live feed stream, or `null` when nothing may be.
+ *
+ * `/api/feed/stream` is anonymous and replays the last ratings to every new subscriber, so a
+ * payload goes on it only when it holds nothing private and states nothing that was not read:
+ *
+ * - a roster vessel under the `'deny'` wallet policy: a canonical figure's holdings are public,
+ *   and no credential changed what the payload says. Never a forged vessel (its wallet is its
+ *   creator's, and even the baseline would let an anonymous GET write the live stream about a
+ *   person's vessel), and never a payload computed for an entitled caller;
+ * - a real sky (`asContractPayload` is `null` without one: a calm-looking surge from no sky
+ *   would impersonate a real one);
+ * - no degraded read: when the ledger could not be read, the holdings are the baseline (or
+ *   zero), and a surge computed from them would be a rating nobody earned.
+ */
+export function streamableRating(
+  vessel: RatableVessel,
+  creatorWallet: CreatorWalletPolicy,
+  payload: RatedVesselPayload
+): RatedAgentPayload | null {
+  if (vessel.origin !== 'roster' || creatorWallet !== 'deny') return null
+  if (payload.degraded) return null
+  return asContractPayload(payload)
+}
+
+const MINUTE_MS = 60_000
+
+function envLimit(name: string, fallback: number): number {
+  const parsed = Number.parseInt(process.env[name] ?? '', 10)
+  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
+}
+
+/**
+ * Charge this caller's own budget (`RATING_API_PER_CALLER_PER_MIN`, 120). Both rating routes
+ * draw on the one `rating:<ip>` bucket: a caller has a single allowance for the sky, the ledger
+ * and the stream, however it spends it. Charge it first, before validating anything.
+ */
+export function withinCallerBudget(request: NextRequest): boolean {
+  return rateLimit(`rating:${getClientIp(request.headers)}`, {
+    limit: envLimit('RATING_API_PER_CALLER_PER_MIN', 120),
+    windowMs: MINUTE_MS,
+  }).ok
+}
+
+/**
+ * Charge the budget every caller shares (`RATING_API_GLOBAL_PER_MIN`, 1200). Only a request
+ * that will do real work (a ledger read, a sky fetch) pays it, never a malformed id or the
+ * static roster listing.
+ */
+export function withinSharedBudget(): boolean {
+  return rateLimit('rating:global', {
+    limit: envLimit('RATING_API_GLOBAL_PER_MIN', 1200),
+    windowMs: MINUTE_MS,
+  }).ok
 }
