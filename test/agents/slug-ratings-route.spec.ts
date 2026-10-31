@@ -724,4 +724,173 @@ describe('GET /api/agents/[slug]/ratings', () => {
       expect(fetchMock).not.toHaveBeenCalled()
     })
   })
+
+  describe('a degraded read is never published', () => {
+    // A rating built from a baseline (the ledger could not be read) or from no sky has no surge
+    // anyone earned. The response says so (`degraded`); the anonymous stream must not say more.
+    const nothingPublished = () => {
+      expect(feedStreamBus.getRecentRatings()).toEqual([])
+      expect(feedMessages).toEqual([])
+    }
+
+    beforeEach(() => {
+      vi.stubEnv('ALCHM_KITCHEN_SYNC_SECRET', '')
+    })
+    afterEach(() => {
+      vi.unstubAllEnvs()
+    })
+
+    it('publishes a healthy roster read (the control)', async () => {
+      const res = await h.get('isaac-newton')
+      expect((await res.json()).degraded).toBeUndefined()
+      expect(feedStreamBus.getRecentRatings().map(r => r.key)).toEqual(['isaac-newton'])
+    })
+
+    it('does not publish a roster vessel that has no ledger row', async () => {
+      const body = await (await h.get('leonardo-da-vinci')).json()
+      expect(body.degraded).toEqual({ esms: 'no ledger row' })
+      expect(body.surge).not.toBeNull()
+      nothingPublished()
+    })
+
+    it('does not publish a roster vessel whose ledger could not be read', async () => {
+      h.db.failures.user = new Error('PrismaClientInitializationError')
+      const body = await (await h.get('isaac-newton')).json()
+      expect(body.degraded).toEqual({ esms: 'ledger unavailable' })
+      nothingPublished()
+    })
+
+    it('does not publish without a live sky, and the answer says there is no surge', async () => {
+      h.resolveSky.mockRejectedValue(new Error('ephemeris down'))
+      const body = await (await h.get('isaac-newton')).json()
+      expect(body.surge).toBeNull()
+      expect(body.degraded?.sky).toBe('live sky unavailable')
+      nothingPublished()
+    })
+
+    it('publishes again once the read is healthy', async () => {
+      h.db.failures.user = new Error('PrismaClientInitializationError')
+      await h.get('isaac-newton')
+      nothingPublished()
+
+      h.db.failures.user = undefined
+      await h.get('isaac-newton')
+      expect(feedStreamBus.getRecentRatings().map(r => r.key)).toEqual(['isaac-newton'])
+    })
+  })
+
+  describe('streamableRating: what the anonymous stream may carry', () => {
+    async function rated(agentId: string) {
+      const lookup = await h.resolverServer.resolveVessel(agentId)
+      if (!lookup.found) throw new Error(`no vessel ${agentId}`)
+      const payload = await h.resolverServer.ratedPayload(lookup.vessel, null, 'deny')
+      return { vessel: lookup.vessel, payload }
+    }
+
+    it('takes a healthy roster vessel read under the deny policy', async () => {
+      const { vessel, payload } = await rated('isaac-newton')
+      const streamable = h.resolverServer.streamableRating(vessel, 'deny', payload)
+      expect(streamable?.key).toBe('isaac-newton')
+      expect(streamable?.surge).toEqual(payload.surge)
+    })
+
+    it('refuses a payload computed for an entitled caller', async () => {
+      const { vessel, payload } = await rated('isaac-newton')
+      expect(h.resolverServer.streamableRating(vessel, 'allow', payload)).toBeNull()
+      expect(h.resolverServer.streamableRating(vessel, { userId: CREATOR }, payload)).toBeNull()
+    })
+
+    it('refuses any forged vessel, whatever the policy', async () => {
+      const { vessel, payload } = await rated(FORGED)
+      expect(vessel.origin).toBe('forged')
+      for (const policy of ['deny', 'allow', { userId: CREATOR }] as const) {
+        expect(h.resolverServer.streamableRating(vessel, policy, payload)).toBeNull()
+      }
+    })
+
+    it('refuses a degraded payload, for either part of the read', async () => {
+      const { vessel, payload } = await rated('isaac-newton')
+      for (const degraded of [{ esms: 'ledger unavailable' }, { sky: 'live sky unavailable' }]) {
+        expect(
+          h.resolverServer.streamableRating(vessel, 'deny', { ...payload, degraded })
+        ).toBeNull()
+      }
+    })
+
+    it('refuses a payload with no surge (no sky)', async () => {
+      const { vessel, payload } = await rated('isaac-newton')
+      expect(
+        h.resolverServer.streamableRating(vessel, 'deny', { ...payload, surge: null })
+      ).toBeNull()
+    })
+  })
+
+  describe('rate limiting: the same budgets as GET /api/agents/rating', () => {
+    afterEach(() => {
+      vi.unstubAllEnvs()
+    })
+
+    const ip = (n: number) => ({ 'x-forwarded-for': `203.0.113.${n}` })
+
+    it('answers 429 with Retry-After and CORS once a caller is past its budget, and only that caller', async () => {
+      vi.stubEnv('RATING_API_PER_CALLER_PER_MIN', '2')
+      h = await boot()
+      const statuses: number[] = []
+      for (let i = 0; i < 4; i++) statuses.push((await h.get('isaac-newton')).status)
+      expect(statuses).toEqual([200, 200, 429, 429])
+
+      const limited = await h.get('isaac-newton')
+      expect(limited.headers.get('retry-after')).toBe('60')
+      expect(limited.headers.get('access-control-allow-origin')).toBe('*')
+      expect(await limited.json()).toEqual({ error: 'Too Many Requests' })
+
+      const other = await h.get('isaac-newton', ip(77))
+      expect(other.status).toBe(200)
+      expect(other.headers.get('retry-after')).toBeNull()
+    })
+
+    it('does no work for, and publishes nothing from, a request it refuses', async () => {
+      vi.stubEnv('RATING_API_PER_CALLER_PER_MIN', '1')
+      h = await boot()
+      unsub = feedStreamBus.subscribe(m => feedMessages.push(m))
+      await h.get('isaac-newton')
+      const skyCalls = h.resolveSky.mock.calls.length
+      const lookups = h.db.historicalFindUnique.mock.calls.length
+      feedStreamBus.resetForTesting()
+      feedMessages.length = 0
+
+      expect((await h.get('leonardo-da-vinci')).status).toBe(429)
+      expect(h.resolveSky.mock.calls.length).toBe(skyCalls)
+      expect(h.db.historicalFindUnique.mock.calls.length).toBe(lookups)
+      expect(feedStreamBus.getRecentRatings()).toEqual([])
+      expect(feedMessages).toEqual([])
+    })
+
+    it('limits the whole route to a shared budget that a malformed slug does not spend', async () => {
+      vi.stubEnv('RATING_API_GLOBAL_PER_MIN', '2')
+      h = await boot()
+      expect((await h.get('../x', ip(1))).status).toBe(400)
+      expect((await h.get('isaac-newton', ip(2))).status).toBe(200)
+      expect((await h.get('isaac-newton', ip(3))).status).toBe(200)
+
+      const spent = await h.get('isaac-newton', ip(4))
+      expect(spent.status).toBe(429)
+      expect(spent.headers.get('retry-after')).toBe('60')
+    })
+
+    it('draws on the one caller bucket GET /api/agents/rating draws on', async () => {
+      vi.stubEnv('RATING_API_PER_CALLER_PER_MIN', '2')
+      h = await boot()
+      const ratingRoute = await import('@/app/api/agents/rating/route')
+      const viaRating = () =>
+        ratingRoute.GET(
+          new NextRequest('http://localhost:3000/api/agents/rating?agentId=isaac-newton')
+        )
+
+      expect((await h.get('isaac-newton')).status).toBe(200)
+      expect((await viaRating()).status).toBe(200)
+      expect((await h.get('isaac-newton')).status).toBe(429)
+      expect((await viaRating()).status).toBe(429)
+    })
+  })
 })

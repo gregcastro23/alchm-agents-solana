@@ -211,14 +211,20 @@ the recalculation and kept for 60 s per serverless instance, keyed by the ledger
 ### `GET /api/agents/[slug]/ratings`
 
 The same payload through the same `ratedPayload` (`lib/agents/rating/rating-resolver.server.ts`,
-since #68): live sky, ledger, wallet policy and progression are identical. Differences: the slug is
-lower-cased first and retried as given; there is no rate limit; errors are `{ error }` (`400`,
-`404`, `422`, `503`, `500`); a roster vessel answers `Cache-Control: no-cache, no-transform`, a
-forged one `private, no-store` plus `CDN-Cache-Control: no-store` and
-`Vary: Authorization, Cookie, X-Internal-Secret`. A roster vessel with a sky is always published to
-`/api/feed/stream` (`recordAgentRating`, and `recordResonanceSurge` while the surge is active): its
-wallet policy is always `'deny'`, so a credential neither changes its payload nor stops the publish.
-A forged vessel is never published, with or without a credential.
+since #68): live sky, ledger, wallet policy and progression are identical, through the shared
+`readRatedVessel`. It draws on the same rate-limit buckets as `GET /api/agents/rating`
+(`withinCallerBudget`, one `rating:<ip>` bucket for both routes, then `withinSharedBudget` for a
+request that will do real work); past either it answers `429` `{ error: "Too Many Requests" }` with
+`Retry-After: 60` and CORS, and does no work. Differences: the slug is lower-cased first and retried
+as given; errors are `{ error }` (`400`, `404`, `422`, `429`, `503`, `500`); a roster vessel answers
+`Cache-Control: no-cache, no-transform`, a forged one `private, no-store` plus
+`CDN-Cache-Control: no-store` and `Vary: Authorization, Cookie, X-Internal-Secret`.
+
+What reaches `/api/feed/stream` (`recordAgentRating`, and `recordResonanceSurge` while the surge is
+active) is decided by one function, `streamableRating`: a **roster vessel**, read under the `'deny'`
+wallet policy (so a credential neither changes its payload nor stops the publish), with a **real
+sky** and **no `degraded` part** — a baseline-ESMS or no-sky rating is answered to the caller but
+never put on the stream. A forged vessel is never published, with or without a credential.
 
 ## Zone contests
 

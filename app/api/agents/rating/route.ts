@@ -3,17 +3,17 @@ import { HISTORICAL_AGENTS } from '@/lib/agents/historical'
 import {
   AGENT_ID,
   AgentLookupUnavailable,
-  creatorWalletPolicy,
   describeError,
   ledgerIdOf,
   ratedPayload,
-  readPushed,
+  readRatedVessel,
   rememberPushed,
   resolveVessel,
+  withinCallerBudget,
+  withinSharedBudget,
 } from '@/lib/agents/rating/rating-resolver.server'
 import { ESMS_TOKENS, type EsmsHoldings } from '@/lib/agents/rating/seals-surge'
 import { ratableFromRoster, summarizeVessel } from '@/lib/agents/rating/vessel-payload'
-import { getClientIp, rateLimit } from '@/lib/security/rate-limit'
 import { bearerMatches } from '@/lib/security/secure-compare'
 
 /**
@@ -75,13 +75,6 @@ export async function OPTIONS() {
 }
 
 const MAX_POST_BYTES = 4 * 1024
-const MINUTE_MS = 60_000
-
-function envLimit(name: string, fallback: number): number {
-  const parsed = Number.parseInt(process.env[name] ?? '', 10)
-  return Number.isFinite(parsed) && parsed > 0 ? parsed : fallback
-}
-
 function json(
   body: unknown,
   status: number,
@@ -149,11 +142,8 @@ export async function GET(request: NextRequest) {
   try {
     // Charge the caller first; the shared bucket is charged only by a request that will do
     // real work (a ledger read, a sky fetch), never by a malformed id or the static roster.
-    const caller = rateLimit(`rating:${getClientIp(request.headers)}`, {
-      limit: envLimit('RATING_API_PER_CALLER_PER_MIN', 120),
-      windowMs: MINUTE_MS,
-    })
-    if (!caller.ok) return json({ success: false, error: 'Too Many Requests' }, 429, RETRY)
+    if (!withinCallerBudget(request))
+      return json({ success: false, error: 'Too Many Requests' }, 429, RETRY)
 
     const params = request.nextUrl.searchParams
     if (params.get('roster') === 'true') {
@@ -167,28 +157,15 @@ export async function GET(request: NextRequest) {
     const invalid = badAgentId(agentId)
     if (invalid) return invalid
 
-    const overall = rateLimit('rating:global', {
-      limit: envLimit('RATING_API_GLOBAL_PER_MIN', 1200),
-      windowMs: MINUTE_MS,
-    })
-    if (!overall.ok) return json({ success: false, error: 'Too Many Requests' }, 429, RETRY)
+    if (!withinSharedBudget())
+      return json({ success: false, error: 'Too Many Requests' }, 429, RETRY)
 
     const lookup = await resolveVessel(agentId as string)
     if (!lookup.found) return notRated(agentId as string, lookup.reason, true)
     const { vessel } = lookup
 
-    // Only a person's vessel has a private wallet; a roster agent's is public.
-    const creatorWallet =
-      vessel.origin === 'forged' ? await creatorWalletPolicy(request) : ('deny' as const)
-    const live =
-      vessel.origin === 'roster' || creatorWallet === 'allow'
-        ? readPushed(ledgerIdOf(vessel))
-        : null
-    return json(
-      await ratedPayload(vessel, live, creatorWallet),
-      200,
-      vessel.origin === 'forged' ? PER_VIEWER : {}
-    )
+    const { payload } = await readRatedVessel(request, vessel)
+    return json(payload, 200, vessel.origin === 'forged' ? PER_VIEWER : {})
   } catch (error) {
     if (error instanceof AgentLookupUnavailable) {
       console.error('[rating] agent lookup unavailable:', error.message)
