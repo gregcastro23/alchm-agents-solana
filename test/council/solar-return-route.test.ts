@@ -30,4 +30,19 @@ describe('Solar Return Council API Route', () => {
     expect(json.edition.date).toBe('2026-10-27')
     expect(json.edition.telemetry.solarAlignment.sign).toBe('Scorpio')
   })
+
+  it('supports multi-year historical chart lookup via yearsAgo query param', async () => {
+    const req = new NextRequest(
+      'http://localhost:3000/api/agents/council-solar-return?date=2026-10-27T12:00:00.000Z&yearsAgo=12'
+    )
+    const response = await GET(req)
+
+    expect(response.status).toBe(200)
+    const json = await response.json()
+
+    expect(json.edition).not.toBeNull()
+    expect(json.edition.yearsAgo).toBe(12)
+    expect(new Date(json.edition.returnIso).getUTCFullYear()).toBe(2014)
+    expect(json.edition.telemetry.solarAlignment.sign).toBe('Scorpio')
+  })
 })

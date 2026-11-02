@@ -1,11 +1,35 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 
 import { AlchemicalButton } from './AlchemicalButton'
 import { RitualInput } from './RitualInput'
 import { useOccultStore } from '@/lib/store/occult-store'
+import {
+  SEAL_TIER_MULTIPLIERS,
+  resolveZoneContest,
+  type RatedVesselPayload,
+} from '@/lib/agents/rating'
+import { SEAL_TIERS } from '@/lib/agents/rating-contract'
 import { cn } from '@/lib/utils'
+
+function formatBestSeal(payload: RatedVesselPayload | null): string {
+  if (!payload || payload.seals.length === 0) return '1.00x Base'
+  let maxIdx = -1
+  for (const seal of payload.seals) {
+    const idx = SEAL_TIERS.indexOf(seal.tier)
+    if (idx > maxIdx) maxIdx = idx
+  }
+  if (maxIdx < 0) return '1.00x Base'
+  const tier = SEAL_TIERS[maxIdx]
+  return `${SEAL_TIER_MULTIPLIERS[tier].toFixed(2)}x ${tier}`
+}
+
+function formatSurgeBoosts(payload: RatedVesselPayload | null): string {
+  if (!payload?.surge) return 'Surge Idle'
+  if (payload.surge.active) return 'Surge +12/+8/+4'
+  return `Surge ${Math.round(payload.surge.meter)}/100`
+}
 
 /**
  * Jing Arena — Active Duel (Stitch realization plan, Phase 5, Module 3).
@@ -32,7 +56,67 @@ export function DuelChat({ onAssemble }: { onAssemble: () => void }) {
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [yieldNote, setYieldNote] = useState<string | null>(null)
+  const [casterRating, setCasterRating] = useState<RatedVesselPayload | null>(null)
+  const [targetRating, setTargetRating] = useState<RatedVesselPayload | null>(null)
   const idCounter = useRef(0)
+
+  useEffect(() => {
+    if (!caster?.agentId) {
+      setCasterRating(null)
+      return
+    }
+    let cancelled = false
+    fetch(`/api/agents/rating?agentId=${encodeURIComponent(caster.agentId)}`, { cache: 'no-store' })
+      .then(res => (res.ok ? (res.json() as Promise<RatedVesselPayload>) : null))
+      .then(data => {
+        if (!cancelled) setCasterRating(data)
+      })
+      .catch(() => {
+        if (!cancelled) setCasterRating(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [caster?.agentId])
+
+  useEffect(() => {
+    if (!target?.agentId) {
+      setTargetRating(null)
+      return
+    }
+    let cancelled = false
+    fetch(`/api/agents/rating?agentId=${encodeURIComponent(target.agentId)}`, { cache: 'no-store' })
+      .then(res => (res.ok ? (res.json() as Promise<RatedVesselPayload>) : null))
+      .then(data => {
+        if (!cancelled) setTargetRating(data)
+      })
+      .catch(() => {
+        if (!cancelled) setTargetRating(null)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [target?.agentId])
+
+  const liveCrownMatchup = useMemo(() => {
+    const cRatings = casterRating?.ratings ?? caster?.ratings
+    const tRatings = targetRating?.ratings ?? target?.ratings
+    if (!cRatings || !tRatings) return null
+    return resolveZoneContest(
+      {
+        ratings: cRatings,
+        seals: casterRating?.seals ?? [],
+        surge: casterRating?.surge ?? null,
+      },
+      {
+        ratings: tRatings,
+        seals: targetRating?.seals ?? [],
+        surge: targetRating?.surge ?? null,
+      },
+      10,
+      50
+    )
+  }, [casterRating, targetRating, caster?.ratings, target?.ratings])
 
   const nextId = () => `duel-${++idCounter.current}`
 
@@ -215,22 +299,74 @@ export function DuelChat({ onAssemble }: { onAssemble: () => void }) {
 
   return (
     <div className="min-h-screen bg-st-background pb-56 md:pb-40">
-      {/* Versus header */}
-      <header className="px-margin-mobile md:px-margin-desktop pt-10 max-w-container-max mx-auto flex items-center justify-between gap-4">
-        <div className="text-left">
-          <p className="font-label-mono text-[11px] uppercase tracking-widest text-spirit-violet">
-            Caster
-          </p>
-          <h2 className="font-headline-sm text-headline-sm text-on-surface">{caster.name}</h2>
-        </div>
-        <span className="material-symbols-outlined text-st-secondary text-3xl" aria-hidden>
-          swords
-        </span>
-        <div className="text-right">
-          <p className="font-label-mono text-[11px] uppercase tracking-widest text-st-secondary">
-            Target
-          </p>
-          <h2 className="font-headline-sm text-headline-sm text-on-surface">{target.name}</h2>
+      {/* Versus header + Side-by-Side Seal & Surge Matchup Modifiers */}
+      <header className="px-margin-mobile md:px-margin-desktop pt-10 max-w-container-max mx-auto space-y-3">
+        <div className="flex items-center justify-between gap-4">
+          <div className="text-left">
+            <p className="font-label-mono text-[11px] uppercase tracking-widest text-spirit-violet">
+              Caster
+            </p>
+            <h2 className="font-headline-sm text-headline-sm text-on-surface">{caster.name}</h2>
+            <div className="mt-1.5 flex flex-wrap items-center gap-1.5 font-mono text-[10px]">
+              {(casterRating?.ovr ?? caster.ovr) && (
+                <span className="rounded border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 font-bold text-amber-200 tabular-nums">
+                  PVR {casterRating?.ovr ?? caster.ovr}
+                </span>
+              )}
+              <span className="rounded border border-amber-400/25 bg-black/40 px-1.5 py-0.5 text-amber-200/90 tabular-nums">
+                {formatBestSeal(casterRating)}
+              </span>
+              <span
+                className={cn(
+                  'rounded border px-1.5 py-0.5 tabular-nums',
+                  casterRating?.surge?.active
+                    ? 'border-emerald-400/35 bg-emerald-500/10 text-emerald-200'
+                    : 'border-white/10 bg-black/30 text-zinc-400'
+                )}
+              >
+                {formatSurgeBoosts(casterRating)}
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-col items-center gap-1 text-center">
+            <span className="material-symbols-outlined text-st-secondary text-3xl" aria-hidden>
+              swords
+            </span>
+            {liveCrownMatchup && (
+              <span className="rounded-full border border-amber-400/25 bg-black/50 px-2.5 py-0.5 font-mono text-[10px] text-amber-200 tabular-nums">
+                Crown ECR {liveCrownMatchup.attackerScore.toFixed(1)} vs{' '}
+                {liveCrownMatchup.defenderScore.toFixed(1)}
+              </span>
+            )}
+          </div>
+
+          <div className="text-right">
+            <p className="font-label-mono text-[11px] uppercase tracking-widest text-st-secondary">
+              Target
+            </p>
+            <h2 className="font-headline-sm text-headline-sm text-on-surface">{target.name}</h2>
+            <div className="mt-1.5 flex flex-wrap items-center justify-end gap-1.5 font-mono text-[10px]">
+              {(targetRating?.ovr ?? target.ovr) && (
+                <span className="rounded border border-amber-400/40 bg-amber-400/10 px-1.5 py-0.5 font-bold text-amber-200 tabular-nums">
+                  PVR {targetRating?.ovr ?? target.ovr}
+                </span>
+              )}
+              <span className="rounded border border-amber-400/25 bg-black/40 px-1.5 py-0.5 text-amber-200/90 tabular-nums">
+                {formatBestSeal(targetRating)}
+              </span>
+              <span
+                className={cn(
+                  'rounded border px-1.5 py-0.5 tabular-nums',
+                  targetRating?.surge?.active
+                    ? 'border-emerald-400/35 bg-emerald-500/10 text-emerald-200'
+                    : 'border-white/10 bg-black/30 text-zinc-400'
+                )}
+              >
+                {formatSurgeBoosts(targetRating)}
+              </span>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -289,7 +425,7 @@ export function DuelChat({ onAssemble }: { onAssemble: () => void }) {
 
       {/* Composer */}
       <form
-        className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] md:bottom-6 left-0 right-0 md:left-64 px-margin-mobile md:px-margin-desktop"
+        className="fixed bottom-6 left-0 right-0 px-margin-mobile md:px-margin-desktop z-30"
         onSubmit={e => {
           e.preventDefault()
           if (!topic.trim() || busy) return

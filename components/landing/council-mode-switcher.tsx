@@ -43,7 +43,7 @@ export function ModeSwitcher({ mode, onModeChange }: ModeSwitcherProps) {
             : 'text-[#c2cab0] hover:text-[#e0e4d2]'
         }`}
       >
-        ☉ 1-Year-Ago Solar Return
+        ☉ Solar Return Charts
       </button>
     </div>
   )

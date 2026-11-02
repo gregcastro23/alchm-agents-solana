@@ -8,6 +8,7 @@ export const runtime = 'nodejs'
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url)
   const dateParam = searchParams.get('date')
+  const yearsAgoParam = searchParams.get('yearsAgo')
 
   let parsedDate: Date | undefined
   if (dateParam) {
@@ -17,7 +18,15 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  const result = await getSolarReturnCouncilEdition(parsedDate)
+  let yearsAgo = 1
+  if (yearsAgoParam) {
+    const n = Number.parseInt(yearsAgoParam, 10)
+    if (Number.isFinite(n) && n >= 1 && n <= 100) {
+      yearsAgo = n
+    }
+  }
+
+  const result = await getSolarReturnCouncilEdition(parsedDate, yearsAgo)
   const validated = SolarReturnCouncilResponseSchema.parse(result)
 
   return NextResponse.json(validated, {

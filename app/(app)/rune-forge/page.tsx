@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useCallback } from 'react'
+import { useState, useCallback, useEffect } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
@@ -21,11 +21,11 @@ import {
   MapPin,
   Clock,
   Info,
-  ChevronRight,
-  Plus,
+  BookOpen,
   X,
 } from 'lucide-react'
 import dynamic from 'next/dynamic'
+import { MULTI_CHART_RUNE_CATALOG } from '@/lib/runes/multi-chart-runes'
 
 const NatalSigilGenerator = dynamic(() => import('@/components/misc/natal-sigil-generator'), {
   loading: () => (
@@ -62,6 +62,15 @@ interface GeneratedSigil extends NatalSigilRune {
 export default function RuneForgePage() {
   const isMobile = useIsMobile()
   const [activeTab, setActiveTab] = useState('quick')
+
+  useEffect(() => {
+    if (typeof window === 'undefined') return
+    const params = new URLSearchParams(window.location.search)
+    const requested = params.get('tab')
+    if (requested && ['quick', 'manual', 'codex'].includes(requested)) {
+      setActiveTab(requested)
+    }
+  }, [])
   const [birthInfo, setBirthInfo] = useState<BirthInfo | null>(null)
   const [geometry, setGeometry] = useState<RuneGeometry | null>(null)
   const [isProcessing, setIsProcessing] = useState(false)
@@ -278,19 +287,22 @@ export default function RuneForgePage() {
     <div className="container mx-auto py-8 px-4 max-w-6xl">
       {/* Header */}
       <div className="mb-8 text-center">
-        <h1 className="text-4xl font-bold mb-3 flex items-center justify-center gap-3">
-          <Hammer className="w-8 h-8 text-purple-500" />
-          Rune Forge
+        <div className="inline-flex items-center gap-2 rounded-full border border-violet-400/30 bg-violet-500/10 px-3 py-1 text-xs font-semibold text-violet-200 mb-3">
+          <Hammer className="w-3.5 h-3.5 text-amber-300" />
+          <span>Runic Sigil Sanctum &amp; Multi-Chart Codex</span>
+        </div>
+        <h1 className="text-4xl font-bold mb-3 bg-gradient-to-r from-amber-200 via-purple-200 to-violet-400 bg-clip-text text-transparent">
+          Rune Forge &amp; Codex
         </h1>
-        <p className="text-lg text-muted-foreground max-w-2xl mx-auto">
-          Transform your natal chart geometry into personalized runic sigils for meditation and
-          magical practice
+        <p className="text-base text-muted-foreground max-w-2xl mx-auto">
+          Transform natal chart geometry into personalized runic sigils and inspect the canonical
+          ESMS multi-chart Rune Codex.
         </p>
       </div>
 
       {/* Main Content */}
       <Tabs value={activeTab} onValueChange={setActiveTab}>
-        <TabsList className={`grid ${isMobile ? 'grid-cols-2' : 'grid-cols-6'} w-full mb-6`}>
+        <TabsList className={`grid ${isMobile ? 'grid-cols-3' : 'grid-cols-7'} w-full mb-6`}>
           {isMobile ? (
             <>
               <TabsTrigger value="quick" className="text-xs">
@@ -300,6 +312,10 @@ export default function RuneForgePage() {
               <TabsTrigger value="manual" className="text-xs">
                 <User className="w-4 h-4 mr-1" />
                 Manual
+              </TabsTrigger>
+              <TabsTrigger value="codex" className="text-xs">
+                <BookOpen className="w-4 h-4 mr-1" />
+                Codex
               </TabsTrigger>
               {geometry && (
                 <>
@@ -330,6 +346,10 @@ export default function RuneForgePage() {
             <>
               <TabsTrigger value="quick">Quick Input</TabsTrigger>
               <TabsTrigger value="manual">Manual Entry</TabsTrigger>
+              <TabsTrigger value="codex">
+                <BookOpen className="w-3.5 h-3.5 mr-1.5" />
+                Rune Codex
+              </TabsTrigger>
               <TabsTrigger value="generate" disabled={!geometry}>
                 Generate
               </TabsTrigger>
@@ -667,6 +687,74 @@ export default function RuneForgePage() {
               )}
             </div>
           )}
+        </TabsContent>
+        {/* Rune Codex Tab */}
+        <TabsContent value="codex">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+            {MULTI_CHART_RUNE_CATALOG.map(rune => (
+              <Card
+                key={rune.id}
+                className="glass-panel border-white/10 bg-[#110e24]/80 flex flex-col justify-between"
+              >
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-3">
+                      <span className="flex h-11 w-11 items-center justify-center rounded-xl border border-amber-400/30 bg-amber-400/10 text-2xl text-amber-200">
+                        {rune.symbol}
+                      </span>
+                      <div>
+                        <CardTitle className="text-base text-zinc-100">{rune.name}</CardTitle>
+                        <div className="mt-1 flex items-center gap-1.5">
+                          <Badge
+                            variant="outline"
+                            className="border-violet-400/30 bg-violet-500/10 text-[10px] uppercase text-violet-200"
+                          >
+                            {rune.rarity}
+                          </Badge>
+                          <Badge
+                            variant="outline"
+                            className="border-white/15 text-[10px] uppercase text-zinc-300"
+                          >
+                            {rune.chartRequirements.complexity} · {rune.chartRequirements.minCharts}
+                            + chart
+                          </Badge>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </CardHeader>
+                <CardContent className="space-y-3 text-xs">
+                  <p className="text-zinc-300 leading-relaxed">{rune.description}</p>
+                  <div className="grid grid-cols-4 gap-1.5 rounded-lg border border-white/10 bg-black/30 p-2 text-center font-mono">
+                    <div>
+                      <div className="text-[10px] text-amber-300">Sp</div>
+                      <div className="font-semibold text-zinc-100">{rune.baseCost.spirit}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-sky-300">Es</div>
+                      <div className="font-semibold text-zinc-100">{rune.baseCost.essence}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-emerald-300">Ma</div>
+                      <div className="font-semibold text-zinc-100">{rune.baseCost.matter}</div>
+                    </div>
+                    <div>
+                      <div className="text-[10px] text-violet-300">Su</div>
+                      <div className="font-semibold text-zinc-100">{rune.baseCost.substance}</div>
+                    </div>
+                  </div>
+                  {rune.effects[0] && (
+                    <div className="rounded-lg border border-violet-400/20 bg-violet-500/5 p-2.5 text-zinc-300">
+                      <span className="font-semibold text-violet-200">
+                        Effect ({rune.effects[0].power}%):{' '}
+                      </span>
+                      {rune.effects[0].description}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            ))}
+          </div>
         </TabsContent>
       </Tabs>
 

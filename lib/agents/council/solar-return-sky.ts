@@ -264,16 +264,18 @@ export interface SecantSolverResult {
 
 /**
  * Two-point bounded continuous modular Secant root-finding solver.
- * Finds the exact historical return moment ~365.242 days prior targeting |Δ| < 0.005'.
+ * Finds the exact historical return moment N * ~365.242 days prior targeting |Δ| < 0.005'.
  */
 export async function solveSolarReturnTimestamp(params: {
   targetLongitude: number
   referenceDate: Date
+  yearsAgo?: number
   evaluateSunLongitude: (date: Date) => Promise<number>
 }): Promise<SecantSolverResult> {
   const { targetLongitude, referenceDate, evaluateSunLongitude } = params
+  const clampedYears = Math.max(1, Math.min(120, Math.round(params.yearsAgo ?? 1)))
 
-  let t0 = referenceDate.getTime() - TROPICAL_YEAR_MS
+  let t0 = referenceDate.getTime() - clampedYears * TROPICAL_YEAR_MS
   let f0 = angleDelta(await evaluateSunLongitude(new Date(t0)), targetLongitude)
 
   if (Math.abs(f0 * 60) <= SECANT_CONVERGENCE_ARCMINUTES) {
@@ -493,8 +495,9 @@ export function assembleYearOverYearTelemetry(params: {
  */
 export async function fetchSolarReturnSky(
   referenceDate: Date = new Date(),
-  options?: { signal?: AbortSignal; preferSwiss?: boolean }
+  options?: { signal?: AbortSignal; preferSwiss?: boolean; yearsAgo?: number }
 ): Promise<YearOverYearTelemetry> {
+  const clampedYears = Math.max(1, Math.min(120, Math.round(options?.yearsAgo ?? 1)))
   let useSwiss = options?.preferSwiss !== false
   let source: EphemerisSource = 'swiss-ephemeris'
   let quality: EphemerisQuality = 'verified'
@@ -530,6 +533,7 @@ export async function fetchSolarReturnSky(
   const solverResult = await solveSolarReturnTimestamp({
     targetLongitude,
     referenceDate,
+    yearsAgo: clampedYears,
     evaluateSunLongitude: async (date: Date) => {
       const pos = await getPositions(date)
       return pos.Sun.longitude

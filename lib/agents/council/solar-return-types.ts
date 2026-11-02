@@ -131,6 +131,7 @@ export interface SolarReturnCouncilEdition {
   schemaVersion: 1
   id: string
   date: string
+  yearsAgo?: number
   timeZone: 'UTC'
   title: string
   summary: string

@@ -49,6 +49,10 @@ import { startGoogleSignIn, signOutLocal } from '@/lib/auth-client'
 import { WorldIdButton } from '@/components/world/WorldIdButton'
 import { LivePriceIndexTicker } from '@/components/economy/LivePriceIndexTicker'
 import { PILLARS } from '@/components/navigation/pillars'
+import { getHistoricalAgent } from '@/lib/agents/historical'
+import { rateAgent, rateStats } from '@/lib/agents/rating'
+import { resolveAgentAppearance } from '@/lib/agents/vessel-appearance-manifest'
+import { VesselRatingRibbon, formatRelicLabel } from '@/components/vessel/pentacle-rating-display'
 
 // ============================================================================
 // STATIC CONFIG
@@ -460,6 +464,29 @@ export default function LandingPage() {
     )
   }, [planetaryData, monicaConstant])
 
+  const skyRating = useMemo(() => (skyStats ? rateStats(skyStats) : null), [skyStats])
+
+  const historicalShowcase = useMemo(
+    () =>
+      HISTORICAL.map(entry => {
+        const canonical = getHistoricalAgent(entry.id)
+        const rating = canonical ? rateAgent(canonical) : null
+        const appearance = resolveAgentAppearance(
+          canonical?.id ?? entry.id,
+          undefined,
+          rating?.archetype
+        )
+        return {
+          ...entry,
+          canonicalId: canonical?.id ?? entry.id,
+          rating,
+          appearance,
+          relicLabel: formatRelicLabel(appearance.signatureRelic),
+        }
+      }),
+    []
+  )
+
   const displayMonica = monicaConstant ?? planetaryData.monicaConstant ?? null
 
   // Live planetary agent cards from the current sky.
@@ -729,11 +756,26 @@ export default function LandingPage() {
                     Real-time transits
                   </span>
                 </div>
-                <div className="flex items-center gap-2 bg-[#1d2116] px-3 py-1.5 rounded-full border border-[#424936]">
-                  <span className="led-dot led-green" />
-                  <span className="font-mono-label text-[10px] text-[#b8fc4b] tracking-widest">
-                    LIVE
-                  </span>
+                <div className="flex items-center gap-2">
+                  {planetaryData.planetaryPositions[0]?.source && (
+                    <span
+                      className={`font-mono-label text-[9px] px-2.5 py-1 rounded-full border uppercase tracking-wider ${
+                        planetaryData.planetaryPositions[0].source === 'swiss-ephemeris'
+                          ? 'border-[#b8fc4b]/40 bg-[#b8fc4b]/10 text-[#b8fc4b]'
+                          : 'border-[#ffe6a0]/40 bg-[#ffe6a0]/10 text-[#ffe6a0]'
+                      }`}
+                    >
+                      {planetaryData.planetaryPositions[0].source === 'swiss-ephemeris'
+                        ? 'Swiss Ephemeris · Live'
+                        : 'VSOP87 Approx'}
+                    </span>
+                  )}
+                  <div className="flex items-center gap-2 bg-[#1d2116] px-3 py-1.5 rounded-full border border-[#424936]">
+                    <span className="led-dot led-green" />
+                    <span className="font-mono-label text-[10px] text-[#b8fc4b] tracking-widest">
+                      LIVE
+                    </span>
+                  </div>
                 </div>
               </div>
 
@@ -796,25 +838,60 @@ export default function LandingPage() {
                 </div>
               </div>
 
-              {/* Monica constant */}
-              <div className="flex items-center justify-between border-t border-[#424936] pt-4">
-                <div className="flex items-center gap-2">
-                  <Activity className="w-4 h-4 text-[#b8fc4b]" />
-                  <span className="font-mono-label text-[10px] text-[#c2cab0] tracking-widest uppercase">
-                    Monica Constant
+              {/* Monica constant + Live Sky Pentacle Rating */}
+              <div className="space-y-3 border-t border-[#424936] pt-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Activity className="w-4 h-4 text-[#b8fc4b]" />
+                    <span className="font-mono-label text-[10px] text-[#c2cab0] tracking-widest uppercase">
+                      Monica Constant
+                    </span>
+                  </div>
+                  <span className="font-headline-sm text-[#b8fc4b]">
+                    {displayMonica !== null ? displayMonica.toFixed(3) : '—'}
                   </span>
                 </div>
-                <span className="font-headline-sm text-[#b8fc4b]">
-                  {displayMonica !== null ? displayMonica.toFixed(3) : '—'}
-                </span>
+                {skyRating && (
+                  <div className="flex items-center justify-between gap-2 pt-1">
+                    <span className="font-mono-label text-[9px] text-[#8c947c] tracking-widest uppercase">
+                      Sky Vessel Scale
+                    </span>
+                    <VesselRatingRibbon
+                      ovr={skyRating.ovr}
+                      archetype={skyRating.archetype}
+                      compact
+                    />
+                  </div>
+                )}
+                <button
+                  type="button"
+                  onClick={() =>
+                    document
+                      .getElementById('solar-return-explorer')
+                      ?.scrollIntoView({ behavior: 'smooth' })
+                  }
+                  className="mt-1 w-full rounded-lg border border-amber-400/35 bg-amber-400/10 px-3 py-2 font-mono-label text-[10px] uppercase tracking-widest text-amber-300 hover:bg-amber-400/20 transition-colors flex items-center justify-between"
+                >
+                  <span>☉ Explore Solar Return Charts Over the Years</span>
+                  <ArrowRight className="w-3.5 h-3.5" />
+                </button>
               </div>
             </div>
           </div>
         </section>
 
-        {/* ==================== SHARED DAILY PLANETARY COUNCIL ==================== */}
-        <section id="current-promotion" className="space-y-6">
-          <SolarReturnCouncil defaultMode="live" />
+        {/* ==================== SOLAR RETURN CHARTS OVER THE YEARS ==================== */}
+        <section id="solar-return-explorer" className="space-y-6">
+          <SectionHead
+            eyebrow="Astronomical Time Machine · Multi-Year Solar Returns"
+            title="Solar Return Charts Over the Years"
+            subtitle="Step back across 1 to 50 tropical solar cycles — or anchor to your birth date — to inspect side-by-side zodiac chart wheels, planetary sign shifts, and Gregory Castro's Solar Return Conclave."
+            accent="#fbbf24"
+          />
+          <SolarReturnCouncil
+            defaultMode="solar-return"
+            onOpenCouncil={() => router.push('/planetary-council')}
+          />
         </section>
 
         {/* ======================= PLANETARY AGENTS & SKY COUNCIL ======================= */}
@@ -955,44 +1032,67 @@ export default function LandingPage() {
         {/* ======================= HISTORICAL MINDS ======================= */}
         <section id="historical" className="space-y-6">
           <SectionHead
-            eyebrow="Chronicles of intellect"
+            eyebrow="Chronicles of intellect · Pentacle Rated"
             title="Historical Minds"
-            subtitle="70+ real historical figures, each a persona-rich agent with their own voice, beliefs, and shadows."
+            subtitle="70+ real historical figures, each rated on the 25–99 Pentacle Vessel Scale with bespoke cameo likeness, Alchemical Seals, and natal Sacred 7 voice."
             accent="#b8fc4b"
           />
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            {HISTORICAL.map(a => {
+          <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+            {historicalShowcase.map(a => {
               const free = isFree(a.id)
               return (
-                <button
+                <div
                   key={a.id}
-                  onClick={() => router.push(`/gallery/chat/${a.id}`)}
-                  className="glass-panel rounded-xl border-[#23262B] p-5 text-left hover:border-[#b8fc4b]/40 transition-all active:scale-95 flex flex-col gap-3 group relative"
+                  className="glass-panel rounded-xl border-[#23262B] p-5 text-left hover:border-[#b8fc4b]/40 transition-all flex flex-col gap-3.5 group relative"
                 >
                   {free && (
                     <span className="self-start font-mono-label text-[10px] text-[#34d399] bg-[#34d399]/10 px-2 py-0.5 rounded border border-[#34d399]/30 flex items-center gap-1">
                       🎁 Free this week
                     </span>
                   )}
-                  <div className="w-12 h-12 rounded-full bg-[#b8fc4b]/10 border border-[#b8fc4b]/20 flex items-center justify-center font-headline-md text-lg text-[#b8fc4b]">
-                    {a.name.charAt(0)}
-                  </div>
-                  <div>
-                    <div className="font-headline-sm text-base text-[#e0e4d2] leading-tight">
-                      {a.name}
+                  <div className="flex items-center gap-3.5">
+                    <img
+                      src={a.appearance.portraitSvgDataUri}
+                      alt={a.name}
+                      className="w-13 h-13 rounded-full border border-[#b8fc4b]/30 bg-[#050506] object-cover shrink-0"
+                    />
+                    <div className="min-w-0">
+                      <div className="font-headline-sm text-base text-[#e0e4d2] leading-tight truncate">
+                        {a.name}
+                      </div>
+                      <div className="font-mono-label text-[10px] text-[#8c947c] uppercase mt-1 truncate">
+                        {a.domain}
+                        {a.relicLabel ? ` · ${a.relicLabel}` : ''}
+                      </div>
                     </div>
-                    <div className="font-mono-label text-[10px] text-[#8c947c] uppercase mt-1">
-                      {a.domain}
-                    </div>
                   </div>
-                  <span className="mt-auto inline-flex items-center gap-1 font-mono-label text-[10px] text-[#c2cab0] group-hover:text-[#b8fc4b]">
-                    {free ? 'Chat free' : 'Chat now'} <ArrowRight className="w-3 h-3" />
-                  </span>
-                </button>
+                  {a.rating && (
+                    <VesselRatingRibbon ovr={a.rating.ovr} archetype={a.rating.archetype} compact />
+                  )}
+                  <div className="mt-auto pt-2 border-t border-white/5 flex items-center justify-between gap-2">
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/gallery/chat/${a.id}`)}
+                      className="inline-flex items-center gap-1 font-mono-label text-[10px] text-[#c2cab0] hover:text-[#b8fc4b] transition-colors uppercase font-bold"
+                    >
+                      {free ? 'Chat free' : 'Chat now'} <ArrowRight className="w-3 h-3" />
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => router.push(`/agent/${a.canonicalId}`)}
+                      className="inline-flex items-center gap-1 font-mono-label text-[10px] text-amber-300/90 hover:text-amber-200 transition-colors uppercase"
+                    >
+                      Codex →
+                    </button>
+                  </div>
+                </div>
               )
             })}
           </div>
-          <SectionCta label="Browse all 70+ agents" onClick={() => router.push('/gallery')} />
+          <SectionCta
+            label="Browse all 70+ rated vessels"
+            onClick={() => router.push('/gallery')}
+          />
         </section>
 
         {/* ===================== PHILOSOPHER'S STONE ===================== */}
@@ -1040,7 +1140,7 @@ export default function LandingPage() {
 
             {/* Live preview vessel */}
             <div className="col-span-12 lg:col-span-5 glass-panel rounded-xl border-[#23262B] p-6 relative overflow-hidden">
-              <div className="flex items-center justify-between mb-4">
+              <div className="flex items-center justify-between mb-3">
                 <span className="font-mono-label text-[10px] text-[#ffe6a0] tracking-widest uppercase">
                   Live preview · today's sky
                 </span>
@@ -1048,6 +1148,11 @@ export default function LandingPage() {
                   yourname.alchmagents.eth
                 </span>
               </div>
+              {skyRating && (
+                <div className="mb-4">
+                  <VesselRatingRibbon ovr={skyRating.ovr} archetype={skyRating.archetype} compact />
+                </div>
+              )}
               <div className="space-y-2.5 mb-5">
                 {SACRED_7.map(s => {
                   const val = skyStats ? Math.round((skyStats as any)[s.key] ?? 0) : 0
@@ -1105,6 +1210,7 @@ export default function LandingPage() {
               </div>
               <div className="flex items-center justify-between gap-4">
                 <DuelSide
+                  agentId={featuredDuel?.casterId || 'plato'}
                   name={featuredDuel?.casterId ? prettyId(featuredDuel.casterId) : 'Plato'}
                 />
                 <div className="flex flex-col items-center">
@@ -1131,7 +1237,10 @@ export default function LandingPage() {
                   )}
                 </div>
                 <DuelSide
-                  name={featuredDuel?.targetId ? prettyId(featuredDuel.targetId) : 'Sun Tzu'}
+                  agentId={featuredDuel?.targetId || 'marcus-aurelius'}
+                  name={
+                    featuredDuel?.targetId ? prettyId(featuredDuel.targetId) : 'Marcus Aurelius'
+                  }
                   right
                 />
               </div>
@@ -1429,6 +1538,18 @@ export default function LandingPage() {
           >
             Alchm Kitchen <ArrowUpRight className="w-3 h-3" />
           </a>
+          <button
+            onClick={() => router.push('/culinary')}
+            className="font-mono-label text-[10px] tracking-widest text-[#c2cab0] hover:text-[#b8fc4b] transition-colors uppercase"
+          >
+            Culinary Reviews
+          </button>
+          <button
+            onClick={() => router.push('/pentacles')}
+            className="font-mono-label text-[10px] tracking-widest text-[#c2cab0] hover:text-[#b8fc4b] transition-colors uppercase"
+          >
+            Pentacles
+          </button>
           {NAV_LINKS.map(link => (
             <button
               key={link.href}
@@ -1499,15 +1620,33 @@ function SectionCta({
   )
 }
 
-function DuelSide({ name, right }: { name: string; right?: boolean }) {
+function DuelSide({ agentId, name, right }: { agentId: string; name: string; right?: boolean }) {
+  const canonical = getHistoricalAgent(agentId)
+  const rating = canonical ? rateAgent(canonical) : null
+  const appearance = resolveAgentAppearance(canonical?.id ?? agentId, undefined, rating?.archetype)
+
   return (
     <div className={`flex flex-col items-center gap-2 ${right ? 'text-right' : ''}`}>
-      <div className="w-14 h-14 rounded-full bg-[#f472b6]/10 border border-[#f472b6]/30 flex items-center justify-center font-headline-md text-xl text-[#f472b6]">
-        {name.charAt(0)}
+      <div className="relative">
+        <img
+          src={appearance.portraitSvgDataUri}
+          alt={name}
+          className="w-14 h-14 rounded-full bg-[#050506] border border-[#f472b6]/40 object-cover"
+        />
+        {rating && (
+          <span className="absolute -bottom-1.5 -right-1.5 rounded border border-amber-400/50 bg-[#0d1020] px-1.5 py-0.5 font-mono text-[9px] font-bold text-amber-200">
+            PVR {rating.ovr}
+          </span>
+        )}
       </div>
-      <span className="font-mono-label text-[11px] text-[#e0e4d2] max-w-[100px] truncate">
+      <span className="font-mono-label text-[11px] text-[#e0e4d2] max-w-[115px] truncate mt-0.5">
         {name}
       </span>
+      {rating && (
+        <span className="font-mono-label text-[9px] text-violet-300/90 max-w-[125px] truncate">
+          {rating.archetype.title}
+        </span>
+      )}
     </div>
   )
 }

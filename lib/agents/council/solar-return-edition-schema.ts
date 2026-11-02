@@ -164,6 +164,7 @@ export const SolarReturnCouncilEditionSchema = z
     schemaVersion: z.literal(1),
     id: z.string().min(1).max(250),
     date: dayRegex,
+    yearsAgo: z.number().int().min(1).max(120).optional(),
     timeZone: z.literal('UTC'),
     title: z.string().min(1).max(300),
     summary: z.string().min(1).max(3000),

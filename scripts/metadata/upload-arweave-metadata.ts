@@ -383,11 +383,9 @@ export async function runUploadArweaveMetadata(options: UploadOptions = {}) {
   for (const relPath of allRelativeFiles) {
     const entry = manifest.assets[relPath]
     console.log(`Verifying remote readback from ${entry.uri}...`)
-    const res = await fetch(entry.uri!)
-    if (!res.ok) {
-      throw new Error(`Readback failed for ${entry.uri}: ${res.status}`)
-    }
-    const remoteBytes = Buffer.from(await res.arrayBuffer())
+    // A fresh Irys upload can 404 on arweave.net until the gateway indexes it;
+    // retry across gateways rather than failing a run whose uploads succeeded.
+    const remoteBytes = await fetchRemoteAsset(entry.uri!, entry.txId!)
     const remoteHash = computeSha256(remoteBytes)
     if (remoteHash !== entry.sha256) {
       throw new Error(

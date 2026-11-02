@@ -33,8 +33,8 @@ export function useLiveOracleChat() {
     }
 
     const identity = Identity.fromString(identityHex)
-    const requestTable = connection.db.oracle_request
-    const replyTable = connection.db.oracle_reply
+    const requestTable = connection.db.my_oracle_request
+    const replyTable = connection.db.my_oracle_reply
     let disposed = false
 
     const syncRows = () => {
@@ -67,8 +67,8 @@ export function useLiveOracleChat() {
         if (!disposed) setError('Live oracle subscription failed')
       })
       .subscribe([
-        tables.oracle_request.where(row => row.asker.eq(identity)),
-        tables.oracle_reply.where(row => row.asker.eq(identity)),
+        tables.my_oracle_request.where(row => row.asker.eq(identity)),
+        tables.my_oracle_reply.where(row => row.asker.eq(identity)),
       ])
 
     return () => {

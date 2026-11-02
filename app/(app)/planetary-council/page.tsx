@@ -4,9 +4,14 @@ import { useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { MessageSquare } from 'lucide-react'
 import PlanetaryWisdomChat from '@/components/misc/planetary-wisdom-chat'
+import { SolarReturnCouncil } from '@/components/landing/solar-return-council'
+import { usePlanetaryPositions } from '@/hooks/usePlanetaryPositions'
 
 export default function PlanetaryCouncilPage() {
   const [isOpen, setIsOpen] = useState(true)
+  const skyData = usePlanetaryPositions()
+  const skySource = skyData.planetaryPositions[0]?.source
+  const isLiveSwiss = skySource === 'swiss-ephemeris'
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0c0319] via-[#1a0838] to-[#0c0319] text-white relative">
@@ -30,16 +35,29 @@ export default function PlanetaryCouncilPage() {
             Convene a council of planetary agents to receive multifaceted wisdom. Each planet brings
             its unique perspective, creating a symphony of cosmic guidance.
           </p>
-          <div className="mt-4 p-3 bg-blue-900/20 border border-blue-500/30 rounded-lg inline-block backdrop-blur-md shadow-[0_0_15px_rgba(59,130,246,0.1)]">
-            <p className="text-sm text-blue-200">
-              🌙 <strong className="text-blue-100">Enhanced Moon Agent:</strong> The Moon agent now
-              includes degree-specific personality traits based on current lunar phase and position
-              for more nuanced guidance.
-            </p>
+          <div className="mt-4 flex flex-wrap items-center justify-center gap-2.5">
+            <span
+              className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 font-mono text-[11px] uppercase tracking-wider ${
+                isLiveSwiss
+                  ? 'border-emerald-400/35 bg-emerald-500/10 text-emerald-300'
+                  : 'border-amber-400/30 bg-amber-500/10 text-amber-200'
+              }`}
+              title="Active ephemeris provenance feeding council dignity and transit calculations"
+            >
+              <span
+                className={`h-1.5 w-1.5 rounded-full ${
+                  isLiveSwiss ? 'bg-emerald-400 animate-pulse' : 'bg-amber-400'
+                }`}
+              />
+              {isLiveSwiss ? 'Swiss Ephemeris · Live' : 'VSOP87 Approx'}
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-500/30 bg-blue-900/20 px-3 py-1 text-xs text-blue-200 backdrop-blur-md">
+              🌙 <strong className="text-blue-100">360° Moon Phase Intelligence</strong> active
+            </span>
           </div>
           <div className="mt-3 text-xs text-purple-300/60">
-            Tip: The council auto-syncs to the current sky by default. You can toggle sync in the
-            panel.
+            Tip: Review Gregory Castro&apos;s Daily Planetary Council briefing below or convene a
+            custom multi-planet chamber synced to the live sky.
           </div>
 
           {!isOpen && (
@@ -50,6 +68,10 @@ export default function PlanetaryCouncilPage() {
               </Button>
             </div>
           )}
+        </div>
+
+        <div className="mb-10 max-w-6xl mx-auto">
+          <SolarReturnCouncil defaultMode="live" onOpenCouncil={() => setIsOpen(true)} />
         </div>
 
         <PlanetaryWisdomChat

@@ -5,7 +5,7 @@ import type { Metadata } from 'next'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import { Download, Monitor } from 'lucide-react'
+import { Download, Monitor, MessageCircle, Utensils, Network, Terminal } from 'lucide-react'
 import { classifyAgent } from '@/lib/agents/agent-type-model'
 import { getSpriteView } from '@/lib/agents/sprite-view'
 import { SkySpriteProfile } from '@/components/agent-profile/SkySpriteProfile'
@@ -13,6 +13,10 @@ import { AgentAvatarControl } from '@/components/agent-profile/AgentAvatarContro
 import { loadAgentProfile, loadAgentProfileMetadata } from '@/lib/agents/agent-profile.server'
 import { AgentActivity } from '@/components/agent-profile/AgentActivity'
 import type { CraftedAgent, Element } from '@/lib/agent-types'
+import {
+  resolveAgentAppearance,
+  VESSEL_RELIC_LABELS,
+} from '@/lib/agents/vessel-appearance-manifest'
 import { VesselProgressionDisplay } from '@/components/vessel/vessel-progression-display'
 import { AgentRatingCard } from '@/components/vessel/agent-rating-card'
 
@@ -172,6 +176,13 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
   const element = agent.consciousness?.dominantElement || 'Air'
   const meta = ELEMENT_METADATA[element as keyof typeof ELEMENT_METADATA] || ELEMENT_METADATA.Air
   const agentMonica = agent.consciousness?.monicaConstant ?? null
+  const vesselAppearance = resolveAgentAppearance(agent.id)
+  const portraitSrc =
+    agent.appearance?.avatar || vesselAppearance.portraitSvgDataUri || '/avatars/default.png'
+  const relicLabel = vesselAppearance.signatureRelic
+    ? (VESSEL_RELIC_LABELS[vesselAppearance.signatureRelic] ??
+      vesselAppearance.signatureRelic.replace(/_/g, ' '))
+    : null
 
   return (
     <div className="relative min-h-screen bg-[#10131f] text-[#e0e1f3] font-body-md overflow-x-hidden">
@@ -209,7 +220,7 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
               }}
             >
               <img
-                src={agent.appearance?.avatar || '/avatars/default.png'}
+                src={portraitSrc}
                 alt={agent.name}
                 className="w-full h-full object-cover filter grayscale hover:grayscale-0 transition-all duration-700"
               />
@@ -242,6 +253,14 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
               >
                 {agent.specialization || 'Alchemical Scholar'}
               </Badge>
+              {relicLabel && (
+                <Badge
+                  variant="outline"
+                  className="border-amber-400/45 text-amber-200 font-mono-label text-[10px] uppercase bg-amber-400/10"
+                >
+                  Relic · {relicLabel}
+                </Badge>
+              )}
             </div>
             <h1 className="font-hero-title text-hero-title text-primary-gold leading-tight mb-2 py-1">
               {agent.name}
@@ -271,6 +290,30 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
             >
               <Link href={`/gallery/chat/${agent.id}`}>Channel this Agent ⚡</Link>
             </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="border-violet-400/40 text-violet-100 hover:border-violet-400 font-mono-label text-[10px] uppercase bg-violet-500/15 h-[36px]"
+              >
+                <Link href={`/vault/${agent.id}`}>
+                  <MessageCircle className="w-3.5 h-3.5 mr-1" />
+                  Quick Commune
+                </Link>
+              </Button>
+              <Button
+                asChild
+                variant="outline"
+                size="sm"
+                className="border-amber-400/40 text-amber-100 hover:border-amber-400 font-mono-label text-[10px] uppercase bg-amber-500/10 h-[36px]"
+              >
+                <Link href={`/culinary?agent=${encodeURIComponent(agent.id)}`}>
+                  <Utensils className="w-3.5 h-3.5 mr-1" />
+                  Kitchen Lab
+                </Link>
+              </Button>
+            </div>
             <div className="flex gap-2">
               <Button
                 asChild
@@ -299,6 +342,25 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
                   .gguf Model
                 </a>
               </Button>
+            </div>
+            <div className="flex items-center justify-between gap-2 pt-1 text-[10px] font-mono text-muted-text">
+              <a
+                href={`/a2a/${encodeURIComponent(agent.id)}/.well-known/agent-card.json`}
+                target="_blank"
+                rel="noreferrer"
+                className="inline-flex items-center gap-1 hover:text-primary-gold transition-colors"
+              >
+                <Network className="w-3 h-3" />
+                A2A Card
+              </a>
+              <span>·</span>
+              <Link
+                href="/mcp"
+                className="inline-flex items-center gap-1 hover:text-primary-gold transition-colors"
+              >
+                <Terminal className="w-3 h-3" />
+                MCP Server
+              </Link>
             </div>
           </div>
 

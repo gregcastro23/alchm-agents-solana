@@ -22,10 +22,21 @@ const INITIAL_STATE: SolarReturnCouncilState = {
   error: null,
 }
 
-export function useSolarReturnCouncil(dateParam?: string): {
+export interface UseSolarReturnCouncilOptions {
+  date?: string
+  yearsAgo?: number
+}
+
+export function useSolarReturnCouncil(optionsOrDate?: string | UseSolarReturnCouncilOptions): {
   state: SolarReturnCouncilState
   refresh: () => Promise<void>
 } {
+  const dateParam = typeof optionsOrDate === 'string' ? optionsOrDate : optionsOrDate?.date
+  const yearsAgo =
+    typeof optionsOrDate === 'object' && optionsOrDate?.yearsAgo
+      ? Math.max(1, Math.min(100, Math.round(optionsOrDate.yearsAgo)))
+      : 1
+
   const [state, setState] = useState<SolarReturnCouncilState>(INITIAL_STATE)
 
   const fetchEdition = async () => {
@@ -34,8 +45,12 @@ export function useSolarReturnCouncil(dateParam?: string): {
     const timer = setTimeout(() => controller.abort(), 15_000)
 
     try {
-      const url = dateParam
-        ? `/api/agents/council-solar-return?date=${encodeURIComponent(dateParam)}`
+      const qs = new URLSearchParams()
+      if (dateParam) qs.set('date', dateParam)
+      if (yearsAgo > 1) qs.set('yearsAgo', String(yearsAgo))
+      const query = qs.toString()
+      const url = query
+        ? `/api/agents/council-solar-return?${query}`
         : '/api/agents/council-solar-return'
 
       const response = await fetch(url, { signal: controller.signal })
@@ -70,7 +85,7 @@ export function useSolarReturnCouncil(dateParam?: string): {
 
   useEffect(() => {
     void fetchEdition()
-  }, [dateParam])
+  }, [dateParam, yearsAgo])
 
   return { state, refresh: fetchEdition }
 }

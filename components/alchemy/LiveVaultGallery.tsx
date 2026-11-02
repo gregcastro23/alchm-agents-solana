@@ -1,5 +1,6 @@
 'use client'
 
+import Link from 'next/link'
 import { useCallback, useEffect, useState } from 'react'
 
 import { AgentCard } from './AgentCard'
@@ -7,6 +8,8 @@ import type { SacredStat } from './StatChip'
 import { AlchemicalButton } from './AlchemicalButton'
 import { RitualInput } from './RitualInput'
 import { useOccultStore, type OccultAgentRef } from '@/lib/store/occult-store'
+import { CORE_STAT_KEYS, rateStats, type CoreStats } from '@/lib/agents/rating'
+import { resolveAgentAppearance } from '@/lib/agents/vessel-appearance-manifest'
 
 /**
  * Live Vault collection (Stitch realization plan, Phase 5). Lists the REAL
@@ -106,18 +109,33 @@ export function LiveVaultGallery({
       {/* Grid */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-gutter">
         {agents.map(agent => {
+          const safeStats = Object.fromEntries(
+            CORE_STAT_KEYS.map(key => [
+              key,
+              Number.isFinite(agent.sacred7?.[key]) ? agent.sacred7[key] : 50,
+            ])
+          ) as CoreStats
+          const rating = rateStats(safeStats)
+          const appearance = resolveAgentAppearance(agent.agentId, undefined, rating.archetype)
+
           const ref: OccultAgentRef = {
             agentId: agent.agentId,
             name: agent.name,
             title: agent.title,
             color: agent.color,
             monicaConstant: agent.monicaConstant,
+            ovr: rating.ovr,
+            archetypeTitle: rating.archetype.title,
+            ratings: rating.ratings,
           }
           const card = (
             <AgentCard
               name={agent.name}
               title={agent.title ?? undefined}
+              avatarUrl={appearance.portraitSvgDataUri}
               symbol={agent.symbol ?? undefined}
+              ovr={rating.ovr}
+              archetypeTitle={rating.archetype.title}
               monicaConstant={
                 typeof agent.monicaConstant === 'number'
                   ? agent.monicaConstant.toFixed(3)
@@ -139,8 +157,16 @@ export function LiveVaultGallery({
               {card}
             </button>
           ) : (
-            <div key={agent.agentId} className="h-full">
-              {card}
+            <div key={agent.agentId} className="flex flex-col h-full gap-1.5">
+              <div className="flex-1">{card}</div>
+              <div className="flex justify-end px-1">
+                <Link
+                  href={`/agent/${agent.agentId}`}
+                  className="font-label-mono text-[10px] uppercase tracking-wider text-amber-300/80 hover:text-amber-200 transition-colors"
+                >
+                  Rated Codex →
+                </Link>
+              </div>
             </div>
           )
         })}

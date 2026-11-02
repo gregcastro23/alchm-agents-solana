@@ -451,4 +451,21 @@ describe('SolarReturnCouncil Component', () => {
     expect(screen.getByText(/Council reflection queued:/i)).toBeInTheDocument()
     expect(screen.getByText(/How does my shifted Moon affect focus\?/i)).toBeInTheDocument()
   })
+
+  it('renders Dual Solar Return Zodiac Wheels, 10-planet table toggle, and multi-year cycle controls', () => {
+    const mockEdition = createMockSolarReturnEdition()
+    render(<SolarReturnCouncil initialEdition={mockEdition} />)
+
+    expect(screen.getByText(/Solar Return Zodiac Wheels \(2025 vs 2026\)/)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Select Solar Return years back/i)).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /Step back one solar return year/i })
+    ).toBeInTheDocument()
+    expect(screen.getByText('Jupiter Return', { exact: false })).toBeInTheDocument()
+
+    const tableToggle = screen.getByRole('button', { name: /View 10-Planet Table/i })
+    fireEvent.click(tableToggle)
+    expect(screen.getByText('2025 Solar Return')).toBeInTheDocument()
+    expect(screen.getByText('2026 Reference')).toBeInTheDocument()
+  })
 })

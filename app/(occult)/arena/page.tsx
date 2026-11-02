@@ -26,7 +26,7 @@ export default function ArenaPage() {
       <div
         role="tablist"
         aria-label="Arena views"
-        className="sticky top-0 md:top-[72px] z-40 flex gap-2 px-margin-mobile md:px-margin-desktop py-3 bg-obsidian-deep/80 backdrop-blur-xl border-b border-white/5 overflow-x-auto"
+        className="sticky top-16 z-40 flex gap-2 px-margin-mobile md:px-margin-desktop py-3 bg-obsidian-deep/85 backdrop-blur-xl border-b border-white/10 overflow-x-auto"
       >
         {TABS.map(t => (
           <button
