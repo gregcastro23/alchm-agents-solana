@@ -16,6 +16,9 @@ ALCHM_MCP_TOOL_NAMES = {
     "generate_cosmic_recipe",
     "compute_synastry_overlay",
     "get_transit_natal_overlay",
+    "compute_triplicate_synastry",
+    "create_evidence_snapshot",
+    "submit_recipe_reflection",
 }
 
 DEFAULT_PROTOCOL_VERSION = "2025-06-18"
@@ -24,8 +27,8 @@ DEFAULT_PROTOCOL_VERSION = "2025-06-18"
 # alchm-kitchen → @alchm/mcp-server). Used as the launch fallback when no local
 # WhatToEatNext source tree is checked out, so deploys and the bundled pa-mcp
 # desktop sidecar can still reach live transits/recipes instead of degrading to
-# no Alchm data. Pin a version by setting ALCHM_MCP_PACKAGE=@alchm/mcp-server@1.1.2.
-DEFAULT_PACKAGE = "@alchm/mcp-server@1.1.2"
+# no Alchm data. Pin a version by setting ALCHM_MCP_PACKAGE=@alchm/mcp-server@1.4.0.
+DEFAULT_PACKAGE = "@alchm/mcp-server@1.4.0"
 
 # Child process environment whitelist to prevent leaking host secrets (OpenAI,
 # Anthropic, Solana wallets, Stripe secrets) to child subprocesses.
@@ -254,6 +257,47 @@ def config_status() -> Dict[str, Any]:
     }
 
 
+def _prepare_arguments(
+    arguments: Optional[Dict[str, Any]] = None,
+    idempotency_key: Optional[str] = None,
+) -> Dict[str, Any]:
+    prepared: Dict[str, Any] = dict(arguments) if arguments else {}
+    existing_meta = prepared.get("_meta")
+    meta: Dict[str, Any] = dict(existing_meta) if isinstance(existing_meta, dict) else {}
+
+    api_key = os.getenv("ALCHM_MCP_API_KEY")
+    if api_key and "apiKey" not in meta and "authKey" not in meta:
+        meta["apiKey"] = api_key
+
+    if idempotency_key:
+        meta["idempotencyKey"] = idempotency_key
+
+    if meta:
+        prepared["_meta"] = meta
+    return prepared
+
+
+def _normalize_billing(raw_billing: Any) -> Optional[Dict[str, Any]]:
+    if not isinstance(raw_billing, dict):
+        return None
+    normalized = dict(raw_billing)
+    status = normalized.get("status")
+    amounts = normalized.get("amounts")
+    if "debited" not in normalized and isinstance(status, str):
+        normalized["debited"] = status == "charged"
+    if "replayed" not in normalized and isinstance(status, str):
+        normalized["replayed"] = status == "replayed"
+    if "cost" not in normalized and "amounts" in normalized:
+        normalized["cost"] = amounts
+    return normalized
+
+
+def extract_billing(payload: Dict[str, Any]) -> Optional[Dict[str, Any]]:
+    if not isinstance(payload, dict):
+        return None
+    return _normalize_billing(payload.get("billing"))
+
+
 def _content_text(result: Dict[str, Any]) -> str:
     content = result.get("content")
     if not isinstance(content, list):
@@ -268,16 +312,27 @@ def _content_text(result: Dict[str, Any]) -> str:
 
 
 def parse_tool_json(result: Dict[str, Any]) -> Dict[str, Any]:
-    text = _content_text(result)
-    if not text:
-        return {}
-    try:
-        parsed = json.loads(text)
-    except json.JSONDecodeError:
-        return {"text": text}
-    if isinstance(parsed, dict):
-        return parsed
-    return {"value": parsed}
+    structured = result.get("structuredContent")
+    if isinstance(structured, dict):
+        parsed_dict: Dict[str, Any] = dict(structured)
+    else:
+        text = _content_text(result)
+        if not text:
+            return {}
+        try:
+            parsed = json.loads(text)
+        except json.JSONDecodeError:
+            return {"text": text}
+        if isinstance(parsed, dict):
+            parsed_dict = dict(parsed)
+        else:
+            return {"value": parsed}
+
+    raw_billing = parsed_dict.get("billing") or result.get("billing")
+    normalized_billing = _normalize_billing(raw_billing)
+    if normalized_billing is not None:
+        parsed_dict["billing"] = normalized_billing
+    return parsed_dict
 
 
 class AlchmMCPClient:
@@ -505,12 +560,18 @@ class AlchmMCPClient:
         self,
         name: str,
         arguments: Optional[Dict[str, Any]] = None,
+        idempotency_key: Optional[str] = None,
         timeout: Optional[float] = None,
     ) -> Dict[str, Any]:
         if name not in ALCHM_MCP_TOOL_NAMES:
             raise AlchmMCPError(f"Unsupported Alchm MCP tool: {name}")
         await self.ensure_started()
-        result = await self._request("tools/call", {"name": name, "arguments": arguments or {}}, timeout=timeout)
+        prepared_args = _prepare_arguments(arguments, idempotency_key=idempotency_key)
+        result = await self._request(
+            "tools/call",
+            {"name": name, "arguments": prepared_args},
+            timeout=timeout,
+        )
         if result.get("isError"):
             raise AlchmMCPError(_content_text(result) or f"Alchm MCP tool failed: {name}")
         return result
@@ -519,9 +580,17 @@ class AlchmMCPClient:
         self,
         name: str,
         arguments: Optional[Dict[str, Any]] = None,
+        idempotency_key: Optional[str] = None,
         timeout: Optional[float] = None,
     ) -> Dict[str, Any]:
-        return parse_tool_json(await self.call_tool(name, arguments, timeout=timeout))
+        return parse_tool_json(
+            await self.call_tool(
+                name,
+                arguments,
+                idempotency_key=idempotency_key,
+                timeout=timeout,
+            )
+        )
 
     async def close(self) -> None:
         proc = self._proc
@@ -578,13 +647,34 @@ async def list_tools() -> List[Dict[str, Any]]:
 async def call_tool_json(
     name: str,
     arguments: Optional[Dict[str, Any]] = None,
+    idempotency_key: Optional[str] = None,
     timeout: Optional[float] = None,
 ) -> Dict[str, Any]:
     # Single telemetry chokepoint: every public tool wrapper and both call paths
     # (main.py chat hydration + the PA MCP server's debate/jing tools) route through
     # here, so recording success/error here covers all call sites uniformly.
     try:
-        result = await _CLIENT.call_tool_json(name, arguments, timeout=timeout)
+        if idempotency_key is not None and timeout is not None:
+            result = await _CLIENT.call_tool_json(
+                name,
+                arguments,
+                idempotency_key=idempotency_key,
+                timeout=timeout,
+            )
+        elif idempotency_key is not None:
+            result = await _CLIENT.call_tool_json(
+                name,
+                arguments,
+                idempotency_key=idempotency_key,
+            )
+        elif timeout is not None:
+            result = await _CLIENT.call_tool_json(
+                name,
+                arguments,
+                timeout=timeout,
+            )
+        else:
+            result = await _CLIENT.call_tool_json(name, arguments)
     except Exception as exc:
         record_error(name, exc)
         raise
@@ -604,8 +694,15 @@ async def get_live_sky_transits(
     return await call_tool_json("get_live_sky_transits", args)
 
 
-async def alchemize_ingredients(ingredients: List[str]) -> Dict[str, Any]:
-    return await call_tool_json("alchemize_ingredients", {"ingredients": ingredients})
+async def alchemize_ingredients(
+    ingredients: List[str],
+    idempotency_key: Optional[str] = None,
+) -> Dict[str, Any]:
+    return await call_tool_json(
+        "alchemize_ingredients",
+        {"ingredients": ingredients},
+        idempotency_key=idempotency_key,
+    )
 
 
 async def generate_cosmic_recipe(
@@ -613,6 +710,7 @@ async def generate_cosmic_recipe(
     cuisine: Optional[str] = None,
     dietary: Optional[List[str]] = None,
     dominant_element: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     args: Dict[str, Any] = {}
     if prompt:
@@ -623,7 +721,11 @@ async def generate_cosmic_recipe(
         args["dietary"] = dietary
     if dominant_element:
         args["dominantElement"] = dominant_element
-    return await call_tool_json("generate_cosmic_recipe", args)
+    return await call_tool_json(
+        "generate_cosmic_recipe",
+        args,
+        idempotency_key=idempotency_key,
+    )
 
 
 async def compute_synastry_overlay(
@@ -631,6 +733,7 @@ async def compute_synastry_overlay(
     agent_b: Dict[str, Any],
     focus_planets: Optional[List[str]] = None,
     cache_strategy: str = "read",
+    idempotency_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Inter-aspect ledger + tension/harmony/intensification scores + stance.
 
@@ -644,7 +747,11 @@ async def compute_synastry_overlay(
     }
     if focus_planets:
         args["focusPlanets"] = focus_planets
-    return await call_tool_json("compute_synastry_overlay", args)
+    return await call_tool_json(
+        "compute_synastry_overlay",
+        args,
+        idempotency_key=idempotency_key,
+    )
 
 
 async def get_transit_natal_overlay(
@@ -653,6 +760,7 @@ async def get_transit_natal_overlay(
     latitude: Optional[float] = None,
     longitude: Optional[float] = None,
     focus_planets: Optional[List[str]] = None,
+    idempotency_key: Optional[str] = None,
 ) -> Dict[str, Any]:
     """Current sky × one agent's natal chart → boost element + magnitude."""
     args: Dict[str, Any] = {"agent": agent}
@@ -664,7 +772,144 @@ async def get_transit_natal_overlay(
         args["longitude"] = longitude
     if focus_planets:
         args["focusPlanets"] = focus_planets
-    return await call_tool_json("get_transit_natal_overlay", args)
+    return await call_tool_json(
+        "get_transit_natal_overlay",
+        args,
+        idempotency_key=idempotency_key,
+    )
+
+
+def _extract_natal_placements(agent_dict: Optional[Dict[str, Any]]) -> Any:
+    if not isinstance(agent_dict, dict):
+        return None
+    natal_chart = agent_dict.get("natalChart")
+    if isinstance(natal_chart, dict) and "planets" in natal_chart:
+        return natal_chart["planets"]
+    if "planets" in agent_dict and isinstance(agent_dict["planets"], dict):
+        return agent_dict["planets"]
+    return agent_dict.get("natal") or natal_chart
+
+
+async def compute_triplicate_synastry(
+    agent_a: Optional[Dict[str, Any]] = None,
+    agent_b: Optional[Dict[str, Any]] = None,
+    *,
+    maker_id: Optional[str] = None,
+    taker_id: Optional[str] = None,
+    maker_natal: Optional[Any] = None,
+    taker_natal: Optional[Any] = None,
+    give_token: str = "Spirit",
+    give_amount: float = 1.0,
+    want_token: str = "Essence",
+    want_amount: float = 1.0,
+    transit_time: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Evaluate 3-body natal A × natal B × live transit sky resonance and rebate."""
+    resolved_maker_id = maker_id or (
+        agent_a.get("id") if isinstance(agent_a, dict) else None
+    )
+    resolved_taker_id = taker_id or (
+        agent_b.get("id") if isinstance(agent_b, dict) else None
+    )
+    resolved_maker_natal = (
+        maker_natal
+        if maker_natal is not None
+        else _extract_natal_placements(agent_a)
+    )
+    resolved_taker_natal = (
+        taker_natal
+        if taker_natal is not None
+        else _extract_natal_placements(agent_b)
+    )
+
+    args: Dict[str, Any] = {
+        "makerId": resolved_maker_id,
+        "takerId": resolved_taker_id,
+        "makerNatal": resolved_maker_natal,
+        "takerNatal": resolved_taker_natal,
+        "giveToken": give_token,
+        "giveAmount": give_amount,
+        "wantToken": want_token,
+        "wantAmount": want_amount,
+    }
+    if transit_time:
+        args["transitTime"] = transit_time
+    return await call_tool_json(
+        "compute_triplicate_synastry",
+        args,
+        idempotency_key=idempotency_key,
+    )
+
+
+async def create_evidence_snapshot(
+    latitude: Optional[float] = None,
+    longitude: Optional[float] = None,
+    ingredients: Optional[List[str]] = None,
+    prompt: Optional[str] = None,
+    cuisine: Optional[str] = None,
+    dietary: Optional[List[str]] = None,
+    dominant_element: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Bundle live sky transits, ingredient alchemization, and cosmic recipes."""
+    args: Dict[str, Any] = {}
+    if latitude is not None:
+        args["latitude"] = latitude
+    if longitude is not None:
+        args["longitude"] = longitude
+    if ingredients:
+        args["ingredients"] = ingredients
+    if prompt:
+        args["prompt"] = prompt
+    if cuisine:
+        args["cuisine"] = cuisine
+    if dietary:
+        args["dietary"] = dietary
+    if dominant_element:
+        args["dominantElement"] = dominant_element
+    return await call_tool_json(
+        "create_evidence_snapshot",
+        args,
+        idempotency_key=idempotency_key,
+    )
+
+
+async def submit_recipe_reflection(
+    recipe_id: str,
+    recipe_name: Optional[str] = None,
+    reflection_text: Optional[str] = None,
+    rating: Optional[float] = None,
+    *,
+    reflection: Optional[str] = None,
+    agent_slug: Optional[str] = None,
+    agent_name: Optional[str] = None,
+    dominant_element: Optional[str] = None,
+    source: Optional[str] = None,
+    idempotency_key: Optional[str] = None,
+) -> Dict[str, Any]:
+    """Submit an authentic culinary reflection for a recipe via Alchm MCP."""
+    _ = rating  # Accepted for caller signature compatibility; MCP schema is unrated.
+    resolved_reflection = reflection if reflection is not None else reflection_text
+    args: Dict[str, Any] = {
+        "recipeId": recipe_id,
+        "reflection": resolved_reflection or "",
+    }
+    if recipe_name:
+        args["recipeName"] = recipe_name
+    if agent_slug:
+        args["agentSlug"] = agent_slug
+    if agent_name:
+        args["agentName"] = agent_name
+    if dominant_element:
+        args["dominantElement"] = dominant_element
+    if source:
+        args["source"] = source
+    return await call_tool_json(
+        "submit_recipe_reflection",
+        args,
+        idempotency_key=idempotency_key,
+    )
 
 
 async def status(include_tools: bool = True) -> Dict[str, Any]:
