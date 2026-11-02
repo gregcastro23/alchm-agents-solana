@@ -132,16 +132,27 @@ export function CommuneChat({ agentId, name, title, essence }: CommuneChatProps)
   return (
     <div className="min-h-screen bg-st-background pb-56 md:pb-40">
       {/* Identity header */}
-      <header className="px-margin-mobile md:px-margin-desktop pt-10 max-w-container-max mx-auto">
-        <Link
-          href="/vault"
-          className="font-label-mono text-label-mono text-on-surface-variant hover:text-st-primary transition-colors inline-flex items-center gap-1"
-        >
-          <span className="material-symbols-outlined text-[16px]" aria-hidden>
-            arrow_back
-          </span>
-          The Vault
-        </Link>
+      <header className="px-margin-mobile md:px-margin-desktop pt-8 max-w-container-max mx-auto">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Link
+            href="/gallery"
+            className="font-label-mono text-label-mono text-on-surface-variant hover:text-st-primary transition-colors inline-flex items-center gap-1"
+          >
+            <span className="material-symbols-outlined text-[16px]" aria-hidden>
+              arrow_back
+            </span>
+            Rated Entities Vault
+          </Link>
+          <Link
+            href={`/agent/${agentId}`}
+            className="font-label-mono text-[11px] uppercase tracking-widest text-amber-200 hover:text-amber-100 border border-amber-400/35 bg-amber-400/10 rounded-full px-3.5 py-1.5 inline-flex items-center gap-1.5 transition-colors"
+          >
+            <span>View Full Rated Codex</span>
+            <span className="material-symbols-outlined text-[14px]" aria-hidden>
+              arrow_forward
+            </span>
+          </Link>
+        </div>
         <div className="mt-4 flex flex-wrap items-baseline gap-x-4 gap-y-1">
           <h1 className="font-headline-lg text-headline-lg text-on-surface">{name}</h1>
           {title && (
@@ -229,7 +240,7 @@ export function CommuneChat({ agentId, name, title, essence }: CommuneChatProps)
 
       {/* Composer */}
       <form
-        className="fixed bottom-[calc(5rem+env(safe-area-inset-bottom))] md:bottom-6 left-0 right-0 md:left-64 px-margin-mobile md:px-margin-desktop"
+        className="fixed bottom-6 left-0 right-0 px-margin-mobile md:px-margin-desktop z-30"
         onSubmit={e => {
           e.preventDefault()
           if (!draft.trim() || busy) return

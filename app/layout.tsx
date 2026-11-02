@@ -75,9 +75,10 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
   return (
     <html
       lang="en"
-      className={`${manrope.variable} ${cormorant.variable} ${ibmPlexMono.variable} ${literata.variable} ${jetbrainsMono.variable}`}
+      className={`dark ${manrope.variable} ${cormorant.variable} ${ibmPlexMono.variable} ${literata.variable} ${jetbrainsMono.variable}`}
+      style={{ colorScheme: 'dark' }}
     >
-      <body className="flex flex-col min-h-screen font-sans antialiased">
+      <body className="flex flex-col min-h-screen bg-background text-foreground font-sans antialiased">
         {/* Material Symbols Outlined (Techno-Occult v2 iconography). Loaded as
             an explicit link because icon fonts aren't served by next/font and
             a CSS @import would land mid-bundle and be ignored.
@@ -88,7 +89,7 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
         <link rel="preconnect" href="https://fonts.gstatic.com" crossOrigin="anonymous" />
         <link
           rel="stylesheet"
-          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=account_balance_wallet,account_circle,account_tree,add,add_circle,adjust,air,all_inclusive,analytics,architecture,arrow_back,arrow_forward,arrow_right_alt,auto_awesome,auto_fix_high,auto_stories,balance,biotech,blur_on,bolt,build_circle,calendar_month,calendar_today,change_history,check,check_circle,chevron_right,clear_day,close,code,construction,crisis_alert,cruelty_free,cyclone,dark_mode,data_object,data_usage,description,diamond,done_all,downloading,ecg_heart,emergency,error,expand_more,explore,favorite,filter_4,filter_center_focus,filter_vintage,flare,functions,gavel,grain,graphic_eq,group_work,help,hexagon,history,history_edu,hourglass_empty,hub,inventory_2,landscape,language,link,local_fire_department,lock,lock_open,magic_button,memory,menu,menu_book,my_location,notifications,person,power_off,psychology,psychology_alt,public,redeem,reply,schedule,science,search,send,settings,shield,speed,stars,stream,swap_horiz,swords,sync,target,timeline,toll,trending_up,visibility,volunteer_activism,warning,water_drop,waves,wb_sunny&display=swap"
+          href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:opsz,wght,FILL,GRAD@20..48,100..700,0..1,-50..200&icon_names=account_balance_wallet,account_circle,account_tree,add,add_circle,adjust,air,all_inclusive,analytics,architecture,arrow_back,arrow_forward,arrow_right_alt,auto_awesome,auto_awesome_mosaic,auto_fix_high,auto_stories,balance,biotech,blur_on,bolt,build_circle,calendar_month,calendar_today,change_history,chat_bubble,check,check_circle,chevron_right,clear_day,close,code,collections_bookmark,construction,crisis_alert,cruelty_free,cyclone,dark_mode,data_object,data_usage,description,diamond,done_all,downloading,ecg_heart,emergency,error,expand_more,explore,favorite,filter_4,filter_center_focus,filter_vintage,flare,forum,functions,gallery_thumbnail,gavel,grain,graphic_eq,group_work,help,hexagon,history,history_edu,hourglass_empty,hub,inventory_2,landscape,language,link,local_fire_department,lock,lock_open,magic_button,memory,menu,menu_book,monitoring,my_location,notifications,person,policy,power_off,psychology,psychology_alt,public,redeem,reply,schedule,science,search,send,settings,shield,skillet,speed,stars,stream,swap_horiz,swords,sync,target,timeline,toll,trending_up,verified,visibility,volunteer_activism,warning,water_drop,waves,wb_sunny,workspace_premium&display=swap"
         />
         <Providers>
           <RootChrome>{children}</RootChrome>
