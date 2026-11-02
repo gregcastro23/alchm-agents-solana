@@ -305,18 +305,23 @@ export function getQuickActionsForPage(pathname: string): Array<{
     Array<{ label: string; action: string; icon: string; priority: 'primary' | 'secondary' }>
   > = {
     '/': [
-      { label: 'Chat with Monica', action: '/monica-guide', icon: '💬', priority: 'primary' },
-      { label: 'View Current Chart', action: '/chart-of-moment', icon: '🌟', priority: 'primary' },
+      { label: 'Chat with Monica', action: '/monica', icon: '💬', priority: 'primary' },
+      {
+        label: 'View Current Chart',
+        action: '/chart-of-the-moment',
+        icon: '🌟',
+        priority: 'primary',
+      },
       { label: 'Explore Gallery', action: '/gallery', icon: '🏛️', priority: 'secondary' },
     ],
     '/monica': [
-      { label: 'Full Chat Interface', action: '/monica-guide', icon: '🧠', priority: 'primary' },
+      { label: 'Tarot Oracle', action: '/monica?tab=tarot', icon: '🧠', priority: 'primary' },
       { label: 'Create Agent', action: '/philosophers-stone', icon: '⚗️', priority: 'primary' },
       { label: 'View Gallery', action: '/gallery', icon: '👥', priority: 'secondary' },
     ],
     '/gallery': [
       { label: 'Create New Agent', action: '/philosophers-stone', icon: '✨', priority: 'primary' },
-      { label: 'Chat with Monica', action: '/monica-guide', icon: '💬', priority: 'secondary' },
+      { label: 'Chat with Monica', action: '/monica', icon: '💬', priority: 'secondary' },
     ],
   }
 

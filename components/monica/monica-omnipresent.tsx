@@ -406,7 +406,7 @@ export function MonicaOmnipresent() {
     }))
     // The legacy in-widget trainer no longer has a real data source. Continue
     // tutorials in Monica's live guide instead of awarding simulated results.
-    router.push(`/monica-guide?tutorial=${encodeURIComponent(tutorialId)}`)
+    router.push(`/monica?tutorial=${encodeURIComponent(tutorialId)}`)
   }
 
   // Handler for quick actions from contextual help
@@ -414,7 +414,7 @@ export function MonicaOmnipresent() {
     try {
       switch (action) {
         case 'explore_features':
-          router.push('/dashboard')
+          router.push('/profile')
           break
         case 'view_current_chart':
           router.push('/chart-of-the-moment')
@@ -1264,7 +1264,7 @@ export function MonicaOmnipresent() {
               <Button
                 className="w-full bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700"
                 size="sm"
-                onClick={() => router.push('/monica-guide')}
+                onClick={() => router.push('/monica')}
               >
                 <MessageCircle className="w-3 h-3 mr-1" />
                 Full Chat Interface

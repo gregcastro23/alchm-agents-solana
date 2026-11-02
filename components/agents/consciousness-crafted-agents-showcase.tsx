@@ -273,7 +273,7 @@ export function ConsciousnessCraftedAgentsShowcase() {
                   </div>
                   <div className="flex gap-1 pt-1">
                     <Button size="sm" variant="outline" className="text-xs h-6" asChild>
-                      <Link href="/monica-guide">Meet Monica</Link>
+                      <Link href="/monica">Meet Monica</Link>
                     </Button>
                     <Button size="sm" variant="ghost" className="text-xs h-6" asChild>
                       <Link href="/gallery">Gallery</Link>
