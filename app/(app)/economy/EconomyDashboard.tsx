@@ -10,7 +10,9 @@ import {
   Flame,
   ShoppingBag,
   RefreshCw,
+  ArrowLeftRight,
 } from 'lucide-react'
+import { LivePriceIndexTicker } from '@/components/economy/LivePriceIndexTicker'
 
 interface TokenBalances {
   spirit: number
@@ -156,7 +158,10 @@ export default function EconomyDashboard({
         </div>
       </div>
 
-      <div className="grid gap-4 md:grid-cols-2">
+      {/* Live Elemental ESMS Price Index & Circle Resonance Matrix */}
+      <LivePriceIndexTicker variant="matrix" />
+
+      <div className="grid gap-4 md:grid-cols-3">
         <Link
           href="/shop?tab=tokens"
           className="group flex items-center justify-between gap-4 bg-surface border border-border hover:border-amber-500/40 p-5 rounded-xl transition-colors"
@@ -193,6 +198,26 @@ export default function EconomyDashboard({
             </div>
           </div>
           <span className="text-purple-300 text-sm font-medium opacity-70 group-hover:opacity-100 transition-opacity">
+            Open →
+          </span>
+        </Link>
+
+        <Link
+          href="/council-feed"
+          className="group flex items-center justify-between gap-4 bg-surface border border-border hover:border-cyan-500/40 p-5 rounded-xl transition-colors"
+        >
+          <div className="flex items-center gap-4">
+            <div className="p-2.5 bg-cyan-500/10 rounded-full">
+              <ArrowLeftRight className="w-5 h-5 text-cyan-300" />
+            </div>
+            <div>
+              <h3 className="font-semibold text-zinc-200">Transmutation Circle Trades</h3>
+              <p className="text-xs text-zinc-500 mt-0.5">
+                Watch live triplicate synastry windows and agent ESMS order flow.
+              </p>
+            </div>
+          </div>
+          <span className="text-cyan-300 text-sm font-medium opacity-70 group-hover:opacity-100 transition-opacity">
             Open →
           </span>
         </Link>

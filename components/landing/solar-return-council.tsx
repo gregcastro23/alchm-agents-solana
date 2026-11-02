@@ -1,9 +1,12 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useMemo, useState } from 'react'
 import {
   ArrowRight,
+  Calendar,
   ChevronDown,
+  ChevronLeft,
+  ChevronRight,
   Clock,
   Compass,
   Flame,
@@ -14,17 +17,33 @@ import {
   Sparkles,
   Zap,
 } from 'lucide-react'
+import NatalWheelSvg, { type WheelBody } from '@/components/charts/natal-wheel-svg'
 import { useSolarReturnCouncil } from '@/hooks/useSolarReturnCouncil'
 import { DailyPlanetaryCouncil } from './daily-planetary-council'
 import { ModeSwitcher } from './council-mode-switcher'
-import type {
-  CouncilPlanet,
-  CouncilSpeakerKey,
-  ShiftedRuler,
-  SolarReturnCouncilEdition,
-  SolarReturnCouncilTurn,
-  YearOverYearTelemetry,
+import {
+  COUNCIL_PLANETS,
+  type CouncilPlanet,
+  type CouncilSpeakerKey,
+  type ShiftedRuler,
+  type SolarReturnCouncilEdition,
+  type SolarReturnCouncilTurn,
+  type SolarReturnPlanetPlacement,
+  type YearOverYearTelemetry,
 } from '@/lib/agents/council/solar-return-types'
+
+const CYCLE_PRESETS: ReadonlyArray<{ years: number; label: string; badge?: string }> = [
+  { years: 1, label: '1Y Ago' },
+  { years: 2, label: '2Y Ago' },
+  { years: 3, label: '3Y Ago' },
+  { years: 5, label: '5Y Ago' },
+  { years: 7, label: '7Y', badge: 'Saturn Sq' },
+  { years: 12, label: '12Y', badge: 'Jupiter Return' },
+  { years: 19, label: '19Y', badge: 'Metonic' },
+  { years: 29, label: '29Y', badge: 'Saturn Return' },
+]
+
+const MAX_YEARS_BACK = 50
 
 const SPEAKER_STYLE: Record<CouncilSpeakerKey, { glyph: string; color: string }> = {
   gregory: { glyph: '✦', color: '#b8fc4b' },
@@ -66,9 +85,198 @@ function formatUtc(isoString: string): string {
   }).format(date)
 }
 
-function HeroEchoCard({ telemetry }: { telemetry: YearOverYearTelemetry }) {
+function toWheelPositions(
+  placements: Record<CouncilPlanet, SolarReturnPlanetPlacement>
+): Record<string, WheelBody> {
+  const out: Record<string, WheelBody> = {}
+  for (const planet of COUNCIL_PLANETS) {
+    const p = placements[planet]
+    if (!p) continue
+    out[planet] = {
+      sign: p.sign,
+      degree: p.degree,
+      exactLongitude: p.longitude,
+      isRetrograde: p.retrograde,
+    }
+  }
+  return out
+}
+
+function DualSolarReturnWheels({
+  telemetry,
+  yearsAgo,
+  anchorDate,
+}: {
+  telemetry: YearOverYearTelemetry
+  yearsAgo: number
+  anchorDate: string
+}) {
+  const [selectedPlanet, setSelectedPlanet] = useState<string | null>(null)
+  const [showLedger, setShowLedger] = useState(false)
+
+  const returnWheel = useMemo(
+    () => toWheelPositions(telemetry.returnSky.positions),
+    [telemetry.returnSky.positions]
+  )
+  const referenceWheel = useMemo(
+    () => toWheelPositions(telemetry.referenceSky.positions),
+    [telemetry.referenceSky.positions]
+  )
+
+  const returnYear = new Date(telemetry.returnSky.iso).getUTCFullYear()
+  const refYear = new Date(telemetry.referenceSky.iso).getUTCFullYear()
+  const activePlanetKey =
+    selectedPlanet && COUNCIL_PLANETS.includes(selectedPlanet as CouncilPlanet)
+      ? (selectedPlanet as CouncilPlanet)
+      : null
+  const selectedReturnPos = activePlanetKey ? telemetry.returnSky.positions[activePlanetKey] : null
+  const selectedRefPos = activePlanetKey ? telemetry.referenceSky.positions[activePlanetKey] : null
+
+  return (
+    <div className="rounded-2xl border border-[#424936]/80 bg-[#07090d] p-4 sm:p-5 space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="font-headline-sm text-base text-amber-300 flex items-center gap-2">
+            <Compass className="h-4 w-4 text-amber-400" />
+            Solar Return Zodiac Wheels ({returnYear} vs {refYear})
+          </h3>
+          <p className="text-xs text-[#8c947c] mt-0.5">
+            Click any planetary glyph on either wheel to compare its exact degree, retrograde
+            motion, and sign dignity across cycles.
+          </p>
+        </div>
+        <button
+          type="button"
+          onClick={() => setShowLedger(prev => !prev)}
+          aria-expanded={showLedger}
+          className="inline-flex items-center gap-1.5 rounded-lg border border-[#424936] bg-[#050506] px-3 py-1.5 font-mono text-[11px] text-[#c2cab0] hover:border-amber-400/50 hover:text-[#e0e4d2]"
+        >
+          <span>{showLedger ? 'Hide 10-Planet Table' : 'View 10-Planet Table'}</span>
+          <ChevronDown
+            className={`h-3.5 w-3.5 transition-transform ${showLedger ? 'rotate-180' : ''}`}
+          />
+        </button>
+      </div>
+
+      <div className="grid gap-4 lg:grid-cols-2">
+        <div className="rounded-xl border border-amber-500/25 bg-[#050506]/90 p-4 flex flex-col items-center">
+          <div className="w-full flex items-center justify-between text-xs mb-2">
+            <span className="font-mono uppercase tracking-wider text-amber-300">
+              {yearsAgo === 1 ? '1-Year Return Wheel' : `${yearsAgo}-Year Return (${returnYear})`}
+            </span>
+            <span className="font-mono text-[11px] text-[#8c947c]">
+              {formatUtc(telemetry.returnSky.iso)} UTC
+            </span>
+          </div>
+          <NatalWheelSvg
+            positions={returnWheel}
+            size={268}
+            selectedPlanet={selectedPlanet}
+            onSelectPlanet={setSelectedPlanet}
+            className="max-w-[268px] w-full h-auto"
+          />
+        </div>
+
+        <div className="rounded-xl border border-[#b8fc4b]/25 bg-[#050506]/90 p-4 flex flex-col items-center">
+          <div className="w-full flex items-center justify-between text-xs mb-2">
+            <span className="font-mono uppercase tracking-wider text-[#b8fc4b]">
+              {anchorDate ? `Anchor Sky (${refYear})` : `Current Sky (${refYear})`}
+            </span>
+            <span className="font-mono text-[11px] text-[#8c947c]">
+              {formatUtc(telemetry.referenceSky.iso)} UTC
+            </span>
+          </div>
+          <NatalWheelSvg
+            positions={referenceWheel}
+            size={268}
+            selectedPlanet={selectedPlanet}
+            onSelectPlanet={setSelectedPlanet}
+            className="max-w-[268px] w-full h-auto"
+          />
+        </div>
+      </div>
+
+      {activePlanetKey && selectedReturnPos && selectedRefPos && (
+        <div className="rounded-xl border border-amber-400/35 bg-amber-500/[0.06] px-4 py-3 flex flex-wrap items-center justify-between gap-3 text-xs">
+          <div className="flex items-center gap-2">
+            <span className="text-base text-amber-300">{PLANET_GLYPH[activePlanetKey]}</span>
+            <span className="font-semibold text-[#e0e4d2]">{`${activePlanetKey} Cycle Shift`}</span>
+          </div>
+          <div className="flex flex-wrap items-center gap-2 font-mono text-[11px]">
+            <span className="text-amber-200">
+              {`${returnYear}: ${selectedReturnPos.sign} ${selectedReturnPos.degree.toFixed(1)}°${selectedReturnPos.retrograde ? ' ℞' : ''} (${selectedReturnPos.dignity})`}
+            </span>
+            <ArrowRight className="h-3.5 w-3.5 text-amber-400" />
+            <span className="text-[#b8fc4b]">
+              {`${refYear}: ${selectedRefPos.sign} ${selectedRefPos.degree.toFixed(1)}°${selectedRefPos.retrograde ? ' ℞' : ''} (${selectedRefPos.dignity})`}
+            </span>
+          </div>
+        </div>
+      )}
+
+      {showLedger && (
+        <div className="overflow-x-auto rounded-xl border border-[#424936]/60 bg-[#050506]">
+          <table className="w-full text-left font-mono text-xs">
+            <thead>
+              <tr className="border-b border-[#424936]/50 text-[10px] uppercase tracking-wider text-[#8c947c]">
+                <th className="px-3 py-2">Body</th>
+                <th className="px-3 py-2 text-amber-300">{returnYear} Solar Return</th>
+                <th className="px-3 py-2 text-[#b8fc4b]">{refYear} Reference</th>
+                <th className="px-3 py-2">Sign Shift</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-[#424936]/30">
+              {COUNCIL_PLANETS.map(planet => {
+                const ret = telemetry.returnSky.positions[planet]
+                const ref = telemetry.referenceSky.positions[planet]
+                const shifted = ret.sign !== ref.sign
+                return (
+                  <tr
+                    key={planet}
+                    onClick={() => setSelectedPlanet(prev => (prev === planet ? null : planet))}
+                    className="cursor-pointer hover:bg-white/[0.03]"
+                  >
+                    <td className="px-3 py-2 font-semibold text-[#e0e4d2]">
+                      {`${PLANET_GLYPH[planet]} ${planet} Body`}
+                    </td>
+                    <td className="px-3 py-2 text-amber-200/90 tabular-nums">
+                      {`${ret.sign} ${ret.degree.toFixed(1)}°${ret.retrograde ? ' ℞' : ''} · ${ret.dignity}`}
+                    </td>
+                    <td className="px-3 py-2 text-[#e0e4d2] tabular-nums">
+                      {`${ref.sign} ${ref.degree.toFixed(1)}°${ref.retrograde ? ' ℞' : ''} · ${ref.dignity}`}
+                    </td>
+                    <td className="px-3 py-2">
+                      {shifted ? (
+                        <span className="rounded bg-amber-400/15 px-1.5 py-0.5 text-[10px] text-amber-200">
+                          {`${ret.sign} → ${ref.sign}`}
+                        </span>
+                      ) : (
+                        <span className="text-[10px] text-[#8c947c]">Same Sign</span>
+                      )}
+                    </td>
+                  </tr>
+                )
+              })}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function HeroEchoCard({
+  telemetry,
+  yearsAgo = 1,
+  anchorDate = '',
+}: {
+  telemetry: YearOverYearTelemetry
+  yearsAgo?: number
+  anchorDate?: string
+}) {
   const { solarAlignment, returnSky, referenceSky } = telemetry
   const deltaLabel = `Δ < ${Math.max(0.001, solarAlignment.deltaArcminutes).toFixed(3)}'`
+  const returnYear = new Date(returnSky.iso).getUTCFullYear()
 
   return (
     <div className="relative overflow-hidden rounded-2xl border border-amber-500/30 bg-gradient-to-b from-[#14120a] to-[#070709] p-5 sm:p-6">
@@ -90,7 +298,10 @@ function HeroEchoCard({ telemetry }: { telemetry: YearOverYearTelemetry }) {
       <div className="mt-4 grid gap-3 sm:grid-cols-2">
         <div className="rounded-xl border border-[#424936]/50 bg-[#0c0f12]/80 p-3">
           <p className="flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-amber-400/90">
-            <Clock className="h-3.5 w-3.5" /> 1 Year Ago (Historical Return)
+            <Clock className="h-3.5 w-3.5" />{' '}
+            {yearsAgo === 1
+              ? '1 Year Ago (Historical Return)'
+              : `${yearsAgo} Years Ago (${returnYear} Solar Return)`}
           </p>
           <p className="mt-1 font-headline-sm text-sm text-[#e0e4d2]">
             {formatUtc(returnSky.iso)} UTC
@@ -102,7 +313,8 @@ function HeroEchoCard({ telemetry }: { telemetry: YearOverYearTelemetry }) {
 
         <div className="rounded-xl border border-[#424936]/50 bg-[#0c0f12]/80 p-3">
           <p className="flex items-center gap-1.5 text-xs font-mono uppercase tracking-wider text-[#b8fc4b]">
-            <Globe className="h-3.5 w-3.5" /> Today (Reference Sky)
+            <Globe className="h-3.5 w-3.5" />{' '}
+            {anchorDate ? `Anchor Sky (${anchorDate})` : 'Today (Reference Sky)'}
           </p>
           <p className="mt-1 font-headline-sm text-sm text-[#e0e4d2]">
             {formatUtc(referenceSky.iso)} UTC
@@ -471,12 +683,31 @@ export function SolarReturnCouncil({
   compact = false,
   onOpenCouncil,
 }: SolarReturnCouncilProps) {
-  const { state, refresh } = useSolarReturnCouncil()
   const [activeMode, setActiveMode] = useState<'live' | 'solar-return'>(defaultMode)
+  const [yearsAgo, setYearsAgo] = useState<number>(1)
+  const [anchorDate, setAnchorDate] = useState<string>('')
 
-  const edition = initialEdition ?? state.edition
-  const loading = !initialEdition && state.loading
-  const error = !initialEdition ? state.error : null
+  const { state, refresh } = useSolarReturnCouncil({
+    date: anchorDate || undefined,
+    yearsAgo,
+  })
+
+  const useInitial = Boolean(initialEdition && yearsAgo === 1 && !anchorDate)
+  const edition = useInitial ? initialEdition : state.edition
+  const loading = !useInitial && state.loading
+  const error = !useInitial ? state.error : null
+
+  const refYear = useMemo(() => {
+    if (anchorDate) {
+      const parsed = new Date(`${anchorDate}T12:00:00Z`)
+      if (!isNaN(parsed.getTime())) return parsed.getUTCFullYear()
+    }
+    if (edition?.referenceIso) {
+      const parsed = new Date(edition.referenceIso)
+      if (!isNaN(parsed.getTime())) return parsed.getUTCFullYear()
+    }
+    return new Date().getUTCFullYear()
+  }, [anchorDate, edition?.referenceIso])
 
   const handleModeChange = (next: 'live' | 'solar-return') => {
     setActiveMode(next)
@@ -514,10 +745,118 @@ export function SolarReturnCouncil({
         </button>
       </div>
 
+      {/* Multi-Year Solar Return Time Machine Controls */}
+      <div className="mt-4 rounded-2xl border border-amber-500/25 bg-[#090b0e] p-3.5 sm:p-4 space-y-3">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex flex-wrap items-center gap-2">
+            <button
+              type="button"
+              onClick={() => setYearsAgo(prev => Math.min(MAX_YEARS_BACK, prev + 1))}
+              disabled={yearsAgo >= MAX_YEARS_BACK || loading}
+              aria-label="Step back one solar return year"
+              className="inline-flex items-center gap-1 rounded-lg border border-[#424936] bg-[#050506] px-2.5 py-1.5 font-mono text-xs text-[#e0e4d2] hover:border-amber-400/60 disabled:opacity-40"
+            >
+              <ChevronLeft className="h-3.5 w-3.5 text-amber-400" />
+              <span>Older Year</span>
+            </button>
+
+            <label className="inline-flex items-center gap-2 rounded-lg border border-amber-400/40 bg-amber-500/10 px-3 py-1.5 font-mono text-xs text-amber-200">
+              <span>Cycle:</span>
+              <select
+                aria-label="Select Solar Return years back"
+                value={yearsAgo}
+                onChange={e => setYearsAgo(Number(e.target.value))}
+                className="bg-transparent font-semibold text-amber-300 focus:outline-none"
+              >
+                {Array.from({ length: MAX_YEARS_BACK }, (_, i) => i + 1).map(yr => (
+                  <option key={yr} value={yr} className="bg-[#090b0e] text-[#e0e4d2]">
+                    {`-${yr} ${yr === 1 ? 'Year' : 'Years'} (${refYear - yr})`}
+                  </option>
+                ))}
+              </select>
+            </label>
+
+            <button
+              type="button"
+              onClick={() => setYearsAgo(prev => Math.max(1, prev - 1))}
+              disabled={yearsAgo <= 1 || loading}
+              aria-label="Step forward one solar return year"
+              className="inline-flex items-center gap-1 rounded-lg border border-[#424936] bg-[#050506] px-2.5 py-1.5 font-mono text-xs text-[#e0e4d2] hover:border-amber-400/60 disabled:opacity-40"
+            >
+              <span>Newer Year</span>
+              <ChevronRight className="h-3.5 w-3.5 text-amber-400" />
+            </button>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2">
+            <label className="inline-flex items-center gap-2 rounded-lg border border-[#424936] bg-[#050506] px-2.5 py-1.5 text-xs text-[#c2cab0]">
+              <Calendar className="h-3.5 w-3.5 text-[#b8fc4b]" />
+              <span className="font-mono text-[11px]">Anchor Date:</span>
+              <input
+                type="date"
+                aria-label="Anchor date for Solar Return lookup"
+                value={anchorDate}
+                max={new Date().toISOString().slice(0, 10)}
+                onChange={e => setAnchorDate(e.target.value)}
+                className="bg-transparent font-mono text-xs text-[#e0e4d2] focus:outline-none"
+              />
+            </label>
+            {(anchorDate || yearsAgo !== 1) && (
+              <button
+                type="button"
+                onClick={() => {
+                  setAnchorDate('')
+                  setYearsAgo(1)
+                }}
+                className="rounded-lg border border-[#424936] px-2.5 py-1.5 font-mono text-[11px] text-[#b8fc4b] hover:border-[#b8fc4b]/50"
+              >
+                Reset
+              </button>
+            )}
+          </div>
+        </div>
+
+        <div className="flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 font-mono text-[10px] uppercase tracking-wider text-[#8c947c]">
+            Cycle Jumps:
+          </span>
+          {CYCLE_PRESETS.map(preset => {
+            const active = yearsAgo === preset.years
+            return (
+              <button
+                key={preset.years}
+                type="button"
+                onClick={() => setYearsAgo(preset.years)}
+                className={`inline-flex items-center gap-1 rounded-full border px-2.5 py-1 font-mono text-[11px] transition-colors ${
+                  active
+                    ? 'border-amber-400 bg-amber-400/20 font-semibold text-amber-200'
+                    : 'border-[#424936]/70 bg-[#050506] text-[#c2cab0] hover:border-amber-400/40 hover:text-[#e0e4d2]'
+                }`}
+              >
+                <span>{preset.label}</span>
+                {preset.badge && (
+                  <span className="text-[9px] text-amber-300/80">· {preset.badge}</span>
+                )}
+              </button>
+            )
+          })}
+        </div>
+      </div>
+
       <div id="council-panel" className="mt-6 space-y-6">
         {edition ? (
           <>
-            <HeroEchoCard telemetry={edition.telemetry} />
+            <HeroEchoCard
+              telemetry={edition.telemetry}
+              yearsAgo={edition.yearsAgo ?? yearsAgo}
+              anchorDate={anchorDate}
+            />
+
+            <DualSolarReturnWheels
+              telemetry={edition.telemetry}
+              yearsAgo={edition.yearsAgo ?? yearsAgo}
+              anchorDate={anchorDate}
+            />
 
             <div>
               <h2 className="font-headline-sm text-2xl text-[#e0e4d2] sm:text-3xl">
@@ -546,7 +885,10 @@ export function SolarReturnCouncil({
         ) : loading ? (
           <div className="flex items-center gap-3 py-12 text-sm text-[#8c947c]">
             <RefreshCw className="h-4 w-4 animate-spin text-amber-400" />
-            <span>Resolving 1-Year Solar Return ephemeris and convening delegates…</span>
+            <span>
+              Resolving {yearsAgo}-Year Solar Return ephemeris ({refYear - yearsAgo}) and convening
+              delegates…
+            </span>
           </div>
         ) : (
           <div role="alert" className="py-8 text-sm text-amber-200">

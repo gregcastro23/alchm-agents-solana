@@ -1,6 +1,9 @@
 'use client'
 
 import React, { useState, useMemo, useEffect, useCallback, useRef } from 'react'
+import Link from 'next/link'
+import { LivePriceIndexTicker } from '@/components/economy/LivePriceIndexTicker'
+import { usePlanetaryPositions } from '@/hooks/usePlanetaryPositions'
 import { ChartWheel } from './chart-wheel'
 import { Avatar, CooldownRing, ElementalBar } from './agent-atoms'
 import { FeedCard, type CardCtx } from './feed-cards'
@@ -450,6 +453,11 @@ export function CouncilFeedClient({
         match: (e: FeedEvent) => e.type === 'planetary-degree' || e.type === 'aspect-activation',
       },
       {
+        id: 'trades',
+        label: 'Circle Trades',
+        match: (e: FeedEvent) => e.type === 'triplicate-trade',
+      },
+      {
         id: 'alliance',
         label: 'Bonds',
         match: (e: FeedEvent) =>
@@ -486,10 +494,24 @@ export function CouncilFeedClient({
     return [...streaming, ...active, ...rest]
   }, [filteredEvents])
 
+  const skyTelemetry = usePlanetaryPositions({ enabled: !desktopWidget })
+  const skySource = skyTelemetry.planetaryPositions[0]?.source ?? null
+
   return (
     <div className={'cosmic-feed-root' + (desktopWidget ? ' desktop-widget' : '')}>
       <div className="app">
-        {!desktopWidget && <Topbar timestamp={chart.timestamp} thermo={chart.thermodynamics} />}
+        {!desktopWidget && (
+          <>
+            <Topbar
+              timestamp={chart.timestamp}
+              thermo={chart.thermodynamics}
+              skySource={skySource}
+            />
+            <div className="px-4 py-2 border-b border-white/10 bg-black/40">
+              <LivePriceIndexTicker variant="ribbon" />
+            </div>
+          </>
+        )}
         <div className="shell">
           {!desktopWidget && <ChartOfMomentColumn chart={chart} />}
           <FeedColumn
@@ -535,9 +557,11 @@ export function CouncilFeedClient({
 function Topbar({
   timestamp,
   thermo,
+  skySource,
 }: {
   timestamp: Date | string
   thermo: ChartOfMoment['thermodynamics']
+  skySource?: string | null
 }) {
   const ts = new Date(timestamp)
   const time = ts.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' UTC'
@@ -549,6 +573,12 @@ function Topbar({
         </div>
         <span>Cosmic&nbsp;Agents</span>
         <span className="brand-sub">/ Council Feed</span>
+        <Link
+          href="/planetary-council"
+          className="ml-3 rounded-full border border-amber-400/35 bg-amber-400/10 px-2.5 py-0.5 text-[10px] font-mono uppercase tracking-wider text-amber-200 hover:bg-amber-400/20 transition-colors"
+        >
+          Daily Council →
+        </Link>
       </div>
       <div className="telemetry">
         <div className="tele heat">
@@ -592,8 +622,20 @@ function Topbar({
       <div className="timestamp">
         <div className="live-dot" />
         <span>{time}</span>
-        <span style={{ color: 'var(--ink-4)' }}>·</span>
-        <span>chart sync 7s ago</span>
+        {skySource && (
+          <>
+            <span style={{ color: 'var(--ink-4)' }}>·</span>
+            <span
+              className={
+                skySource === 'swiss-ephemeris'
+                  ? 'text-emerald-300 font-semibold'
+                  : 'text-amber-300'
+              }
+            >
+              {skySource === 'swiss-ephemeris' ? 'Swiss Ephemeris · Live' : 'VSOP87 Approx'}
+            </span>
+          </>
+        )}
       </div>
     </header>
   )

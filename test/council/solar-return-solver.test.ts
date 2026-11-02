@@ -107,6 +107,35 @@ describe('Solar Return Solver and Ephemeris Engine', () => {
       expect(result.iterations).toBeLessThanOrEqual(8)
       expect(result.finalDeltaArcminutes).toBeLessThan(0.005)
     })
+
+    it('solves multi-year Solar Returns (e.g. 12-year Jupiter Return and 29-year Saturn Return) with sub-arcminute precision', async () => {
+      const referenceDate = new Date('2026-10-27T12:00:00.000Z')
+      const targetLongitude = 214.5678
+      const tropicalDays = 365.242189
+
+      const evaluateSunLongitude = async (d: Date) => {
+        const elapsedDays = (d.getTime() - referenceDate.getTime()) / 86_400_000
+        return normalizeDegrees(
+          targetLongitude +
+            (elapsedDays / tropicalDays) * 360 +
+            Math.sin(elapsedDays * 0.017) * 0.015
+        )
+      }
+
+      for (const yearsAgo of [5, 12, 29]) {
+        const result = await solveSolarReturnTimestamp({
+          targetLongitude,
+          referenceDate,
+          yearsAgo,
+          evaluateSunLongitude,
+        })
+        expect(result.iterations).toBeLessThanOrEqual(8)
+        expect(result.finalDeltaArcminutes).toBeLessThan(0.005)
+        const diffDays = (referenceDate.getTime() - result.returnTimestamp) / 86_400_000
+        expect(diffDays).toBeGreaterThan(yearsAgo * 365 - 2)
+        expect(diffDays).toBeLessThan(yearsAgo * 366 + 2)
+      }
+    })
   })
 
   describe('Year-Over-Year Dual Sky Snapshot Comparison', () => {

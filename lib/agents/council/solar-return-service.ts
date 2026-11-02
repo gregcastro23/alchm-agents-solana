@@ -20,8 +20,11 @@ interface CacheEntry {
 
 const memoryCache = new Map<string, CacheEntry>()
 
-export function solarReturnEditionKey(dateStr: string): string {
-  return `${SOLAR_RETURN_COUNCIL_VERSION}:${dateStr}`
+export function solarReturnEditionKey(dateStr: string, yearsAgo: number = 1): string {
+  const clamped = Math.max(1, Math.min(120, Math.round(yearsAgo)))
+  return clamped === 1
+    ? `${SOLAR_RETURN_COUNCIL_VERSION}:${dateStr}`
+    : `${SOLAR_RETURN_COUNCIL_VERSION}:${dateStr}:y-${clamped}`
 }
 
 async function withTimeout<T>(promise: Promise<T>, timeoutMs: number): Promise<T> {
@@ -112,11 +115,13 @@ export function setCachedSolarReturnEdition(key: string, edition: SolarReturnCou
  * Ensures a 2-second store budget before returning a deterministic fallback briefing.
  */
 export async function getSolarReturnCouncilEdition(
-  targetDate?: Date
+  targetDate?: Date,
+  yearsAgo: number = 1
 ): Promise<SolarReturnCouncilResponse> {
+  const clampedYears = Math.max(1, Math.min(120, Math.round(yearsAgo)))
   const refDate = targetDate && !isNaN(targetDate.getTime()) ? targetDate : new Date()
   const dateStr = refDate.toISOString().slice(0, 10)
-  const key = solarReturnEditionKey(dateStr)
+  const key = solarReturnEditionKey(dateStr, clampedYears)
 
   // 1. Check in-memory cache
   const memoryHit = getCachedSolarReturnEdition(key)
@@ -139,8 +144,8 @@ export async function getSolarReturnCouncilEdition(
 
   // 3. Compute deterministic fallback briefing
   try {
-    const telemetry = await fetchSolarReturnSky(refDate)
-    const edition = createSolarReturnBriefingEdition(telemetry, dateStr)
+    const telemetry = await fetchSolarReturnSky(refDate, { yearsAgo: clampedYears })
+    const edition = createSolarReturnBriefingEdition(telemetry, dateStr, clampedYears)
 
     setCachedSolarReturnEdition(key, edition)
     // Persist in background

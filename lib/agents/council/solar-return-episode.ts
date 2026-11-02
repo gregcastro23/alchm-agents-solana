@@ -222,8 +222,10 @@ function composeBriefingText(
  */
 export function createSolarReturnBriefingEdition(
   telemetry: YearOverYearTelemetry,
-  date: string
+  date: string,
+  yearsAgo: number = 1
 ): SolarReturnCouncilEdition {
+  const clampedYears = Math.max(1, Math.min(120, Math.round(yearsAgo)))
   const beats = planSolarReturnEpisode(telemetry)
   const turns: SolarReturnCouncilTurn[] = []
 
@@ -243,14 +245,26 @@ export function createSolarReturnBriefingEdition(
     })
   }
 
+  const returnYear = new Date(telemetry.returnSky.iso).getUTCFullYear()
+  const refYear = new Date(telemetry.referenceSky.iso).getUTCFullYear()
   const coveredTopics = Array.from(new Set(turns.flatMap(t => t.coverageIds)))
-  const title = `Solar Return Conclave · ${telemetry.solarAlignment.sign} ${telemetry.solarAlignment.degree}° Alignment`
-  const summary = `Historical Planetary Council convening Gregory Castro and the ten planetary delegates to debate the celestial state from exactly one tropical year ago, contrasting historical balance with today.`
+  const title =
+    clampedYears === 1
+      ? `Solar Return Conclave · ${telemetry.solarAlignment.sign} ${telemetry.solarAlignment.degree}° Alignment`
+      : `Solar Return Conclave · ${returnYear} → ${refYear} (${clampedYears}-Year Cycle) · ${telemetry.solarAlignment.sign} ${telemetry.solarAlignment.degree}° Alignment`
+  const summary =
+    clampedYears === 1
+      ? `Historical Planetary Council convening Gregory Castro and the ten planetary delegates to debate the celestial state from exactly one tropical year ago, contrasting historical balance with today.`
+      : `Historical Planetary Council convening Gregory Castro and the ten planetary delegates to compare the exact ${returnYear} Solar Return sky (${clampedYears} tropical cycles prior) against the ${refYear} reference sky.`
 
   const rawEdition: SolarReturnCouncilEdition = {
     schemaVersion: 1,
-    id: `solar-return-council-v1:${date}`,
+    id:
+      clampedYears === 1
+        ? `solar-return-council-v1:${date}`
+        : `solar-return-council-v1:${date}:y-${clampedYears}`,
     date,
+    yearsAgo: clampedYears,
     timeZone: 'UTC',
     title,
     summary,

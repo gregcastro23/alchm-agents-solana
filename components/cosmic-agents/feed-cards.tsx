@@ -19,6 +19,7 @@ import type {
   CouncilEvent,
   PactEvent,
   SigilEvent,
+  TriplicateTradeEvent,
 } from './types'
 
 interface CardCtx {
@@ -846,6 +847,54 @@ function SigilCard({ event, ctx }: { event: SigilEvent; ctx: CardCtx }) {
   )
 }
 
+/* ─── Transmutation Circle Triplicate Trade ─── */
+function TriplicateTradeCard({ event }: { event: TriplicateTradeEvent }) {
+  return (
+    <div className="card">
+      <CardMeta type="Circle Trade" time={event.timestamp}>
+        <span
+          style={{
+            fontFamily: 'var(--ff-mono)',
+            fontSize: 10,
+            color: 'var(--gold-hi)',
+          }}
+        >
+          +{event.resonanceBonusPct}% synastry bonus
+        </span>
+      </CardMeta>
+      <div className="card-body">
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'space-between',
+            gap: 10,
+            flexWrap: 'wrap',
+            marginBottom: 8,
+          }}
+        >
+          <span style={{ fontWeight: 600, color: 'var(--ink-1)' }}>
+            {event.makerName} ⇄ {event.takerName}
+          </span>
+          <span
+            style={{
+              fontFamily: 'var(--ff-mono)',
+              fontSize: 11,
+              color: 'var(--gold-hi)',
+            }}
+          >
+            {event.gaveAmount} {event.gaveToken} → {event.receivedAmount} {event.receivedToken}
+          </span>
+        </div>
+        <p style={{ fontSize: 12, color: 'var(--ink-3)', margin: 0 }}>
+          {event.aspectDescription}
+          {event.transitCatalyst ? ` · ${event.transitCatalyst}` : ''}
+        </p>
+      </div>
+    </div>
+  )
+}
+
 /* ─── Dispatcher ─── */
 export function FeedCard({ event, ctx }: { event: FeedEvent; ctx: CardCtx }) {
   switch (event.type) {
@@ -873,6 +922,8 @@ export function FeedCard({ event, ctx }: { event: FeedEvent; ctx: CardCtx }) {
       return <EvolutionCard event={event} ctx={ctx} />
     case 'system':
       return <SystemCard event={event} ctx={ctx} />
+    case 'triplicate-trade':
+      return <TriplicateTradeCard event={event} />
     default:
       return null
   }
