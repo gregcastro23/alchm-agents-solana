@@ -19,6 +19,8 @@ import {
   Users,
 } from 'lucide-react'
 import { usePentaclesWarState } from '@/lib/spacetime/hooks/usePentaclesWarState'
+import { ZONE_PROFILES, SEAL_TIER_MULTIPLIERS } from '@/lib/agents/rating'
+import { SEAL_TIERS } from '@/lib/agents/rating-contract'
 
 const FACTIONS = [
   'Sun',
@@ -318,51 +320,106 @@ export default function PentaclesWarClient() {
             </section>
 
             <section className="rounded-3xl border border-white/10 bg-[#0b0e18]/90 p-5">
-              <div className="mb-5 flex items-center gap-3">
-                <Target className="h-5 w-5 text-cyan-300" />
+              <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
+                <div className="flex items-center gap-3">
+                  <Target className="h-5 w-5 text-cyan-300" />
+                  <div>
+                    <h2 className="font-medium">Territorial field</h2>
+                    <p className="text-xs text-slate-500">
+                      Five Houses, five Spires, and the Crown
+                    </p>
+                  </div>
+                </div>
+                <span className="rounded-full border border-cyan-400/20 bg-cyan-500/10 px-2.5 py-0.5 font-mono text-[10px] uppercase tracking-wider text-cyan-200">
+                  11-Zone ECR Grid
+                </span>
+              </div>
+
+              {/* Pentacle Combat Modifiers: Seal Multipliers & Resonance Surge */}
+              <div className="mb-4 grid gap-2.5 rounded-2xl border border-white/[0.07] bg-black/30 p-3.5 sm:grid-cols-2">
                 <div>
-                  <h2 className="font-medium">Territorial field</h2>
-                  <p className="text-xs text-slate-500">Five Houses, five Spires, and the Crown</p>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-amber-300/90">
+                    Alchemical Seal ECR Multipliers
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap gap-1.5">
+                    {SEAL_TIERS.map(tier => (
+                      <span
+                        key={tier}
+                        className="rounded-md border border-amber-400/20 bg-amber-400/5 px-1.5 py-0.5 font-mono text-[10px] text-slate-300 tabular-nums"
+                      >
+                        {tier}{' '}
+                        <strong className="text-amber-200">
+                          {SEAL_TIER_MULTIPLIERS[tier].toFixed(2)}x
+                        </strong>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+                <div>
+                  <p className="font-mono text-[10px] uppercase tracking-[0.16em] text-violet-300/90">
+                    Active Resonance Surge (Meter ≥ 70)
+                  </p>
+                  <div className="mt-1.5 flex flex-wrap items-center gap-1.5 font-mono text-[10px] text-slate-300">
+                    <span className="rounded-md border border-violet-400/25 bg-violet-500/10 px-1.5 py-0.5 text-violet-200">
+                      Primary +12
+                    </span>
+                    <span className="rounded-md border border-violet-400/20 bg-violet-500/5 px-1.5 py-0.5 text-violet-200/90">
+                      Secondary +8
+                    </span>
+                    <span className="rounded-md border border-violet-400/15 bg-violet-500/5 px-1.5 py-0.5 text-violet-200/80">
+                      Tertiary +4
+                    </span>
+                  </div>
                 </div>
               </div>
+
               <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-                {live.zones.map(zone => (
-                  <article
-                    key={zone.zoneId}
-                    className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-black/20 p-4"
-                  >
-                    <div
-                      className="absolute inset-x-0 top-0 h-px"
-                      style={{ background: zone.owner ? FACTION_TONE[zone.owner] : '#334155' }}
-                    />
-                    <div className="flex items-start justify-between gap-3">
-                      <div>
-                        <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600">
-                          {zone.kind}
-                        </p>
-                        <h3 className="mt-1 text-sm font-medium">{zoneName(zone.zoneId)}</h3>
+                {live.zones.map(zone => {
+                  const profile = ZONE_PROFILES[zone.zoneId]
+                  return (
+                    <article
+                      key={zone.zoneId}
+                      className="relative overflow-hidden rounded-2xl border border-white/[0.08] bg-black/20 p-4"
+                    >
+                      <div
+                        className="absolute inset-x-0 top-0 h-px"
+                        style={{ background: zone.owner ? FACTION_TONE[zone.owner] : '#334155' }}
+                      />
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <p className="text-[10px] uppercase tracking-[0.2em] text-slate-600">
+                            {zone.kind}
+                          </p>
+                          <h3 className="mt-1 text-sm font-medium">{zoneName(zone.zoneId)}</h3>
+                          {profile && (
+                            <p className="mt-1 font-mono text-[10px] uppercase tracking-wider text-slate-500">
+                              {profile.element} ·{' '}
+                              <span className="text-amber-300/80">{profile.esmsToken}</span> Seal
+                            </p>
+                          )}
+                        </div>
+                        {zone.inFlux && <Sparkles className="h-4 w-4 text-amber-300" />}
                       </div>
-                      {zone.inFlux && <Sparkles className="h-4 w-4 text-amber-300" />}
-                    </div>
-                    <div className="mt-5 flex items-end justify-between">
-                      <div>
-                        <p
-                          className="text-xs"
-                          style={{ color: zone.owner ? FACTION_TONE[zone.owner] : '#64748b' }}
-                        >
-                          {zone.owner ?? 'Unclaimed'}
-                        </p>
-                        <p className="mt-1 text-[11px] text-slate-600">
-                          {zone.claimedStars} claimed stars
-                        </p>
+                      <div className="mt-4 flex items-end justify-between">
+                        <div>
+                          <p
+                            className="text-xs"
+                            style={{ color: zone.owner ? FACTION_TONE[zone.owner] : '#64748b' }}
+                          >
+                            {zone.owner ?? 'Unclaimed'}
+                          </p>
+                          <p className="mt-1 text-[11px] text-slate-600">
+                            {zone.claimedStars} claimed stars
+                          </p>
+                        </div>
+                        <span className="font-mono text-sm text-slate-400">
+                          {zone.control > 0 ? '+' : ''}
+                          {zone.control}
+                        </span>
                       </div>
-                      <span className="font-mono text-sm text-slate-400">
-                        {zone.control > 0 ? '+' : ''}
-                        {zone.control}
-                      </span>
-                    </div>
-                  </article>
-                ))}
+                    </article>
+                  )
+                })}
               </div>
             </section>
 

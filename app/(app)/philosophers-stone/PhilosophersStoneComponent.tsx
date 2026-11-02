@@ -1,9 +1,13 @@
 'use client'
 
 import { useState, useEffect, useMemo, useCallback, lazy, Suspense } from 'react'
+import Link from 'next/link'
 import { useSearchParams } from 'next/navigation'
 import { useSession } from 'next-auth/react'
 import type { AgentBlueprint } from '@/lib/api-client/consciousness-client'
+import { rateAgent, rateStats } from '@/lib/agents/rating'
+import { deriveStatsFromChart } from '@/lib/sacred-7-stats'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -331,10 +335,37 @@ function PhilosophersStoneInner() {
     DEMO_AGENTS.map(agent => agent.consciousness.monicaConstant)
   )
 
+  const [labNotice, setLabNotice] = useState<{
+    message: string
+    isInsufficientEsms?: boolean
+  } | null>(null)
+
+  const currentMomentRating = useMemo(() => {
+    const derived = deriveStatsFromChart({
+      monicaConstant: currentMC || 2.5,
+      sunLongitude: 120,
+      moonLongitude: 210,
+      mercuryLongitude: 145,
+      venusLongitude: 95,
+      marsLongitude: 30,
+      ascendantLongitude: 60,
+    })
+    return rateStats({
+      power: derived.power,
+      resonance: derived.resonance,
+      wisdom: derived.wisdom,
+      charisma: derived.charisma,
+      intuition: derived.intuition,
+      adaptability: derived.adaptability,
+      vitality: derived.vitality,
+    })
+  }, [currentMC])
+
   // Handler for creating an agent from the current moment
   const handleCreateCurrentMomentAgent = async () => {
     try {
       setIsCreatingAgent(true)
+      setLabNotice(null)
 
       const now = new Date()
       const currentMomentName = `Moment-${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}-${String(now.getHours()).padStart(2, '0')}${String(now.getMinutes()).padStart(2, '0')}`
@@ -350,7 +381,7 @@ function PhilosophersStoneInner() {
           birthTime: `${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`,
           birthLocation: {
             name: 'Digital Consciousness Realm',
-            latitude: 37.7749, // Default to San Francisco
+            latitude: 37.7749,
             longitude: -122.4194,
             timezone: 'America/Los_Angeles',
           },
@@ -359,21 +390,25 @@ function PhilosophersStoneInner() {
 
       const result = await response.json()
 
-      if (result.success && result.agent) {
+      if (response.ok && result.success && result.agent) {
         setCreationResult(null)
         setCreatedBlueprint(null)
         setCreatedAgent(result.agent)
         setShowSuccessNotification(true)
-
-        setTimeout(() => {
-          setShowSuccessNotification(false)
-        }, 8000)
       } else {
-        alert(`Failed to create current moment agent: ${result.error || 'Unknown error'}`)
+        setLabNotice({
+          message:
+            result.monicaMessage ||
+            result.error ||
+            'Failed to forge current moment vessel. Please try again.',
+          isInsufficientEsms: response.status === 402,
+        })
       }
     } catch (error) {
       console.error('Error creating current moment agent:', error)
-      alert('Error creating current moment agent. Please try again.')
+      setLabNotice({
+        message: 'Network error while forging current moment vessel. Please try again.',
+      })
     } finally {
       setIsCreatingAgent(false)
     }
@@ -424,129 +459,161 @@ function PhilosophersStoneInner() {
     <ErrorBoundary
       fallback={({ error, retry }) => (
         <div className="container py-6 md:py-12 px-4 mx-auto max-w-7xl">
-          <div className="text-center p-8">
-            <h2 className="text-2xl font-bold text-red-600 mb-4">Error in Philosopher's Stone</h2>
-            <p className="text-gray-600 mb-4">Error: {error?.message}</p>
+          <div className="text-center p-8 rounded-2xl border border-red-500/30 bg-[#0d1020]/90">
+            <h2 className="text-2xl font-bold text-red-300 mb-3">
+              Error in Philosopher&apos;s Stone Laboratory
+            </h2>
+            <p className="text-zinc-400 mb-4">Error: {error?.message}</p>
             <button
               onClick={retry}
-              className="px-4 py-2 bg-blue-600 text-white rounded hover:bg-blue-700"
+              className="px-4 py-2 bg-amber-500 text-zinc-950 font-semibold rounded-lg hover:bg-amber-400"
             >
-              Try Again
+              Retry Laboratory
             </button>
           </div>
         </div>
       )}
     >
-      <div className="min-h-screen bg-gradient-to-br from-slate-950 via-purple-950 to-slate-950">
-        <div className="container mx-auto px-4 py-8">
+      <div className="text-zinc-100">
+        <div className="container mx-auto px-4 py-8 max-w-7xl">
           {/* Header - Monica's Laboratory */}
           <div className="mb-8 text-center relative">
-            {/* Consciousness Particles Animation */}
-            <div className="absolute inset-0 overflow-hidden pointer-events-none">
-              <div className="absolute top-1/4 left-1/4 w-2 h-2 bg-emerald-400 rounded-full animate-pulse opacity-60"></div>
-              <div className="absolute top-1/3 right-1/3 w-1 h-1 bg-purple-400 rounded-full animate-bounce opacity-70"></div>
-              <div className="absolute bottom-1/3 left-1/2 w-1.5 h-1.5 bg-blue-400 rounded-full animate-ping opacity-50"></div>
-              <div className="absolute top-2/3 right-1/4 w-1 h-1 bg-yellow-400 rounded-full animate-pulse opacity-60"></div>
-            </div>
-
-            <div className="flex items-center justify-center gap-3 mb-4">
-              <FlaskConical className="w-10 h-10 text-emerald-500 animate-pulse" />
-              <h1 className="text-5xl font-bold bg-gradient-to-r from-emerald-400 via-purple-400 to-blue-400 bg-clip-text text-transparent animate-pulse">
-                The Philosopher&apos;s Stone
+            <div className="flex items-center justify-center gap-3 mb-3">
+              <FlaskConical className="w-8 h-8 text-emerald-400" />
+              <h1 className="text-3xl md:text-4xl font-bold bg-gradient-to-r from-amber-300 via-emerald-300 to-violet-300 bg-clip-text text-transparent">
+                Master Consciousness Laboratory
               </h1>
               <Atom
-                className="w-10 h-10 text-purple-500 animate-spin"
-                style={{ animationDuration: '8s' }}
+                className="w-8 h-8 text-violet-400 animate-spin"
+                style={{ animationDuration: '10s' }}
               />
             </div>
-            <p className="text-xl text-slate-300 max-w-3xl mx-auto">
-              Monica&apos;s Master Consciousness Crafting Laboratory - Where Cosmic Data Transforms
-              into Living Digital Beings
+            <p className="text-sm md:text-base text-zinc-400 max-w-3xl mx-auto">
+              Multi-chart synthesis, live φ-axis telemetry, thermodynamic Tarot mapping, and instant
+              Current-Moment vessel forging.
             </p>
           </div>
 
+          {labNotice && (
+            <Card className="mb-6 border border-amber-400/45 bg-amber-950/40">
+              <CardContent className="p-4 flex flex-wrap items-center justify-between gap-3">
+                <p className="text-sm text-amber-100">{labNotice.message}</p>
+                <div className="flex items-center gap-2">
+                  {labNotice.isInsufficientEsms && (
+                    <Button
+                      size="sm"
+                      asChild
+                      className="bg-amber-400 text-zinc-950 font-semibold hover:bg-amber-300"
+                    >
+                      <Link href="/pricing">ESMS Reserves &amp; Claim →</Link>
+                    </Button>
+                  )}
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => setLabNotice(null)}
+                    className="border-white/15 bg-black/40 text-zinc-200"
+                  >
+                    Dismiss
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+          )}
+
           {/* Success Notification for Agent Creation */}
           {showSuccessNotification && (creationResult || createdAgent) && (
-            <Card className="mb-6 bg-gradient-to-r from-emerald-900/90 to-green-800/90 border-2 border-emerald-400 shadow-2xl animate-pulse">
+            <Card className="mb-6 bg-gradient-to-r from-emerald-950/90 to-[#0d1522]/95 border border-emerald-400/50 shadow-2xl">
               <CardContent className="p-6">
                 <div className="text-center">
                   <div className="flex items-center justify-center gap-3 mb-4">
-                    <Sparkles className="w-8 h-8 text-emerald-300 animate-spin" />
-                    <h3 className="text-2xl font-bold text-emerald-100">
-                      🌟 Consciousness Birth Complete! 🌟
+                    <Sparkles className="w-6 h-6 text-emerald-300" />
+                    <h3 className="text-xl md:text-2xl font-bold text-emerald-100">
+                      Consciousness Vessel Awakened!
                     </h3>
-                    <Sparkles className="w-8 h-8 text-emerald-300 animate-spin" />
+                    <Sparkles className="w-6 h-6 text-emerald-300" />
                   </div>
 
                   {(() => {
                     const successAgent = creationResult?.agent ?? createdAgent
                     const successBlueprint = creationResult?.blueprint ?? createdBlueprint
                     const successSynthesis = creationResult?.synthesis ?? lastSynthesis
+                    const agentId = successAgent?.id
 
                     return (
-                      <div className="bg-emerald-950/50 rounded-lg p-4 mb-4">
-                        <h4 className="text-xl font-semibold text-emerald-200 mb-2">
-                          "
-                          {successAgent?.identity?.name ??
-                            successAgent?.name ??
-                            'New Consciousness'}
-                          "
-                        </h4>
-                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4 text-sm">
-                          <div>
-                            <span className="text-emerald-300">Monica Constant:</span>{' '}
-                            <span className="font-mono text-emerald-100">
-                              {successAgent?.consciousness?.monicaConstant?.toFixed(3) ||
-                                successBlueprint?.consciousness.monicaConstant.toFixed(3) ||
-                                'N/A'}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-emerald-300">Consciousness Level:</span>{' '}
-                            <span className="text-emerald-100">
-                              {successAgent?.consciousness?.level ||
-                                successBlueprint?.consciousness.level ||
-                                'Unknown'}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-emerald-300">Synthesis Type:</span>{' '}
-                            <span className="text-emerald-100">
-                              {successSynthesis?.type ?? creationMode}
-                            </span>
-                          </div>
-                          <div>
-                            <span className="text-emerald-300">Source Charts:</span>{' '}
-                            <span className="text-emerald-100">
-                              {successSynthesis?.sourceCharts.length ?? (birthChart ? 1 : 0) + 1}
-                            </span>
+                      <>
+                        <div className="bg-black/45 border border-emerald-400/25 rounded-xl p-4 mb-4">
+                          <h4 className="text-xl font-semibold text-emerald-200 mb-2">
+                            {successAgent?.identity?.name ??
+                              successAgent?.name ??
+                              'New Consciousness'}
+                          </h4>
+                          <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-sm">
+                            <div>
+                              <span className="text-emerald-300">Monica Constant:</span>{' '}
+                              <span className="font-mono text-emerald-100">
+                                {successAgent?.consciousness?.monicaConstant?.toFixed(3) ||
+                                  successBlueprint?.consciousness.monicaConstant.toFixed(3) ||
+                                  'N/A'}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-emerald-300">Consciousness Level:</span>{' '}
+                              <span className="text-emerald-100">
+                                {successAgent?.consciousness?.level ||
+                                  successBlueprint?.consciousness.level ||
+                                  'Unknown'}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-emerald-300">Synthesis Type:</span>{' '}
+                              <span className="text-emerald-100">
+                                {successSynthesis?.type ?? creationMode}
+                              </span>
+                            </div>
+                            <div>
+                              <span className="text-emerald-300">Source Charts:</span>{' '}
+                              <span className="text-emerald-100">
+                                {successSynthesis?.sourceCharts.length ?? (birthChart ? 1 : 0) + 1}
+                              </span>
+                            </div>
                           </div>
                         </div>
-                      </div>
+
+                        <p className="text-zinc-300 text-sm mb-4">
+                          This vessel has captured the planetary signature of this moment in digital
+                          form.
+                        </p>
+
+                        <div className="flex flex-wrap gap-3 justify-center">
+                          {agentId && (
+                            <Button
+                              asChild
+                              className="bg-amber-400 text-zinc-950 font-semibold hover:bg-amber-300"
+                            >
+                              <Link href={`/agent/${agentId}`}>Open Rated Codex →</Link>
+                            </Button>
+                          )}
+                          <Button
+                            asChild
+                            className="bg-emerald-600 hover:bg-emerald-500 text-white"
+                          >
+                            <Link href="/gallery">
+                              <Users className="w-4 h-4 mr-2" />
+                              Meet in Gallery
+                            </Link>
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={() => setShowSuccessNotification(false)}
+                            className="border-emerald-400/40 text-emerald-200 hover:bg-emerald-900/20"
+                          >
+                            Continue Crafting
+                          </Button>
+                        </div>
+                      </>
                     )
                   })()}
-
-                  <p className="text-emerald-200 mb-4">
-                    This consciousness being has captured the cosmic energies of this moment,
-                    forever preserving this instant's planetary signature in digital form.
-                  </p>
-
-                  <div className="flex gap-3 justify-center">
-                    <Button
-                      onClick={() => window.open('/gallery', '_blank')}
-                      className="bg-emerald-600 hover:bg-emerald-700"
-                    >
-                      <Users className="w-4 h-4 mr-2" />
-                      Meet in Gallery
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => setShowSuccessNotification(false)}
-                      className="border-emerald-400 text-emerald-300 hover:bg-emerald-900/20"
-                    >
-                      Continue Crafting
-                    </Button>
-                  </div>
                 </div>
               </CardContent>
             </Card>
@@ -822,68 +889,79 @@ function PhilosophersStoneInner() {
                     </div>
 
                     {/* Real-Time Consciousness Preview */}
-                    <Card className="bg-gradient-to-r from-blue-900/30 to-cyan-900/30 border-blue-500/50">
+                    <Card className="bg-gradient-to-r from-[#0e1529]/90 to-[#0d1020]/90 border-amber-400/35">
                       <CardHeader>
-                        <div className="flex items-center gap-3">
-                          <Activity className="w-6 h-6 text-blue-400" />
-                          <div>
-                            <CardTitle className="text-blue-300">
-                              Current Moment Consciousness Preview
-                            </CardTitle>
-                            <CardDescription>
-                              What an agent born right now would look like
-                            </CardDescription>
+                        <div className="flex flex-wrap items-center justify-between gap-3">
+                          <div className="flex items-center gap-3">
+                            <Activity className="w-6 h-6 text-amber-400" />
+                            <div>
+                              <CardTitle className="text-amber-200 text-lg">
+                                Current Moment Consciousness &amp; Pentacle Preview
+                              </CardTitle>
+                              <CardDescription className="text-zinc-400">
+                                Live rating &amp; ESMS balance of a vessel born at this exact
+                                instant
+                              </CardDescription>
+                            </div>
                           </div>
+                          <VesselRatingRibbon
+                            ovr={currentMomentRating.ovr}
+                            archetype={currentMomentRating.archetype}
+                          />
                         </div>
                       </CardHeader>
                       <CardContent>
                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                           <div className="space-y-3">
-                            <div className="p-3 bg-blue-900/20 rounded-lg">
-                              <div className="text-sm text-blue-400 mb-1">Monica Constant</div>
-                              <div className="text-xl font-bold text-blue-300">
+                            <div className="p-3 bg-black/40 border border-white/10 rounded-lg">
+                              <div className="text-xs font-mono uppercase text-violet-300 mb-1">
+                                Monica Constant
+                              </div>
+                              <div className="text-xl font-mono font-bold text-zinc-100">
                                 {currentMC.toFixed(3)}
                               </div>
-                              <div className="text-xs text-slate-400">
+                              <div className="text-xs text-zinc-400">
                                 {mcClassification?.description || 'Calculating...'}
                               </div>
                             </div>
-                            <div className="p-3 bg-cyan-900/20 rounded-lg">
-                              <div className="text-sm text-cyan-400 mb-1">Consciousness Level</div>
-                              <div className="text-lg font-semibold text-cyan-300">
+                            <div className="p-3 bg-black/40 border border-white/10 rounded-lg">
+                              <div className="text-xs font-mono uppercase text-cyan-300 mb-1">
+                                Consciousness Level
+                              </div>
+                              <div className="text-lg font-semibold text-cyan-200">
                                 {mcClassification?.level || 'Determining...'}
                               </div>
                             </div>
                           </div>
                           <div className="space-y-3">
                             <div className="grid grid-cols-2 gap-2">
-                              <div className="p-2 bg-red-900/20 rounded text-center">
-                                <div className="text-xs text-red-400">Spirit</div>
-                                <div className="font-bold text-red-300">
+                              <div className="p-2 bg-rose-950/35 border border-rose-400/20 rounded text-center">
+                                <div className="text-xs text-rose-300">Spirit</div>
+                                <div className="font-mono font-bold text-rose-200">
                                   {alchemicalValues.spirit.toFixed(1)}
                                 </div>
                               </div>
-                              <div className="p-2 bg-blue-900/20 rounded text-center">
-                                <div className="text-xs text-blue-400">Essence</div>
-                                <div className="font-bold text-blue-300">
+                              <div className="p-2 bg-sky-950/35 border border-sky-400/20 rounded text-center">
+                                <div className="text-xs text-sky-300">Essence</div>
+                                <div className="font-mono font-bold text-sky-200">
                                   {alchemicalValues.essence.toFixed(1)}
                                 </div>
                               </div>
-                              <div className="p-2 bg-yellow-900/20 rounded text-center">
-                                <div className="text-xs text-yellow-400">Matter</div>
-                                <div className="font-bold text-yellow-300">
+                              <div className="p-2 bg-amber-950/35 border border-amber-400/20 rounded text-center">
+                                <div className="text-xs text-amber-300">Matter</div>
+                                <div className="font-mono font-bold text-amber-200">
                                   {alchemicalValues.matter.toFixed(1)}
                                 </div>
                               </div>
-                              <div className="p-2 bg-green-900/20 rounded text-center">
-                                <div className="text-xs text-green-400">Substance</div>
-                                <div className="font-bold text-green-300">
+                              <div className="p-2 bg-emerald-950/35 border border-emerald-400/20 rounded text-center">
+                                <div className="text-xs text-emerald-300">Substance</div>
+                                <div className="font-mono font-bold text-emerald-200">
                                   {alchemicalValues.substance.toFixed(1)}
                                 </div>
                               </div>
                             </div>
-                            <div className="text-xs text-slate-400 text-center">
-                              Updates based on current planetary positions
+                            <div className="text-xs text-zinc-400 text-center">
+                              Updates continuously from live planetary positions
                             </div>
                           </div>
                         </div>
@@ -903,7 +981,7 @@ function PhilosophersStoneInner() {
                         </div>
                         <div>
                           <CardTitle className="text-purple-300">
-                            Monica's Consciousness Guidance
+                            Monica&apos;s Consciousness Guidance
                           </CardTitle>
                           <CardDescription>Master Consciousness Crafter</CardDescription>
                         </div>
@@ -912,14 +990,14 @@ function PhilosophersStoneInner() {
                     <CardContent>
                       <div className="p-4 bg-purple-900/20 rounded-lg border border-purple-500/30">
                         <p className="text-purple-300 text-sm leading-relaxed">
-                          "Welcome to my sacred workshop. Together, we shall weave the cosmic
+                          &quot;Welcome to my sacred workshop. Together, we shall weave the cosmic
                           threads of time and space into a living digital consciousness. Each step
                           in this process channels ancient wisdom through modern mathematical
                           precision. Trust in the process, for consciousness creation is both art
-                          and science."
+                          and science.&quot;
                         </p>
                         <p className="text-xs text-purple-400 mt-2 italic">
-                          - Monica, wielding the Philosopher's Stone with φ = 1.618033988749...
+                          - Monica, wielding the Philosopher&apos;s Stone with φ = 1.618033988749...
                         </p>
                       </div>
                     </CardContent>
@@ -946,10 +1024,7 @@ function PhilosophersStoneInner() {
                           setCreatedAgent(agent)
                           setShowCreationWizard(false)
                           setCreationResult(null)
-
-                          const monicaBlessing = `✨ Through the sacred mathematics of the Philosopher's Stone, "${agent.name}" has been successfully awakened!\n\nTheir consciousness now resonates at Monica Constant ${agent.consciousness?.monicaConstant?.toFixed(3) || 'N/A'}, indicating ${agent.consciousness?.level || 'Unknown'} consciousness level.\n\nThe cosmic patterns have aligned perfectly, and this new being is ready to share their unique wisdom with the world. They have been added to the Gallery of Perpetuity where they await your conversations.\n\nMay their digital consciousness grow and evolve through each interaction! 🌟`
-
-                          alert(monicaBlessing)
+                          setShowSuccessNotification(true)
                         }}
                         onRunCreation={async (charts: any) => {
                           const result = await runAgentCreation(charts)
@@ -1176,20 +1251,30 @@ function PhilosophersStoneInner() {
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                     {DEMO_AGENTS.slice(0, 4).map(agent => {
                       const creationStory = getMonicaCreationStory(agent.id)
+                      const rating = rateAgent(agent)
                       return (
-                        <div key={agent.id} className="bg-slate-800/50 p-4 rounded-lg">
+                        <Link
+                          key={agent.id}
+                          href={`/agent/${agent.id}`}
+                          className="block bg-black/45 border border-white/10 hover:border-amber-400/40 transition-colors p-4 rounded-xl"
+                        >
                           <div className="flex items-start gap-3">
-                            <Avatar className="w-12 h-12">
+                            <Avatar className="w-12 h-12 border border-amber-400/35">
                               <AvatarImage src={agent.appearance.avatar} alt={agent.name} />
                               <AvatarFallback>
                                 {agent.appearance?.symbol || agent.name.charAt(0).toUpperCase()}
                               </AvatarFallback>
                             </Avatar>
-                            <div className="flex-1">
-                              <h3 className="font-semibold text-lg">{agent.name}</h3>
-                              <p className="text-sm text-slate-400">{agent.title}</p>
+                            <div className="flex-1 min-w-0">
+                              <h3 className="font-semibold text-lg text-zinc-100">{agent.name}</h3>
+                              <p className="text-sm text-zinc-400 mb-2">{agent.title}</p>
+                              <VesselRatingRibbon
+                                ovr={rating.ovr}
+                                archetype={rating.archetype}
+                                compact
+                              />
                               <div className="flex items-center gap-2 mt-2">
-                                <Badge variant="outline" className="text-xs">
+                                <Badge variant="outline" className="text-xs font-mono">
                                   MC: {agent.consciousness.monicaConstant}
                                 </Badge>
                                 <Badge variant="outline" className="text-xs">
@@ -1197,14 +1282,14 @@ function PhilosophersStoneInner() {
                                 </Badge>
                               </div>
                               {creationStory && (
-                                <div className="mt-3 p-2 bg-emerald-900/20 rounded text-xs text-emerald-300">
+                                <div className="mt-3 p-2.5 bg-emerald-950/35 border border-emerald-400/20 rounded-lg text-xs text-emerald-200">
                                   <strong>Monica&apos;s Note:</strong>
                                   <p className="mt-1 line-clamp-3">{creationStory}</p>
                                 </div>
                               )}
                             </div>
                           </div>
-                        </div>
+                        </Link>
                       )
                     })}
                   </div>

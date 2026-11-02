@@ -72,9 +72,13 @@ import SignVectorGraphic, {
 } from '@/components/charts/sign-vector-graphic'
 
 import { StitchAgentCard } from '@/components/misc/stitch-agent-card'
+import { rateAgent, type AgentRating } from '@/lib/agents/rating'
+import type { SacredStatKey } from '@/lib/agents/rating-contract'
 
 import { useSearchParams } from 'next/navigation'
 import { degreeAgentMatcher } from '@/lib/degree-agent-matcher'
+
+type GallerySortKey = AgentSortCriteria | 'pentacleOvr' | 'vesselLevel'
 
 const RULING_PLANETS: Record<string, string> = {
   Aries: 'Mars',
@@ -183,8 +187,9 @@ function GalleryPageContent() {
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState<string | null>(null)
   const [showGroupChat, setShowGroupChat] = useState(false)
-  const [sortCriteria, setSortCriteria] = useState<AgentSortCriteria>('relevanceScore')
+  const [sortCriteria, setSortCriteria] = useState<GallerySortKey>('pentacleOvr')
   const [sortDirection, setSortDirection] = useState<SortDirection>('desc')
+  const [archetypeFilter, setArchetypeFilter] = useState<'all' | SacredStatKey>('all')
   const searchParams = useSearchParams()
   const [degreeFilter, setDegreeFilter] = useState<{
     planet: string
@@ -192,6 +197,19 @@ function GalleryPageContent() {
     degree: number
   } | null>(null)
   const [activatedByDegree, setActivatedByDegree] = useState<string[]>([])
+
+  // Precompute Pentacle Vessel Ratings once per roster load
+  const ratingById = useMemo(() => {
+    const map = new Map<string, AgentRating>()
+    for (const agent of agents) {
+      try {
+        map.set(agent.id, rateAgent(agent))
+      } catch {
+        // Skip malformed custom entries gracefully
+      }
+    }
+    return map
+  }, [agents])
 
   // Stable callback functions to prevent infinite re-renders
   const handleElementFilterChange = useCallback((value: string) => {
@@ -207,11 +225,18 @@ function GalleryPageContent() {
   }, [])
 
   const handleSortCriteriaChange = useCallback((value: string) => {
-    setSortCriteria(value as AgentSortCriteria)
+    setSortCriteria(value as GallerySortKey)
   }, [])
 
   // Memoize sorting options to prevent infinite re-renders
-  const sortingOptions = useMemo(() => getSortingOptions(), [])
+  const sortingOptions = useMemo(
+    () => [
+      { value: 'pentacleOvr', label: 'Pentacle Rating (PVR 25–99)' },
+      { value: 'vesselLevel', label: 'Vessel Level (VL)' },
+      ...getSortingOptions(),
+    ],
+    []
+  )
 
   // Prepare birth chart data for batch live consciousness calculation (memoized to prevent update loops)
   const agentBirthCharts: BirthChartData[] = useMemo(
@@ -338,8 +363,33 @@ function GalleryPageContent() {
       )
     }
 
-    // Apply sorting
-    const sorted = sortAgents(filtered, sortCriteria, sortDirection)
+    // Pentacle Archetype primary attribute filter
+    if (archetypeFilter !== 'all') {
+      filtered = filtered.filter(
+        agent => ratingById.get(agent.id)?.archetype.primary === archetypeFilter
+      )
+    }
+
+    // Apply sorting (Pentacle OVR, Vessel Level, or standard criteria)
+    const dir = sortDirection === 'asc' ? 1 : -1
+    let sorted: CraftedAgent[]
+    if (sortCriteria === 'pentacleOvr') {
+      sorted = [...filtered].sort((a, b) => {
+        const ra = ratingById.get(a.id)?.ovr ?? 0
+        const rb = ratingById.get(b.id)?.ovr ?? 0
+        if (ra !== rb) return (ra - rb) * dir
+        return (a.name ?? '').localeCompare(b.name ?? '')
+      })
+    } else if (sortCriteria === 'vesselLevel') {
+      sorted = [...filtered].sort((a, b) => {
+        const la = (a as any).level ?? a.stats?.conversations ?? 0
+        const lb = (b as any).level ?? b.stats?.conversations ?? 0
+        if (la !== lb) return (la - lb) * dir
+        return ((ratingById.get(a.id)?.ovr ?? 0) - (ratingById.get(b.id)?.ovr ?? 0)) * dir
+      })
+    } else {
+      sorted = sortAgents(filtered, sortCriteria, sortDirection)
+    }
 
     if (activatedByDegree.length > 0) {
       const idToIndex: Record<string, number> = {}
@@ -362,7 +412,17 @@ function GalleryPageContent() {
     }
     // Reset visible count when filters change
     setVisibleCount(12)
-  }, [agents, searchQuery, filters, factionFilter, sortCriteria, sortDirection, activatedByDegree])
+  }, [
+    agents,
+    ratingById,
+    searchQuery,
+    filters,
+    factionFilter,
+    archetypeFilter,
+    sortCriteria,
+    sortDirection,
+    activatedByDegree,
+  ])
 
   // Parse degree-specific params and compute activations
   useEffect(() => {
@@ -644,6 +704,28 @@ function GalleryPageContent() {
             </Button>
 
             <span className="font-mono-label text-mono-label text-muted-text text-xs uppercase ml-md">
+              Archetype:
+            </span>
+            <Select
+              value={archetypeFilter}
+              onValueChange={val => setArchetypeFilter(val as 'all' | SacredStatKey)}
+            >
+              <SelectTrigger className="w-40 bg-[#0b0e19]/50 border-border-gold text-ivory-text text-xs font-mono-data rounded">
+                <SelectValue placeholder="Archetype" />
+              </SelectTrigger>
+              <SelectContent className="bg-[#12141f] border-border-gold text-ivory-text font-mono-data">
+                <SelectItem value="all">All Archetypes</SelectItem>
+                <SelectItem value="power">Power Lead</SelectItem>
+                <SelectItem value="resonance">Resonance Lead</SelectItem>
+                <SelectItem value="wisdom">Wisdom Lead</SelectItem>
+                <SelectItem value="charisma">Charisma Lead</SelectItem>
+                <SelectItem value="intuition">Intuition Lead</SelectItem>
+                <SelectItem value="adaptability">Adaptability Lead</SelectItem>
+                <SelectItem value="vitality">Vitality Lead</SelectItem>
+              </SelectContent>
+            </Select>
+
+            <span className="font-mono-label text-mono-label text-muted-text text-xs uppercase ml-md">
               Level:
             </span>
             <Select
@@ -830,6 +912,7 @@ function GalleryPageContent() {
                     <StitchAgentCard
                       key={agent.id}
                       agent={agent}
+                      rating={ratingById.get(agent.id) ?? null}
                       isSelected={selectedAgents.includes(agent.id)}
                       onToggleSelection={toggleAgentSelection}
                     />
@@ -852,6 +935,7 @@ function GalleryPageContent() {
                     <StitchAgentCard
                       key={agent.id}
                       agent={agent}
+                      rating={ratingById.get(agent.id) ?? null}
                       variant="list"
                       isSelected={selectedAgents.includes(agent.id)}
                       onToggleSelection={toggleAgentSelection}

@@ -14,6 +14,10 @@ export interface AgentCardProps {
   title?: string
   /** Monica Constant, rendered as A#<value> in mono with white glow */
   monicaConstant?: number | string
+  /** Pentacle Vessel Rating (25–99 OWA scale) */
+  ovr?: number
+  /** Canonical Pentacle Archetype Title */
+  archetypeTitle?: string
   avatarUrl?: string
   /** Emoji/glyph fallback avatar (e.g. the agent's symbol field) */
   symbol?: string
@@ -40,6 +44,8 @@ export function AgentCard({
   name,
   title,
   monicaConstant,
+  ovr,
+  archetypeTitle,
   avatarUrl,
   symbol,
   stats,
@@ -61,7 +67,7 @@ export function AgentCard({
             <img
               src={avatarUrl}
               alt=""
-              className="w-12 h-12 rounded-full border border-st-primary/30 object-cover"
+              className="w-12 h-12 rounded-full border border-st-primary/30 object-cover bg-black/50"
             />
           ) : symbol ? (
             <span
@@ -99,10 +105,28 @@ export function AgentCard({
         )}
       </div>
 
-      {monicaConstant !== undefined && (
-        <p className="font-label-mono text-label-mono text-monica-constant glow-monica tabular-nums">
-          A#{monicaConstant}
-        </p>
+      {(ovr !== undefined || monicaConstant !== undefined) && (
+        <div className="flex flex-wrap items-center gap-2">
+          {ovr !== undefined && (
+            <span
+              className="inline-flex items-center gap-1 rounded-md border border-amber-400/45 bg-amber-400/12 px-2 py-0.5 font-mono text-[11px] font-bold text-amber-200 tabular-nums"
+              title={`Pentacle Vessel Rating: ${ovr} OVR (25–99 OWA scale)`}
+            >
+              <span className="text-[9px] uppercase tracking-wider text-amber-300/80">PVR</span>
+              <span>{ovr}</span>
+            </span>
+          )}
+          {archetypeTitle && (
+            <span className="inline-flex items-center rounded-md border border-violet-400/30 bg-violet-500/10 px-2 py-0.5 text-[11px] font-medium text-violet-100 truncate max-w-[165px]">
+              {archetypeTitle}
+            </span>
+          )}
+          {monicaConstant !== undefined && (
+            <span className="ml-auto font-label-mono text-label-mono text-monica-constant glow-monica tabular-nums">
+              A#{monicaConstant}
+            </span>
+          )}
+        </div>
       )}
 
       {statEntries.length > 0 && (

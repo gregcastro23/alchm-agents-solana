@@ -220,11 +220,23 @@ export function TransitDashboard({
     return true
   })
 
-  // Get significance color
+  // Get significance color (dark-first Techno-Occult palette)
   const getSignificanceColor = (score: number) => {
-    if (score >= 0.8) return 'text-red-500 bg-red-50 border-red-200'
-    if (score >= 0.6) return 'text-orange-500 bg-orange-50 border-orange-200'
-    return 'text-green-500 bg-green-50 border-green-200'
+    if (score >= 0.8) return 'text-red-300 bg-red-500/15 border-red-500/35'
+    if (score >= 0.6) return 'text-amber-300 bg-amber-500/15 border-amber-500/35'
+    return 'text-emerald-300 bg-emerald-500/15 border-emerald-500/35'
+  }
+
+  const getSignificanceDotColor = (score: number) => {
+    if (score >= 0.8) return 'bg-red-400'
+    if (score >= 0.6) return 'bg-amber-400'
+    return 'bg-emerald-400'
+  }
+
+  const getSignificanceExportHex = (score: number) => {
+    if (score >= 0.8) return '#ef4444'
+    if (score >= 0.6) return '#f97316'
+    return '#22c55e'
   }
 
   // Get significance label
@@ -320,7 +332,7 @@ export function TransitDashboard({
             <div class="transit ${getSignificanceLabel(transit.overallScore).toLowerCase()}">
               <div class="header">
                 <h3>${transit.transitingPlanet} ${transit.aspectType} Natal ${transit.natalPlanet}</h3>
-                <span class="score" style="color: ${getSignificanceColor(transit.overallScore).split(' ')[0]}">
+                <span class="score" style="color: ${getSignificanceExportHex(transit.overallScore)}">
                   ${(transit.overallScore * 100).toFixed(0)}%
                 </span>
               </div>
@@ -382,7 +394,10 @@ export function TransitDashboard({
         <div className="grid grid-cols-7 gap-1">
           {/* Day headers */}
           {['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'].map(day => (
-            <div key={day} className="p-2 text-center font-semibold text-sm">
+            <div
+              key={day}
+              className="p-2 text-center font-mono font-semibold text-xs uppercase tracking-wider text-zinc-400"
+            >
               {day}
             </div>
           ))}
@@ -396,31 +411,33 @@ export function TransitDashboard({
             return (
               <div
                 key={dateKey}
-                className={`min-h-[100px] p-2 border border-gray-200 ${
-                  !isCurrentMonth ? 'bg-gray-50 text-gray-400' : 'bg-white'
-                } ${isToday(day) ? 'bg-blue-50 border-blue-300' : ''}`}
+                className={`min-h-[100px] p-2 rounded-lg border border-white/10 ${
+                  !isCurrentMonth ? 'bg-black/30 text-zinc-600' : 'bg-[#0d1020]/85 text-zinc-100'
+                } ${isToday(day) ? 'ring-1 ring-amber-400/60 bg-amber-500/10 border-amber-400/40' : ''}`}
               >
-                <div className="text-sm font-medium mb-1">{format(day, 'd')}</div>
+                <div className="text-xs font-mono font-semibold mb-1">{format(day, 'd')}</div>
 
                 {/* Transit indicators */}
                 <div className="space-y-1">
                   {dayTransits.slice(0, 3).map((transit, index) => (
                     <div
                       key={index}
-                      className={`text-xs p-1 rounded cursor-pointer hover:opacity-80 ${getSignificanceColor(transit.overallScore)}`}
+                      className={`text-xs p-1 rounded border cursor-pointer hover:opacity-85 ${getSignificanceColor(transit.overallScore)}`}
                       onClick={() => setSelectedTransit(transit)}
                     >
                       <div className="font-medium truncate">
                         {transit.transitingPlanet}→{transit.natalPlanet}
                       </div>
-                      <div className="text-xs opacity-75">
+                      <div className="text-[10px] font-mono opacity-80">
                         {(transit.overallScore * 100).toFixed(0)}%
                       </div>
                     </div>
                   ))}
 
                   {dayTransits.length > 3 && (
-                    <div className="text-xs text-gray-500">+{dayTransits.length - 3} more</div>
+                    <div className="text-[10px] font-mono text-zinc-400">
+                      +{dayTransits.length - 3} more
+                    </div>
                   )}
                 </div>
               </div>
@@ -450,26 +467,26 @@ export function TransitDashboard({
                 {/* Timeline line */}
                 <div className="flex flex-col items-center mr-4">
                   <div
-                    className={`w-3 h-3 rounded-full ${getSignificanceColor(transit.overallScore).split(' ')[0].replace('text-', 'bg-')}`}
+                    className={`w-3 h-3 rounded-full ${getSignificanceDotColor(transit.overallScore)}`}
                   />
                   {index < sortedTransits.length - 1 && (
-                    <div className="w-0.5 h-16 bg-gray-300 mt-2" />
+                    <div className="w-0.5 h-16 bg-white/15 mt-2" />
                   )}
                 </div>
 
                 {/* Transit card */}
                 <Card
-                  className={`flex-1 cursor-pointer hover:shadow-md transition-shadow ${isPastTransit ? 'opacity-60' : ''}`}
+                  className={`flex-1 cursor-pointer border-white/10 bg-[#0d1020]/90 hover:border-amber-400/35 transition-colors ${isPastTransit ? 'opacity-60' : ''}`}
                   onClick={() => setSelectedTransit(transit)}
                 >
                   <CardContent className="p-4">
                     <div className="flex items-center justify-between">
                       <div className="flex items-center gap-3">
                         <div
-                          className={`w-2 h-2 rounded-full ${getSignificanceColor(transit.overallScore).split(' ')[0].replace('text-', 'bg-')}`}
+                          className={`w-2 h-2 rounded-full ${getSignificanceDotColor(transit.overallScore)}`}
                         />
                         <div>
-                          <div className="font-semibold">
+                          <div className="font-semibold text-zinc-100">
                             {transit.transitingPlanet} {transit.aspectType} {transit.natalPlanet}
                           </div>
                           <div className="text-sm text-muted-foreground">
@@ -479,7 +496,7 @@ export function TransitDashboard({
                       </div>
 
                       <div className="flex items-center gap-2">
-                        <Badge className={getSignificanceColor(transit.overallScore)}>
+                        <Badge className={`border ${getSignificanceColor(transit.overallScore)}`}>
                           {(transit.overallScore * 100).toFixed(0)}%
                         </Badge>
                         <Button
@@ -495,7 +512,7 @@ export function TransitDashboard({
                           {trackedTransits.has(
                             `${transit.transitingPlanet}-${transit.aspectType}-${transit.natalPlanet}-${transit.transitDate}`
                           ) ? (
-                            <Check className="w-4 h-4 text-green-500" />
+                            <Check className="w-4 h-4 text-emerald-400" />
                           ) : (
                             <Eye className="w-4 h-4" />
                           )}
@@ -503,7 +520,7 @@ export function TransitDashboard({
                       </div>
                     </div>
 
-                    <div className="mt-2 flex items-center gap-4 text-sm">
+                    <div className="mt-2 flex flex-wrap items-center gap-4 text-sm text-zinc-300">
                       <span>
                         Agent: {transit.planetaryAgent.ruler} in {transit.planetaryAgent.sign}
                       </span>
@@ -525,15 +542,18 @@ export function TransitDashboard({
     return (
       <div className="space-y-4">
         {filteredTransits.map((transit, index) => (
-          <Card key={index} className="cursor-pointer hover:shadow-md transition-shadow">
+          <Card
+            key={index}
+            className="cursor-pointer border-white/10 bg-[#0d1020]/90 hover:border-amber-400/35 transition-colors"
+          >
             <CardContent className="p-4">
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4">
                   <div
-                    className={`w-3 h-3 rounded-full ${getSignificanceColor(transit.overallScore).split(' ')[0].replace('text-', 'bg-')}`}
+                    className={`w-3 h-3 rounded-full ${getSignificanceDotColor(transit.overallScore)}`}
                   />
                   <div>
-                    <div className="font-semibold text-lg">
+                    <div className="font-semibold text-lg text-zinc-100">
                       {transit.transitingPlanet} {transit.aspectType} Natal {transit.natalPlanet}
                     </div>
                     <div className="text-sm text-muted-foreground">
@@ -544,7 +564,7 @@ export function TransitDashboard({
                 </div>
 
                 <div className="flex items-center gap-2">
-                  <Badge className={getSignificanceColor(transit.overallScore)}>
+                  <Badge className={`border ${getSignificanceColor(transit.overallScore)}`}>
                     {getSignificanceLabel(transit.overallScore)}
                   </Badge>
                   <Badge variant="outline">{(transit.overallScore * 100).toFixed(0)}%</Badge>

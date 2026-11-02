@@ -1,6 +1,7 @@
 'use client'
 
 import { create } from 'zustand'
+import type { SacredStatKey } from '@/lib/agents/rating-contract'
 
 /**
  * Techno-Occult v2 global state (Stitch realization plan, Phase 5.1).
@@ -15,6 +16,9 @@ export interface OccultAgentRef {
   title?: string | null
   color?: string | null
   monicaConstant?: number | null
+  ovr?: number | null
+  archetypeTitle?: string | null
+  ratings?: Record<SacredStatKey, number> | null
 }
 
 export interface EsmsBalances {
