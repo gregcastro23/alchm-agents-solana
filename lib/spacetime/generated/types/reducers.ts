@@ -18,29 +18,36 @@ import AnswerAgentMeleeTurnReducer from '../answer_agent_melee_turn_reducer'
 import AnswerDuelReducer from '../answer_duel_reducer'
 import AnswerJingReducer from '../answer_jing_reducer'
 import AnswerOracleReducer from '../answer_oracle_reducer'
+import AnswerPillarReducer from '../answer_pillar_reducer'
 import AnswerTraceReducer from '../answer_trace_reducer'
 import AskOracleReducer from '../ask_oracle_reducer'
-import AssertEsmsBridgeReadyReducer from '../assert_esms_bridge_ready_reducer'
 import BackfillDecansReducer from '../backfill_decans_reducer'
-import BindWalletAddressReducer from '../bind_wallet_address_reducer'
-import BridgeEsmsCrosschainReducer from '../bridge_esms_crosschain_reducer'
+import BindSolanaWalletReducer from '../bind_solana_wallet_reducer'
+import CancelPillarDuelReducer from '../cancel_pillar_duel_reducer'
 import CancelStaleClaimReducer from '../cancel_stale_claim_reducer'
 import CancelTradeReducer from '../cancel_trade_reducer'
 import CaptureArConstellationReducer from '../capture_ar_constellation_reducer'
 import CastJingReducer from '../cast_jing_reducer'
+import CastPillarReducer from '../cast_pillar_reducer'
+import CastRoomPillarReducer from '../cast_room_pillar_reducer'
 import CastWordReducer from '../cast_word_reducer'
+import ClaimDailyFaucetReducer from '../claim_daily_faucet_reducer'
 import ClaimDuelTimeoutReducer from '../claim_duel_timeout_reducer'
 import ClaimProfileReducer from '../claim_profile_reducer'
 import CombineCardsReducer from '../combine_cards_reducer'
 import CommitDuelReducer from '../commit_duel_reducer'
-import CompleteEsmsBridgeReducer from '../complete_esms_bridge_reducer'
+import CommitPentacleGateReducer from '../commit_pentacle_gate_reducer'
 import ConfirmTradeReducer from '../confirm_trade_reducer'
 import ConfirmYieldClaimReducer from '../confirm_yield_claim_reducer'
 import CounterJingReducer from '../counter_jing_reducer'
+import CounterPillarReducer from '../counter_pillar_reducer'
 import CreatePlayerReducer from '../create_player_reducer'
+import CreditPentaclesFromConversionReducer from '../credit_pentacles_from_conversion_reducer'
+import DecayTensionReducer from '../decay_tension_reducer'
 import DeletePlayerDataReducer from '../delete_player_data_reducer'
 import DeployCardReducer from '../deploy_card_reducer'
 import EnqueueDuelReducer from '../enqueue_duel_reducer'
+import EscrowPentaclesForConversionReducer from '../escrow_pentacles_for_conversion_reducer'
 import JoinMeleeQueueReducer from '../join_melee_queue_reducer'
 import LeaveMeleeQueueReducer from '../leave_melee_queue_reducer'
 import LockAnomalyReducer from '../lock_anomaly_reducer'
@@ -48,31 +55,33 @@ import OpenIdentityLinkReducer from '../open_identity_link_reducer'
 import OpenMeleeRoundReducer from '../open_melee_round_reducer'
 import PlayMeleeCardReducer from '../play_melee_card_reducer'
 import ProposeTradeReducer from '../propose_trade_reducer'
+import PublishAgentRatingReducer from '../publish_agent_rating_reducer'
 import PurgeStaleAgentsReducer from '../purge_stale_agents_reducer'
 import PushEphemerisReducer from '../push_ephemeris_reducer'
 import RecordMeleePlayReducer from '../record_melee_play_reducer'
 import RecordStarStakeReducer from '../record_star_stake_reducer'
 import RecordStarUnstakeReducer from '../record_star_unstake_reducer'
+import RefundPentacleConversionReducer from '../refund_pentacle_conversion_reducer'
 import ReportServiceHealthReducer from '../report_service_health_reducer'
 import RequestYieldClaimReducer from '../request_yield_claim_reducer'
 import ResolveStarBattleReducer from '../resolve_star_battle_reducer'
 import SeedAgentPlayerReducer from '../seed_agent_player_reducer'
 import SetLoadoutReducer from '../set_loadout_reducer'
 import SetLocationReducer from '../set_location_reducer'
+import SettleDecanBoundaryReducer from '../settle_decan_boundary_reducer'
+import SettlePentacleConversionReducer from '../settle_pentacle_conversion_reducer'
 import SiegeHorizonStarReducer from '../siege_horizon_star_reducer'
 import StardexClaimConstellationReducer from '../stardex_claim_constellation_reducer'
 import StardexFortifyNodeReducer from '../stardex_fortify_node_reducer'
 import StrikeStarSingleReducer from '../strike_star_single_reducer'
 import SubmitMeleeResultReducer from '../submit_melee_result_reducer'
-import SyncEvmEventReducer from '../sync_evm_event_reducer'
+import SweepStalePillarDuelsReducer from '../sweep_stale_pillar_duels_reducer'
 import SyncSolanaEventReducer from '../sync_solana_event_reducer'
 import SyncStardexEphemerisReducer from '../sync_stardex_ephemeris_reducer'
 import TraceConstellationReducer from '../trace_constellation_reducer'
 import TransferStarStakeReducer from '../transfer_star_stake_reducer'
 import TriggerZoneFluxReducer from '../trigger_zone_flux_reducer'
 import UpdateSeekerEnvironmentReducer from '../update_seeker_environment_reducer'
-import VerifyEvmWalletBindingReducer from '../verify_evm_wallet_binding_reducer'
-import VerifySolanaWalletBindingReducer from '../verify_solana_wallet_binding_reducer'
 
 export type AddStarToConstellationParams = __Infer<typeof AddStarToConstellationReducer>
 export type AdminAgentCastJingParams = __Infer<typeof AdminAgentCastJingReducer>
@@ -86,29 +95,38 @@ export type AnswerAgentMeleeTurnParams = __Infer<typeof AnswerAgentMeleeTurnRedu
 export type AnswerDuelParams = __Infer<typeof AnswerDuelReducer>
 export type AnswerJingParams = __Infer<typeof AnswerJingReducer>
 export type AnswerOracleParams = __Infer<typeof AnswerOracleReducer>
+export type AnswerPillarParams = __Infer<typeof AnswerPillarReducer>
 export type AnswerTraceParams = __Infer<typeof AnswerTraceReducer>
 export type AskOracleParams = __Infer<typeof AskOracleReducer>
-export type AssertEsmsBridgeReadyParams = __Infer<typeof AssertEsmsBridgeReadyReducer>
 export type BackfillDecansParams = __Infer<typeof BackfillDecansReducer>
-export type BindWalletAddressParams = __Infer<typeof BindWalletAddressReducer>
-export type BridgeEsmsCrosschainParams = __Infer<typeof BridgeEsmsCrosschainReducer>
+export type BindSolanaWalletParams = __Infer<typeof BindSolanaWalletReducer>
+export type CancelPillarDuelParams = __Infer<typeof CancelPillarDuelReducer>
 export type CancelStaleClaimParams = __Infer<typeof CancelStaleClaimReducer>
 export type CancelTradeParams = __Infer<typeof CancelTradeReducer>
 export type CaptureArConstellationParams = __Infer<typeof CaptureArConstellationReducer>
 export type CastJingParams = __Infer<typeof CastJingReducer>
+export type CastPillarParams = __Infer<typeof CastPillarReducer>
+export type CastRoomPillarParams = __Infer<typeof CastRoomPillarReducer>
 export type CastWordParams = __Infer<typeof CastWordReducer>
+export type ClaimDailyFaucetParams = __Infer<typeof ClaimDailyFaucetReducer>
 export type ClaimDuelTimeoutParams = __Infer<typeof ClaimDuelTimeoutReducer>
 export type ClaimProfileParams = __Infer<typeof ClaimProfileReducer>
 export type CombineCardsParams = __Infer<typeof CombineCardsReducer>
 export type CommitDuelParams = __Infer<typeof CommitDuelReducer>
-export type CompleteEsmsBridgeParams = __Infer<typeof CompleteEsmsBridgeReducer>
+export type CommitPentacleGateParams = __Infer<typeof CommitPentacleGateReducer>
 export type ConfirmTradeParams = __Infer<typeof ConfirmTradeReducer>
 export type ConfirmYieldClaimParams = __Infer<typeof ConfirmYieldClaimReducer>
 export type CounterJingParams = __Infer<typeof CounterJingReducer>
+export type CounterPillarParams = __Infer<typeof CounterPillarReducer>
 export type CreatePlayerParams = __Infer<typeof CreatePlayerReducer>
+export type CreditPentaclesFromConversionParams = __Infer<
+  typeof CreditPentaclesFromConversionReducer
+>
+export type DecayTensionParams = __Infer<typeof DecayTensionReducer>
 export type DeletePlayerDataParams = __Infer<typeof DeletePlayerDataReducer>
 export type DeployCardParams = __Infer<typeof DeployCardReducer>
 export type EnqueueDuelParams = __Infer<typeof EnqueueDuelReducer>
+export type EscrowPentaclesForConversionParams = __Infer<typeof EscrowPentaclesForConversionReducer>
 export type JoinMeleeQueueParams = __Infer<typeof JoinMeleeQueueReducer>
 export type LeaveMeleeQueueParams = __Infer<typeof LeaveMeleeQueueReducer>
 export type LockAnomalyParams = __Infer<typeof LockAnomalyReducer>
@@ -116,28 +134,30 @@ export type OpenIdentityLinkParams = __Infer<typeof OpenIdentityLinkReducer>
 export type OpenMeleeRoundParams = __Infer<typeof OpenMeleeRoundReducer>
 export type PlayMeleeCardParams = __Infer<typeof PlayMeleeCardReducer>
 export type ProposeTradeParams = __Infer<typeof ProposeTradeReducer>
+export type PublishAgentRatingParams = __Infer<typeof PublishAgentRatingReducer>
 export type PurgeStaleAgentsParams = __Infer<typeof PurgeStaleAgentsReducer>
 export type PushEphemerisParams = __Infer<typeof PushEphemerisReducer>
 export type RecordMeleePlayParams = __Infer<typeof RecordMeleePlayReducer>
 export type RecordStarStakeParams = __Infer<typeof RecordStarStakeReducer>
 export type RecordStarUnstakeParams = __Infer<typeof RecordStarUnstakeReducer>
+export type RefundPentacleConversionParams = __Infer<typeof RefundPentacleConversionReducer>
 export type ReportServiceHealthParams = __Infer<typeof ReportServiceHealthReducer>
 export type RequestYieldClaimParams = __Infer<typeof RequestYieldClaimReducer>
 export type ResolveStarBattleParams = __Infer<typeof ResolveStarBattleReducer>
 export type SeedAgentPlayerParams = __Infer<typeof SeedAgentPlayerReducer>
 export type SetLoadoutParams = __Infer<typeof SetLoadoutReducer>
 export type SetLocationParams = __Infer<typeof SetLocationReducer>
+export type SettleDecanBoundaryParams = __Infer<typeof SettleDecanBoundaryReducer>
+export type SettlePentacleConversionParams = __Infer<typeof SettlePentacleConversionReducer>
 export type SiegeHorizonStarParams = __Infer<typeof SiegeHorizonStarReducer>
 export type StardexClaimConstellationParams = __Infer<typeof StardexClaimConstellationReducer>
 export type StardexFortifyNodeParams = __Infer<typeof StardexFortifyNodeReducer>
 export type StrikeStarSingleParams = __Infer<typeof StrikeStarSingleReducer>
 export type SubmitMeleeResultParams = __Infer<typeof SubmitMeleeResultReducer>
-export type SyncEvmEventParams = __Infer<typeof SyncEvmEventReducer>
+export type SweepStalePillarDuelsParams = __Infer<typeof SweepStalePillarDuelsReducer>
 export type SyncSolanaEventParams = __Infer<typeof SyncSolanaEventReducer>
 export type SyncStardexEphemerisParams = __Infer<typeof SyncStardexEphemerisReducer>
 export type TraceConstellationParams = __Infer<typeof TraceConstellationReducer>
 export type TransferStarStakeParams = __Infer<typeof TransferStarStakeReducer>
 export type TriggerZoneFluxParams = __Infer<typeof TriggerZoneFluxReducer>
 export type UpdateSeekerEnvironmentParams = __Infer<typeof UpdateSeekerEnvironmentReducer>
-export type VerifyEvmWalletBindingParams = __Infer<typeof VerifyEvmWalletBindingReducer>
-export type VerifySolanaWalletBindingParams = __Infer<typeof VerifySolanaWalletBindingReducer>
