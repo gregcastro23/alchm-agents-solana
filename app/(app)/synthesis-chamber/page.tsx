@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -21,6 +22,37 @@ import {
 import ConsciousnessLaboratoryChat from '@/components/agents/consciousness-laboratory-chat'
 import type { CraftedAgent } from '@/lib/agent-types'
 import type { ChatSession } from '@/lib/unified-agent-types'
+import { getPlanetaryAgentStats } from '@/lib/agents/planetary-agent-stats'
+import { rateStats, evaluateSeals, earnedSeals } from '@/lib/agents/rating'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+
+function extractAgentSacred7(agent?: CraftedAgent) {
+  if (agent?.sacredStats) {
+    return {
+      power: agent.sacredStats.power,
+      resonance: agent.sacredStats.resonance,
+      wisdom: agent.sacredStats.wisdom,
+      charisma: agent.sacredStats.charisma,
+      intuition: agent.sacredStats.intuition,
+      adaptability: agent.sacredStats.adaptability,
+      vitality: agent.sacredStats.vitality,
+    }
+  }
+  const sunPlacement =
+    agent?.consciousness?.natalChart?.planets?.Sun ?? agent?.consciousness?.natalChart?.planets?.sun
+  const sunSign = sunPlacement?.sign || 'Leo'
+  const sunDeg = Math.max(1, Math.min(29, sunPlacement?.degree || 15))
+  const st = getPlanetaryAgentStats('Sun', sunSign, sunDeg)
+  return {
+    power: st.power,
+    resonance: st.resonance,
+    wisdom: st.wisdom,
+    charisma: st.charisma,
+    intuition: st.intuition,
+    adaptability: st.adaptability,
+    vitality: st.vitality,
+  }
+}
 
 export default function SynthesisChamberPage() {
   const [isLabOpen, setIsLabOpen] = useState(false)
@@ -125,10 +157,10 @@ export default function SynthesisChamberPage() {
           Where historical wisdom meets celestial intelligence. Conduct sophisticated consciousness
           experiments by combining the insights of history's greatest minds with planetary energies.
         </p>
-        <div className="mt-4 p-4 bg-blue-50 dark:bg-blue-950/20 rounded-lg inline-block">
-          <p className="text-sm text-blue-700 dark:text-blue-300">
+        <div className="mt-4 px-4 py-3 border border-cyan-400/30 bg-cyan-500/10 rounded-xl inline-block">
+          <p className="text-sm text-cyan-200">
             🧪 <strong>Research Laboratory:</strong> Advanced multi-agent synthesis with real-time
-            transcript recording, configurable councils, and session export.
+            transcript recording, Pentacle-rated councils (25–99 PVR), and session export.
           </p>
         </div>
       </div>
@@ -141,9 +173,9 @@ export default function SynthesisChamberPage() {
 
       {/* Features Overview */}
       <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-        <Card>
+        <Card className="border-white/10 bg-[#0d1020]/90">
           <CardContent className="flex items-center gap-3 pt-6">
-            <Brain className="w-8 h-8 text-purple-500" />
+            <Brain className="w-8 h-8 text-purple-400" />
             <div>
               <h3 className="font-semibold">Multi-Agent Synthesis</h3>
               <p className="text-sm text-muted-foreground">Combine up to 8 consciousness agents</p>
@@ -151,9 +183,9 @@ export default function SynthesisChamberPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-white/10 bg-[#0d1020]/90">
           <CardContent className="flex items-center gap-3 pt-6">
-            <Activity className="w-8 h-8 text-green-500" />
+            <Activity className="w-8 h-8 text-emerald-400" />
             <div>
               <h3 className="font-semibold">Live Session Facts</h3>
               <p className="text-sm text-muted-foreground">Messages and participants from chat</p>
@@ -161,9 +193,9 @@ export default function SynthesisChamberPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-white/10 bg-[#0d1020]/90">
           <CardContent className="flex items-center gap-3 pt-6">
-            <Beaker className="w-8 h-8 text-blue-500" />
+            <Beaker className="w-8 h-8 text-cyan-400" />
             <div>
               <h3 className="font-semibold">Recording Mode</h3>
               <p className="text-sm text-muted-foreground">Capture real council sessions</p>
@@ -171,9 +203,9 @@ export default function SynthesisChamberPage() {
           </CardContent>
         </Card>
 
-        <Card>
+        <Card className="border-white/10 bg-[#0d1020]/90">
           <CardContent className="flex items-center gap-3 pt-6">
-            <Star className="w-8 h-8 text-amber-500" />
+            <Star className="w-8 h-8 text-amber-400" />
             <div>
               <h3 className="font-semibold">Provider Routing</h3>
               <p className="text-sm text-muted-foreground">
@@ -188,84 +220,168 @@ export default function SynthesisChamberPage() {
       <div className="mb-8">
         <h2 className="text-2xl font-bold mb-6">Research Protocols</h2>
         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {quickStartExperiments.map(experiment => (
-            <Card
-              key={experiment.id}
-              className="cursor-pointer transition-all hover:shadow-lg hover:border-primary/50"
-            >
-              <CardHeader className="pb-3">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-3">
-                    {experiment.icon}
-                    <div>
-                      <CardTitle className="text-lg">{experiment.name}</CardTitle>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Badge
-                          variant={
-                            experiment.difficulty === 'Expert'
-                              ? 'destructive'
-                              : experiment.difficulty === 'Advanced'
-                                ? 'default'
-                                : 'secondary'
-                          }
-                        >
-                          {experiment.difficulty}
-                        </Badge>
-                        <div className="flex items-center gap-1 text-muted-foreground">
-                          <Clock className="w-3 h-3" />
-                          <span className="text-xs">{experiment.estimatedTime}</span>
+          {quickStartExperiments.map(experiment => {
+            const memberStats = [
+              ...experiment.agents.map(id =>
+                extractAgentSacred7(historicalAgents.find(a => a.id === id))
+              ),
+              ...experiment.planets.map(planet => {
+                const st = getPlanetaryAgentStats(planet, 'Leo', 15)
+                return {
+                  power: st.power,
+                  resonance: st.resonance,
+                  wisdom: st.wisdom,
+                  charisma: st.charisma,
+                  intuition: st.intuition,
+                  adaptability: st.adaptability,
+                  vitality: st.vitality,
+                }
+              }),
+            ]
+            const count = Math.max(1, memberStats.length)
+            const avgStats = memberStats.reduce(
+              (acc, s) => ({
+                power: acc.power + s.power / count,
+                resonance: acc.resonance + s.resonance / count,
+                wisdom: acc.wisdom + s.wisdom / count,
+                charisma: acc.charisma + s.charisma / count,
+                intuition: acc.intuition + s.intuition / count,
+                adaptability: acc.adaptability + s.adaptability / count,
+                vitality: acc.vitality + s.vitality / count,
+              }),
+              {
+                power: 0,
+                resonance: 0,
+                wisdom: 0,
+                charisma: 0,
+                intuition: 0,
+                adaptability: 0,
+                vitality: 0,
+              }
+            )
+            const roundedAvg = {
+              power: Math.round(avgStats.power),
+              resonance: Math.round(avgStats.resonance),
+              wisdom: Math.round(avgStats.wisdom),
+              charisma: Math.round(avgStats.charisma),
+              intuition: Math.round(avgStats.intuition),
+              adaptability: Math.round(avgStats.adaptability),
+              vitality: Math.round(avgStats.vitality),
+            }
+            const councilRated = rateStats(roundedAvg)
+            const councilSeals = earnedSeals(
+              evaluateSeals({
+                stats: roundedAvg,
+                esmsBalances: { spirit: 60, essence: 60, matter: 60, substance: 60 },
+              })
+            )
+
+            return (
+              <Card
+                key={experiment.id}
+                className="border-white/10 bg-[#0d1020]/90 transition-all hover:shadow-lg hover:border-cyan-400/40"
+              >
+                <CardHeader className="pb-3">
+                  <div className="flex items-start justify-between gap-2">
+                    <div className="flex items-center gap-3">
+                      {experiment.icon}
+                      <div>
+                        <CardTitle className="text-lg">{experiment.name}</CardTitle>
+                        <div className="flex flex-wrap items-center gap-2 mt-1">
+                          <Badge
+                            variant={
+                              experiment.difficulty === 'Expert'
+                                ? 'destructive'
+                                : experiment.difficulty === 'Advanced'
+                                  ? 'default'
+                                  : 'secondary'
+                            }
+                          >
+                            {experiment.difficulty}
+                          </Badge>
+                          <div className="flex items-center gap-1 text-muted-foreground">
+                            <Clock className="w-3 h-3" />
+                            <span className="text-xs">{experiment.estimatedTime}</span>
+                          </div>
                         </div>
                       </div>
                     </div>
                   </div>
-                </div>
-              </CardHeader>
-              <CardContent>
-                <p className="text-sm text-muted-foreground mb-4">{experiment.description}</p>
+                  <div className="pt-2">
+                    <VesselRatingRibbon
+                      ovr={councilRated.ovr}
+                      archetype={councilRated.archetype}
+                      seals={councilSeals}
+                      compact
+                    />
+                  </div>
+                </CardHeader>
+                <CardContent>
+                  <p className="text-sm text-muted-foreground mb-4">{experiment.description}</p>
 
-                <div className="space-y-3">
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <Users className="w-4 h-4 text-blue-500" />
-                      <span className="text-sm font-medium">Historical Agents:</span>
+                  <div className="space-y-3">
+                    <div>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <Users className="w-4 h-4 text-cyan-400" />
+                        <span className="text-sm font-medium">Historical Agents:</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 ml-6">
+                        {experiment.agents.map(agentId => {
+                          const agent = historicalAgents.find(a => a.id === agentId)
+                          if (!agent) return null
+                          const agentRated = rateStats(extractAgentSacred7(agent))
+                          return (
+                            <Link
+                              key={agentId}
+                              href={`/agent/${encodeURIComponent(agent.id)}`}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-white/[0.03] px-2 py-0.5 text-xs text-slate-200 hover:border-cyan-400/45 hover:text-cyan-200 transition-colors"
+                            >
+                              <span>{agent.name}</span>
+                              <span className="font-mono text-[10px] font-bold text-amber-300">
+                                PVR {agentRated.ovr}
+                              </span>
+                            </Link>
+                          )
+                        })}
+                      </div>
                     </div>
-                    <div className="flex flex-wrap gap-1 ml-6">
-                      {experiment.agents.map(agentId => {
-                        const agent = historicalAgents.find(a => a.id === agentId)
-                        return agent ? (
-                          <Badge key={agentId} variant="outline" className="text-xs">
-                            {agent.name}
-                          </Badge>
-                        ) : null
-                      })}
+
+                    <div>
+                      <div className="flex items-center gap-2 mb-1.5">
+                        <Star className="w-4 h-4 text-amber-400" />
+                        <span className="text-sm font-medium">Planetary Agents:</span>
+                      </div>
+                      <div className="flex flex-wrap gap-1.5 ml-6">
+                        {experiment.planets.map(planet => {
+                          const pRated = rateStats(getPlanetaryAgentStats(planet, 'Leo', 15))
+                          return (
+                            <Link
+                              key={planet}
+                              href={`/agents/${encodeURIComponent(planet)}/Leo/15`}
+                              className="inline-flex items-center gap-1.5 rounded-md border border-white/15 bg-white/[0.03] px-2 py-0.5 text-xs text-slate-200 hover:border-amber-400/45 hover:text-amber-200 transition-colors"
+                            >
+                              <span>{planet}</span>
+                              <span className="font-mono text-[10px] font-bold text-amber-300">
+                                PVR {pRated.ovr}
+                              </span>
+                            </Link>
+                          )
+                        })}
+                      </div>
                     </div>
                   </div>
 
-                  <div>
-                    <div className="flex items-center gap-2 mb-1">
-                      <Star className="w-4 h-4 text-amber-500" />
-                      <span className="text-sm font-medium">Planetary Agents:</span>
-                    </div>
-                    <div className="flex flex-wrap gap-1 ml-6">
-                      {experiment.planets.map(planet => (
-                        <Badge key={planet} variant="outline" className="text-xs">
-                          {planet}
-                        </Badge>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-
-                <Button
-                  onClick={() => handleStartExperiment(experiment.id)}
-                  disabled={historicalAgents.length === 0}
-                  className="w-full mt-4"
-                >
-                  Start Experiment
-                </Button>
-              </CardContent>
-            </Card>
-          ))}
+                  <Button
+                    onClick={() => handleStartExperiment(experiment.id)}
+                    disabled={historicalAgents.length === 0}
+                    className="w-full mt-4"
+                  >
+                    Start Experiment
+                  </Button>
+                </CardContent>
+              </Card>
+            )
+          })}
         </div>
       </div>
 

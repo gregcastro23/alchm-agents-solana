@@ -1,19 +1,23 @@
 'use client'
 
-import { useState, useEffect, useCallback } from 'react'
+import { useState, useEffect, useCallback, useMemo } from 'react'
 import Link from 'next/link'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
-import { RefreshCw, Wand2, Sparkles } from 'lucide-react'
+import { RefreshCw, Wand2, Sparkles, Compass } from 'lucide-react'
 import { getPlanetaryDignity, getSignElement, getPlanetaryElement } from '@/lib/astrological-data'
 import { usePlanetaryPositionsOnly } from '@/hooks/usePlanetaryPositions'
 import ElementalChart from '@/components/charts/elemental-chart'
+import NatalWheelSvg, { type WheelBody } from '@/components/charts/natal-wheel-svg'
 import TarotCosmicWidget from '@/components/misc/tarot-cosmic-widget'
 import NatalSigilGenerator from '@/components/misc/natal-sigil-generator'
 import { ChartGeometryExtractor } from '@/lib/chart-geometry-extractor'
 import { detectPatternsStatic, PlanetPosition } from '@/lib/astrological-pattern-recognition'
 import { RuneGeometry } from '@/lib/runes/natal-sigil-runes'
+import { getPlanetaryAgentStats } from '@/lib/agents/planetary-agent-stats'
+import { rateStats, evaluateSeals, earnedSeals } from '@/lib/agents/rating'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
 
 const SIGN_ORDER = [
   'Aries',
@@ -140,19 +144,80 @@ export default function ChartOfTheMomentPage() {
     setShowSigilGenerator(true)
   }, [currentPlanetaryPositions])
 
+  const [selectedWheelPlanet, setSelectedWheelPlanet] = useState<string | null>(null)
+
+  const wheelPositions = useMemo(() => {
+    const out: Record<string, WheelBody> = {}
+    for (const [planet, data] of Object.entries(currentPlanetaryPositions)) {
+      const signIdx = Math.max(0, SIGN_ORDER.indexOf(data.sign))
+      const deg = parseFloat(data.degree) || 0
+      out[planet] = {
+        sign: data.sign,
+        degree: deg,
+        exactLongitude: (signIdx * 30 + deg) % 360,
+        isRetrograde: Boolean((data as { isRetrograde?: boolean }).isRetrograde),
+      }
+    }
+    return out
+  }, [currentPlanetaryPositions])
+
+  const momentRatingSummary = useMemo(() => {
+    const entries = Object.entries(currentPlanetaryPositions)
+    if (entries.length === 0) return null
+    const totals = {
+      power: 0,
+      resonance: 0,
+      wisdom: 0,
+      charisma: 0,
+      intuition: 0,
+      adaptability: 0,
+      vitality: 0,
+    }
+    for (const [planet, data] of entries) {
+      const deg = Math.max(1, Math.min(29, Math.floor(parseFloat(data.degree) || 15)))
+      const st = getPlanetaryAgentStats(planet, data.sign, deg)
+      totals.power += st.power
+      totals.resonance += st.resonance
+      totals.wisdom += st.wisdom
+      totals.charisma += st.charisma
+      totals.intuition += st.intuition
+      totals.adaptability += st.adaptability
+      totals.vitality += st.vitality
+    }
+    const n = entries.length
+    const avgStats = {
+      power: Math.round(totals.power / n),
+      resonance: Math.round(totals.resonance / n),
+      wisdom: Math.round(totals.wisdom / n),
+      charisma: Math.round(totals.charisma / n),
+      intuition: Math.round(totals.intuition / n),
+      adaptability: Math.round(totals.adaptability / n),
+      vitality: Math.round(totals.vitality / n),
+    }
+    const rated = rateStats(avgStats)
+    const sealProgress = evaluateSeals({
+      stats: avgStats,
+      esmsBalances: { spirit: 45, essence: 45, matter: 45, substance: 45 },
+    })
+    return {
+      rated,
+      seals: earnedSeals(sealProgress),
+    }
+  }, [currentPlanetaryPositions])
+
   // Get color for element
   const getElementColor = (element: string) => {
     switch (element) {
       case 'Fire':
-        return 'bg-red-500 hover:bg-red-600'
+        return 'border-amber-500/40 bg-amber-500/15 text-amber-300'
       case 'Water':
-        return 'bg-blue-500 hover:bg-blue-600'
+        return 'border-cyan-500/40 bg-cyan-500/15 text-cyan-300'
       case 'Air':
-        return 'bg-yellow-500 hover:bg-yellow-600'
+        return 'border-violet-400/40 bg-violet-500/15 text-violet-200'
       case 'Earth':
-        return 'bg-green-500 hover:bg-green-600'
+        return 'border-emerald-500/40 bg-emerald-500/15 text-emerald-300'
       default:
-        return 'bg-gray-500 hover:bg-gray-600'
+        return 'border-white/15 bg-white/5 text-slate-300'
     }
   }
 
@@ -160,15 +225,15 @@ export default function ChartOfTheMomentPage() {
   const getDignityColor = (dignity: string) => {
     switch (dignity) {
       case 'domicile':
-        return 'bg-emerald-100 dark:bg-emerald-950'
+        return 'border-emerald-500/35 bg-emerald-500/[0.06] hover:border-emerald-400/60'
       case 'exaltation':
-        return 'bg-blue-100 dark:bg-blue-950'
+        return 'border-amber-400/40 bg-amber-500/[0.07] hover:border-amber-300/70'
       case 'detriment':
-        return 'bg-red-100 dark:bg-red-950'
+        return 'border-rose-500/30 bg-rose-500/[0.05] hover:border-rose-400/50'
       case 'fall':
-        return 'bg-orange-100 dark:bg-orange-950'
+        return 'border-orange-500/30 bg-orange-500/[0.05] hover:border-orange-400/50'
       default:
-        return 'bg-gray-100 dark:bg-gray-950'
+        return 'border-white/10 bg-white/[0.02] hover:border-cyan-400/40'
     }
   }
 
@@ -176,15 +241,15 @@ export default function ChartOfTheMomentPage() {
   const getDignityBadge = (dignity: string) => {
     switch (dignity) {
       case 'domicile':
-        return 'bg-emerald-500'
+        return 'border-emerald-400/45 bg-emerald-500/15 text-emerald-300'
       case 'exaltation':
-        return 'bg-blue-500'
+        return 'border-amber-400/50 bg-amber-500/15 text-amber-200'
       case 'detriment':
-        return 'bg-red-500'
+        return 'border-rose-400/45 bg-rose-500/15 text-rose-300'
       case 'fall':
-        return 'bg-orange-500'
+        return 'border-orange-400/45 bg-orange-500/15 text-orange-300'
       default:
-        return 'bg-gray-500'
+        return 'border-white/15 bg-white/5 text-slate-300'
     }
   }
 
@@ -204,13 +269,34 @@ export default function ChartOfTheMomentPage() {
   }
 
   return (
-    <div className="container py-12 px-4 mx-auto">
-      <h1 className="text-3xl font-bold text-center mb-4">Current Planetary Positions</h1>
-      <p className="text-center mb-4 max-w-2xl mx-auto">
-        Explore the current planetary alignments and their elemental influences
-      </p>
+    <div className="container py-10 px-4 mx-auto space-y-8 max-w-6xl">
+      <div className="text-center space-y-3">
+        <div className="inline-flex items-center gap-2 rounded-full border border-cyan-400/30 bg-cyan-500/10 px-3 py-1 font-mono text-[10px] uppercase tracking-widest text-cyan-300">
+          <Compass className="h-3.5 w-3.5" />
+          Live Ephemeris Sky Sanctum
+        </div>
+        <h1 className="text-3xl md:text-4xl font-bold text-center text-white">
+          Current Planetary Positions
+        </h1>
+        <p className="text-center text-slate-300 max-w-2xl mx-auto">
+          Explore the current planetary alignments, live Pentacle Vessel Ratings (25–99 PVR), and
+          elemental influences
+        </p>
+        <div className="font-mono text-xs text-cyan-300/90">
+          {currentDate} at {currentTime} · {isDiurnal ? 'Diurnal (Day)' : 'Nocturnal (Night)'} Sky
+        </div>
+        {momentRatingSummary && (
+          <div className="flex justify-center pt-1">
+            <VesselRatingRibbon
+              ovr={momentRatingSummary.rated.ovr}
+              archetype={momentRatingSummary.rated.archetype}
+              seals={momentRatingSummary.seals}
+            />
+          </div>
+        )}
+      </div>
 
-      <div className="flex justify-center gap-3 mb-6">
+      <div className="flex flex-wrap justify-center gap-3">
         <Button variant="outline" size="sm" onClick={refresh} disabled={loading} className="gap-2">
           <RefreshCw className={`h-4 w-4 ${loading ? 'animate-spin' : ''}`} />
           {loading ? 'Refreshing...' : 'Refresh Positions'}
@@ -225,51 +311,90 @@ export default function ChartOfTheMomentPage() {
           <Wand2 className="h-4 w-4" />
           Generate Moment Sigil
         </Button>
+        <Button variant="outline" size="sm" asChild>
+          <Link href="/chart-interpreter?type=current">Interpret in Council →</Link>
+        </Button>
       </div>
 
-      <div className="mb-2 text-center text-sm text-muted-foreground">
-        {currentDate} at {currentTime} - {isDiurnal ? 'Day' : 'Night'} Chart
+      <div className="grid grid-cols-1 lg:grid-cols-12 gap-6 items-start">
+        {/* Left Column: Interactive Natal Wheel + Tarot Cosmic Moment */}
+        <div className="lg:col-span-5 space-y-6">
+          <Card className="border-white/10 bg-[#0d1020]/90 backdrop-blur-xl">
+            <CardHeader className="pb-2">
+              <CardTitle className="text-center font-mono text-xs uppercase tracking-widest text-cyan-300">
+                Interactive Ecliptic Wheel
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="flex flex-col items-center">
+              <NatalWheelSvg
+                positions={wheelPositions}
+                size={340}
+                selectedPlanet={selectedWheelPlanet}
+                onSelectPlanet={setSelectedWheelPlanet}
+              />
+            </CardContent>
+          </Card>
+
+          <TarotCosmicWidget variant="card" showExpanded={false} />
+
+          {Object.keys(chartPlanets).length > 0 && <ElementalChart {...chartPlanets} />}
+        </div>
+
+        {/* Right Column: Rated Planetary Transits */}
+        <Card className="lg:col-span-7 border-white/10 bg-[#0d1020]/90 backdrop-blur-xl">
+          <CardHeader className="flex flex-row items-center justify-between border-b border-white/10 pb-4">
+            <CardTitle className="text-lg font-bold text-white">Chart of the Moment</CardTitle>
+            <span className="font-mono text-[10px] uppercase tracking-widest text-amber-300">
+              Click any transit to commune →
+            </span>
+          </CardHeader>
+          <CardContent className="pt-4">
+            <div className="grid grid-cols-1 gap-3">
+              {Object.entries(currentPlanetaryPositions).map(([planet, data]) => {
+                const dignity = getPlanetaryDignity(planet, data.sign)
+                const signElement = getSignElement(data.sign)
+                const planetElement = getPlanetaryElement(planet, isDiurnal)
+                const degInt = Math.max(1, Math.min(29, Math.floor(parseFloat(data.degree) || 15)))
+                const planetStats = getPlanetaryAgentStats(planet, data.sign, degInt)
+                const planetRated = rateStats(planetStats)
+
+                return (
+                  <Link
+                    href={`/agents/${encodeURIComponent(planet)}/${encodeURIComponent(data.sign)}/${degInt}`}
+                    key={planet}
+                    className={`p-3.5 rounded-xl border flex flex-col sm:flex-row sm:justify-between sm:items-center gap-3 ${getDignityColor(dignity)} transition-all`}
+                  >
+                    <div className="space-y-1">
+                      <div className="flex items-center gap-2">
+                        <span className="font-semibold text-white">{planet}</span>
+                        <span className="font-mono text-xs text-cyan-300">
+                          {data.sign} {data.degree}°
+                        </span>
+                      </div>
+                      <VesselRatingRibbon
+                        ovr={planetRated.ovr}
+                        archetype={planetRated.archetype}
+                        compact
+                      />
+                    </div>
+                    <div className="flex flex-wrap gap-1.5">
+                      <Badge variant="outline" className={getElementColor(signElement)}>
+                        {signElement}
+                      </Badge>
+                      <Badge variant="outline" className={getElementColor(planetElement)}>
+                        {planetElement}
+                      </Badge>
+                      <Badge variant="outline" className={`capitalize ${getDignityBadge(dignity)}`}>
+                        {dignity}
+                      </Badge>
+                    </div>
+                  </Link>
+                )
+              })}
+            </div>
+          </CardContent>
+        </Card>
       </div>
-
-      {/* Cosmic Tarot Moment */}
-      <div className="mb-8 max-w-md mx-auto">
-        <TarotCosmicWidget variant="card" showExpanded={false} />
-      </div>
-
-      <Card className="mb-6">
-        <CardHeader>
-          <CardTitle className="text-center">Chart of the Moment</CardTitle>
-        </CardHeader>
-        <CardContent>
-          <div className="grid grid-cols-1 gap-3">
-            {Object.entries(currentPlanetaryPositions).map(([planet, data]) => {
-              const dignity = getPlanetaryDignity(planet, data.sign)
-              const signElement = getSignElement(data.sign)
-              const planetElement = getPlanetaryElement(planet, isDiurnal)
-
-              return (
-                <Link
-                  href={`/agents/${encodeURIComponent(planet)}/${encodeURIComponent(data.sign)}/${Math.max(1, Math.min(29, Math.floor(parseFloat(data.degree))))}`}
-                  key={planet}
-                  className={`p-3 rounded-md border flex justify-between items-center ${getDignityColor(dignity)} hover:opacity-90 transition-opacity`}
-                >
-                  <div className="flex flex-col">
-                    <span className="font-semibold">{planet}</span>
-                    <span>
-                      {data.sign} {data.degree}°
-                    </span>
-                  </div>
-                  <div className="flex gap-2">
-                    <Badge className={getElementColor(signElement)}>{signElement}</Badge>
-                    <Badge className={getElementColor(planetElement)}>{planetElement}</Badge>
-                    <Badge className={getDignityBadge(dignity)}>{dignity}</Badge>
-                  </div>
-                </Link>
-              )
-            })}
-          </div>
-        </CardContent>
-      </Card>
 
       {/* Sigil Generator */}
       {showSigilGenerator && chartGeometry && (
