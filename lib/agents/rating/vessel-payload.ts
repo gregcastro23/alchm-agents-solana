@@ -542,10 +542,11 @@ export function buildRatedAgentPayload({
 /**
  * The payload as the contract's own `RatedAgentPayload` (what `feedStreamBus.recordAgentRating`
  * takes), or `null` when there is no surge to put in it — a payload built from no sky is never
- * published as if it had one. Extension fields ride along. `GET /api/agents/[slug]/ratings` is the
- * caller: it puts the result on the anonymous feed stream ONLY for a roster vessel read under the
- * 'deny' wallet policy, because a payload computed for a forged vessel or for an entitled caller
- * can hold a person's private ESMS wallet. This function does not decide that; the caller must.
+ * published as if it had one. Extension fields ride along. `GET /api/agents/[slug]/ratings` puts
+ * the result on the anonymous feed stream, but only through `streamableRating`
+ * (`rating-resolver.server.ts`), which adds what this function cannot know: a roster vessel read
+ * under the 'deny' wallet policy (a payload for a forged vessel or an entitled caller can hold a
+ * person's private ESMS wallet) and no degraded read. This function does not decide that.
  * `GET /api/agents/rating` never publishes: a public GET must not write to a live stream.
  */
 export function asContractPayload(payload: RatedVesselPayload): RatedAgentPayload | null {
