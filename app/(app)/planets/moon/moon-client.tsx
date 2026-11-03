@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
@@ -14,6 +15,9 @@ import {
 } from '@/components/ui/select'
 import { Slider } from '@/components/ui/slider'
 import { identifyPlanetaryThemes } from '@/lib/transit-patterns'
+import { getPlanetaryAgentStats } from '@/lib/agents/planetary-agent-stats'
+import { rateStats, evaluateSeals, earnedSeals } from '@/lib/agents/rating'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
 import { Moon, Calendar, TrendingUp, Info, Sparkles } from 'lucide-react'
 
 interface MoonPlanetClientProps {
@@ -60,6 +64,65 @@ export default function MoonPlanetClient({
 
   // Synchronous computation — no useEffect needed
   const themes = useMemo(() => identifyPlanetaryThemes('Moon', selectedSign), [selectedSign])
+
+  const currentMoonRating = useMemo(() => {
+    const sign = currentPosition?.sign || 'Cancer'
+    const deg = Math.max(
+      1,
+      Math.min(30, Math.round(parseFloat(currentPosition?.degree || '15') || 15))
+    )
+    const stats = getPlanetaryAgentStats('Moon', sign, deg)
+    const rated = rateStats(stats)
+    const seals = earnedSeals(
+      evaluateSeals({
+        stats,
+        esmsBalances: { spirit: 70, essence: 95, matter: 55, substance: 65 },
+      })
+    )
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+    }
+  }, [currentPosition])
+
+  const degreeMoonRating = useMemo(() => {
+    const sign = signs[Math.floor(selectedDegree / 30)] || 'Cancer'
+    const degInSign = (selectedDegree % 30) + 1
+    const stats = getPlanetaryAgentStats('Moon', sign, degInSign)
+    const rated = rateStats(stats)
+    const seals = earnedSeals(
+      evaluateSeals({
+        stats,
+        esmsBalances: { spirit: 70, essence: 95, matter: 55, substance: 65 },
+      })
+    )
+    return {
+      sign,
+      degInSign,
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+    }
+  }, [selectedDegree])
+
+  const agentMoonRating = useMemo(() => {
+    const degInSign = Math.max(1, Math.min(30, (selectedDegree % 30) + 1))
+    const stats = getPlanetaryAgentStats('Moon', selectedSign, degInSign)
+    const rated = rateStats(stats)
+    const seals = earnedSeals(
+      evaluateSeals({
+        stats,
+        esmsBalances: { spirit: 70, essence: 95, matter: 55, substance: 65 },
+      })
+    )
+    return {
+      degInSign,
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+    }
+  }, [selectedSign, selectedDegree])
 
   const getPhaseEmoji = (phase: string): string => {
     const emojis: Record<string, string> = {
@@ -111,8 +174,8 @@ export default function MoonPlanetClient({
   return (
     <div className="container py-8 max-w-7xl mx-auto">
       <div className="flex items-center gap-3 mb-8">
-        <div className="p-3 bg-blue-500/20 rounded-full">
-          <Moon className="h-8 w-8 text-blue-600" />
+        <div className="p-3 bg-sky-500/20 rounded-full border border-sky-400/30">
+          <Moon className="h-8 w-8 text-sky-400" />
         </div>
         <div>
           <h1 className="text-4xl font-bold">The Moon</h1>
@@ -121,15 +184,15 @@ export default function MoonPlanetClient({
       </div>
 
       {currentPosition && (
-        <Card className="mb-6 border-blue-500/20 bg-blue-50/5">
+        <Card className="mb-6 border-sky-500/30 bg-[#0d1020]/90">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5" />
+              <TrendingUp className="h-5 w-5 text-sky-400" />
               Current Lunar Position
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-4">
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap items-center gap-4">
               <Badge variant="default" className="text-lg py-1 px-3">
                 {currentPosition.sign} {currentPosition.degree}°
               </Badge>
@@ -140,6 +203,12 @@ export default function MoonPlanetClient({
                 The Moon nurtures through {currentPosition.sign}
               </span>
             </div>
+            <VesselRatingRibbon
+              ovr={currentMoonRating.ovr}
+              archetype={currentMoonRating.archetype}
+              seals={currentMoonRating.seals}
+              compact
+            />
           </CardContent>
         </Card>
       )}
@@ -261,10 +330,10 @@ export default function MoonPlanetClient({
         </TabsContent>
 
         <TabsContent value="phases" className="space-y-4">
-          <Card>
+          <Card className="border-white/10 bg-[#0d1020]/90">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Sparkles className="h-5 w-5" />
+                <Sparkles className="h-5 w-5 text-sky-400" />
                 Moon Phase System
               </CardTitle>
               <CardDescription>Each lunar phase carries unique energy and wisdom</CardDescription>
@@ -274,7 +343,11 @@ export default function MoonPlanetClient({
                 {moonPhases.map(phase => (
                   <Card
                     key={phase}
-                    className="cursor-pointer hover:bg-muted/50 transition-colors"
+                    className={`cursor-pointer border transition-colors ${
+                      moonPhase === phase
+                        ? 'border-sky-400/50 bg-sky-500/15'
+                        : 'border-white/10 bg-white/[0.03] hover:border-sky-400/30'
+                    }`}
                     onClick={() => setMoonPhase(phase)}
                   >
                     <CardContent className="pt-6 text-center">
@@ -295,7 +368,7 @@ export default function MoonPlanetClient({
                 ))}
               </div>
 
-              <Card className="bg-muted/30">
+              <Card className="border-white/10 bg-white/[0.03]">
                 <CardHeader>
                   <CardTitle className="text-lg">Current Selection: {moonPhase}</CardTitle>
                 </CardHeader>
@@ -325,11 +398,12 @@ export default function MoonPlanetClient({
         </TabsContent>
 
         <TabsContent value="degrees" className="space-y-4">
-          <Card>
+          <Card className="border-white/10 bg-[#0d1020]/90">
             <CardHeader>
               <CardTitle>360-Degree Lunar Personalities</CardTitle>
               <CardDescription>
-                Each degree of the Moon's journey carries a unique personality
+                Each degree of the Moon&apos;s journey carries a unique personality and Pentacle
+                Vessel Rating
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
@@ -352,7 +426,7 @@ export default function MoonPlanetClient({
                   <div>
                     <p className="text-sm text-muted-foreground mb-1">Zodiac Position</p>
                     <Badge variant="outline">
-                      {signs[Math.floor(selectedDegree / 30)]} {selectedDegree % 30}°
+                      {degreeMoonRating.sign} {degreeMoonRating.degInSign}°
                     </Badge>
                   </div>
                   <div>
@@ -363,10 +437,25 @@ export default function MoonPlanetClient({
                   </div>
                 </div>
 
-                <Card className="bg-blue-50/50 dark:bg-blue-900/20">
-                  <CardContent className="pt-6">
-                    <h4 className="font-semibold mb-2">Personality at {selectedDegree}°</h4>
-                    <p className="text-sm mb-3">{getLunarPersonality(selectedDegree)}</p>
+                <VesselRatingRibbon
+                  ovr={degreeMoonRating.ovr}
+                  archetype={degreeMoonRating.archetype}
+                  seals={degreeMoonRating.seals}
+                  compact
+                />
+
+                <Card className="border-sky-500/30 bg-sky-950/20">
+                  <CardContent className="pt-6 space-y-3">
+                    <div className="flex flex-wrap items-center justify-between gap-2">
+                      <h4 className="font-semibold">Personality at {selectedDegree}°</h4>
+                      <Link
+                        href={`/agents/Moon/${encodeURIComponent(degreeMoonRating.sign)}/${degreeMoonRating.degInSign}`}
+                        className="rounded-lg border border-amber-400/30 bg-amber-500/10 px-3 py-1 text-xs font-semibold text-amber-200 hover:bg-amber-500/20"
+                      >
+                        Consult Moon in {degreeMoonRating.sign} {degreeMoonRating.degInSign}° →
+                      </Link>
+                    </div>
+                    <p className="text-sm">{getLunarPersonality(selectedDegree)}</p>
 
                     <div className="space-y-2 text-sm">
                       <div>
@@ -391,7 +480,7 @@ export default function MoonPlanetClient({
                       </div>
                       <div>
                         <span className="text-muted-foreground">Nurturing Approach: </span>
-                        <span>{signs[Math.floor(selectedDegree / 30)]}-influenced</span>
+                        <span>{degreeMoonRating.sign}-influenced</span>
                       </div>
                     </div>
                   </CardContent>
@@ -402,16 +491,16 @@ export default function MoonPlanetClient({
         </TabsContent>
 
         <TabsContent value="cycles" className="space-y-4">
-          <Card>
+          <Card className="border-white/10 bg-[#0d1020]/90">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Calendar className="h-5 w-5" />
+                <Calendar className="h-5 w-5 text-sky-400" />
                 Lunar Cycles & Returns
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="p-4 bg-blue-50/50 dark:bg-blue-900/20 rounded-lg">
-                <h4 className="font-semibold mb-2">Lunar Return (Monthly)</h4>
+              <div className="p-4 border border-sky-500/30 bg-sky-950/20 rounded-lg">
+                <h4 className="font-semibold mb-2 text-sky-200">Lunar Return (Monthly)</h4>
                 <p className="text-sm text-muted-foreground mb-3">
                   The Moon returns to its natal position every 27.3 days, marking your emotional
                   reset cycle.
@@ -439,19 +528,19 @@ export default function MoonPlanetClient({
               <div>
                 <h4 className="font-semibold mb-3">Progressed Moon Cycle</h4>
                 <div className="space-y-2 text-sm">
-                  <div className="p-3 border rounded-lg">
+                  <div className="p-3 border border-white/10 bg-white/[0.03] rounded-lg">
                     <p className="font-medium">27-30 Year Cycle</p>
                     <p className="text-muted-foreground">
                       The progressed Moon completes a full zodiac cycle
                     </p>
                   </div>
-                  <div className="p-3 border rounded-lg">
+                  <div className="p-3 border border-white/10 bg-white/[0.03] rounded-lg">
                     <p className="font-medium">2.5 Years per Sign</p>
                     <p className="text-muted-foreground">
                       Major emotional themes shift every 2.5 years
                     </p>
                   </div>
-                  <div className="p-3 border rounded-lg">
+                  <div className="p-3 border border-white/10 bg-white/[0.03] rounded-lg">
                     <p className="font-medium">Monthly Lunations</p>
                     <p className="text-muted-foreground">
                       13 lunar returns per year, 13 emotional resets
@@ -463,13 +552,13 @@ export default function MoonPlanetClient({
               <div>
                 <h4 className="font-semibold mb-3">Eclipses & Nodes</h4>
                 <div className="grid grid-cols-2 gap-3">
-                  <div className="p-3 border rounded-lg">
+                  <div className="p-3 border border-white/10 bg-white/[0.03] rounded-lg">
                     <p className="font-medium">Lunar Eclipses</p>
                     <p className="text-xs text-muted-foreground">
                       Emotional revelations and releases
                     </p>
                   </div>
-                  <div className="p-3 border rounded-lg">
+                  <div className="p-3 border border-white/10 bg-white/[0.03] rounded-lg">
                     <p className="font-medium">Nodal Return</p>
                     <p className="text-xs text-muted-foreground">Every 18.6 years - karmic reset</p>
                   </div>
@@ -480,11 +569,11 @@ export default function MoonPlanetClient({
         </TabsContent>
 
         <TabsContent value="agent" className="space-y-4">
-          <Card>
+          <Card className="border-white/10 bg-[#0d1020]/90">
             <CardHeader>
               <CardTitle>Lunar Agent Consultation</CardTitle>
               <CardDescription>
-                Connect with the Moon's intuitive wisdom for any degree and phase
+                Connect with the Moon&apos;s intuitive wisdom for any degree and phase
               </CardDescription>
             </CardHeader>
             <CardContent>
@@ -517,18 +606,24 @@ export default function MoonPlanetClient({
                   </Select>
                 </div>
 
+                <VesselRatingRibbon
+                  ovr={agentMoonRating.ovr}
+                  archetype={agentMoonRating.archetype}
+                  seals={agentMoonRating.seals}
+                  compact
+                />
+
                 <div className="text-center py-4">
                   <p className="text-sm text-muted-foreground mb-4">
-                    Consult with the Lunar consciousness at {selectedSign} {selectedDegree}° during{' '}
-                    {moonPhase}
+                    Consult with the Lunar consciousness at {selectedSign}{' '}
+                    {agentMoonRating.degInSign}° during {moonPhase}
                   </p>
-                  <Button
-                    onClick={() =>
-                      (window.location.href = `/agents/Moon/${encodeURIComponent(selectedSign)}/${selectedDegree}`)
-                    }
-                    className="w-full md:w-auto"
-                  >
-                    Start Lunar Consultation
+                  <Button asChild className="w-full md:w-auto">
+                    <Link
+                      href={`/agents/Moon/${encodeURIComponent(selectedSign)}/${agentMoonRating.degInSign}`}
+                    >
+                      Start Lunar Consultation
+                    </Link>
                   </Button>
                 </div>
               </div>

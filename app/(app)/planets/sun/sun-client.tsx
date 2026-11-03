@@ -1,6 +1,7 @@
 'use client'
 
 import { useMemo, useState } from 'react'
+import Link from 'next/link'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Badge } from '@/components/ui/badge'
@@ -15,6 +16,9 @@ import {
 import { identifyPlanetaryThemes } from '@/lib/transit-patterns'
 import { findLastOccurrence, findNextOccurrence } from '@/lib/historical-transits'
 import sunData from '@/lib/planets/sun'
+import { getPlanetaryAgentStats } from '@/lib/agents/planetary-agent-stats'
+import { rateStats, evaluateSeals, earnedSeals } from '@/lib/agents/rating'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
 import { Sun, Calendar, History, TrendingUp, Info } from 'lucide-react'
 
 const FALLBACK_SUN_POSITION = { sign: 'Libra', degree: '23.4', house: null as any }
@@ -57,6 +61,40 @@ export default function SunPlanetClient({ initialSunPosition }: SunPlanetClientP
     [selectedSign, selectedDegree]
   )
 
+  const currentSunRating = useMemo(() => {
+    const pos = currentPosition || FALLBACK_SUN_POSITION
+    const deg = Math.max(1, Math.min(30, Math.round(parseFloat(pos.degree) || 15)))
+    const stats = getPlanetaryAgentStats('Sun', pos.sign, deg)
+    const rated = rateStats(stats)
+    const seals = earnedSeals(
+      evaluateSeals({
+        stats,
+        esmsBalances: { spirit: 95, essence: 70, matter: 55, substance: 60 },
+      })
+    )
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+    }
+  }, [currentPosition])
+
+  const selectedSunRating = useMemo(() => {
+    const stats = getPlanetaryAgentStats('Sun', selectedSign, selectedDegree)
+    const rated = rateStats(stats)
+    const seals = earnedSeals(
+      evaluateSeals({
+        stats,
+        esmsBalances: { spirit: 95, essence: 70, matter: 55, substance: 60 },
+      })
+    )
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+    }
+  }, [selectedSign, selectedDegree])
+
   const formatDate = (date: Date | undefined) => {
     if (!date) return 'Unknown'
     return date.toLocaleDateString('en-US', {
@@ -72,8 +110,8 @@ export default function SunPlanetClient({ initialSunPosition }: SunPlanetClientP
   return (
     <div className="container py-8 max-w-7xl mx-auto">
       <div className="flex items-center gap-3 mb-8">
-        <div className="p-3 bg-yellow-500/20 rounded-full">
-          <Sun className="h-8 w-8 text-yellow-600" />
+        <div className="p-3 bg-amber-500/20 rounded-full border border-amber-400/30">
+          <Sun className="h-8 w-8 text-amber-400" />
         </div>
         <div>
           <h1 className="text-4xl font-bold">The Sun</h1>
@@ -82,15 +120,15 @@ export default function SunPlanetClient({ initialSunPosition }: SunPlanetClientP
       </div>
 
       {currentPosition && (
-        <Card className="mb-6 border-yellow-500/20 bg-yellow-50/5">
+        <Card className="mb-6 border-amber-500/30 bg-[#0d1020]/90">
           <CardHeader>
             <CardTitle className="flex items-center gap-2">
-              <TrendingUp className="h-5 w-5" />
+              <TrendingUp className="h-5 w-5 text-amber-400" />
               Current Position
             </CardTitle>
           </CardHeader>
-          <CardContent>
-            <div className="flex items-center gap-4">
+          <CardContent className="space-y-4">
+            <div className="flex flex-wrap items-center gap-4">
               <Badge variant="default" className="text-lg py-1 px-3">
                 {currentPosition.sign} {currentPosition.degree}°
               </Badge>
@@ -98,6 +136,12 @@ export default function SunPlanetClient({ initialSunPosition }: SunPlanetClientP
                 The Sun illuminates {currentPosition.sign} at {currentPosition.degree} degrees
               </span>
             </div>
+            <VesselRatingRibbon
+              ovr={currentSunRating.ovr}
+              archetype={currentSunRating.archetype}
+              seals={currentSunRating.seals}
+              compact
+            />
           </CardContent>
         </Card>
       )}
@@ -207,16 +251,16 @@ export default function SunPlanetClient({ initialSunPosition }: SunPlanetClientP
         </TabsContent>
 
         <TabsContent value="historical" className="space-y-4">
-          <Card>
+          <Card className="border-white/10 bg-[#0d1020]/90">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <History className="h-5 w-5" />
+                <History className="h-5 w-5 text-amber-400" />
                 Historical Context for {selectedSign}
               </CardTitle>
               <CardDescription>Explore when the Sun was last in this position</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="flex gap-4">
+              <div className="flex flex-wrap gap-4">
                 <Select value={selectedSign} onValueChange={setSelectedSign}>
                   <SelectTrigger className="w-[180px]">
                     <SelectValue />
@@ -247,6 +291,13 @@ export default function SunPlanetClient({ initialSunPosition }: SunPlanetClientP
                 </Select>
               </div>
 
+              <VesselRatingRibbon
+                ovr={selectedSunRating.ovr}
+                archetype={selectedSunRating.archetype}
+                seals={selectedSunRating.seals}
+                compact
+              />
+
               {themes && (
                 <div className="space-y-3">
                   <div>
@@ -274,14 +325,14 @@ export default function SunPlanetClient({ initialSunPosition }: SunPlanetClientP
               )}
 
               <div className="grid grid-cols-1 md:grid-cols-2 gap-4 pt-4">
-                <div className="p-4 bg-muted/50 rounded-lg">
+                <div className="p-4 border border-white/10 bg-white/[0.03] rounded-lg">
                   <p className="text-sm text-muted-foreground mb-1">Last Occurrence</p>
                   <p className="font-semibold">{formatDate(lastOccurrence?.date)}</p>
                   {lastOccurrence?.historicalContext && (
                     <p className="text-sm mt-1">{lastOccurrence.historicalContext}</p>
                   )}
                 </div>
-                <div className="p-4 bg-muted/50 rounded-lg">
+                <div className="p-4 border border-white/10 bg-white/[0.03] rounded-lg">
                   <p className="text-sm text-muted-foreground mb-1">Next Occurrence</p>
                   <p className="font-semibold">{formatDate(nextOccurrence?.date)}</p>
                   {nextOccurrence?.historicalContext && (
@@ -294,17 +345,17 @@ export default function SunPlanetClient({ initialSunPosition }: SunPlanetClientP
         </TabsContent>
 
         <TabsContent value="cycles" className="space-y-4">
-          <Card>
+          <Card className="border-white/10 bg-[#0d1020]/90">
             <CardHeader>
               <CardTitle className="flex items-center gap-2">
-                <Calendar className="h-5 w-5" />
+                <Calendar className="h-5 w-5 text-amber-400" />
                 Solar Cycles
               </CardTitle>
-              <CardDescription>Understanding the Sun's annual journey</CardDescription>
+              <CardDescription>Understanding the Sun&apos;s annual journey</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <div className="p-4 bg-yellow-50/50 dark:bg-yellow-900/20 rounded-lg">
-                <h4 className="font-semibold mb-2">Annual Solar Return</h4>
+              <div className="p-4 border border-amber-500/30 bg-amber-950/20 rounded-lg">
+                <h4 className="font-semibold mb-2 text-amber-200">Annual Solar Return</h4>
                 <p className="text-sm text-muted-foreground mb-3">
                   The Sun returns to its natal position once per year, marking your birthday and a
                   new solar year.
@@ -324,22 +375,22 @@ export default function SunPlanetClient({ initialSunPosition }: SunPlanetClientP
               <div>
                 <h4 className="font-semibold mb-3">Seasonal Markers</h4>
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-3">
-                  <div className="p-3 border rounded-lg">
+                  <div className="p-3 border border-white/10 bg-white/[0.03] rounded-lg">
                     <p className="font-medium">Spring Equinox</p>
                     <p className="text-sm text-muted-foreground">Sun enters Aries (0°)</p>
                     <p className="text-xs mt-1">~March 20</p>
                   </div>
-                  <div className="p-3 border rounded-lg">
+                  <div className="p-3 border border-white/10 bg-white/[0.03] rounded-lg">
                     <p className="font-medium">Summer Solstice</p>
                     <p className="text-sm text-muted-foreground">Sun enters Cancer (0°)</p>
                     <p className="text-xs mt-1">~June 21</p>
                   </div>
-                  <div className="p-3 border rounded-lg">
+                  <div className="p-3 border border-white/10 bg-white/[0.03] rounded-lg">
                     <p className="font-medium">Autumn Equinox</p>
                     <p className="text-sm text-muted-foreground">Sun enters Libra (0°)</p>
                     <p className="text-xs mt-1">~September 23</p>
                   </div>
-                  <div className="p-3 border rounded-lg">
+                  <div className="p-3 border border-white/10 bg-white/[0.03] rounded-lg">
                     <p className="font-medium">Winter Solstice</p>
                     <p className="text-sm text-muted-foreground">Sun enters Capricorn (0°)</p>
                     <p className="text-xs mt-1">~December 21</p>
@@ -351,20 +402,18 @@ export default function SunPlanetClient({ initialSunPosition }: SunPlanetClientP
         </TabsContent>
 
         <TabsContent value="explorer" className="space-y-4">
-          <Card>
+          <Card className="border-white/10 bg-[#0d1020]/90">
             <CardHeader>
               <CardTitle>Solar Position Explorer</CardTitle>
               <CardDescription>
-                Explore the Sun's influence through different signs and degrees
+                Explore the Sun&apos;s influence through different signs and degrees
               </CardDescription>
             </CardHeader>
             <CardContent>
               <div className="space-y-4">
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                  <div className="p-4 bg-amber-50 dark:bg-amber-950/30 rounded-lg border border-amber-200 dark:border-amber-800">
-                    <h4 className="font-semibold text-amber-900 dark:text-amber-100 mb-2">
-                      Current Position
-                    </h4>
+                  <div className="p-4 bg-amber-950/30 rounded-lg border border-amber-500/30">
+                    <h4 className="font-semibold text-amber-100 mb-2">Current Position</h4>
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Zodiac Sign:</span>
@@ -388,10 +437,8 @@ export default function SunPlanetClient({ initialSunPosition }: SunPlanetClientP
                       </div>
                     </div>
                   </div>
-                  <div className="p-4 bg-orange-50 dark:bg-orange-950/30 rounded-lg border border-orange-200 dark:border-orange-800">
-                    <h4 className="font-semibold text-orange-900 dark:text-orange-100 mb-2">
-                      Solar Energy
-                    </h4>
+                  <div className="p-4 bg-orange-950/30 rounded-lg border border-orange-500/30">
+                    <h4 className="font-semibold text-orange-100 mb-2">Solar Energy</h4>
                     <div className="space-y-2 text-sm">
                       <div className="flex justify-between">
                         <span className="text-muted-foreground">Spirit Essence:</span>
@@ -418,24 +465,28 @@ export default function SunPlanetClient({ initialSunPosition }: SunPlanetClientP
         </TabsContent>
 
         <TabsContent value="agent" className="space-y-4">
-          <Card>
+          <Card className="border-white/10 bg-[#0d1020]/90">
             <CardHeader>
               <CardTitle>Solar Agent Consultation</CardTitle>
               <CardDescription>
-                Connect with the Sun's wisdom for your current position
+                Connect with the Sun&apos;s wisdom for your current position
               </CardDescription>
             </CardHeader>
-            <CardContent>
-              <div className="text-center py-8">
+            <CardContent className="space-y-4">
+              <VesselRatingRibbon
+                ovr={selectedSunRating.ovr}
+                archetype={selectedSunRating.archetype}
+                seals={selectedSunRating.seals}
+                compact
+              />
+              <div className="text-center py-4">
                 <p className="text-muted-foreground mb-4">
-                  Consult with the Solar consciousness agent
+                  Consult with the Solar consciousness agent ({selectedSign} {selectedDegree}°)
                 </p>
-                <Button
-                  onClick={() =>
-                    (window.location.href = `/agents/Sun/${encodeURIComponent(selectedSign)}/${selectedDegree}`)
-                  }
-                >
-                  Start Solar Consultation
+                <Button asChild>
+                  <Link href={`/agents/Sun/${encodeURIComponent(selectedSign)}/${selectedDegree}`}>
+                    Start Solar Consultation
+                  </Link>
                 </Button>
               </div>
             </CardContent>

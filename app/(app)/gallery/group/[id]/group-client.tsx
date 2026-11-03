@@ -7,6 +7,9 @@ import { Input } from '@/components/ui/input'
 import { ArrowLeft, Send, Sparkles, Users, Activity } from 'lucide-react'
 import { toast } from 'sonner'
 import { buildTransitUnifiedAgents, type TransitAgentDetail } from '@/lib/agents/degree-agent'
+import { getPlanetaryAgentStats } from '@/lib/agents/planetary-agent-stats'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
 import { AiGeneratedPill } from '@/components/ui/ai-generated-pill'
 import { AiDisclaimer } from '@/components/ui/ai-disclaimer'
 
@@ -45,6 +48,58 @@ export default function TransitGroupChatClient({ sessionId, agents, transit }: P
   // Rebuild full UnifiedAgents (with planetaryData) so the chat API renders the rich
   // planetary prompt rather than the generic fallback.
   const unifiedAgents = useMemo(() => buildTransitUnifiedAgents(agents), [agents])
+
+  const { councilRating, participantRatings } = useMemo(() => {
+    const byId: Record<string, { ovr: number; archetype: string }> = {}
+    const statsList: CoreStats[] = agents.map(a => {
+      const stats = getPlanetaryAgentStats(a.planet || 'Sun', a.sign || 'Leo', a.degree || 15)
+      const rated = rateStats(stats)
+      byId[a.id] = { ovr: rated.ovr, archetype: rated.archetype.title }
+      return stats
+    })
+
+    const count = Math.max(1, statsList.length)
+    const compositeStats: CoreStats =
+      statsList.length > 0
+        ? statsList.reduce<CoreStats>(
+            (acc, s) => ({
+              power: acc.power + s.power / count,
+              resonance: acc.resonance + s.resonance / count,
+              wisdom: acc.wisdom + s.wisdom / count,
+              charisma: acc.charisma + s.charisma / count,
+              intuition: acc.intuition + s.intuition / count,
+              adaptability: acc.adaptability + s.adaptability / count,
+              vitality: acc.vitality + s.vitality / count,
+            }),
+            {
+              power: 0,
+              resonance: 0,
+              wisdom: 0,
+              charisma: 0,
+              intuition: 0,
+              adaptability: 0,
+              vitality: 0,
+            }
+          )
+        : getPlanetaryAgentStats('Sun', 'Leo', 15)
+
+    const ratedCouncil = rateStats(compositeStats)
+    const seals = earnedSeals(
+      evaluateSeals({
+        stats: compositeStats,
+        esmsBalances: { spirit: 85, essence: 80, matter: 65, substance: 70 },
+      })
+    )
+
+    return {
+      councilRating: {
+        ovr: ratedCouncil.ovr,
+        archetype: ratedCouncil.archetype,
+        seals,
+      },
+      participantRatings: byId,
+    }
+  }, [agents])
 
   const [messages, setMessages] = useState<ChatMessage[]>([])
   const [input, setInput] = useState('')
@@ -300,23 +355,42 @@ export default function TransitGroupChatClient({ sessionId, agents, transit }: P
           </div>
         </div>
 
+        {/* Combined Council Pentacle Vessel Rating */}
+        <div className="mb-4">
+          <VesselRatingRibbon
+            ovr={councilRating.ovr}
+            archetype={councilRating.archetype}
+            seals={councilRating.seals}
+            compact
+          />
+        </div>
+
         {/* Participants */}
         <div className="mb-4 flex flex-wrap gap-2">
-          {agents.map(a => (
-            <span
-              key={a.id}
-              className="flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-sm backdrop-blur-md"
-            >
-              <span
-                className="flex h-5 w-5 items-center justify-center rounded-full text-xs"
-                style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+          {agents.map(a => {
+            const pRating = participantRatings[a.id]
+            return (
+              <Link
+                key={a.id}
+                href={`/agents/${encodeURIComponent(a.planet || 'Sun')}/${encodeURIComponent(a.sign || 'Leo')}/${a.degree || 15}`}
+                className="flex items-center gap-2 rounded-full border border-white/10 bg-black/40 px-3 py-1.5 text-sm backdrop-blur-md transition-colors hover:border-amber-400/40"
               >
-                {a.planet?.[0] ?? '✦'}
-              </span>
-              <span className="font-medium">{a.name || `${a.planet} in ${a.sign}`}</span>
-              <span className="text-xs text-purple-300/60">{a.degree}°</span>
-            </span>
-          ))}
+                <span
+                  className="flex h-5 w-5 items-center justify-center rounded-full text-xs"
+                  style={{ backgroundColor: 'rgba(255,255,255,0.08)' }}
+                >
+                  {a.planet?.[0] ?? '✦'}
+                </span>
+                <span className="font-medium">{a.name || `${a.planet} in ${a.sign}`}</span>
+                <span className="text-xs text-purple-300/60">{a.degree}°</span>
+                {pRating && (
+                  <span className="rounded border border-amber-400/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                    PVR {pRating.ovr}
+                  </span>
+                )}
+              </Link>
+            )
+          })}
         </div>
 
         {/* Conversation */}
