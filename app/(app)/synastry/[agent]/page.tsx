@@ -2,13 +2,27 @@ import type { Metadata } from 'next'
 import Link from 'next/link'
 import { notFound } from 'next/navigation'
 import { cache } from 'react'
-import { ArrowLeft, Heart, MessageCircle, Sparkles, Stars, UserRound } from 'lucide-react'
+import { ArrowLeft, Heart, MessageCircle, Sparkles, Stars, Swords, UserRound } from 'lucide-react'
 
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { HISTORICAL_AGENTS } from '@/lib/agents/historical'
 import { resolveAnyAgent } from '@/lib/agents/resolve-any-agent'
+import { getPlanetaryAgentStats } from '@/lib/agents/planetary-agent-stats'
+import {
+  rateStats,
+  evaluateSeals,
+  earnedSeals,
+  computeZoneSynergies,
+  bestZoneId,
+  type CoreStats,
+} from '@/lib/agents/rating'
+import {
+  VesselRatingRibbon,
+  AlchemicalSealsCodex,
+  PentacleZoneSynergyPanel,
+} from '@/components/vessel/pentacle-rating-display'
 
 // Pre-render the known historical set and resolve the thousands of planetary,
 // lunar, and DB-backed crafted agents on demand.
@@ -78,9 +92,41 @@ export default async function SynastryAgentPage({ params }: SynastryAgentPagePro
     },
   ]
 
+  const sunPos =
+    agent.consciousness?.natalChart?.planets?.Sun ?? agent.consciousness?.natalChart?.planets?.sun
+  const fallbackStats = getPlanetaryAgentStats(
+    'Sun',
+    sunPos?.sign || 'Leo',
+    Math.round(sunPos?.degree ?? 15)
+  )
+  const sacredStats: CoreStats = agent.sacredStats
+    ? {
+        power: agent.sacredStats.power ?? fallbackStats.power,
+        resonance: agent.sacredStats.resonance ?? fallbackStats.resonance,
+        wisdom: agent.sacredStats.wisdom ?? fallbackStats.wisdom,
+        charisma: agent.sacredStats.charisma ?? fallbackStats.charisma,
+        intuition: agent.sacredStats.intuition ?? fallbackStats.intuition,
+        adaptability: agent.sacredStats.adaptability ?? fallbackStats.adaptability,
+        vitality: agent.sacredStats.vitality ?? fallbackStats.vitality,
+      }
+    : fallbackStats
+
+  const el = agent.consciousness?.alchemicalElements
+  const esmsBalances = {
+    spirit: Math.round((el?.spirit ?? 0.3) * 200),
+    essence: Math.round((el?.essence ?? 0.3) * 200),
+    matter: Math.round((el?.matter ?? 0.25) * 200),
+    substance: Math.round((el?.substance ?? 0.25) * 200),
+  }
+  const rated = rateStats(sacredStats)
+  const sealProgress = evaluateSeals({ stats: sacredStats, esmsBalances })
+  const seals = earnedSeals(sealProgress)
+  const zoneSynergies = computeZoneSynergies({ ratings: rated.ratings, seals })
+  const peakZoneId = bestZoneId({ ratings: rated.ratings, seals })
+
   return (
     <main className="min-h-screen bg-background">
-      <section className="border-b bg-muted/30">
+      <section className="border-b border-white/10 bg-[#0d1020]/70">
         <div className="container py-10">
           <Button variant="ghost" size="sm" asChild className="mb-6">
             <Link href="/gallery">
@@ -113,11 +159,24 @@ export default async function SynastryAgentPage({ params }: SynastryAgentPagePro
                 </p>
               </div>
 
-              <div className="flex flex-col gap-3 sm:flex-row">
+              <VesselRatingRibbon ovr={rated.ovr} archetype={rated.archetype} seals={seals} />
+
+              <div className="flex flex-wrap gap-3">
                 <Button asChild size="lg">
                   <Link href={`/chart-interpreter?type=synastry&agent=${encodedAgentId}`}>
                     <Heart className="mr-2 h-4 w-4" />
                     Open Synastry Workspace
+                  </Link>
+                </Button>
+                <Button
+                  variant="outline"
+                  asChild
+                  size="lg"
+                  className="border-amber-500/40 bg-amber-500/10 text-amber-200 hover:bg-amber-500/20"
+                >
+                  <Link href="/arena">
+                    <Swords className="mr-2 h-4 w-4" />
+                    14-Pillar Synastry Arena
                   </Link>
                 </Button>
                 <Button variant="outline" asChild size="lg">
@@ -135,7 +194,7 @@ export default async function SynastryAgentPage({ params }: SynastryAgentPagePro
               </div>
             </div>
 
-            <Card>
+            <Card className="border-white/10 bg-[#0d1020]/90">
               <CardHeader>
                 <CardTitle className="flex items-center gap-2 text-lg">
                   <Sparkles className="h-5 w-5" style={{ color: accent }} />
@@ -143,6 +202,12 @@ export default async function SynastryAgentPage({ params }: SynastryAgentPagePro
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4 text-sm">
+                <div className="flex justify-between gap-4">
+                  <span className="text-muted-foreground">Pentacle Vessel Rating</span>
+                  <span className="font-mono font-bold text-amber-300">
+                    {rated.ovr} PVR · {rated.archetype.title}
+                  </span>
+                </div>
                 <div className="flex justify-between gap-4">
                   <span className="text-muted-foreground">Resonance Score</span>
                   <span className="font-medium">{percent(resonanceScore)}</span>
@@ -167,10 +232,10 @@ export default async function SynastryAgentPage({ params }: SynastryAgentPagePro
         </div>
       </section>
 
-      <section className="container py-8">
+      <section className="container py-8 space-y-6">
         <div className="grid gap-4 md:grid-cols-3">
           {highlights.map(item => (
-            <Card key={item.label}>
+            <Card key={item.label} className="border-white/10 bg-[#0d1020]/90">
               <CardHeader>
                 <CardTitle className="text-base">{item.label}</CardTitle>
               </CardHeader>
@@ -181,8 +246,13 @@ export default async function SynastryAgentPage({ params }: SynastryAgentPagePro
           ))}
         </div>
 
+        <div className="grid gap-6 lg:grid-cols-2">
+          <AlchemicalSealsCodex sealProgress={sealProgress} />
+          <PentacleZoneSynergyPanel zoneSynergies={zoneSynergies} bestZoneId={peakZoneId} />
+        </div>
+
         {wisdomDomains.length > 0 && (
-          <Card className="mt-6">
+          <Card className="border-white/10 bg-[#0d1020]/90">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-lg">
                 <Stars className="h-5 w-5" style={{ color: accent }} />
@@ -192,7 +262,7 @@ export default async function SynastryAgentPage({ params }: SynastryAgentPagePro
             <CardContent>
               <div className="flex flex-wrap gap-2">
                 {wisdomDomains.map(domain => (
-                  <Badge key={domain} variant="outline">
+                  <Badge key={domain} variant="outline" className="border-white/15 bg-white/[0.03]">
                     {domain}
                   </Badge>
                 ))}

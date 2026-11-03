@@ -1,19 +1,28 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
 import { useParams } from 'next/navigation'
 import Link from 'next/link'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
-import { ArrowLeft, MessageCircle, Sparkles, TrendingUp } from 'lucide-react'
+import { ArrowLeft, MessageCircle, Sparkles, TrendingUp, UserRound } from 'lucide-react'
 import { RAGToggle, SourceCitations, RAGFeedbackWidget, type RAGSource } from '@/components/rag'
 import { ragAnalytics } from '@/lib/rag/rag-analytics'
 import { detectAmbiguousQuery } from '@/lib/rag/rag-quality'
 import WeeklyMenuPlanner from '@/components/misc/weekly-menu-planner'
 import { AiGeneratedPill } from '@/components/ui/ai-generated-pill'
 import { AiDisclaimer } from '@/components/ui/ai-disclaimer'
+import { getPlanetaryAgentStats } from '@/lib/agents/planetary-agent-stats'
+import {
+  rateStats,
+  evaluateSeals,
+  earnedSeals,
+  type AlchemicalSeal,
+  type VesselArchetype,
+} from '@/lib/agents/rating'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
 
 type Message = {
   role: 'user' | 'agent'
@@ -54,6 +63,47 @@ export default function HistoricalAgentChatPage() {
   const [ragEnabled, setRagEnabled] = useState(true) // RAG enabled by default
   const [level, setLevel] = useState<number | null>(null)
   const [showMenuPlanner, setShowMenuPlanner] = useState(false)
+  const [liveRating, setLiveRating] = useState<{
+    ovr: number
+    archetype: VesselArchetype
+    seals: AlchemicalSeal[]
+  } | null>(null)
+
+  const baselineRating = useMemo(() => {
+    const signs = [
+      'Aries',
+      'Taurus',
+      'Gemini',
+      'Cancer',
+      'Leo',
+      'Virgo',
+      'Libra',
+      'Scorpio',
+      'Sagittarius',
+      'Capricorn',
+      'Aquarius',
+      'Pisces',
+    ]
+    let hash = 0
+    for (let i = 0; i < agentId.length; i++) {
+      hash = (hash * 31 + agentId.charCodeAt(i)) >>> 0
+    }
+    const sign = signs[hash % signs.length]
+    const degree = (hash % 29) + 1
+    const stats = getPlanetaryAgentStats('Sun', sign, degree)
+    const rated = rateStats(stats)
+    const seals = earnedSeals(
+      evaluateSeals({
+        stats,
+        esmsBalances: { spirit: 80, essence: 70, matter: 55, substance: 60 },
+      })
+    )
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+    }
+  }, [agentId])
 
   // Static agent mapping to avoid server-side imports
   useEffect(() => {
@@ -114,10 +164,22 @@ export default function HistoricalAgentChatPage() {
         if (!cancelled && d && typeof d.level === 'number') setLevel(d.level)
       })
       .catch(() => {})
+    fetch(`/api/agents/rating?agentId=${encodeURIComponent(agentId)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(d => {
+        if (!cancelled && d && typeof d.ovr === 'number') {
+          setLiveRating({
+            ovr: d.ovr,
+            archetype: d.archetype?.title ? d.archetype : baselineRating.archetype,
+            seals: Array.isArray(d.seals) ? d.seals : baselineRating.seals,
+          })
+        }
+      })
+      .catch(() => {})
     return () => {
       cancelled = true
     }
-  }, [agentId])
+  }, [agentId, baselineRating])
 
   useEffect(() => {
     // Use crypto.randomUUID() if available, fallback to manual UUID generation
@@ -385,14 +447,16 @@ export default function HistoricalAgentChatPage() {
     }
   }
 
+  const activeRating = liveRating ?? baselineRating
+
   if (agentLoading) {
     return (
       <div className="container py-8 max-w-4xl mx-auto">
-        <Card>
+        <Card className="border-white/10 bg-[#0d1020]/90">
           <CardContent className="p-8 text-center">
             <div className="animate-pulse">
-              <div className="h-8 bg-gray-200 rounded w-3/4 mx-auto mb-4"></div>
-              <div className="h-4 bg-gray-200 rounded w-1/2 mx-auto"></div>
+              <div className="h-8 bg-white/10 rounded w-3/4 mx-auto mb-4"></div>
+              <div className="h-4 bg-white/10 rounded w-1/2 mx-auto"></div>
             </div>
             <p className="mt-4 text-muted-foreground">Loading agent consciousness...</p>
           </CardContent>
@@ -404,7 +468,7 @@ export default function HistoricalAgentChatPage() {
   if (!agent) {
     return (
       <div className="container py-8">
-        <Card>
+        <Card className="border-white/10 bg-[#0d1020]/90">
           <CardContent className="p-8 text-center">
             <h1 className="text-2xl font-bold mb-4">Agent Not Found</h1>
             <p className="mb-4">The requested historical agent could not be found.</p>
@@ -418,15 +482,15 @@ export default function HistoricalAgentChatPage() {
   }
 
   return (
-    <div className="container py-8 max-w-4xl mx-auto">
-      <div className="flex items-center gap-4 mb-6">
+    <div className="container py-8 max-w-4xl mx-auto space-y-4">
+      <div className="flex flex-wrap items-center gap-4">
         <Link href="/gallery">
           <Button variant="outline" size="sm">
             <ArrowLeft className="h-4 w-4 mr-2" />
             Back to Gallery
           </Button>
         </Link>
-        <div className="flex-1">
+        <div className="flex-1 min-w-[200px]">
           <h1 className="flex items-center gap-2 text-2xl font-bold">
             {agent.name}
             {typeof level === 'number' && (
@@ -437,6 +501,13 @@ export default function HistoricalAgentChatPage() {
           </h1>
           <p className="text-muted-foreground">{agent.title}</p>
         </div>
+
+        <Link href={`/agent/${encodeURIComponent(agent.id)}`}>
+          <Button variant="outline" size="sm" className="border-white/15 bg-white/[0.03]">
+            <UserRound className="h-4 w-4 mr-2 text-amber-400" />
+            Vessel Codex
+          </Button>
+        </Link>
 
         {/* RAG Toggle */}
         <RAGToggle enabled={ragEnabled} onToggle={setRagEnabled} size="sm" showStatus />
@@ -455,11 +526,11 @@ export default function HistoricalAgentChatPage() {
         {/* Moment Synergy Display */}
         {momentSynergy && (
           <div className="flex flex-col items-end gap-1">
-            <div className="flex items-center gap-2 px-3 py-1.5 bg-gradient-to-r from-purple-50 to-blue-50 dark:from-purple-950/30 dark:to-blue-950/30 rounded-lg border border-purple-200 dark:border-purple-800">
-              <Sparkles className="h-4 w-4 text-purple-600" />
+            <div className="flex items-center gap-2 px-3 py-1.5 bg-purple-950/30 rounded-lg border border-purple-500/30">
+              <Sparkles className="h-4 w-4 text-purple-400" />
               <span className="text-sm font-medium">Moment Synergy:</span>
               <span
-                className={`text-lg font-bold ${momentSynergy.score >= 75 ? 'text-green-600' : momentSynergy.score >= 50 ? 'text-blue-600' : 'text-orange-600'}`}
+                className={`text-lg font-bold ${momentSynergy.score >= 75 ? 'text-emerald-400' : momentSynergy.score >= 50 ? 'text-sky-400' : 'text-amber-400'}`}
               >
                 {momentSynergy.score}%
               </span>
@@ -468,24 +539,29 @@ export default function HistoricalAgentChatPage() {
               {momentSynergy.description}
             </div>
             <div className="flex gap-2 text-xs">
-              <span className="text-green-600">✓ {momentSynergy.harmonicCount} harmonic</span>
-              <span className="text-orange-600">
-                ⚠ {momentSynergy.challengingCount} challenging
-              </span>
+              <span className="text-emerald-400">✓ {momentSynergy.harmonicCount} harmonic</span>
+              <span className="text-amber-400">⚠ {momentSynergy.challengingCount} challenging</span>
             </div>
           </div>
         )}
       </div>
 
-      <Card>
+      <VesselRatingRibbon
+        ovr={activeRating.ovr}
+        archetype={activeRating.archetype}
+        seals={activeRating.seals}
+        compact
+      />
+
+      <Card className="border-white/10 bg-[#0d1020]/90">
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
-            <MessageCircle className="h-5 w-5" />
+            <MessageCircle className="h-5 w-5 text-amber-400" />
             Conversation with {agent.name}
           </CardTitle>
         </CardHeader>
         <CardContent>
-          <div className="h-[500px] overflow-y-auto border rounded-lg p-4 mb-4 bg-muted/20">
+          <div className="h-[500px] overflow-y-auto border border-white/10 rounded-lg p-4 mb-4 bg-black/30">
             {messages.length === 0 ? (
               <div className="text-center text-muted-foreground h-full flex flex-col items-center justify-center">
                 <div className="text-6xl mb-4">{agent.appearance?.symbol || '👤'}</div>
