@@ -33,6 +33,14 @@ import {
 } from 'lucide-react'
 import Link from 'next/link'
 import { getPlanetaryAgentStats } from '@/lib/agents/planetary-agent-stats'
+import {
+  rateStats,
+  evaluateSeals,
+  earnedSeals,
+  computeZoneSynergies,
+  bestZoneId,
+} from '@/lib/agents/rating'
+import { VesselRatingRibbon, SEAL_TIER_STYLES } from '@/components/vessel/pentacle-rating-display'
 
 interface Message {
   role: 'user' | 'agent'
@@ -167,12 +175,29 @@ export default function DegreeAgentClient({
     })
   }
   const stats = getPlanetaryAgentStats(planet, sign, degree)
+  const ratingSummary = (() => {
+    const base = rateStats(stats)
+    const sealProgress = evaluateSeals({
+      stats,
+      esmsBalances: {
+        spirit: Math.round(stats.alchemicalContributions.spirit * 1000),
+        essence: Math.round(stats.alchemicalContributions.essence * 1000),
+        matter: Math.round(stats.alchemicalContributions.matter * 1000),
+        substance: Math.round(stats.alchemicalContributions.substance * 1000),
+      },
+    })
+    const seals = earnedSeals(sealProgress)
+    const zoneSynergies = computeZoneSynergies({ ratings: base.ratings, seals })
+    const topZoneId = bestZoneId({ ratings: base.ratings, seals })
+    const bestZone = zoneSynergies.find(z => z.zoneId === topZoneId) ?? zoneSynergies[0]
+    return { ...base, sealProgress, seals, bestZone }
+  })()
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0c0319] via-[#1a0838] to-[#0c0319] text-white selection:bg-purple-500/30">
       <div className="container py-8 max-w-7xl mx-auto relative z-10">
         {/* Header */}
-        <div className="flex items-center justify-between mb-8">
+        <div className="flex flex-wrap items-center justify-between gap-4 mb-8">
           <div className="flex items-center gap-4">
             <Link href="/planetary-agents">
               <Button
@@ -199,6 +224,19 @@ export default function DegreeAgentClient({
                 <p className="text-white/60 font-light">Degree-Specific Planetary Consciousness</p>
               </div>
             </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <VesselRatingRibbon
+              ovr={ratingSummary.ovr}
+              archetype={ratingSummary.archetype}
+              seals={ratingSummary.seals}
+            />
+            {ratingSummary.bestZone && (
+              <span className="rounded-md border border-emerald-400/30 bg-emerald-500/10 px-2.5 py-1 font-mono text-xs text-emerald-200">
+                Best Zone: {ratingSummary.bestZone.label} ·{' '}
+                {ratingSummary.bestZone.synergy.toFixed(1)} ECR
+              </span>
+            )}
           </div>
         </div>
 
@@ -299,12 +337,29 @@ export default function DegreeAgentClient({
             <Card className="bg-black/40 backdrop-blur-md border-white/10 overflow-hidden relative group">
               <div className="absolute -top-12 -right-12 w-32 h-32 border border-white/5 rounded-full"></div>
               <CardHeader className="pb-3 border-b border-white/5">
-                <CardTitle className="flex items-center gap-2 text-white">
-                  <Activity className="h-5 w-5 text-amber-400" />
-                  Sacred Profile
+                <CardTitle className="flex items-center justify-between gap-2 text-white">
+                  <span className="flex items-center gap-2">
+                    <Activity className="h-5 w-5 text-amber-400" />
+                    Sacred Profile
+                  </span>
+                  <span className="rounded border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 font-mono text-xs font-bold text-amber-200">
+                    PVR {ratingSummary.ovr}
+                  </span>
                 </CardTitle>
               </CardHeader>
               <CardContent className="pt-4 space-y-4">
+                {ratingSummary.seals.length > 0 && (
+                  <div className="flex flex-wrap gap-1.5 pb-2 border-b border-white/10">
+                    {ratingSummary.seals.map(seal => (
+                      <span
+                        key={seal.id}
+                        className={`rounded border px-2 py-0.5 font-mono text-[10px] font-semibold ${SEAL_TIER_STYLES[seal.tier].badge}`}
+                      >
+                        {seal.tier} · {seal.name} ({seal.multiplier.toFixed(2)}x)
+                      </span>
+                    ))}
+                  </div>
+                )}
                 <div className="space-y-3">
                   <div>
                     <div className="flex justify-between text-xs mb-1 text-white/80">

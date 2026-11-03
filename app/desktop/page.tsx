@@ -31,6 +31,8 @@ import {
 import { ELEMENT_MAPPING } from '@/components/philosophers-stone-config'
 import { ALCHM_DESKTOP_AGENT_UNLOCK_LABEL } from '@/lib/desktop-download'
 import { hasTauriInvokeRuntime, requestDesktopSidecar } from '@/lib/desktop-sidecar'
+import { rateStats } from '@/lib/agents/rating'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
 
 type DesktopView = 'onboarding' | 'chat' | 'agents' | 'ledger' | 'tray'
 
@@ -54,6 +56,42 @@ interface DesktopGalleryAgent {
     matter: number
     substance: number
   }
+}
+
+const MCP_V140_TOOLS = [
+  'get_live_transits',
+  'calculate_natal_chart',
+  'compute_synastry',
+  'compute_triplicate_synastry',
+  'query_agent_persona',
+  'chat_with_agent',
+  'create_evidence_snapshot',
+  'submit_recipe_reflection',
+] as const
+
+const MCP_CONFIG_SNIPPET = `{
+  "mcpServers": {
+    "alchm-agents": {
+      "command": "npx",
+      "args": ["-y", "@alchm/mcp-server@1.4.0"],
+      "env": {
+        "ALCHM_AGENTS_URL": "https://api.agents.alchm.kitchen"
+      }
+    }
+  }
+}`
+
+function rateDesktopAgent(agent: DesktopGalleryAgent) {
+  const { spirit, essence, matter, substance } = agent.stats
+  return rateStats({
+    power: Math.round(spirit * 0.65 + matter * 0.35),
+    resonance: Math.round(essence * 0.7 + spirit * 0.3),
+    wisdom: Math.round(substance * 0.65 + spirit * 0.35),
+    charisma: Math.round(spirit * 0.55 + essence * 0.45),
+    intuition: Math.round(essence * 0.75 + substance * 0.25),
+    adaptability: Math.round(substance * 0.6 + essence * 0.4),
+    vitality: Math.round(matter * 0.7 + spirit * 0.3),
+  })
 }
 
 interface ModelCatalogEntry {
@@ -1618,17 +1656,74 @@ export default function App() {
                 </button>
               </div>
 
+              {/* @alchm/mcp-server@1.4.0 Protocol & Connect Panel */}
+              <div className="mb-8 rounded-2xl border border-amber-400/25 bg-zinc-950/75 p-5 space-y-4">
+                <div className="flex flex-wrap items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="rounded-md border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-amber-200">
+                        @alchm/mcp-server@1.4.0
+                      </span>
+                      <span className="font-mono text-xs font-semibold text-white">
+                        Agent Protocol &amp; MCP Bridge (8 Canonical Tools)
+                      </span>
+                    </div>
+                    <p className="mt-1 text-xs text-zinc-400">
+                      Connect Claude Desktop, Cursor, or Antigravity to the live Planetary Agents
+                      MCP server with triplicate synastry, evidence snapshots, and recipe
+                      reflections.
+                    </p>
+                  </div>
+                  <div className="flex flex-wrap items-center gap-2">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (typeof navigator !== 'undefined' && navigator.clipboard) {
+                          void navigator.clipboard.writeText(MCP_CONFIG_SNIPPET)
+                        }
+                      }}
+                      className="rounded-lg border border-amber-400/35 bg-amber-400/10 px-3 py-1.5 font-mono text-[11px] font-semibold text-amber-200 hover:bg-amber-400/20 transition-colors"
+                    >
+                      Copy mcp.json Config
+                    </button>
+                    <Link
+                      href="/erc8004"
+                      className="rounded-lg border border-emerald-400/30 bg-emerald-500/10 px-3 py-1.5 font-mono text-[11px] font-semibold text-emerald-200 hover:bg-emerald-500/20 transition-colors"
+                    >
+                      ERC-8004 Leaderboard
+                    </Link>
+                    <Link
+                      href="/gallery"
+                      className="rounded-lg border border-purple-400/30 bg-purple-500/10 px-3 py-1.5 font-mono text-[11px] font-semibold text-purple-200 hover:bg-purple-500/20 transition-colors"
+                    >
+                      Full Rated Vault
+                    </Link>
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-1.5">
+                  {MCP_V140_TOOLS.map(tool => (
+                    <span
+                      key={tool}
+                      className="rounded border border-white/10 bg-white/[0.03] px-2 py-0.5 font-mono text-[10px] text-zinc-300"
+                    >
+                      {tool}
+                    </span>
+                  ))}
+                </div>
+              </div>
+
               {loadingAgents ? (
                 <div className="text-center text-zinc-400 py-12">Loading local roster...</div>
               ) : (
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6">
                   {galleryAgents.map(agent => {
                     const isPremium = agent.tier === 'premium'
+                    const pvr = rateDesktopAgent(agent)
 
                     return (
                       <div
                         key={agent.id}
-                        className="group p-6 rounded-2xl bg-zinc-950/60 border border-purple-900/10 hover:border-purple-500/30 transition-all duration-300 relative overflow-hidden flex flex-col justify-between h-96 shadow-[0_0_20px_rgba(0,0,0,0.3)] hover:shadow-[0_0_25px_rgba(139,92,246,0.15)] hover:-translate-y-1"
+                        className="group p-6 rounded-2xl bg-zinc-950/60 border border-purple-900/10 hover:border-purple-500/30 transition-all duration-300 relative overflow-hidden flex flex-col justify-between min-h-[25rem] shadow-[0_0_20px_rgba(0,0,0,0.3)] hover:shadow-[0_0_25px_rgba(139,92,246,0.15)] hover:-translate-y-1"
                       >
                         <div
                           className={`absolute -top-10 -right-10 w-24 h-24 rounded-full filter blur-xl opacity-25 group-hover:opacity-40 transition-opacity ${
@@ -1642,7 +1737,7 @@ export default function App() {
                           }`}
                         />
 
-                        <div className="space-y-4">
+                        <div className="space-y-3">
                           <div className="flex justify-between items-center">
                             <span className="text-[10px] uppercase font-bold text-zinc-500 font-mono tracking-wider">
                               {agent.era}
@@ -1679,6 +1774,8 @@ export default function App() {
                               <p className="text-[10px] text-zinc-500">{agent.title}</p>
                             </div>
                           </div>
+
+                          <VesselRatingRibbon ovr={pvr.ovr} archetype={pvr.archetype} compact />
 
                           <blockquote className="text-zinc-400 italic text-xs border-l border-zinc-800 pl-3 leading-relaxed mt-2">
                             "{agent.quote}"

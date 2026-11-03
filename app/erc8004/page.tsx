@@ -11,6 +11,7 @@
  */
 
 import { useCallback, useEffect, useState } from 'react'
+import Link from 'next/link'
 import { Bot, ExternalLink, RefreshCw, ShieldCheck, Star, Zap } from 'lucide-react'
 
 interface LeaderboardEntry {
@@ -78,7 +79,7 @@ export default function Erc8004LeaderboardPage() {
             <Zap className="h-3.5 w-3.5" /> = accepts x402 payments
           </span>
         </p>
-        <div className="mt-4 flex items-center gap-3">
+        <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
             onClick={() => void load()}
             className="inline-flex items-center gap-2 rounded-lg bg-emerald-600/90 px-3 py-1.5 text-sm font-medium hover:bg-emerald-500"
@@ -96,6 +97,18 @@ export default function Erc8004LeaderboardPage() {
               </option>
             ))}
           </select>
+          <Link
+            href="/gallery"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-amber-400/35 bg-amber-400/10 px-3 py-1.5 font-mono text-xs font-semibold text-amber-200 hover:bg-amber-400/20 transition-colors"
+          >
+            Rated Entities Vault (PVR 25–99)
+          </Link>
+          <Link
+            href="/desktop"
+            className="inline-flex items-center gap-1.5 rounded-lg border border-violet-400/35 bg-violet-500/10 px-3 py-1.5 font-mono text-xs font-semibold text-violet-200 hover:bg-violet-500/20 transition-colors"
+          >
+            @alchm/mcp-server@1.4.0 Bridge
+          </Link>
         </div>
       </header>
 

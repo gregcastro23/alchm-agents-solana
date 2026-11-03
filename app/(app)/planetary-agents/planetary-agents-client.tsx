@@ -10,6 +10,8 @@ import { getPlanetaryDignity } from '@/lib/astrological-data'
 import { MoonPhaseAgentChat } from '@/components/misc/moon-phase-agent-chat'
 import UnifiedMultiAgentChat from '@/components/misc/unified-multi-agent-chat'
 import { getPlanetaryAgentStats } from '@/lib/agents/planetary-agent-stats'
+import { rateStats, evaluateSeals, earnedSeals } from '@/lib/agents/rating'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
 
 import { createDefaultPlanetaryConfigs } from '@/lib/planetary-config-helper'
 import { PLANETARY_COUNCIL_PRESETS, type PlanetaryCouncilPreset } from '@/lib/council-presets'
@@ -106,6 +108,23 @@ function PlanetaryAgentsContent({ initialPositions }: PlanetaryAgentsClientProps
       const dignity = sign !== '—' ? getPlanetaryDignity(planet, sign) : 'peregrine'
       const dignityLabel = getDignityLabel(dignity)
       const stats = degreeNum !== null ? getPlanetaryAgentStats(planet, sign, degreeNum) : null
+      const ratingSummary = stats
+        ? (() => {
+            const base = rateStats(stats)
+            const seals = earnedSeals(
+              evaluateSeals({
+                stats,
+                esmsBalances: {
+                  spirit: Math.round(stats.alchemicalContributions.spirit * 1000),
+                  essence: Math.round(stats.alchemicalContributions.essence * 1000),
+                  matter: Math.round(stats.alchemicalContributions.matter * 1000),
+                  substance: Math.round(stats.alchemicalContributions.substance * 1000),
+                },
+              })
+            )
+            return { ...base, seals }
+          })()
+        : null
       const href =
         degreeNum !== null
           ? `/agents/${encodeURIComponent(planet)}/${encodeURIComponent(sign)}/${degreeNum}`
@@ -156,7 +175,18 @@ function PlanetaryAgentsContent({ initialPositions }: PlanetaryAgentsClientProps
 
               {/* Sacred Stats Mini View */}
               {stats && (
-                <div className="pt-2 mt-2 border-t border-white/10">
+                <div className="pt-2 mt-2 border-t border-white/10 space-y-2.5">
+                  {ratingSummary && (
+                    <div className="flex justify-center">
+                      <VesselRatingRibbon
+                        ovr={ratingSummary.ovr}
+                        archetype={ratingSummary.archetype}
+                        seals={ratingSummary.seals}
+                        compact
+                        className="justify-center"
+                      />
+                    </div>
+                  )}
                   <div className="grid grid-cols-2 gap-y-2 gap-x-1 text-xs text-left mb-3">
                     <div className="flex items-center gap-1.5">
                       <Zap className="w-3 h-3 text-amber-400" />
