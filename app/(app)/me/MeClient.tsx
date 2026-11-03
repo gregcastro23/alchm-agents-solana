@@ -9,6 +9,19 @@ import type { ProfileYieldState } from '@/lib/profile-yield'
 import { ProfileYieldPanel } from '@/components/profile/ProfileYieldPanel'
 import { QuickChartAttachmentGenerator } from '@/components/landing/quick-chart-attachment-generator'
 import { AlchmVesselWidget } from '@/components/AlchmVesselWidget'
+import { getPlanetaryAgentStats } from '@/lib/agents/planetary-agent-stats'
+import {
+  rateStats,
+  evaluateSeals,
+  earnedSeals,
+  computeZoneSynergies,
+  bestZoneId,
+} from '@/lib/agents/rating'
+import {
+  VesselRatingRibbon,
+  AlchemicalSealsCodex,
+  PentacleZoneSynergyPanel,
+} from '@/components/vessel/pentacle-rating-display'
 import {
   Compass,
   Users,
@@ -558,6 +571,87 @@ export function MeClient({
     },
   ]
 
+  // Compute Personal Natal Pentacle Rating (PVR 25-99, 7 Seals, 11-Zone ECR)
+  const planetWeights: Record<string, number> = {
+    Sun: 0.25,
+    Moon: 0.2,
+    Mercury: 0.15,
+    Venus: 0.12,
+    Mars: 0.12,
+    Jupiter: 0.08,
+    Saturn: 0.08,
+  }
+  const personalStats = codexPlanets.reduce(
+    (acc, item) => {
+      const deg = Math.max(1, Math.min(29, Math.floor(parseFloat(item.degree) || 15)))
+      const st = getPlanetaryAgentStats(item.body, item.sign, deg)
+      const w = planetWeights[item.body] ?? 0.1
+      acc.power += st.power * w
+      acc.resonance += st.resonance * w
+      acc.wisdom += st.wisdom * w
+      acc.charisma += st.charisma * w
+      acc.intuition += st.intuition * w
+      acc.adaptability += st.adaptability * w
+      acc.vitality += st.vitality * w
+      return acc
+    },
+    {
+      power: 0,
+      resonance: 0,
+      wisdom: 0,
+      charisma: 0,
+      intuition: 0,
+      adaptability: 0,
+      vitality: 0,
+    }
+  )
+  const personalRated = rateStats({
+    power: Math.round(personalStats.power),
+    resonance: Math.round(personalStats.resonance),
+    wisdom: Math.round(personalStats.wisdom),
+    charisma: Math.round(personalStats.charisma),
+    intuition: Math.round(personalStats.intuition),
+    adaptability: Math.round(personalStats.adaptability),
+    vitality: Math.round(personalStats.vitality),
+  })
+  const hasLiveWallet = Boolean(
+    wallet?.balances &&
+    wallet.balances.spirit +
+      wallet.balances.essence +
+      wallet.balances.matter +
+      wallet.balances.substance >
+      0
+  )
+  const personalEsms = hasLiveWallet
+    ? wallet!.balances
+    : {
+        spirit: Math.round(spirit * 12 + 25),
+        essence: Math.round(essence * 12 + 25),
+        matter: Math.round(matter * 12 + 25),
+        substance: Math.round(substance * 12 + 25),
+      }
+  const personalSealProgress = evaluateSeals({
+    stats: {
+      power: Math.round(personalStats.power),
+      resonance: Math.round(personalStats.resonance),
+      wisdom: Math.round(personalStats.wisdom),
+      charisma: Math.round(personalStats.charisma),
+      intuition: Math.round(personalStats.intuition),
+      adaptability: Math.round(personalStats.adaptability),
+      vitality: Math.round(personalStats.vitality),
+    },
+    esmsBalances: personalEsms,
+  })
+  const personalSeals = earnedSeals(personalSealProgress)
+  const personalZoneSynergies = computeZoneSynergies({
+    ratings: personalRated.ratings,
+    seals: personalSeals,
+  })
+  const personalBestZoneId = bestZoneId({
+    ratings: personalRated.ratings,
+    seals: personalSeals,
+  })
+
   return (
     <div className="me-page" style={zodiacCssVars}>
       {/* Starfield Layer */}
@@ -628,6 +722,13 @@ export function MeClient({
               <div className="font-mono text-xs text-slate-400 flex items-center justify-center md:justify-start gap-2">
                 <span className="text-cyan-400">⚡</span> Phi Axis Index:{' '}
                 {monicaConstant.toFixed(3)} · {getConsciousnessLevel(monicaConstant)} Level
+              </div>
+              <div className="pt-1 flex justify-center md:justify-start">
+                <VesselRatingRibbon
+                  ovr={personalRated.ovr}
+                  archetype={personalRated.archetype}
+                  seals={personalSeals}
+                />
               </div>
             </div>
           </div>
@@ -901,28 +1002,58 @@ export function MeClient({
                   : activeCodexTab === 'angles'
                     ? codexAngles
                     : codexKarmic
-                ).map((item, idx) => (
-                  <div
-                    key={idx}
-                    className="flex items-center justify-between p-3 bg-white/[0.02] border border-white/[0.05] rounded-xl hover:bg-white/[0.04] transition-all group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center text-sm bg-white/[0.03]">
-                        {item.symbol}
-                      </div>
-                      <div>
-                        <div className="font-mono text-xs text-white">
-                          {item.body}{' '}
-                          <span className="text-slate-400 font-normal">
-                            {item.sign} {item.degree}
-                          </span>
+                ).map((item, idx) => {
+                  const isPlanetTab = activeCodexTab === 'planets'
+                  const degNum = Math.max(
+                    1,
+                    Math.min(29, Math.floor(parseFloat(item.degree) || 15))
+                  )
+                  const planetRating = isPlanetTab
+                    ? rateStats(getPlanetaryAgentStats(item.body, item.sign, degNum))
+                    : null
+                  const rowContent = (
+                    <>
+                      <div className="flex items-center gap-3">
+                        <div className="w-8 h-8 rounded-full border border-white/10 flex items-center justify-center text-sm bg-white/[0.03]">
+                          {item.symbol}
                         </div>
-                        <div className="font-mono text-[9px] text-slate-500">{item.house}</div>
+                        <div>
+                          <div className="font-mono text-xs text-white group-hover:text-cyan-300 transition-colors">
+                            {item.body}{' '}
+                            <span className="text-slate-400 font-normal">
+                              {item.sign} {item.degree}
+                            </span>
+                          </div>
+                          <div className="font-mono text-[9px] text-slate-500">{item.house}</div>
+                        </div>
                       </div>
+                      <div className="flex items-center gap-1.5">
+                        {planetRating && (
+                          <span className="px-1.5 py-0.5 rounded border border-amber-400/35 bg-amber-400/10 font-mono text-[10px] font-bold text-amber-200">
+                            PVR {planetRating.ovr}
+                          </span>
+                        )}
+                        <DignityBadge dignity={item.dignity as EssentialDignity} />
+                      </div>
+                    </>
+                  )
+                  return isPlanetTab ? (
+                    <Link
+                      key={idx}
+                      href={`/agents/${encodeURIComponent(item.body)}/${encodeURIComponent(item.sign)}/${degNum}`}
+                      className="flex items-center justify-between p-3 bg-white/[0.02] border border-white/[0.05] rounded-xl hover:bg-white/[0.05] hover:border-cyan-400/30 transition-all group"
+                    >
+                      {rowContent}
+                    </Link>
+                  ) : (
+                    <div
+                      key={idx}
+                      className="flex items-center justify-between p-3 bg-white/[0.02] border border-white/[0.05] rounded-xl hover:bg-white/[0.04] transition-all group"
+                    >
+                      {rowContent}
                     </div>
-                    <DignityBadge dignity={item.dignity as EssentialDignity} />
-                  </div>
-                ))}
+                  )
+                })}
               </div>
 
               <Link
@@ -934,6 +1065,18 @@ export function MeClient({
             </div>
           </section>
         </div>
+
+        {/* Personal Natal Pentacle Rating, 7 Alchemical Seals & 11-Zone ECR */}
+        <section className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          <AlchemicalSealsCodex
+            sealProgress={personalSealProgress}
+            esmsSource={hasLiveWallet ? 'Live ESMS Treasury' : 'Natal Alchemical Reserves'}
+          />
+          <PentacleZoneSynergyPanel
+            zoneSynergies={personalZoneSynergies}
+            bestZoneId={personalBestZoneId}
+          />
+        </section>
       </div>
 
       <ProfileYieldPanel initialWallet={wallet} />

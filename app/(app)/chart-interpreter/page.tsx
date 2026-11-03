@@ -2,7 +2,8 @@
 
 import type React from 'react'
 
-import { useState, useEffect } from 'react'
+import { useState, useEffect, useMemo } from 'react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -12,7 +13,19 @@ import { Badge } from '@/components/ui/badge'
 import { ScrollArea } from '@/components/ui/scroll-area'
 import { Separator } from '@/components/ui/separator'
 import { Alert, AlertDescription } from '@/components/ui/alert'
-import { Loader2, Star, Calendar, MapPin, Clock, Download, Save, Zap, Heart } from 'lucide-react'
+import {
+  Loader2,
+  Star,
+  Calendar,
+  MapPin,
+  Clock,
+  Download,
+  Save,
+  Zap,
+  Heart,
+  Shield,
+  Sparkles,
+} from 'lucide-react'
 import CircularNatalHoroscope from '@/components/charts/circular-natal-horoscope'
 import EnhancedChartDisplay from '@/components/charts/enhanced-chart-display'
 import QuickChartInput from '@/components/charts/quick-chart-input'
@@ -20,6 +33,15 @@ import SavedChartsManager from '@/components/charts/saved-charts-manager'
 import AspectGrid from '@/components/charts/aspect-grid'
 import { usePlanetaryPositions } from '@/hooks/usePlanetaryPositions'
 import { SavedChart } from '@/hooks/useSavedCharts'
+import { getPlanetaryAgentStats } from '@/lib/agents/planetary-agent-stats'
+import {
+  rateStats,
+  evaluateSeals,
+  earnedSeals,
+  computeZoneSynergies,
+  bestZoneId,
+} from '@/lib/agents/rating'
+import { VesselRatingRibbon, SEAL_TIER_STYLES } from '@/components/vessel/pentacle-rating-display'
 
 type ChartType = 'birth' | 'current' | 'synastry'
 
@@ -283,14 +305,67 @@ export default function ChartInterpreterPage() {
     }
   }, [chartData.chartType, planetaryPositions])
 
+  const chartRatingSummary = useMemo(() => {
+    const entries = Object.entries(chartData.planets)
+    if (entries.length === 0) return null
+    const totals = {
+      power: 0,
+      resonance: 0,
+      wisdom: 0,
+      charisma: 0,
+      intuition: 0,
+      adaptability: 0,
+      vitality: 0,
+    }
+    for (const [planetKey, pos] of entries) {
+      const planetName = planetKey.charAt(0).toUpperCase() + planetKey.slice(1)
+      const deg = Math.max(1, Math.min(29, Number(pos.degree) || 15))
+      const st = getPlanetaryAgentStats(planetName, pos.sign || 'Aries', deg)
+      totals.power += st.power
+      totals.resonance += st.resonance
+      totals.wisdom += st.wisdom
+      totals.charisma += st.charisma
+      totals.intuition += st.intuition
+      totals.adaptability += st.adaptability
+      totals.vitality += st.vitality
+    }
+    const n = entries.length
+    const avgStats = {
+      power: Math.round(totals.power / n),
+      resonance: Math.round(totals.resonance / n),
+      wisdom: Math.round(totals.wisdom / n),
+      charisma: Math.round(totals.charisma / n),
+      intuition: Math.round(totals.intuition / n),
+      adaptability: Math.round(totals.adaptability / n),
+      vitality: Math.round(totals.vitality / n),
+    }
+    const rated = rateStats(avgStats)
+    const esmsBalances = {
+      spirit: Math.round((alchmQuantities.spirit || 4) * 10 + 25),
+      essence: Math.round((alchmQuantities.essence || 4) * 10 + 25),
+      matter: Math.round((alchmQuantities.matter || 4) * 10 + 25),
+      substance: Math.round((alchmQuantities.substance || 4) * 10 + 25),
+    }
+    const sealProgress = evaluateSeals({ stats: avgStats, esmsBalances })
+    const seals = earnedSeals(sealProgress)
+    const zoneSynergies = computeZoneSynergies({ ratings: rated.ratings, seals })
+    const bestId = bestZoneId({ ratings: rated.ratings, seals })
+    const bestZone = zoneSynergies.find(z => z.zoneId === bestId) ?? zoneSynergies[0]
+    return {
+      rated,
+      seals,
+      bestZone,
+    }
+  }, [chartData.planets, alchmQuantities])
+
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-50/10 via-background to-purple-50/10 dark:from-indigo-950/20 dark:via-background dark:to-purple-950/20">
+    <div className="min-h-screen bg-gradient-to-br from-indigo-950/20 via-background to-purple-950/20">
       {/* Header */}
-      <div className="border-b bg-background/80 backdrop-blur-sm sticky top-0 z-40">
+      <div className="border-b border-white/10 bg-background/85 backdrop-blur-md sticky top-0 z-40">
         <div className="container py-6">
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-4">
             <div>
-              <h1 className="text-3xl font-bold bg-gradient-to-r from-indigo-600 to-purple-600 bg-clip-text text-transparent">
+              <h1 className="text-3xl font-bold bg-gradient-to-r from-cyan-300 via-violet-300 to-amber-300 bg-clip-text text-transparent">
                 🔮 Advanced Chart Interpreter
               </h1>
               <p className="text-muted-foreground mt-1">
@@ -298,6 +373,14 @@ export default function ChartInterpreterPage() {
               </p>
             </div>
             <div className="flex flex-wrap items-center justify-end gap-2">
+              {chartRatingSummary && (
+                <VesselRatingRibbon
+                  ovr={chartRatingSummary.rated.ovr}
+                  archetype={chartRatingSummary.rated.archetype}
+                  seals={chartRatingSummary.seals}
+                  compact
+                />
+              )}
               {chartData.chartType === 'synastry' && synastryAgentLabel && (
                 <Badge variant="outline" className="flex items-center gap-1">
                   <Heart className="w-3 h-3" />
@@ -650,11 +733,11 @@ export default function ChartInterpreterPage() {
                       </CardContent>
                     </Card>
                   ) : (
-                    <Card>
+                    <Card className="border-white/10 bg-[#0d1020]/90">
                       <CardContent className="py-12 text-center">
                         <div className="flex flex-col items-center gap-4">
-                          <div className="w-12 h-12 rounded-full bg-purple-100 flex items-center justify-center">
-                            <Star className="w-6 h-6 text-purple-600" />
+                          <div className="w-12 h-12 rounded-full border border-violet-400/35 bg-violet-500/15 flex items-center justify-center">
+                            <Star className="w-6 h-6 text-violet-300" />
                           </div>
                           <div>
                             <h3 className="font-semibold mb-2">Ready for Analysis</h3>
@@ -678,8 +761,56 @@ export default function ChartInterpreterPage() {
                     </Card>
                   )}
 
+                  {/* Chart Pentacle Rating & Seal Preview */}
+                  {chartRatingSummary && (
+                    <Card className="border-amber-400/25 bg-[#0d1020]/90">
+                      <CardHeader className="pb-3">
+                        <div className="flex flex-wrap items-center justify-between gap-2">
+                          <CardTitle className="text-base flex items-center gap-2 text-amber-200">
+                            <Sparkles className="w-4 h-4 text-amber-300" />
+                            Chart Pentacle Rating &amp; Seal Preview
+                          </CardTitle>
+                          <Button variant="outline" size="sm" asChild className="h-7 text-xs">
+                            <Link href="/forge">Forge in Philosopher&apos;s Stone →</Link>
+                          </Button>
+                        </div>
+                      </CardHeader>
+                      <CardContent className="space-y-3">
+                        <VesselRatingRibbon
+                          ovr={chartRatingSummary.rated.ovr}
+                          archetype={chartRatingSummary.rated.archetype}
+                          seals={chartRatingSummary.seals}
+                        />
+                        {chartRatingSummary.bestZone && (
+                          <div className="flex items-center justify-between rounded-lg border border-violet-400/30 bg-violet-500/10 px-3 py-2 font-mono text-xs">
+                            <span className="text-violet-200">
+                              Peak Pentacle Domain: {chartRatingSummary.bestZone.label} (
+                              {chartRatingSummary.bestZone.element})
+                            </span>
+                            <span className="font-bold text-amber-200">
+                              ECR {chartRatingSummary.bestZone.synergy.toFixed(1)}
+                            </span>
+                          </div>
+                        )}
+                        {chartRatingSummary.seals.length > 0 && (
+                          <div className="flex flex-wrap gap-1.5">
+                            {chartRatingSummary.seals.map(seal => (
+                              <span
+                                key={seal.id}
+                                className={`inline-flex items-center gap-1 rounded border px-2 py-0.5 font-mono text-[10px] font-semibold ${SEAL_TIER_STYLES[seal.tier].badge}`}
+                              >
+                                <Shield className="h-2.5 w-2.5" />
+                                {seal.tier} · {seal.name} ({seal.multiplier.toFixed(2)}x)
+                              </span>
+                            ))}
+                          </div>
+                        )}
+                      </CardContent>
+                    </Card>
+                  )}
+
                   {/* Monica's Enhanced Alchemical Analysis */}
-                  <Card>
+                  <Card className="border-white/10 bg-[#0d1020]/90">
                     <CardHeader>
                       <CardTitle className="text-lg flex items-center gap-2">
                         <Zap className="w-5 h-5 text-amber-500" />
@@ -691,15 +822,15 @@ export default function ChartInterpreterPage() {
                       <div>
                         <h4 className="font-medium text-sm mb-2">Primary Alchemical Quantities</h4>
                         <div className="grid grid-cols-2 gap-3">
-                          <div className="flex items-center justify-between p-2 bg-muted rounded">
+                          <div className="flex items-center justify-between p-2.5 bg-white/[0.03] border border-white/10 rounded-lg">
                             <span className="text-sm">Spirit</span>
                             <div className="text-right">
                               <div className="font-mono text-sm">
                                 {alchmQuantities.spirit.toFixed(2)}
                               </div>
-                              <div className="w-16 h-1 bg-gray-200 rounded-full overflow-hidden">
+                              <div className="w-16 h-1 bg-white/10 rounded-full overflow-hidden mt-1">
                                 <div
-                                  className="h-full bg-purple-500 transition-all duration-500"
+                                  className="h-full bg-purple-400 transition-all duration-500"
                                   style={{
                                     width: `${Math.min(100, (alchmQuantities.spirit / 20) * 100)}%`,
                                   }}
@@ -707,15 +838,15 @@ export default function ChartInterpreterPage() {
                               </div>
                             </div>
                           </div>
-                          <div className="flex items-center justify-between p-2 bg-muted rounded">
+                          <div className="flex items-center justify-between p-2.5 bg-white/[0.03] border border-white/10 rounded-lg">
                             <span className="text-sm">Essence</span>
                             <div className="text-right">
                               <div className="font-mono text-sm">
                                 {alchmQuantities.essence.toFixed(2)}
                               </div>
-                              <div className="w-16 h-1 bg-gray-200 rounded-full overflow-hidden">
+                              <div className="w-16 h-1 bg-white/10 rounded-full overflow-hidden mt-1">
                                 <div
-                                  className="h-full bg-blue-500 transition-all duration-500"
+                                  className="h-full bg-cyan-400 transition-all duration-500"
                                   style={{
                                     width: `${Math.min(100, (alchmQuantities.essence / 20) * 100)}%`,
                                   }}
@@ -723,15 +854,15 @@ export default function ChartInterpreterPage() {
                               </div>
                             </div>
                           </div>
-                          <div className="flex items-center justify-between p-2 bg-muted rounded">
+                          <div className="flex items-center justify-between p-2.5 bg-white/[0.03] border border-white/10 rounded-lg">
                             <span className="text-sm">Matter</span>
                             <div className="text-right">
                               <div className="font-mono text-sm">
                                 {alchmQuantities.matter.toFixed(2)}
                               </div>
-                              <div className="w-16 h-1 bg-gray-200 rounded-full overflow-hidden">
+                              <div className="w-16 h-1 bg-white/10 rounded-full overflow-hidden mt-1">
                                 <div
-                                  className="h-full bg-green-500 transition-all duration-500"
+                                  className="h-full bg-emerald-400 transition-all duration-500"
                                   style={{
                                     width: `${Math.min(100, (alchmQuantities.matter / 20) * 100)}%`,
                                   }}
@@ -739,15 +870,15 @@ export default function ChartInterpreterPage() {
                               </div>
                             </div>
                           </div>
-                          <div className="flex items-center justify-between p-2 bg-muted rounded">
+                          <div className="flex items-center justify-between p-2.5 bg-white/[0.03] border border-white/10 rounded-lg">
                             <span className="text-sm">Substance</span>
                             <div className="text-right">
                               <div className="font-mono text-sm">
                                 {alchmQuantities.substance.toFixed(2)}
                               </div>
-                              <div className="w-16 h-1 bg-gray-200 rounded-full overflow-hidden">
+                              <div className="w-16 h-1 bg-white/10 rounded-full overflow-hidden mt-1">
                                 <div
-                                  className="h-full bg-orange-500 transition-all duration-500"
+                                  className="h-full bg-amber-400 transition-all duration-500"
                                   style={{
                                     width: `${Math.min(100, (alchmQuantities.substance / 20) * 100)}%`,
                                   }}
@@ -784,11 +915,13 @@ export default function ChartInterpreterPage() {
                       </div>
 
                       {/* Consciousness Level */}
-                      <div className="p-3 bg-gradient-to-r from-purple-50 to-amber-50 rounded-lg">
+                      <div className="p-3 bg-gradient-to-r from-violet-500/15 to-amber-500/15 border border-violet-400/25 rounded-lg">
                         <div className="flex items-center justify-between">
-                          <span className="text-sm font-medium">Consciousness Level:</span>
+                          <span className="text-sm font-medium text-slate-200">
+                            Consciousness Level:
+                          </span>
                           <div className="text-right">
-                            <div className="font-mono text-lg font-bold text-purple-600">
+                            <div className="font-mono text-lg font-bold text-violet-300">
                               {monicaLabel}
                             </div>
                             <div className="text-xs text-muted-foreground">
