@@ -32,4 +32,25 @@ describe('next build fits the Vercel build machine', () => {
     expect(generate).toBe('bun run prisma:generate')
     expect(build).toBe('NODE_OPTIONS="$NODE_OPTIONS --max-old-space-size=4096" bun run build')
   })
+
+  it('self-hosts root typography via next/font/local so next build makes zero outbound Google Fonts fetches', () => {
+    const layoutSource = fs.readFileSync(path.join(ROOT, 'app/layout.tsx'), 'utf8')
+    expect(layoutSource).not.toContain('next/font/google')
+    expect(layoutSource).toContain("from 'next/font/local'")
+
+    const expectedFonts = [
+      'manrope-latin.woff2',
+      'cormorant-garamond-latin.woff2',
+      'ibm-plex-mono-400-latin.woff2',
+      'ibm-plex-mono-500-latin.woff2',
+      'ibm-plex-mono-600-latin.woff2',
+      'literata-latin.woff2',
+      'jetbrains-mono-latin.woff2',
+    ]
+    for (const file of expectedFonts) {
+      const fullPath = path.join(ROOT, 'app/fonts', file)
+      expect(fs.existsSync(fullPath)).toBe(true)
+      expect(fs.statSync(fullPath).size).toBeGreaterThan(1000)
+    }
+  })
 })

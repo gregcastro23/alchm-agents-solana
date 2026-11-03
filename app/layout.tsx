@@ -1,11 +1,5 @@
 import type { Metadata } from 'next'
-import {
-  Cormorant_Garamond,
-  Manrope,
-  IBM_Plex_Mono,
-  Literata,
-  JetBrains_Mono,
-} from 'next/font/google'
+import localFont from 'next/font/local'
 import './globals.css'
 import './navigation.css'
 import './techno-occult.css'
@@ -16,24 +10,30 @@ import { SpeedInsights } from '@vercel/speed-insights/next'
 import { RootChrome } from '@/components/RootChrome'
 import { resolvePublicOrigin } from '@/lib/self-origin'
 
-// Alchm Design System type families. Exposed as CSS variables and consumed by
-// app/globals.css (--ff-ui / --ff-display / --ff-mono) + tailwind.config.ts.
-const manrope = Manrope({
-  subsets: ['latin'],
+// Alchm Design System type families (self-hosted via next/font/local so CI and
+// production builds never depend on outbound fonts.googleapis.com fetches).
+// Exposed as CSS variables and consumed by app/globals.css (--ff-ui / --ff-display / --ff-mono)
+// + tailwind.config.ts.
+const manrope = localFont({
+  src: './fonts/manrope-latin.woff2',
+  weight: '200 800',
   display: 'swap',
   variable: '--font-manrope',
 })
 
-const cormorant = Cormorant_Garamond({
-  subsets: ['latin'],
-  weight: ['400', '500', '600', '700'],
+const cormorant = localFont({
+  src: './fonts/cormorant-garamond-latin.woff2',
+  weight: '400 700',
   display: 'swap',
   variable: '--font-cormorant',
 })
 
-const ibmPlexMono = IBM_Plex_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500', '600'],
+const ibmPlexMono = localFont({
+  src: [
+    { path: './fonts/ibm-plex-mono-400-latin.woff2', weight: '400', style: 'normal' },
+    { path: './fonts/ibm-plex-mono-500-latin.woff2', weight: '500', style: 'normal' },
+    { path: './fonts/ibm-plex-mono-600-latin.woff2', weight: '600', style: 'normal' },
+  ],
   display: 'swap',
   variable: '--font-ibm-plex-mono',
 })
@@ -41,16 +41,16 @@ const ibmPlexMono = IBM_Plex_Mono({
 // Techno-Occult v2 families (Stitch prototypes): Literata for headlines,
 // JetBrains Mono for Sacred-7 stats / labels. Consumed by the
 // font-headline-* / font-label-mono utilities in tailwind.config.ts.
-const literata = Literata({
-  subsets: ['latin'],
-  weight: ['400', '600', '700'],
+const literata = localFont({
+  src: './fonts/literata-latin.woff2',
+  weight: '400 700',
   display: 'swap',
   variable: '--font-literata',
 })
 
-const jetbrainsMono = JetBrains_Mono({
-  subsets: ['latin'],
-  weight: ['400', '500', '700'],
+const jetbrainsMono = localFont({
+  src: './fonts/jetbrains-mono-latin.woff2',
+  weight: '400 700',
   display: 'swap',
   variable: '--font-jetbrains-mono',
 })
