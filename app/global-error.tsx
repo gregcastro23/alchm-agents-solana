@@ -8,8 +8,8 @@ export default function GlobalError({
   reset: () => void
 }) {
   return (
-    <html>
-      <body>
+    <html lang="en" className="dark" style={{ colorScheme: 'dark' }}>
+      <body className="bg-background text-foreground">
         <div className="min-h-screen bg-gradient-to-br from-red-50 to-red-100 dark:from-red-950 dark:to-red-900 flex items-center justify-center p-4">
           <div className="max-w-md w-full bg-white dark:bg-gray-800 rounded-lg shadow-lg p-6 text-center">
             <div className="mb-4">

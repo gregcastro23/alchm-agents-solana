@@ -1,6 +1,7 @@
 'use client'
 
 import { useEffect, useState } from 'react'
+import Link from 'next/link'
 import {
   ResponsiveContainer,
   LineChart,
@@ -69,6 +70,9 @@ export function LabsAnalytics() {
     avgOverall: number
   } | null>(null)
   const [standings, setStandings] = useState<Standing[]>([])
+  const [standingRatings, setStandingRatings] = useState<
+    Record<string, { ovr: number; archetypeTitle: string }>
+  >({})
   const [league, setLeague] = useState<{
     totalMatches: number
     last24h: number
@@ -89,8 +93,35 @@ export function LabsAnalytics() {
           setTotals(traj.totals)
         }
         if (league.success && league.available) {
-          setStandings(league.standings ?? [])
+          const rows: Standing[] = league.standings ?? []
+          setStandings(rows)
           setLeague(league.aggregates ?? null)
+          void Promise.all(
+            rows.slice(0, 10).map(async s => {
+              try {
+                const res = await fetch(
+                  `/api/agents/rating?agentId=${encodeURIComponent(s.agentId)}`
+                )
+                const json = await res.json()
+                if (json?.ovr && json?.archetype?.title) {
+                  return [
+                    s.agentId,
+                    { ovr: Number(json.ovr), archetypeTitle: String(json.archetype.title) },
+                  ] as const
+                }
+              } catch {
+                // Non-fatal
+              }
+              return null
+            })
+          ).then(entries => {
+            if (cancelled) return
+            const map: Record<string, { ovr: number; archetypeTitle: string }> = {}
+            for (const entry of entries) {
+              if (entry) map[entry[0]] = entry[1]
+            }
+            setStandingRatings(map)
+          })
         }
       })
       .catch(() => {
@@ -243,25 +274,42 @@ export function LabsAnalytics() {
                 </tr>
               </thead>
               <tbody>
-                {standings.slice(0, 10).map(s => (
-                  <tr key={s.agentId} className="border-b border-white/5 hover:bg-st-primary/5">
-                    <td className="py-2 pr-4 text-outline tabular-nums">{s.rank}</td>
-                    <td className="py-2 pr-4 text-on-surface">{s.name}</td>
-                    <td
-                      className={cn(
-                        'py-2 pr-4 text-right tabular-nums',
-                        s.rank === 1 ? 'text-st-secondary gold-glow' : 'text-st-primary'
-                      )}
-                    >
-                      {s.elo}
-                    </td>
-                    <td className="py-2 pr-4 text-right text-tertiary tabular-nums">{s.won}</td>
-                    <td className="py-2 pr-4 text-right text-error tabular-nums">{s.lost}</td>
-                    <td className="py-2 text-right text-on-surface-variant tabular-nums">
-                      {s.tied}
-                    </td>
-                  </tr>
-                ))}
+                {standings.slice(0, 10).map(s => {
+                  const rating = standingRatings[s.agentId]
+                  return (
+                    <tr key={s.agentId} className="border-b border-white/5 hover:bg-st-primary/5">
+                      <td className="py-2 pr-4 text-outline tabular-nums">{s.rank}</td>
+                      <td className="py-2 pr-4 text-on-surface">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Link
+                            href={`/agent/${s.agentId}`}
+                            className="hover:text-st-primary transition-colors font-medium"
+                          >
+                            {s.name}
+                          </Link>
+                          {rating && (
+                            <span className="rounded border border-amber-400/35 bg-amber-400/10 px-1.5 py-0.5 text-[10px] font-bold text-amber-200">
+                              PVR {rating.ovr} · {rating.archetypeTitle}
+                            </span>
+                          )}
+                        </div>
+                      </td>
+                      <td
+                        className={cn(
+                          'py-2 pr-4 text-right tabular-nums',
+                          s.rank === 1 ? 'text-st-secondary gold-glow' : 'text-st-primary'
+                        )}
+                      >
+                        {s.elo}
+                      </td>
+                      <td className="py-2 pr-4 text-right text-tertiary tabular-nums">{s.won}</td>
+                      <td className="py-2 pr-4 text-right text-error tabular-nums">{s.lost}</td>
+                      <td className="py-2 text-right text-on-surface-variant tabular-nums">
+                        {s.tied}
+                      </td>
+                    </tr>
+                  )
+                })}
               </tbody>
             </table>
           ) : (

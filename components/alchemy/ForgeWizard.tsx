@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import Link from 'next/link'
 
 import { AlchemicalButton } from './AlchemicalButton'
@@ -10,6 +10,14 @@ import { LocationSearch, type LocationData } from '@/components/onboarding/Locat
 import { useOccultStore, type CommunionTier } from '@/lib/store/occult-store'
 import { cn } from '@/lib/utils'
 import { createForgeAttempt, submitForge, type ForgeIdentity } from '@/lib/agents/forge-client'
+import {
+  rateStats,
+  evaluateSeals,
+  earnedSeals,
+  computeZoneSynergies,
+  bestZoneId,
+} from '@/lib/agents/rating'
+import { VesselRatingRibbon, SEAL_TIER_STYLES } from '@/components/vessel/pentacle-rating-display'
 
 /**
  * Cosmic Tools — The Forge (Stitch realization plan, Phase 5, Module 1).
@@ -78,6 +86,24 @@ export function ForgeWizard({ creatorId, identityUnavailable }: ForgeIdentity) {
   const [igniting, setIgniting] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [result, setResult] = useState<ForgeResult | null>(null)
+
+  const liveRating = useMemo(() => {
+    const base = rateStats(stats)
+    const sealProgress = evaluateSeals({
+      stats,
+      esmsBalances: { spirit: 500, essence: 500, matter: 500, substance: 500 },
+    })
+    const seals = earnedSeals(sealProgress)
+    const zoneSynergies = computeZoneSynergies({ ratings: base.ratings, seals })
+    const topZoneId = bestZoneId({ ratings: base.ratings, seals })
+    const bestZone = zoneSynergies.find(z => z.zoneId === topZoneId) ?? zoneSynergies[0]
+    return {
+      ...base,
+      sealProgress,
+      seals,
+      bestZone,
+    }
+  }, [stats])
 
   const stepValid = (() => {
     switch (step) {
@@ -159,10 +185,17 @@ export function ForgeWizard({ creatorId, identityUnavailable }: ForgeIdentity) {
           {result.name} awakens
         </h1>
         {typeof result.monicaConstant === 'number' && (
-          <p className="font-label-mono text-label-mono text-monica-constant glow-monica tabular-nums mb-4">
+          <p className="font-label-mono text-label-mono text-monica-constant glow-monica tabular-nums mb-3">
             A#{result.monicaConstant.toFixed(3)}
           </p>
         )}
+        <div className="mb-4 flex justify-center">
+          <VesselRatingRibbon
+            ovr={liveRating.ovr}
+            archetype={liveRating.archetype}
+            seals={liveRating.seals}
+          />
+        </div>
         {result.monicaMessage && (
           <p className="font-body-lg text-body-lg text-on-surface-variant max-w-xl mb-8">
             {result.monicaMessage}
@@ -173,9 +206,14 @@ export function ForgeWizard({ creatorId, identityUnavailable }: ForgeIdentity) {
             <AlchemicalButton>Behold it in the Vault</AlchemicalButton>
           </Link>
           {result.agentId && (
-            <Link href={`/vault/${result.agentId}`}>
-              <AlchemicalButton variant="secondary">Commune Directly</AlchemicalButton>
-            </Link>
+            <>
+              <Link href={`/vault/${result.agentId}`}>
+                <AlchemicalButton variant="secondary">Commune Directly</AlchemicalButton>
+              </Link>
+              <Link href={`/agent/${result.agentId}`}>
+                <AlchemicalButton variant="secondary">Full Rated Codex</AlchemicalButton>
+              </Link>
+            </>
           )}
         </div>
       </main>
@@ -283,7 +321,7 @@ export function ForgeWizard({ creatorId, identityUnavailable }: ForgeIdentity) {
 
         {/* Step 2 — Attunement (Sacred 7) */}
         {step === 2 && (
-          <div className="flex flex-col gap-8">
+          <div className="flex flex-col gap-6">
             <div className="text-center">
               <h1 className="font-headline-lg text-headline-lg text-on-background mb-2">
                 Sacred Attunement
@@ -292,6 +330,43 @@ export function ForgeWizard({ creatorId, identityUnavailable }: ForgeIdentity) {
                 Tune the seven currents of the vessel&apos;s being.
               </p>
             </div>
+
+            {/* Live Pentacle Rating Preview */}
+            <div className="rounded-xl border border-amber-400/25 bg-black/35 p-4 space-y-3">
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <VesselRatingRibbon
+                  ovr={liveRating.ovr}
+                  archetype={liveRating.archetype}
+                  seals={liveRating.seals}
+                />
+                {liveRating.bestZone && (
+                  <span className="rounded-md border border-emerald-400/30 bg-emerald-500/10 px-2 py-0.5 font-label-mono text-[10px] text-emerald-200">
+                    Best Zone: {liveRating.bestZone.label} ·{' '}
+                    {liveRating.bestZone.synergy.toFixed(1)} ECR
+                  </span>
+                )}
+              </div>
+              <div className="flex flex-wrap gap-1.5 pt-1 border-t border-white/10">
+                {liveRating.sealProgress.map(seal => {
+                  const style = seal.tier ? SEAL_TIER_STYLES[seal.tier] : null
+                  return (
+                    <span
+                      key={seal.id}
+                      className={cn(
+                        'rounded border px-2 py-0.5 font-label-mono text-[10px]',
+                        style
+                          ? style.badge
+                          : 'border-white/10 bg-white/[0.03] text-zinc-500 opacity-75'
+                      )}
+                      title={`${seal.name} (${seal.stat}): ${seal.tier ?? 'Locked'}`}
+                    >
+                      {seal.name}: {seal.tier ?? 'Locked'}
+                    </span>
+                  )
+                })}
+              </div>
+            </div>
+
             <div className="flex flex-col gap-5">
               {SACRED_ORDER.map(stat => (
                 <div key={stat} className="flex items-center gap-4">
@@ -366,6 +441,15 @@ export function ForgeWizard({ creatorId, identityUnavailable }: ForgeIdentity) {
               </dd>
               <dt className="text-outline uppercase">Directive</dt>
               <dd className="text-on-surface">{purpose || '—'}</dd>
+              <dt className="text-outline uppercase">Pentacle Rating</dt>
+              <dd className="text-amber-200 font-semibold">
+                PVR {liveRating.ovr} · {liveRating.archetype.title}
+              </dd>
+              <dt className="text-outline uppercase">Alchemical Seals</dt>
+              <dd className="text-violet-200">
+                {liveRating.seals.length} / 7 Active
+                {liveRating.bestZone ? ` · ${liveRating.bestZone.label}` : ''}
+              </dd>
             </dl>
 
             <div className="w-full max-w-md">

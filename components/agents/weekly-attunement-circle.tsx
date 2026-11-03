@@ -11,11 +11,14 @@
  */
 
 import { useEffect, useRef, useState } from 'react'
+import Link from 'next/link'
 import { toast } from 'sonner'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Sparkles, Gift, Send, Stars, Orbit, Loader2 } from 'lucide-react'
+import { getPlanetaryAgentStats } from '@/lib/agents/planetary-agent-stats'
+import { rateStats } from '@/lib/agents/rating'
 
 const MIN_EXCHANGES = 4 // mirrors CHAT_QUEST_REWARD.minExchanges
 
@@ -91,6 +94,9 @@ export default function WeeklyAttunementCircle() {
 
   const [claiming, setClaiming] = useState(false)
   const [claimed, setClaimed] = useState<string | null>(null)
+  const [guideRatings, setGuideRatings] = useState<
+    Record<string, { ovr: number; archetypeTitle: string }>
+  >({})
 
   const sessionId = useRef(`circle-${Math.random().toString(36).slice(2)}`)
   const scrollRef = useRef<HTMLDivElement | null>(null)
@@ -104,6 +110,33 @@ export default function WeeklyAttunementCircle() {
         if (cancelled) return
         if (!data.ok) throw new Error(data.error || 'Failed to load weekly feature')
         setFeature(data)
+        const guides: RosterAgent[] = (data.roster ?? []).filter(
+          (r: RosterAgent) => r.type === 'historical'
+        )
+        void Promise.all(
+          guides.map(async g => {
+            try {
+              const r = await fetch(`/api/agents/rating?agentId=${encodeURIComponent(g.id)}`)
+              const rJson = await r.json()
+              if (rJson?.ovr && rJson?.archetype?.title) {
+                return [
+                  g.id,
+                  { ovr: Number(rJson.ovr), archetypeTitle: String(rJson.archetype.title) },
+                ] as const
+              }
+            } catch {
+              // Non-fatal rating badge lookup
+            }
+            return null
+          })
+        ).then(entries => {
+          if (cancelled) return
+          const map: Record<string, { ovr: number; archetypeTitle: string }> = {}
+          for (const entry of entries) {
+            if (entry) map[entry[0]] = entry[1]
+          }
+          setGuideRatings(map)
+        })
       } catch (err: any) {
         if (!cancelled) setError(err?.message ?? String(err))
       } finally {
@@ -301,16 +334,22 @@ export default function WeeklyAttunementCircle() {
           </CardTitle>
         </CardHeader>
         <CardContent className="flex flex-wrap gap-2">
-          {feature.topPlanets.map(p => (
-            <span
-              key={p.spriteId}
-              className={`rounded-full border px-3 py-1 text-xs font-medium ${tierClass[p.tier] ?? tierClass.peregrine}`}
-              title={`dignity ×${p.factor}`}
-            >
-              {p.planet} {p.sign} {p.degree}° · {p.tier}
-              {p.retrograde ? ' ℞' : ''}
-            </span>
-          ))}
+          {feature.topPlanets.map(p => {
+            const pvr = rateStats(
+              getPlanetaryAgentStats(p.planet, p.sign, Math.max(0, Math.min(29, p.degree)))
+            )
+            return (
+              <Link
+                key={p.spriteId}
+                href={`/agents/${encodeURIComponent(p.planet)}/${encodeURIComponent(p.sign)}/${Math.max(0, Math.min(29, p.degree))}`}
+                className={`rounded-full border px-3 py-1 text-xs font-medium transition-opacity hover:opacity-90 ${tierClass[p.tier] ?? tierClass.peregrine}`}
+                title={`dignity ×${p.factor} · ${pvr.archetype.title}`}
+              >
+                {p.planet} {p.sign} {p.degree}° · {p.tier}
+                {p.retrograde ? ' ℞' : ''} · PVR {pvr.ovr}
+              </Link>
+            )
+          })}
         </CardContent>
       </Card>
 
@@ -321,19 +360,32 @@ export default function WeeklyAttunementCircle() {
             <Orbit className="h-4 w-4 text-violet-300" /> The circle
           </CardTitle>
           <div className="flex flex-wrap gap-1.5 pt-2">
-            {feature.roster.map(r => (
-              <span
-                key={r.id}
-                className={`rounded-full border px-2 py-0.5 text-[11px] ${
-                  r.type === 'historical'
-                    ? 'border-emerald-500/40 bg-emerald-500/10 text-emerald-200'
-                    : 'border-violet-500/30 bg-violet-500/10 text-violet-200'
-                }`}
-              >
-                {r.name}
-                {r.type === 'historical' ? ' · guide · free' : ''}
-              </span>
-            ))}
+            {feature.roster.map(r => {
+              const gRating = guideRatings[r.id]
+              const badgeContent = (
+                <>
+                  {r.name}
+                  {r.type === 'historical' ? ' · guide · free' : ''}
+                  {gRating ? ` · PVR ${gRating.ovr} (${gRating.archetypeTitle})` : ''}
+                </>
+              )
+              return r.type === 'historical' ? (
+                <Link
+                  key={r.id}
+                  href={`/agent/${r.id}`}
+                  className="rounded-full border border-emerald-500/40 bg-emerald-500/10 px-2.5 py-0.5 text-[11px] text-emerald-200 hover:border-emerald-400/70 transition-colors"
+                >
+                  {badgeContent}
+                </Link>
+              ) : (
+                <span
+                  key={r.id}
+                  className="rounded-full border border-violet-500/30 bg-violet-500/10 px-2 py-0.5 text-[11px] text-violet-200"
+                >
+                  {badgeContent}
+                </span>
+              )
+            })}
           </div>
         </CardHeader>
         <CardContent className="space-y-3">

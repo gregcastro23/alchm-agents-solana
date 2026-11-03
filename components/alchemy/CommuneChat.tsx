@@ -7,6 +7,8 @@ import { AlchemicalButton } from './AlchemicalButton'
 import { RitualInput } from './RitualInput'
 import { createUnifiedChatHeaders } from '@/lib/agents/unified-chat-request'
 import { useOccultStore } from '@/lib/store/occult-store'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import type { RatedVesselPayload } from '@/lib/agents/rating'
 
 /**
  * Vault Communion — the v2 in-shell chat surface (the "commune" step of the
@@ -40,6 +42,7 @@ export function CommuneChat({ agentId, name, title, essence }: CommuneChatProps)
   const [needsAuth, setNeedsAuth] = useState(false)
   const [needsTokens, setNeedsTokens] = useState(false)
   const [freeThisWeek, setFreeThisWeek] = useState(false)
+  const [ratingPayload, setRatingPayload] = useState<RatedVesselPayload | null>(null)
   const idCounter = useRef(0)
   const sessionIdRef = useRef<string>('')
   const scrollAnchor = useRef<HTMLDivElement>(null)
@@ -51,6 +54,23 @@ export function CommuneChat({ agentId, name, title, essence }: CommuneChatProps)
   }
 
   const nextId = () => `commune-${++idCounter.current}`
+
+  useEffect(() => {
+    let cancelled = false
+    fetch(`/api/agents/rating?agentId=${encodeURIComponent(agentId)}`)
+      .then(r => (r.ok ? r.json() : null))
+      .then(data => {
+        if (!cancelled && data && typeof data.ovr === 'number' && data.archetype) {
+          setRatingPayload(data as RatedVesselPayload)
+        }
+      })
+      .catch(() => {
+        // Non-fatal rating badge lookup
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [agentId])
 
   useEffect(() => {
     scrollAnchor.current?.scrollIntoView({ behavior: 'smooth', block: 'end' })
@@ -153,10 +173,19 @@ export function CommuneChat({ agentId, name, title, essence }: CommuneChatProps)
             </span>
           </Link>
         </div>
-        <div className="mt-4 flex flex-wrap items-baseline gap-x-4 gap-y-1">
+        <div className="mt-4 flex flex-wrap items-baseline gap-x-4 gap-y-2">
           <h1 className="font-headline-lg text-headline-lg text-on-surface">{name}</h1>
           {title && (
             <p className="font-label-mono text-label-mono text-spirit-violet uppercase">{title}</p>
+          )}
+          {ratingPayload && (
+            <VesselRatingRibbon
+              ovr={ratingPayload.ovr}
+              archetype={ratingPayload.archetype}
+              seals={ratingPayload.seals}
+              surge={ratingPayload.surge}
+              compact
+            />
           )}
           {freeThisWeek && (
             <span className="font-label-mono text-[11px] uppercase tracking-widest text-st-secondary glass-panel rounded-full px-3 py-1">
