@@ -2,6 +2,8 @@
 
 import { Database, FileSearch, HardDrive, Gauge, ExternalLink, HelpCircle } from 'lucide-react'
 import { RAGMonitor } from '@/components/rag/rag-monitor'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import Link from 'next/link'
 
 interface RagKnowledgeProps {
@@ -9,6 +11,28 @@ interface RagKnowledgeProps {
 }
 
 export default function RagKnowledgePanel({ productionUrl }: RagKnowledgeProps) {
+  const ragStats: CoreStats = {
+    power: 90,
+    resonance: 92,
+    wisdom: 95,
+    charisma: 86,
+    intuition: 94,
+    adaptability: 89,
+    vitality: 91,
+  }
+  const ragRating = rateStats(ragStats)
+  const ragSeals = earnedSeals(
+    evaluateSeals({
+      stats: ragStats,
+      esmsBalances: {
+        spirit: 220,
+        essence: 240,
+        matter: 180,
+        substance: 210,
+      },
+    })
+  )
+
   const panelButtonClass =
     'flex items-center justify-between gap-2.5 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-xs font-bold text-zinc-250 transition hover:border-sky-500/30 hover:bg-sky-500/10 hover:text-sky-100 font-sans'
 
@@ -32,6 +56,13 @@ export default function RagKnowledgePanel({ productionUrl }: RagKnowledgeProps) 
           </p>
         </div>
       </div>
+
+      <VesselRatingRibbon
+        ovr={ragRating.ovr}
+        archetype={ragRating.archetype}
+        seals={ragSeals}
+        compact
+      />
 
       {/* Main RAG Monitor embed */}
       <div className="rounded-2xl border border-white/10 bg-zinc-900/25 p-5 backdrop-blur-md">
@@ -68,21 +99,36 @@ export default function RagKnowledgePanel({ productionUrl }: RagKnowledgeProps) 
                   <Gauge className="h-4 w-4 text-sky-400 shrink-0" />
                   Vector Store Health
                 </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-zinc-650" />
+                <span className="flex items-center gap-1.5">
+                  <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                    PVR 94
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-zinc-650" />
+                </span>
               </Link>
               <Link href="/api/knowledge-updater" className={panelButtonClass}>
                 <span className="flex items-center gap-2">
                   <Database className="h-4 w-4 text-emerald-400 shrink-0" />
                   Knowledge Updater
                 </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-zinc-650" />
+                <span className="flex items-center gap-1.5">
+                  <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                    PVR 92
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-zinc-650" />
+                </span>
               </Link>
               <Link href="/api/rag/cache" className={panelButtonClass}>
                 <span className="flex items-center gap-2">
                   <HardDrive className="h-4 w-4 text-amber-400 shrink-0" />
                   Flush RAG Cache
                 </span>
-                <ChevronRight className="h-4 w-4 shrink-0 text-zinc-650" />
+                <span className="flex items-center gap-1.5">
+                  <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                    PVR 90
+                  </span>
+                  <ChevronRight className="h-4 w-4 shrink-0 text-zinc-650" />
+                </span>
               </Link>
               <a
                 href={`${productionUrl}/api/vector-store/health`}
@@ -94,7 +140,12 @@ export default function RagKnowledgePanel({ productionUrl }: RagKnowledgeProps) 
                   <ExternalLink className="h-4 w-4 text-violet-400 shrink-0" />
                   Production Vector API
                 </span>
-                <ExternalLink className="h-3.5 w-3.5 shrink-0 text-zinc-650" />
+                <span className="flex items-center gap-1.5">
+                  <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                    PVR 93
+                  </span>
+                  <ExternalLink className="h-3.5 w-3.5 shrink-0 text-zinc-650" />
+                </span>
               </a>
             </div>
           </div>
