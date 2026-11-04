@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import Link from 'next/link'
 import Image from 'next/image'
 import dynamic from 'next/dynamic'
@@ -22,6 +22,7 @@ import {
   AlchemicalSealsCodex,
   PentacleZoneSynergyPanel,
 } from '@/components/vessel/pentacle-rating-display'
+import { NatalTransitBiWheel } from '@/components/charts/NatalTransitBiWheel'
 import {
   Compass,
   Users,
@@ -432,6 +433,22 @@ export function MeClient({
   const ascDegree = rawPlanets.Ascendant?.degree
     ? `${Number(rawPlanets.Ascendant.degree).toFixed(1)}°`
     : '18.8°'
+
+  const userNatalForBiWheel = useMemo(() => {
+    if (rawPlanets && Object.keys(rawPlanets).length > 0) {
+      return rawPlanets
+    }
+    return {
+      Sun: { sign: sunSign, degree: parseFloat(sunDegree) || 24.5 },
+      Moon: { sign: moonSign, degree: parseFloat(moonDegree) || 12.1 },
+      Ascendant: { sign: ascSign, degree: parseFloat(ascDegree) || 18.8 },
+      Mercury: { sign: dominantElement === 'Air' ? 'Gemini' : 'Taurus', degree: 14.0 },
+      Venus: { sign: dominantElement === 'Water' ? 'Pisces' : 'Taurus', degree: 20.0 },
+      Mars: { sign: dominantElement === 'Fire' ? 'Aries' : 'Capricorn', degree: 16.0 },
+      Jupiter: { sign: dominantElement === 'Fire' ? 'Sagittarius' : 'Cancer', degree: 12.0 },
+      Saturn: { sign: dominantElement === 'Earth' ? 'Capricorn' : 'Aquarius', degree: 8.0 },
+    }
+  }, [ascDegree, ascSign, dominantElement, moonDegree, moonSign, rawPlanets, sunDegree, sunSign])
 
   // Dynamic Codex Placements
   const codexPlanets = [
@@ -1114,6 +1131,15 @@ export function MeClient({
 
       <section className="me-charts-section">
         <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: '1.5rem' }}>
+          {/* Wave 20C: Personal Natal × Live Sky Bi-Wheel & Daily Mentors */}
+          <div className="me-glass-card">
+            <NatalTransitBiWheel
+              userName={profileName || user.name || 'Your Natal Chart'}
+              userNatalPlacements={userNatalForBiWheel}
+              showMentorStrip={true}
+            />
+          </div>
+
           {/* Natal Chart */}
           <div className="me-glass-card">
             <CircularNatalHoroscope
