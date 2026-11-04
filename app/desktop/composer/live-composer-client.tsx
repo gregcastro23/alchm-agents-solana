@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { JING_MOVES } from '@/components/cosmic-agents/constants'
 import type { CouncilAgent, JingMoveId } from '@/components/cosmic-agents/types'
+import { rateStats } from '@/lib/agents/rating'
 
 interface LiveComposerClientProps {
   agents: CouncilAgent[]
@@ -179,7 +180,7 @@ export function LiveComposerClient({ agents }: LiveComposerClientProps) {
             <select value={casterId} onChange={event => setCasterId(event.target.value)}>
               {agents.map(agent => (
                 <option key={agent.id} value={agent.id}>
-                  {agent.name}
+                  {agent.name} · PVR {rateStats(agent.stats).ovr}
                 </option>
               ))}
             </select>
@@ -203,7 +204,7 @@ export function LiveComposerClient({ agents }: LiveComposerClientProps) {
                 .filter(agent => agent.id !== casterId)
                 .map(agent => (
                   <option key={agent.id} value={agent.id}>
-                    {agent.name}
+                    {agent.name} · PVR {rateStats(agent.stats).ovr}
                   </option>
                 ))}
             </select>
