@@ -16,6 +16,11 @@ import {
 import { cn } from '@/lib/utils'
 import type { AdminAlert } from '@/lib/admin/alerts'
 import {
+  VesselRatingRibbon,
+  AlchemicalSealsCodex,
+} from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
+import {
   AlertRow,
   Bar,
   Empty,
@@ -159,6 +164,38 @@ export default function TokenEconomyPanel({
     [data]
   )
 
+  const macroEconomyRating = useMemo(() => {
+    const getAvg = (axisName: string) =>
+      data?.supply?.perAxis.find(a => a.axis === axisName)?.average ?? 45
+    const sp = Math.max(20, Math.round(getAvg('spirit')))
+    const es = Math.max(20, Math.round(getAvg('essence')))
+    const ma = Math.max(20, Math.round(getAvg('matter')))
+    const su = Math.max(20, Math.round(getAvg('substance')))
+    const boost = Math.min(
+      22,
+      Math.round(Math.log10(Math.max(10, (data?.supply?.circulating ?? 1000) + 10)) * 5)
+    )
+    const stats: CoreStats = {
+      power: Math.min(99, 68 + boost),
+      resonance: Math.min(99, 70 + boost),
+      wisdom: Math.min(99, 71 + boost),
+      charisma: Math.min(99, 69 + boost),
+      intuition: Math.min(99, 71 + boost),
+      adaptability: Math.min(99, 70 + boost),
+      vitality: Math.min(99, 70 + boost),
+    }
+    const esmsBalances = { spirit: sp, essence: es, matter: ma, substance: su }
+    const sealProgress = evaluateSeals({ stats, esmsBalances })
+    const seals = earnedSeals(sealProgress)
+    const rated = rateStats(stats)
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+      sealProgress,
+    }
+  }, [data?.supply])
+
   if (error) return <PanelError message={error} onRetry={onRetry} />
   if (loading && !data) return <PanelSkeleton />
   if (!data) return <Empty label="Token economy telemetry is unavailable." />
@@ -179,6 +216,13 @@ export default function TokenEconomyPanel({
             read {formatDateTime(data.generatedAt)}
           </span>
         }
+      />
+
+      <VesselRatingRibbon
+        ovr={macroEconomyRating.ovr}
+        archetype={macroEconomyRating.archetype}
+        seals={macroEconomyRating.seals}
+        compact
       />
 
       {data.degraded.length > 0 && (

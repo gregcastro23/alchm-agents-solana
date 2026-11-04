@@ -1,5 +1,6 @@
 'use client'
 
+import { useCallback, useMemo } from 'react'
 import {
   Activity,
   AlertTriangle,
@@ -14,6 +15,8 @@ import {
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { AdminAlert } from '@/lib/admin/alerts'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import {
   AlertRow,
   Bar,
@@ -155,6 +158,47 @@ export default function PlanetaryAgentsPanel({
   onRetry: () => void
   onNavigate?: (tab: string) => void
 }) {
+  const getBodyPvr = useCallback((planet: string, degree: number, retrograde: boolean) => {
+    let hash = Math.round(degree * 10)
+    for (let i = 0; i < planet.length; i++) hash = (hash * 31 + planet.charCodeAt(i)) >>> 0
+    const retroPenalty = retrograde ? -3 : 4
+    const stats: CoreStats = {
+      power: Math.min(99, Math.max(60, 70 + (hash % 22) + retroPenalty)),
+      resonance: Math.min(99, Math.max(60, 72 + ((hash >> 3) % 21) + retroPenalty)),
+      wisdom: Math.min(99, Math.max(60, 73 + ((hash >> 6) % 21))),
+      charisma: Math.min(99, Math.max(60, 71 + ((hash >> 9) % 21))),
+      intuition: Math.min(99, Math.max(60, 72 + ((hash >> 12) % 21))),
+      adaptability: Math.min(99, Math.max(60, 70 + ((hash >> 15) % 21) + retroPenalty)),
+      vitality: Math.min(99, Math.max(60, 71 + ((hash >> 18) % 21))),
+    }
+    return rateStats(stats).ovr
+  }, [])
+
+  const planetaryTelemetryRating = useMemo(() => {
+    const swissBonus = data?.ephemeris.source === 'swiss-ephemeris' ? 10 : 0
+    const bodyBonus = Math.min(14, data?.ephemeris.bodies.length ?? 0)
+    const stats: CoreStats = {
+      power: Math.min(99, 68 + swissBonus + bodyBonus),
+      resonance: Math.min(99, 70 + swissBonus + bodyBonus),
+      wisdom: Math.min(99, 72 + swissBonus + bodyBonus),
+      charisma: Math.min(99, 69 + swissBonus + bodyBonus),
+      intuition: Math.min(99, 71 + swissBonus + bodyBonus),
+      adaptability: Math.min(99, 68 + swissBonus + bodyBonus),
+      vitality: Math.min(99, 70 + swissBonus + bodyBonus),
+    }
+    const sealProgress = evaluateSeals({
+      stats,
+      esmsBalances: { spirit: 64, essence: 60, matter: 58, substance: 62 },
+    })
+    const seals = earnedSeals(sealProgress)
+    const rated = rateStats(stats)
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+    }
+  }, [data?.ephemeris.source, data?.ephemeris.bodies.length])
+
   if (error) return <PanelError message={error} onRetry={onRetry} />
   if (loading && !data) return <PanelSkeleton />
   if (!data) return <Empty label="Planetary integration telemetry is unavailable." />
@@ -176,6 +220,13 @@ export default function PlanetaryAgentsPanel({
             read {formatDateTime(data.generatedAt)}
           </span>
         }
+      />
+
+      <VesselRatingRibbon
+        ovr={planetaryTelemetryRating.ovr}
+        archetype={planetaryTelemetryRating.archetype}
+        seals={planetaryTelemetryRating.seals}
+        compact
       />
 
       {data.degraded.length > 0 && (
@@ -264,7 +315,12 @@ export default function PlanetaryAgentsPanel({
                 >
                   <div className="flex items-center justify-between gap-2">
                     <span className="text-xs font-bold text-zinc-200">{body.planet}</span>
-                    {body.retrograde && <Pill tone="amber">℞</Pill>}
+                    <div className="flex items-center gap-1">
+                      <span className="rounded border border-amber-400/35 bg-amber-500/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-amber-300">
+                        PVR {getBodyPvr(body.planet, body.degree, body.retrograde)}
+                      </span>
+                      {body.retrograde && <Pill tone="amber">℞</Pill>}
+                    </div>
                   </div>
                   <p className="mt-1 font-mono text-[11px] text-zinc-400">
                     {body.degree.toFixed(2)}° {body.sign}

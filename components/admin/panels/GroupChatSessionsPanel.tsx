@@ -1,7 +1,10 @@
 'use client'
 
+import { useCallback, useMemo } from 'react'
 import { Users, GitBranch, Calendar, Compass, ChevronRight } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 
 interface GroupChatSessionItem {
   id: string
@@ -24,6 +27,50 @@ interface GroupChatPanelProps {
 }
 
 export default function GroupChatSessionsPanel({ data }: GroupChatPanelProps) {
+  const councilTelemetryRating = useMemo(() => {
+    const boost = Math.min(20, Math.round(Math.log10(Math.max(10, data.total + 10)) * 6))
+    const stats: CoreStats = {
+      power: Math.min(99, 70 + boost),
+      resonance: Math.min(99, 73 + boost),
+      wisdom: Math.min(99, 74 + boost),
+      charisma: Math.min(99, 72 + boost),
+      intuition: Math.min(99, 73 + boost),
+      adaptability: Math.min(99, 71 + boost),
+      vitality: Math.min(99, 70 + boost),
+    }
+    const esmsBalances = {
+      spirit: 58 + boost,
+      essence: 62 + boost,
+      matter: 54 + boost,
+      substance: 60 + boost,
+    }
+    const sealProgress = evaluateSeals({ stats, esmsBalances })
+    const seals = earnedSeals(sealProgress)
+    const rated = rateStats(stats)
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+    }
+  }, [data.total])
+
+  const getSessionPvr = useCallback((item: GroupChatSessionItem) => {
+    let hash = 0
+    for (let i = 0; i < item.id.length; i++) {
+      hash = (hash * 31 + item.id.charCodeAt(i)) >>> 0
+    }
+    const stats: CoreStats = {
+      power: Math.min(99, 70 + (hash % 22)),
+      resonance: Math.min(99, 72 + ((hash >> 3) % 21)),
+      wisdom: Math.min(99, 73 + ((hash >> 6) % 21)),
+      charisma: Math.min(99, 71 + ((hash >> 9) % 21)),
+      intuition: Math.min(99, 72 + ((hash >> 12) % 21)),
+      adaptability: Math.min(99, 70 + ((hash >> 15) % 21)),
+      vitality: Math.min(99, 71 + ((hash >> 18) % 21)),
+    }
+    return rateStats(stats).ovr
+  }, [])
+
   // Format agent ID lists beautifully
   const formatAgentsList = (agentIdsRaw: any) => {
     try {
@@ -47,6 +94,12 @@ export default function GroupChatSessionsPanel({ data }: GroupChatPanelProps) {
 
   return (
     <div className="space-y-6 font-sans">
+      <VesselRatingRibbon
+        ovr={councilTelemetryRating.ovr}
+        archetype={councilTelemetryRating.archetype}
+        seals={councilTelemetryRating.seals}
+        compact
+      />
       {/* Metrics Row */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
         {/* Total Councils */}
@@ -166,7 +219,12 @@ export default function GroupChatSessionsPanel({ data }: GroupChatPanelProps) {
                   className="border border-white/5 bg-zinc-950/40 rounded-xl p-3.5 hover:border-violet-500/20 transition-all text-xs"
                 >
                   <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-white/5 pb-2 mb-2 font-mono text-[10px] text-zinc-500">
-                    <span className="font-bold text-zinc-400">ID: {item.id}</span>
+                    <span className="inline-flex items-center gap-2 font-bold text-zinc-400">
+                      <span>ID: {item.id}</span>
+                      <span className="rounded border border-amber-400/35 bg-amber-500/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-amber-300">
+                        Council PVR {getSessionPvr(item)}
+                      </span>
+                    </span>
                     <div className="flex items-center gap-2">
                       <span className="h-2 w-2 rounded-full bg-violet-400 shadow-[0_0_8px_rgba(167,139,250,0.5)]" />
                       <span className="capitalize">{item.origin || 'Web app'}</span>

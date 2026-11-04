@@ -1,7 +1,10 @@
 'use client'
 
+import { useCallback, useMemo } from 'react'
 import { Trophy, Activity, Sparkles, Zap, Target, Crown } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 
 interface Standing {
   rank: number
@@ -84,6 +87,54 @@ function MetricCard({
 }
 
 export default function ScrabbleLeaguePanel({ data, loading }: ScrabbleLeagueProps) {
+  const getStandingPvr = useCallback((s: Standing) => {
+    const eloBoost = Math.min(28, Math.max(0, Math.round((s.elo - 1100) * 0.06)))
+    const winRatio = s.played > 0 ? s.won / s.played : 0.5
+    const winBoost = Math.round(winRatio * 14)
+    const stats: CoreStats = {
+      power: Math.min(99, 64 + eloBoost),
+      resonance: Math.min(99, 66 + winBoost + Math.round(eloBoost * 0.5)),
+      wisdom: Math.min(99, 68 + eloBoost),
+      charisma: Math.min(99, 65 + winBoost),
+      intuition: Math.min(99, 67 + eloBoost),
+      adaptability: Math.min(99, 66 + winBoost + Math.round(eloBoost * 0.4)),
+      vitality: Math.min(99, 65 + Math.min(20, s.played)),
+    }
+    return rateStats(stats).ovr
+  }, [])
+
+  const leagueCohortRating = useMemo(() => {
+    const totalMatches = data?.aggregates?.totalMatches ?? 0
+    const highlights =
+      (data?.aggregates?.highlights.bingo ?? 0) +
+      (data?.aggregates?.highlights.upset ?? 0) +
+      (data?.aggregates?.highlights.sweep ?? 0)
+    const boost = Math.min(20, Math.round(Math.log10(Math.max(10, totalMatches + 10)) * 6))
+    const stats: CoreStats = {
+      power: Math.min(99, 70 + boost),
+      resonance: Math.min(99, 71 + boost),
+      wisdom: Math.min(99, 74 + boost),
+      charisma: Math.min(99, 70 + Math.min(22, highlights)),
+      intuition: Math.min(99, 73 + boost),
+      adaptability: Math.min(99, 72 + boost),
+      vitality: Math.min(99, 71 + boost),
+    }
+    const esmsBalances = {
+      spirit: 58 + boost,
+      essence: 54 + boost,
+      matter: 52 + boost,
+      substance: 60 + boost,
+    }
+    const sealProgress = evaluateSeals({ stats, esmsBalances })
+    const seals = earnedSeals(sealProgress)
+    const rated = rateStats(stats)
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+    }
+  }, [data?.aggregates])
+
   if (loading && !data) {
     return (
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
@@ -111,6 +162,12 @@ export default function ScrabbleLeaguePanel({ data, loading }: ScrabbleLeaguePro
 
   return (
     <div className="space-y-6">
+      <VesselRatingRibbon
+        ovr={leagueCohortRating.ovr}
+        archetype={leagueCohortRating.archetype}
+        seals={leagueCohortRating.seals}
+        compact
+      />
       {/* Metrics */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         <MetricCard
@@ -170,7 +227,14 @@ export default function ScrabbleLeaguePanel({ data, loading }: ScrabbleLeaguePro
                 {standings.map(s => (
                   <tr key={s.agentId} className="border-t border-white/5">
                     <td className="py-2 pr-3 font-mono text-zinc-500">{s.rank}</td>
-                    <td className="py-2 pr-3 font-medium text-white">{s.name}</td>
+                    <td className="py-2 pr-3 font-medium text-white">
+                      <span className="inline-flex items-center gap-2">
+                        <span>{s.name}</span>
+                        <span className="rounded border border-amber-400/35 bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                          PVR {getStandingPvr(s)}
+                        </span>
+                      </span>
+                    </td>
                     <td className="py-2 pr-3 text-right font-mono font-bold text-amber-300">
                       {s.elo}
                     </td>
