@@ -3,6 +3,8 @@ import CosmicMenuAlchemist from '@/components/culinary/CosmicMenuAlchemist'
 import type { EsmsToken } from '@/lib/agents/rating'
 import type { CulinarySurgeMode } from '@/lib/culinary/sanctum-catalog'
 
+export const dynamic = 'force-dynamic'
+
 export const metadata: Metadata = {
   title: 'Culinary Alchemy Sanctum & Live Sky Menu Lab | Alchm Agents',
   description:
