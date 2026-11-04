@@ -650,12 +650,14 @@ export function NatalTransitBiWheel({
                   >
                     Synastry
                   </Link>
-                  <Link
+                  <a
                     href={mentor.links.culinary}
+                    target="_blank"
+                    rel="noreferrer"
                     className="rounded-lg border border-amber-400/30 bg-amber-400/10 py-1.5 text-amber-200 hover:bg-amber-400/20"
                   >
-                    Kitchen
-                  </Link>
+                    Kitchen ↗
+                  </a>
                 </div>
               </article>
             ))}

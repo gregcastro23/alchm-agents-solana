@@ -501,13 +501,21 @@ export function findDailyHistoricalMentors(params: {
   // Sort descending by mentorResonanceScore
   matches.sort((a, b) => b.mentorResonanceScore - a.mentorResonanceScore || b.pvr - a.pvr)
 
+  const kitchenBase = (
+    (typeof process !== 'undefined' &&
+      (process.env.NEXT_PUBLIC_KITCHEN_URL ||
+        process.env.ALCHM_KITCHEN_URL ||
+        process.env.ALCHM_KITCHEN_BASE_URL)) ||
+    'https://alchm.kitchen'
+  ).replace(/\/+$/, '')
+
   return matches.slice(0, 3).map((m, idx) => ({
     rank: idx + 1,
     ...m,
     links: {
       agentProfile: `/agent/${m.agentId}`,
       synastry: `/synastry/${m.agentId}`,
-      culinary: `/culinary?agent=${encodeURIComponent(m.agentId)}`,
+      culinary: `${kitchenBase}/recipes?agent=${encodeURIComponent(m.agentId)}`,
     },
   }))
 }

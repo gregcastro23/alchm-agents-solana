@@ -186,13 +186,6 @@ const navigationGroups: NavGroup[] = [
     icon: FlaskConical,
     links: [
       {
-        href: '/culinary',
-        label: 'Culinary Alchemy Sanctum',
-        badge: 'WTEN 1K',
-        description:
-          'Live Sky-to-Plate Menu Lab & WTEN 1,000-recipe vessel alterations with ESMS & PVR.',
-      },
-      {
         href: '/labs',
         label: 'Alchemical Labs',
         description: 'Live consciousness trajectory telemetry and agent league standings.',

@@ -65,16 +65,6 @@ export function TopNavBar() {
           </span>
         </Link>
         <Link
-          href="/culinary"
-          aria-label="Culinary Alchemy Sanctum"
-          title="Culinary Alchemy Sanctum"
-          className="text-on-surface-variant hover:text-st-primary transition-colors flex items-center gap-1"
-        >
-          <span className="material-symbols-outlined text-[20px]" aria-hidden>
-            restaurant_menu
-          </span>
-        </Link>
-        <Link
           href="/attunement-circle"
           aria-label="Attune"
           className="text-on-surface-variant hover:text-st-primary transition-colors"
