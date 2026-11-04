@@ -15,6 +15,8 @@ import {
   ExternalLink,
 } from 'lucide-react'
 import { buildLocalSignInHref } from '@/lib/kitchen-signin'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 
 interface YieldUser {
   id?: string
@@ -245,6 +247,79 @@ export default function YieldHub({ user }: { user: YieldUser | null }) {
     ]
   }, [session])
 
+  const yieldHubRating = useMemo(() => {
+    const sp = Number(session?.balances?.spirit ?? 28)
+    const es = Number(session?.balances?.essence ?? 28)
+    const ma = Number(session?.balances?.matter ?? 28)
+    const su = Number(session?.balances?.substance ?? 28)
+    const totalStreak = accounts.reduce((acc, item) => acc + (item.streak || 0), 0)
+    const stats: CoreStats = {
+      power: Math.min(99, Math.max(66, Math.round(64 + Math.min(30, sp * 0.45) + totalStreak))),
+      resonance: Math.min(99, Math.max(66, Math.round(64 + Math.min(30, es * 0.45) + totalStreak))),
+      wisdom: Math.min(99, Math.max(66, Math.round(64 + Math.min(30, su * 0.45) + totalStreak))),
+      charisma: Math.min(99, Math.max(70, Math.round(68 + totalStreak * 2 + (signedIn ? 8 : 0)))),
+      intuition: Math.min(99, Math.max(66, Math.round(65 + Math.min(30, es * 0.45) + totalStreak))),
+      adaptability: Math.min(
+        99,
+        Math.max(70, Math.round(68 + accounts.filter(a => a.status === 'linked').length * 10))
+      ),
+      vitality: Math.min(99, Math.max(66, Math.round(64 + Math.min(30, ma * 0.45) + totalStreak))),
+    }
+    const esmsBalances = {
+      spirit: Math.max(12, Math.round(sp)),
+      essence: Math.max(12, Math.round(es)),
+      matter: Math.max(12, Math.round(ma)),
+      substance: Math.max(12, Math.round(su)),
+    }
+    const sealProgress = evaluateSeals({ stats, esmsBalances })
+    const seals = earnedSeals(sealProgress)
+    const rated = rateStats(stats)
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+    }
+  }, [session, accounts, signedIn])
+
+  const getSitePvr = useCallback((account: SiteAccount) => {
+    const total =
+      Number(account.balances.spirit || 0) +
+      Number(account.balances.essence || 0) +
+      Number(account.balances.matter || 0) +
+      Number(account.balances.substance || 0)
+    const stats: CoreStats = {
+      power: Math.min(
+        99,
+        Math.max(64, Math.round(64 + Math.min(30, Number(account.balances.spirit || 0) * 0.6)))
+      ),
+      resonance: Math.min(
+        99,
+        Math.max(64, Math.round(64 + Math.min(30, Number(account.balances.essence || 0) * 0.6)))
+      ),
+      wisdom: Math.min(
+        99,
+        Math.max(64, Math.round(64 + Math.min(30, Number(account.balances.substance || 0) * 0.6)))
+      ),
+      charisma: Math.min(
+        99,
+        Math.max(
+          68,
+          Math.round(68 + (account.streak || 0) * 3 + (account.status === 'linked' ? 8 : 0))
+        )
+      ),
+      intuition: Math.min(99, Math.max(68, Math.round(68 + Math.min(25, total * 0.25)))),
+      adaptability: Math.min(
+        99,
+        Math.max(66, Math.round(66 + (account.streak || 0) * 2 + (account.canClaimDaily ? 6 : 0)))
+      ),
+      vitality: Math.min(
+        99,
+        Math.max(64, Math.round(64 + Math.min(30, Number(account.balances.matter || 0) * 0.6)))
+      ),
+    }
+    return rateStats(stats).ovr
+  }, [])
+
   return (
     <div className="min-h-screen bg-[#07020d] text-zinc-100">
       <div className="mx-auto max-w-5xl px-6 py-10 space-y-8">
@@ -273,6 +348,20 @@ export default function YieldHub({ user }: { user: YieldUser | null }) {
             >
               Acquire ESMS Bundles
             </Link>
+            <Link
+              href="/pentacles"
+              className="rounded-lg border border-cyan-500/30 bg-cyan-500/10 px-3 py-2 text-xs font-semibold text-cyan-200 hover:bg-cyan-500/15"
+            >
+              Pentacle Star Vaults
+            </Link>
+          </div>
+          <div className="pt-2">
+            <VesselRatingRibbon
+              ovr={yieldHubRating.ovr}
+              archetype={yieldHubRating.archetype}
+              seals={yieldHubRating.seals}
+              compact
+            />
           </div>
           {cameFromDesktop && (
             <div className="mt-3 inline-flex items-center gap-2 rounded-full border border-purple-500/30 bg-purple-500/10 px-3 py-1.5 text-[11px] font-semibold uppercase tracking-wider text-purple-200">
@@ -359,15 +448,20 @@ export default function YieldHub({ user }: { user: YieldUser | null }) {
                           <ExternalLink className="w-3 h-3" />
                         </a>
                       </div>
-                      <span
-                        className={`text-[10px] uppercase tracking-widest font-bold px-2 py-1 rounded-full border ${
-                          account.status === 'linked'
-                            ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300'
-                            : 'border-zinc-700 bg-zinc-900 text-zinc-400'
-                        }`}
-                      >
-                        {account.status === 'linked' ? 'Active Sync' : 'Local Preview'}
-                      </span>
+                      <div className="flex items-center gap-2">
+                        <span className="rounded-full border border-amber-400/35 bg-amber-500/15 px-2.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                          PVR {getSitePvr(account)}
+                        </span>
+                        <span
+                          className={`text-[10px] uppercase tracking-widest font-bold px-2 py-1 rounded-full border ${
+                            account.status === 'linked'
+                              ? 'border-emerald-400/40 bg-emerald-400/10 text-emerald-300'
+                              : 'border-zinc-700 bg-zinc-900 text-zinc-400'
+                          }`}
+                        >
+                          {account.status === 'linked' ? 'Active Sync' : 'Local Preview'}
+                        </span>
+                      </div>
                     </header>
 
                     <div className="grid grid-cols-4 gap-2">

@@ -1,7 +1,12 @@
 'use client'
 
-import { useState, useCallback, useEffect } from 'react'
+import { useState, useCallback, useEffect, useMemo } from 'react'
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from '@/components/ui/card'
+import {
+  VesselRatingRibbon,
+  AlchemicalSealsCodex,
+} from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import { Button } from '@/components/ui/button'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import { Alert, AlertDescription } from '@/components/ui/alert'
@@ -283,6 +288,69 @@ export default function RuneForgePage() {
     setShowBatchGenerator(false)
   }, [])
 
+  const sigilVesselRating = useMemo(() => {
+    const aspectCount = geometry?.aspectLines?.length ?? 8
+    const nodeCount = geometry?.powerNodes?.length ?? 5
+    const patternCount = geometry?.sacredPatterns?.length ?? 2
+    const dom = (geometry?.dominantElement || 'Fire').toLowerCase()
+    const stats: CoreStats = {
+      power: Math.min(99, Math.max(66, 64 + aspectCount * 2 + (dom === 'fire' ? 12 : 0))),
+      resonance: Math.min(99, Math.max(66, 64 + nodeCount * 3 + (dom === 'water' ? 12 : 0))),
+      wisdom: Math.min(99, Math.max(66, 64 + aspectCount * 2 + (dom === 'air' ? 12 : 0))),
+      charisma: Math.min(99, Math.max(70, 68 + patternCount * 6 + generatedSigils.length * 3)),
+      intuition: Math.min(99, Math.max(68, 66 + nodeCount * 3 + patternCount * 4)),
+      adaptability: Math.min(99, Math.max(68, 66 + aspectCount * 2 + generatedSigils.length * 3)),
+      vitality: Math.min(99, Math.max(66, 64 + patternCount * 5 + (dom === 'earth' ? 12 : 0))),
+    }
+    const esmsBalances = {
+      spirit: 38 + patternCount * 6,
+      essence: 36 + nodeCount * 5,
+      matter: 34 + aspectCount * 3,
+      substance: 40 + generatedSigils.length * 6,
+    }
+    const sealProgress = evaluateSeals({ stats, esmsBalances })
+    const seals = earnedSeals(sealProgress)
+    const rated = rateStats(stats)
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+      sealProgress,
+    }
+  }, [geometry, generatedSigils.length])
+
+  const getRunePvr = useCallback((rune: (typeof MULTI_CHART_RUNE_CATALOG)[number]) => {
+    const effectPower = rune.effects[0]?.power ?? 25
+    const stats: CoreStats = {
+      power: Math.min(
+        99,
+        Math.max(62, 58 + rune.baseCost.spirit * 2 + Math.round(effectPower * 0.35))
+      ),
+      resonance: Math.min(
+        99,
+        Math.max(62, 58 + rune.baseCost.essence * 2 + Math.round(effectPower * 0.35))
+      ),
+      wisdom: Math.min(
+        99,
+        Math.max(62, 58 + rune.baseCost.substance * 2 + Math.round(effectPower * 0.35))
+      ),
+      charisma: Math.min(
+        99,
+        Math.max(68, 64 + rune.chartRequirements.minCharts * 7 + Math.round(effectPower * 0.4))
+      ),
+      intuition: Math.min(99, Math.max(66, 62 + Math.round(effectPower * 0.5))),
+      adaptability: Math.min(
+        99,
+        Math.max(64, 60 + rune.chartRequirements.minCharts * 6 + Math.round(effectPower * 0.35))
+      ),
+      vitality: Math.min(
+        99,
+        Math.max(62, 58 + rune.baseCost.matter * 2 + Math.round(effectPower * 0.35))
+      ),
+    }
+    return rateStats(stats).ovr
+  }, [])
+
   return (
     <div className="container mx-auto py-8 px-4 max-w-6xl">
       {/* Header */}
@@ -298,6 +366,14 @@ export default function RuneForgePage() {
           Transform natal chart geometry into personalized runic sigils and inspect the canonical
           ESMS multi-chart Rune Codex.
         </p>
+        <div className="mt-4 max-w-xl mx-auto text-left">
+          <VesselRatingRibbon
+            ovr={sigilVesselRating.ovr}
+            archetype={sigilVesselRating.archetype}
+            seals={sigilVesselRating.seals}
+            compact
+          />
+        </div>
       </div>
 
       {/* Main Content */}
@@ -368,7 +444,7 @@ export default function RuneForgePage() {
 
         {/* Quick Input Tab */}
         <TabsContent value="quick">
-          <Card>
+          <Card className="glass-panel border-white/10 bg-[#0d1020]/90 text-white">
             <CardHeader>
               <CardTitle>Quick Chart Input</CardTitle>
               <CardDescription>
@@ -403,7 +479,7 @@ export default function RuneForgePage() {
 
         {/* Manual Entry Tab */}
         <TabsContent value="manual">
-          <Card>
+          <Card className="glass-panel border-white/10 bg-[#0d1020]/90 text-white">
             <CardHeader>
               <CardTitle>Manual Birth Data Entry</CardTitle>
               <CardDescription>
@@ -487,7 +563,7 @@ export default function RuneForgePage() {
           {geometry ? (
             <div className="space-y-6">
               {/* Chart Summary */}
-              <Card>
+              <Card className="glass-panel border-white/10 bg-[#0d1020]/90 text-white">
                 <CardHeader>
                   <CardTitle>Chart Analysis Complete</CardTitle>
                   <CardDescription>
@@ -496,32 +572,36 @@ export default function RuneForgePage() {
                       new Date(birthInfo.year, birthInfo.month, birthInfo.day).toLocaleDateString()}
                   </CardDescription>
                 </CardHeader>
-                <CardContent>
+                <CardContent className="space-y-4">
                   <div
                     className={`grid ${isMobile ? 'grid-cols-2' : 'grid-cols-4'} gap-4 text-center`}
                   >
-                    <div className="p-3 bg-muted rounded">
+                    <div className="p-3 bg-white/[0.04] border border-white/10 rounded">
                       <div className="text-2xl font-bold">{geometry.aspectLines.length}</div>
                       <div className="text-xs text-muted-foreground">Aspects</div>
                     </div>
-                    <div className="p-3 bg-muted rounded">
+                    <div className="p-3 bg-white/[0.04] border border-white/10 rounded">
                       <div className="text-2xl font-bold">{geometry.powerNodes.length}</div>
                       <div className="text-xs text-muted-foreground">Power Nodes</div>
                     </div>
-                    <div className="p-3 bg-muted rounded">
+                    <div className="p-3 bg-white/[0.04] border border-white/10 rounded">
                       <div className="text-2xl font-bold">{geometry.sacredPatterns.length}</div>
                       <div className="text-xs text-muted-foreground">Patterns</div>
                     </div>
-                    <div className="p-3 bg-muted rounded">
+                    <div className="p-3 bg-white/[0.04] border border-white/10 rounded">
                       <div className="text-2xl font-bold">{geometry.dominantElement}</div>
                       <div className="text-xs text-muted-foreground">Element</div>
                     </div>
                   </div>
+                  <AlchemicalSealsCodex
+                    sealProgress={sigilVesselRating.sealProgress}
+                    esmsSource="estimated"
+                  />
                 </CardContent>
               </Card>
 
               {/* Batch Generation */}
-              <Card>
+              <Card className="glass-panel border-white/10 bg-[#0d1020]/90 text-white">
                 <CardHeader>
                   <CardTitle>Batch Generation</CardTitle>
                   <CardDescription>Generate sigils in all four styles at once</CardDescription>
@@ -553,7 +633,7 @@ export default function RuneForgePage() {
 
         {/* Gallery Tab */}
         <TabsContent value="gallery">
-          <Card>
+          <Card className="glass-panel border-white/10 bg-[#0d1020]/90 text-white">
             <CardHeader>
               <CardTitle>Generated Sigils</CardTitle>
               <CardDescription>
@@ -572,7 +652,7 @@ export default function RuneForgePage() {
                 {generatedSigils.map((sigil, index) => (
                   <Card
                     key={index}
-                    className="cursor-pointer hover:shadow-lg transition-shadow"
+                    className="cursor-pointer border-white/10 bg-[#110e24]/85 text-white hover:border-amber-400/40 hover:shadow-lg transition-all"
                     onClick={() => setSelectedSigilIndex(index)}
                   >
                     <div className="aspect-square relative bg-gradient-to-br from-purple-900/20 to-blue-900/20 rounded-t-lg overflow-hidden">
@@ -627,7 +707,7 @@ export default function RuneForgePage() {
         <TabsContent value="meditation">
           {generatedSigils.length > 0 && (
             <div className="space-y-6">
-              <Card>
+              <Card className="glass-panel border-white/10 bg-[#0d1020]/90 text-white">
                 <CardHeader>
                   <CardTitle>Choose a Sigil for Meditation</CardTitle>
                   <CardDescription>
@@ -704,7 +784,13 @@ export default function RuneForgePage() {
                       </span>
                       <div>
                         <CardTitle className="text-base text-zinc-100">{rune.name}</CardTitle>
-                        <div className="mt-1 flex items-center gap-1.5">
+                        <div className="mt-1 flex items-center gap-1.5 flex-wrap">
+                          <Badge
+                            variant="outline"
+                            className="border-amber-400/35 bg-amber-500/15 font-mono text-[10px] font-bold text-amber-300"
+                          >
+                            PVR {getRunePvr(rune)}
+                          </Badge>
                           <Badge
                             variant="outline"
                             className="border-violet-400/30 bg-violet-500/10 text-[10px] uppercase text-violet-200"
@@ -765,7 +851,7 @@ export default function RuneForgePage() {
           onClick={() => setSelectedSigilIndex(null)}
         >
           <Card
-            className="max-w-4xl w-full max-h-[90vh] overflow-y-auto"
+            className="max-w-4xl w-full max-h-[90vh] overflow-y-auto glass-panel border-white/10 bg-[#0d1020]/95 text-white"
             onClick={e => e.stopPropagation()}
           >
             <CardHeader>

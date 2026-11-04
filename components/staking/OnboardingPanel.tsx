@@ -1,9 +1,13 @@
 'use client'
 
+import { useMemo } from 'react'
+import Link from 'next/link'
 import { DynamicWidget } from '@dynamic-labs/sdk-react-core'
 import { useArcWallet } from '@/lib/staking/useArcWallet'
 import { GOLD } from '@/lib/staking/ui'
 import PentaclesNetworkStatus from './PentaclesNetworkStatus'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 
 const card: React.CSSProperties = {
   background: 'rgba(22,19,12,0.6)',
@@ -78,6 +82,34 @@ function Step({
 export default function OnboardingPanel() {
   const wallet = useArcWallet()
 
+  const initiationRating = useMemo(() => {
+    const completedSteps = (wallet.connected ? 1 : 0) + (wallet.onArc === true ? 1 : 0)
+    const base = 66 + completedSteps * 10
+    const stats: CoreStats = {
+      power: Math.min(99, base + 4),
+      resonance: Math.min(99, base + 2),
+      wisdom: Math.min(99, base + 3),
+      charisma: Math.min(99, base + 8),
+      intuition: Math.min(99, base + 5),
+      adaptability: Math.min(99, base + 4),
+      vitality: Math.min(99, base + 6),
+    }
+    const esmsBalances = {
+      spirit: 25 + completedSteps * 15,
+      essence: 25 + completedSteps * 15,
+      matter: 30 + completedSteps * 15,
+      substance: 25 + completedSteps * 15,
+    }
+    const sealProgress = evaluateSeals({ stats, esmsBalances })
+    const seals = earnedSeals(sealProgress)
+    const rated = rateStats(stats)
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+    }
+  }, [wallet.connected, wallet.onArc])
+
   return (
     <div
       style={{ maxWidth: 460, margin: '0 auto', display: 'flex', flexDirection: 'column', gap: 20 }}
@@ -99,6 +131,13 @@ export default function OnboardingPanel() {
         </p>
         <PentaclesNetworkStatus />
       </div>
+
+      <VesselRatingRibbon
+        ovr={initiationRating.ovr}
+        archetype={initiationRating.archetype}
+        seals={initiationRating.seals}
+        compact
+      />
 
       <DynamicWidget />
 
@@ -194,6 +233,40 @@ export default function OnboardingPanel() {
             }
           />
         </ul>
+        <div
+          style={{
+            marginTop: 14,
+            paddingTop: 12,
+            borderTop: '1px solid rgba(255,255,255,0.06)',
+            display: 'flex',
+            justifyContent: 'space-between',
+            gap: 8,
+            flexWrap: 'wrap',
+          }}
+        >
+          <Link
+            href="/pentacles"
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              color: GOLD,
+              textDecoration: 'none',
+            }}
+          >
+            Enter Sky Vaults →
+          </Link>
+          <Link
+            href="/pentacles/star-agents"
+            style={{
+              fontSize: 12,
+              fontWeight: 600,
+              color: '#7febff',
+              textDecoration: 'none',
+            }}
+          >
+            Consult Star Agents →
+          </Link>
+        </div>
       </div>
     </div>
   )
