@@ -165,6 +165,9 @@ export function McpX402Playground({ defaultExpanded = true }: { defaultExpanded?
             arguments: parsed,
             idempotencyKey: activeKey,
             settlementRail: rail,
+            seenIdempotencyKeys: ledger.map(
+              entry => `${entry.tool}::${entry.receipt.idempotencyKey}`
+            ),
           }),
         })
         const payload = await res.json()
@@ -190,7 +193,7 @@ export function McpX402Playground({ defaultExpanded = true }: { defaultExpanded?
         setRunning(false)
       }
     },
-    [argsText, idempotencyKey, rail, selectedTool.name, toolPvr.ovr]
+    [argsText, idempotencyKey, ledger, rail, selectedTool.name, toolPvr.ovr]
   )
 
   const copyText = (text: string, id: string) => {

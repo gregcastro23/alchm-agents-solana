@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { POST } from '@/app/api/mcp/playground/route'
 import {
   MCP_V140_TOOL_CATALOG,
   buildX402PaymentPreview,
@@ -87,5 +88,30 @@ describe('@alchm/mcp-server@1.4.0 playground catalog & billing normalization', (
 
     const basePreview = buildX402PaymentPreview(tool, 'base-x402', 'idem_1')
     expect(basePreview.network).toBe('eip155:84532')
+  })
+
+  it('survives serverless cold-start replays via seenIdempotencyKeys or alchm_mcp_idem_keys cookie', async () => {
+    const req = new Request('http://localhost:3000/api/mcp/playground', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        cookie: 'alchm_mcp_idem_keys=get_live_sky_transits%3A%3Aidem_coldstart_cookie',
+      },
+      body: JSON.stringify({
+        tool: 'get_live_sky_transits',
+        idempotencyKey: 'idem_coldstart_cookie',
+        settlementRail: 'arc-eip3009',
+      }),
+    })
+
+    const res = await POST(req)
+    expect(res.status).toBe(200)
+    const json = await res.json()
+    expect(json.ok).toBe(true)
+    expect(json.billing.status).toBe('replayed')
+    expect(json.billing.debited).toBe(false)
+    expect(json.billing.replayed).toBe(true)
+    expect(json.billing.cost).toEqual({ spirit: 0, essence: 0, matter: 0, substance: 0 })
+    expect(res.headers.get('Set-Cookie')).toContain('alchm_mcp_idem_keys=')
   })
 })

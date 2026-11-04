@@ -189,6 +189,7 @@ export async function POST(req: Request) {
       arguments?: Record<string, unknown>
       idempotencyKey?: string
       settlementRail?: McpSettlementRail
+      seenIdempotencyKeys?: string[]
     }
 
     const toolName = String(body.tool ?? 'get_live_sky_transits')
@@ -224,46 +225,87 @@ export async function POST(req: Request) {
     const cacheKey = `${toolDef.name}::${idempotencyKey}`
     const cached = IDEMPOTENCY_CACHE.get(cacheKey)
 
+    // Stateless cold-start / multi-region Vercel Fluid replay fallback via client ledger or cookie
+    const clientSeenKeys = Array.isArray(body.seenIdempotencyKeys)
+      ? body.seenIdempotencyKeys.filter((k): k is string => typeof k === 'string')
+      : []
+    const cookieHeader = req.headers.get('cookie') ?? ''
+    const cookieMatch = cookieHeader.match(/(?:^|;\s*)alchm_mcp_idem_keys=([^;]+)/)
+    const cookieKeys = cookieMatch
+      ? decodeURIComponent(cookieMatch[1]).split(',').filter(Boolean)
+      : []
+    const isColdStartReplay =
+      !cached &&
+      (clientSeenKeys.includes(cacheKey) ||
+        clientSeenKeys.includes(idempotencyKey) ||
+        cookieKeys.includes(cacheKey))
+
     const pvrRating = rateMcpToolReadiness(toolDef)
     const x402Preview = buildX402PaymentPreview(toolDef, rail, idempotencyKey)
 
-    if (cached) {
+    const txRefPrefix =
+      rail === 'solana-amm' ? 'sol_sig_' : rail === 'arc-eip3009' ? '0xarc_' : '0xbase_'
+    const deterministicTxReference = `${txRefPrefix}${Buffer.from(cacheKey).toString('hex').slice(0, 24)}`
+
+    const nextCookieKeys = Array.from(new Set([cacheKey, ...cookieKeys])).slice(0, 24)
+    const setCookieValue = `alchm_mcp_idem_keys=${encodeURIComponent(nextCookieKeys.join(','))}; Path=/api/mcp/playground; Max-Age=3600; SameSite=Lax`
+
+    if (cached || isColdStartReplay) {
       const replayedReceipt = normalizeMcpBillingReceipt({
         status: 'replayed',
         amounts: toolDef.esmsCost,
         idempotencyKey,
         rail,
         x402AtomicUsdc: toolDef.x402AtomicUsdc,
-        txReference: cached.receipt.txReference,
+        txReference: cached?.receipt.txReference ?? deterministicTxReference,
       })
 
-      return NextResponse.json({
-        ok: true,
-        package: '@alchm/mcp-server@1.4.0',
-        tool: toolDef.name,
-        pvr: pvrRating.ovr,
-        archetype: pvrRating.archetype.title,
-        jsonRpcRequest: {
-          jsonrpc: '2.0',
-          id: 1,
-          method: 'tools/call',
-          params: {
-            name: toolDef.name,
-            arguments: preparedArgs,
+      const baseResult =
+        cached?.result ??
+        synthesizeToolResult(toolDef.name, {
+          ...rawArgs,
+          idempotencyKey,
+        })
+
+      if (!cached) {
+        IDEMPOTENCY_CACHE.set(cacheKey, {
+          tool: toolDef.name,
+          result: baseResult,
+          receipt: replayedReceipt,
+          createdAt: new Date().toISOString(),
+        })
+      }
+
+      return NextResponse.json(
+        {
+          ok: true,
+          package: '@alchm/mcp-server@1.4.0',
+          tool: toolDef.name,
+          pvr: pvrRating.ovr,
+          archetype: pvrRating.archetype.title,
+          jsonRpcRequest: {
+            jsonrpc: '2.0',
+            id: 1,
+            method: 'tools/call',
+            params: {
+              name: toolDef.name,
+              arguments: preparedArgs,
+            },
           },
-        },
-        result: {
-          ...cached.result,
+          result: {
+            ...baseResult,
+            billing: replayedReceipt,
+          },
           billing: replayedReceipt,
+          x402Payment: x402Preview,
         },
-        billing: replayedReceipt,
-        x402Payment: x402Preview,
-      })
+        {
+          headers: {
+            'Set-Cookie': setCookieValue,
+          },
+        }
+      )
     }
-
-    const txRefPrefix =
-      rail === 'solana-amm' ? 'sol_sig_' : rail === 'arc-eip3009' ? '0xarc_' : '0xbase_'
-    const txReference = `${txRefPrefix}${Buffer.from(cacheKey).toString('hex').slice(0, 24)}`
 
     const chargedReceipt = normalizeMcpBillingReceipt({
       status: 'charged',
@@ -271,7 +313,7 @@ export async function POST(req: Request) {
       idempotencyKey,
       rail,
       x402AtomicUsdc: toolDef.x402AtomicUsdc,
-      txReference,
+      txReference: deterministicTxReference,
     })
 
     const synthesized = synthesizeToolResult(toolDef.name, {
@@ -291,28 +333,35 @@ export async function POST(req: Request) {
       createdAt: new Date().toISOString(),
     })
 
-    return NextResponse.json({
-      ok: true,
-      package: '@alchm/mcp-server@1.4.0',
-      tool: toolDef.name,
-      pvr: pvrRating.ovr,
-      archetype: pvrRating.archetype.title,
-      jsonRpcRequest: {
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'tools/call',
-        params: {
-          name: toolDef.name,
-          arguments: preparedArgs,
+    return NextResponse.json(
+      {
+        ok: true,
+        package: '@alchm/mcp-server@1.4.0',
+        tool: toolDef.name,
+        pvr: pvrRating.ovr,
+        archetype: pvrRating.archetype.title,
+        jsonRpcRequest: {
+          jsonrpc: '2.0',
+          id: 1,
+          method: 'tools/call',
+          params: {
+            name: toolDef.name,
+            arguments: preparedArgs,
+          },
         },
-      },
-      result: {
-        ...synthesized,
+        result: {
+          ...synthesized,
+          billing: chargedReceipt,
+        },
         billing: chargedReceipt,
+        x402Payment: x402Preview,
       },
-      billing: chargedReceipt,
-      x402Payment: x402Preview,
-    })
+      {
+        headers: {
+          'Set-Cookie': setCookieValue,
+        },
+      }
+    )
   } catch (error) {
     return NextResponse.json(
       {
