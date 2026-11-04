@@ -882,6 +882,28 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
                     </div>
                   )}
               </div>
+              <div className="pt-sm border-t border-border-gold/15 flex flex-wrap items-center justify-between gap-2">
+                <span className="font-mono-label text-[10px] uppercase tracking-wider text-muted-text">
+                  WTEN 1,000-Recipe Bridge · Sky-to-Plate Resonance
+                </span>
+                <div className="flex flex-wrap items-center gap-2">
+                  <Link
+                    href={`/culinary?agent=${encodeURIComponent(agent.id)}`}
+                    className="inline-flex items-center gap-1.5 rounded border border-amber-400/40 bg-amber-400/15 px-3 py-1 font-mono-label text-[10px] uppercase tracking-wider text-amber-200 hover:bg-amber-400/25"
+                  >
+                    <Utensils className="w-3 h-3" />
+                    Open in Culinary Sanctum
+                  </Link>
+                  <a
+                    href={`https://alchm.kitchen/recipes?agent=${encodeURIComponent(agent.id)}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="inline-flex items-center gap-1 rounded border border-border-gold/30 bg-[#0b0e19]/60 px-3 py-1 font-mono-label text-[10px] uppercase tracking-wider text-bright-gold hover:border-primary-gold"
+                  >
+                    alchm.kitchen ↗
+                  </a>
+                </div>
+              </div>
             </div>
           </section>
         )}

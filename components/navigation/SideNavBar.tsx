@@ -107,6 +107,19 @@ export function SideNavBar() {
           </span>
           Cross-Site ESMS Yield
         </Link>
+        <Link
+          href="/culinary"
+          className={
+            pathname === '/culinary'
+              ? 'flex items-center gap-3 p-3 rounded bg-primary-container/20 text-st-primary border-r-4 border-st-primary'
+              : 'flex items-center gap-3 p-3 rounded text-on-surface-variant hover:bg-surface-variant/30 transition-colors'
+          }
+        >
+          <span className="material-symbols-outlined" aria-hidden>
+            restaurant_menu
+          </span>
+          Culinary Sanctum
+        </Link>
       </nav>
 
       {/* ESMS balances */}
