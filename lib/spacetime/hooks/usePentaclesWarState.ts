@@ -342,6 +342,17 @@ export function usePentaclesWarState() {
           ).length,
         }))
         .sort((left, right) => Number(BigInt(right.tableId) - BigInt(left.tableId))),
+      myMeleeHand: raw.meleeHands.map(card => ({
+        handId: card.handId.toString(),
+        tableId: card.tableId.toString(),
+        seatId: card.seatId.toString(),
+        cardId: card.cardId.toString(),
+        suit: card.suit.tag,
+        rank: card.rank,
+        isMajor: card.isMajor,
+        inverted: card.inverted,
+        played: card.played,
+      })),
     }
   }, [raw])
 
