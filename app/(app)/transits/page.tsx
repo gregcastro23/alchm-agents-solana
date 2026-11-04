@@ -14,6 +14,7 @@ import {
   Zap,
   ArrowRight,
   Compass,
+  Orbit,
 } from 'lucide-react'
 import Link from 'next/link'
 import { fetchCurrentPlanetaryPositions } from '@/lib/monica/fetch-current-positions'
@@ -27,6 +28,7 @@ import { resolveAgentAppearance } from '@/lib/agents/vessel-appearance-manifest'
 import { computeAgentProgression } from '@/lib/agents/leveling-service'
 import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
 import { VesselProgressionDisplay } from '@/components/vessel/vessel-progression-display'
+import { NatalTransitBiWheel } from '@/components/charts/NatalTransitBiWheel'
 import dynamic from 'next/dynamic'
 import type { CraftedAgent } from '@/lib/agent-types'
 
@@ -71,6 +73,7 @@ export default function TransitsPage() {
     : 0
   const [loading, setLoading] = useState(true)
   const [showGroupChat, setShowGroupChat] = useState(false)
+  const [showPersonalBiWheel, setShowPersonalBiWheel] = useState(true)
   const [lastUpdate, setLastUpdate] = useState<Date>(new Date())
   const [mounted, setMounted] = useState(false)
 
@@ -363,6 +366,34 @@ export default function TransitsPage() {
           </CardContent>
         </Card>
       )}
+
+      {/* Wave 20C: Personal Natal × Live Sky Bi-Wheel & Daily Mentors */}
+      <div className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="flex items-center gap-2">
+            <Orbit className="w-5 h-5 text-amber-400" />
+            <h2 className="text-lg font-semibold text-zinc-100">
+              Personal Natal Sky Overlay &amp; Daily Mentors
+            </h2>
+          </div>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={() => setShowPersonalBiWheel(prev => !prev)}
+            className="border-white/15 bg-black/40 text-xs font-mono text-zinc-300 hover:text-white"
+          >
+            {showPersonalBiWheel ? 'Hide Bi-Wheel Overlay' : 'Show Bi-Wheel Overlay'}
+          </Button>
+        </div>
+
+        {showPersonalBiWheel && (
+          <NatalTransitBiWheel
+            userName="Visitor Natal Horizon"
+            liveTransitPlacements={planetaryPositions?.['Planet Positions']}
+            showMentorStrip={true}
+          />
+        )}
+      </div>
 
       {/* Planetary Transit Visualizer */}
       {!loading && wheelTransits.length > 0 && (
