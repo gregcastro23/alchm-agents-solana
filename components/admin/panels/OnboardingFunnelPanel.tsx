@@ -14,6 +14,8 @@ import {
   X,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import type { AdminAlert } from '@/lib/admin/alerts'
 import {
   AlertRow,
@@ -109,6 +111,32 @@ export default function OnboardingFunnelPanel({
 
   const funnel = data.funnels.find(f => f.window === activeWindow) ?? data.funnels[0]
   const signups = funnel?.steps[0]?.count ?? 0
+  const avgCompleted =
+    data.recent.length > 0
+      ? data.recent.reduce((sum, u) => sum + u.completedSteps, 0) / data.recent.length
+      : 3
+
+  const onboardingStats: CoreStats = {
+    power: Math.min(99, 74 + Math.min(22, signups * 3)),
+    resonance: Math.min(99, 72 + Math.round(avgCompleted * 5)),
+    wisdom: Math.min(99, 76 + Math.min(20, (data.monica?.withProgress ?? 0) * 4)),
+    charisma: Math.min(99, 74 + Math.min(22, (data.monica?.activeStreaks ?? 0) * 5)),
+    intuition: Math.min(99, 76 + (data.alerts.length === 0 ? 18 : 6)),
+    adaptability: Math.min(99, 75 + Math.round(avgCompleted * 4)),
+    vitality: Math.min(99, 76 + Math.min(20, data.recent.filter(u => u.hasChatted).length * 4)),
+  }
+  const onboardingRating = rateStats(onboardingStats)
+  const onboardingSeals = earnedSeals(
+    evaluateSeals({
+      stats: onboardingStats,
+      esmsBalances: {
+        spirit: Math.max(110, signups * 15),
+        essence: Math.max(100, Math.round(avgCompleted * 35)),
+        matter: Math.max(90, (data.monica?.withProgress ?? 4) * 20),
+        substance: Math.max(85, data.recent.filter(u => u.hasWallet).length * 25),
+      },
+    })
+  )
 
   return (
     <div className="space-y-6">
@@ -123,6 +151,13 @@ export default function OnboardingFunnelPanel({
             read {formatDateTime(data.generatedAt)}
           </span>
         }
+      />
+
+      <VesselRatingRibbon
+        ovr={onboardingRating.ovr}
+        archetype={onboardingRating.archetype}
+        seals={onboardingSeals}
+        compact
       />
 
       {data.alerts.length > 0 && (
@@ -223,45 +258,57 @@ export default function OnboardingFunnelPanel({
                   </tr>
                 </thead>
                 <tbody className="divide-y divide-zinc-850">
-                  {data.recent.map(user => (
-                    <tr key={user.id} className="transition-colors hover:bg-white/[0.02]">
-                      <td className="px-3 py-2.5">
-                        <div className="font-bold text-zinc-200">
-                          {user.name || 'Unnamed alchemist'}
-                        </div>
-                        <div className="mt-0.5 font-mono text-[10px] text-zinc-500">
-                          {user.email}
-                          {user.provider && (
-                            <span className="text-zinc-700"> · {user.provider}</span>
+                  {data.recent.map(user => {
+                    const userPvr = Math.min(
+                      99,
+                      58 +
+                        user.completedSteps * 7 +
+                        (user.verified ? 4 : 0) +
+                        (user.hasWallet ? 2 : 0)
+                    )
+                    return (
+                      <tr key={user.id} className="transition-colors hover:bg-white/[0.02]">
+                        <td className="px-3 py-2.5">
+                          <div className="flex flex-wrap items-center gap-1.5 font-bold text-zinc-200">
+                            <span>{user.name || 'Unnamed alchemist'}</span>
+                            <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                              PVR {userPvr}
+                            </span>
+                          </div>
+                          <div className="mt-0.5 font-mono text-[10px] text-zinc-500">
+                            {user.email}
+                            {user.provider && (
+                              <span className="text-zinc-700"> · {user.provider}</span>
+                            )}
+                          </div>
+                        </td>
+                        <td className="px-3 py-2.5 font-mono text-[10px] text-zinc-500">
+                          {formatDateTime(user.createdAt)}
+                        </td>
+                        <td className="px-3 py-2.5">
+                          <div className="flex items-center justify-center gap-1.5">
+                            <StepCheck ok={user.hasProfile} label="Birth profile" />
+                            <StepCheck ok={user.hasChart} label="Natal chart" />
+                            <StepCheck ok={user.hasBalance} label="ESMS balance" />
+                            <StepCheck ok={user.hasChatted} label="First consultation" />
+                            <StepCheck ok={user.hasWallet} label="Wallet linked" />
+                          </div>
+                        </td>
+                        <td
+                          className={cn(
+                            'px-3 py-2.5 text-right font-mono font-bold',
+                            user.completedSteps === 0
+                              ? 'text-rose-300'
+                              : user.completedSteps >= 4
+                                ? 'text-emerald-300'
+                                : 'text-amber-300'
                           )}
-                        </div>
-                      </td>
-                      <td className="px-3 py-2.5 font-mono text-[10px] text-zinc-500">
-                        {formatDateTime(user.createdAt)}
-                      </td>
-                      <td className="px-3 py-2.5">
-                        <div className="flex items-center justify-center gap-1.5">
-                          <StepCheck ok={user.hasProfile} label="Birth profile" />
-                          <StepCheck ok={user.hasChart} label="Natal chart" />
-                          <StepCheck ok={user.hasBalance} label="ESMS balance" />
-                          <StepCheck ok={user.hasChatted} label="First consultation" />
-                          <StepCheck ok={user.hasWallet} label="Wallet linked" />
-                        </div>
-                      </td>
-                      <td
-                        className={cn(
-                          'px-3 py-2.5 text-right font-mono font-bold',
-                          user.completedSteps === 0
-                            ? 'text-rose-300'
-                            : user.completedSteps >= 4
-                              ? 'text-emerald-300'
-                              : 'text-amber-300'
-                        )}
-                      >
-                        {user.completedSteps}/5
-                      </td>
-                    </tr>
-                  ))}
+                        >
+                          {user.completedSteps}/5
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </table>
             </div>

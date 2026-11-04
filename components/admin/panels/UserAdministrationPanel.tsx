@@ -15,6 +15,8 @@ import {
   Wallet,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import type { AdminAlert } from '@/lib/admin/alerts'
 import {
   AlertRow,
@@ -101,6 +103,27 @@ const ROLE_TONE: Record<string, Tone> = {
 
 const ROLES = ['user', 'moderator', 'admin'] as const
 
+function getUserPvr(user: AdminUserRow): { ovr: number; title: string } {
+  const balanceScore = user.balance ? Math.min(20, Math.round(user.balance.total / 40)) : 0
+  const stats: CoreStats = {
+    power: Math.min(
+      99,
+      64 + (user.role === 'admin' ? 24 : user.role === 'moderator' ? 14 : 6) + balanceScore / 2
+    ),
+    resonance: Math.min(99, 66 + (user.verified ? 16 : 0) + (user.privyLinked ? 10 : 0)),
+    wisdom: Math.min(
+      99,
+      68 + (user.dominantElement ? 14 : 0) + (user.providerKeys.length > 0 ? 10 : 0)
+    ),
+    charisma: Math.min(99, 65 + (user.isAgentic ? 18 : 0) + Math.min(12, user.activationCount * 2)),
+    intuition: Math.min(99, 67 + (user.alchmKitchenLinked ? 14 : 0) + (user.subscription ? 12 : 0)),
+    adaptability: Math.min(99, 66 + (user.walletAddress ? 18 : 0) + balanceScore),
+    vitality: Math.min(99, 68 + (user.lastLogin ? 14 : 0) + balanceScore),
+  }
+  const rating = rateStats(stats)
+  return { ovr: rating.ovr, title: rating.archetype.title }
+}
+
 export default function UserAdministrationPanel({
   onNavigate,
 }: {
@@ -177,6 +200,32 @@ export default function UserAdministrationPanel({
   if (loading && !data) return <PanelSkeleton />
   if (!data) return <Empty label="User directory is unavailable." />
 
+  const verifiedRatio = data.total > 0 ? Math.round((data.totals.verified / data.total) * 100) : 70
+  const directoryStats: CoreStats = {
+    power: Math.min(99, 76 + Math.min(20, Math.round(data.total / 10))),
+    resonance: Math.min(99, 74 + Math.min(22, Math.round(verifiedRatio / 4))),
+    wisdom: Math.min(99, 78 + (data.audit.available ? 16 : 0)),
+    charisma: Math.min(99, 74 + Math.min(22, data.totals.agentic * 4)),
+    intuition: Math.min(99, 78 + (data.alerts.length === 0 ? 16 : 6)),
+    adaptability: Math.min(
+      99,
+      76 + Math.min(20, data.users.filter(u => u.walletAddress).length * 4)
+    ),
+    vitality: Math.min(99, 78 + Math.min(18, Math.round(verifiedRatio / 5))),
+  }
+  const directoryRating = rateStats(directoryStats)
+  const directorySeals = earnedSeals(
+    evaluateSeals({
+      stats: directoryStats,
+      esmsBalances: {
+        spirit: Math.max(120, data.total * 10),
+        essence: Math.max(100, data.totals.verified * 12),
+        matter: Math.max(90, data.totals.agentic * 15),
+        substance: Math.max(80, data.audit.available ? 140 : 60),
+      },
+    })
+  )
+
   return (
     <div className="space-y-6">
       <PanelHeader
@@ -190,6 +239,13 @@ export default function UserAdministrationPanel({
             read {formatDateTime(data.generatedAt)}
           </span>
         }
+      />
+
+      <VesselRatingRibbon
+        ovr={directoryRating.ovr}
+        archetype={directoryRating.archetype}
+        seals={directorySeals}
+        compact
       />
 
       {data.alerts.length > 0 && (
@@ -295,6 +351,7 @@ export default function UserAdministrationPanel({
           <div className="space-y-2">
             {data.users.map(user => {
               const isOpen = expanded === user.id
+              const userPvr = getUserPvr(user)
               return (
                 <div
                   key={user.id}
@@ -309,6 +366,9 @@ export default function UserAdministrationPanel({
                       <div className="flex flex-wrap items-center gap-2">
                         <span className="truncate text-xs font-bold text-zinc-100">
                           {user.name || 'Unnamed alchemist'}
+                        </span>
+                        <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                          PVR {userPvr.ovr} · {userPvr.title}
                         </span>
                         <Pill tone={ROLE_TONE[user.role] ?? 'zinc'}>{user.role}</Pill>
                         {user.verified && <Pill tone="emerald">verified</Pill>}

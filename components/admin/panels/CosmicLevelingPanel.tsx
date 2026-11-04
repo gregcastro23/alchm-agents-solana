@@ -5,6 +5,8 @@ import Link from 'next/link'
 import type { LevelingReport } from '@/lib/admin/leveling-schema'
 import { ALL_VESSEL_STAT_KEYS } from '@/lib/vessel/progression'
 import { VesselProgressionDisplay } from '@/components/vessel/vessel-progression-display'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import {
   AlertList,
   Badge,
@@ -37,8 +39,38 @@ const missingReason = (agent: Agent) =>
 
 function ProgressionSummary({ value }: { value: Progression }) {
   const { totals } = value
+  const coveragePct =
+    totals.agents > 0 ? Math.round(((totals.live + totals.estimated) / totals.agents) * 100) : 80
+  const progressionStats: CoreStats = {
+    power: Math.min(99, 76 + Math.min(20, Math.round((totals.avgVesselLevel ?? 40) / 4))),
+    resonance: Math.min(99, 76 + Math.min(20, Math.round(coveragePct / 5))),
+    wisdom: Math.min(99, 78 + Math.min(18, Math.round(totals.withExperience / 2))),
+    charisma: Math.min(99, 74 + Math.min(22, Math.round(totals.live / 2))),
+    intuition: Math.min(99, 76 + Math.min(20, Math.round((totals.totalXp ?? 1000) / 1000))),
+    adaptability: Math.min(99, 78 + Math.min(18, Math.round(totals.agents / 4))),
+    vitality: Math.min(99, 78 + Math.min(18, Math.round(coveragePct / 5))),
+  }
+  const progressionRating = rateStats(progressionStats)
+  const progressionSeals = earnedSeals(
+    evaluateSeals({
+      stats: progressionStats,
+      esmsBalances: {
+        spirit: Math.max(120, totals.agents * 8),
+        essence: Math.max(100, totals.withExperience * 12),
+        matter: Math.max(90, totals.live * 15),
+        substance: Math.max(80, Math.round((totals.totalXp ?? 800) / 20)),
+      },
+    })
+  )
+
   return (
     <>
+      <VesselRatingRibbon
+        ovr={progressionRating.ovr}
+        archetype={progressionRating.archetype}
+        seals={progressionSeals}
+        compact
+      />
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <Stat label="Catalog agents" value={num(totals.agents, '')} sub="Historical agent roster" />
         <Stat
@@ -228,21 +260,35 @@ function AgentProgressionTable({
             {shown.map(agent => {
               const reason = missingReason(agent)
               const badge = STATUS[agent.progressionStatus]
+              const pvrScore = Math.max(
+                25,
+                Math.min(
+                  99,
+                  Math.round(
+                    agent.currentOverall ?? agent.trainedOverall ?? agent.baseOverall ?? 72
+                  )
+                )
+              )
               return (
                 <tr
                   key={agent.agentId}
                   className={agent.agentId === selectedId ? 'bg-indigo-500/10' : undefined}
                 >
                   <td className={td}>
-                    <button
-                      type="button"
-                      className="text-left font-semibold text-indigo-200 underline decoration-indigo-500/40 underline-offset-4 hover:text-indigo-100"
-                      aria-label={`Inspect ${agent.name}`}
-                      aria-pressed={agent.agentId === selectedId}
-                      onClick={() => setSelectedId(agent.agentId)}
-                    >
-                      {agent.name}
-                    </button>
+                    <div className="flex flex-wrap items-center gap-1.5">
+                      <button
+                        type="button"
+                        className="text-left font-semibold text-indigo-200 underline decoration-indigo-500/40 underline-offset-4 hover:text-indigo-100"
+                        aria-label={`Inspect ${agent.name}`}
+                        aria-pressed={agent.agentId === selectedId}
+                        onClick={() => setSelectedId(agent.agentId)}
+                      >
+                        {agent.name}
+                      </button>
+                      <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                        PVR {pvrScore}
+                      </span>
+                    </div>
                     <span className="mt-1 block font-mono text-[10px] text-zinc-500">
                       {agent.agentId}
                     </span>
@@ -442,16 +488,32 @@ export function LevelingView({
                   </tr>
                 </thead>
                 <tbody>
-                  {legacy.inTraining.map(agent => (
-                    <tr key={agent.agentId}>
-                      <td className={td}>{agent.name}</td>
-                      <td className={td}>{agent.level}</td>
-                      <td className={td}>
-                        {agent.evTotal} / {legacy.totals.evTotalCap}
-                      </td>
-                      <td className={td}>{agent.lastTrainingPartner ?? 'None recorded'}</td>
-                    </tr>
-                  ))}
+                  {legacy.inTraining.map(agent => {
+                    const legacyPvr = Math.min(
+                      99,
+                      Math.max(
+                        60,
+                        62 + Math.round(agent.level / 4) + Math.round(agent.evTotal / 50)
+                      )
+                    )
+                    return (
+                      <tr key={agent.agentId}>
+                        <td className={td}>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span>{agent.name}</span>
+                            <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                              PVR {legacyPvr}
+                            </span>
+                          </div>
+                        </td>
+                        <td className={td}>{agent.level}</td>
+                        <td className={td}>
+                          {agent.evTotal} / {legacy.totals.evTotalCap}
+                        </td>
+                        <td className={td}>{agent.lastTrainingPartner ?? 'None recorded'}</td>
+                      </tr>
+                    )
+                  })}
                   {legacy.inTraining.length === 0 && (
                     <tr>
                       <td colSpan={4} className="py-4 text-sm text-zinc-400">

@@ -22,6 +22,8 @@ import {
   Key,
 } from 'lucide-react'
 import { createPublicClient, http, parseAbi, formatEther } from 'viem'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import { ARC_ESMS_ADDRESS, STAR_VAULT_ADDRESS } from '@/lib/staking/arc'
 import { ARC_TESTNET } from '@/lib/erc8004/registry'
 import { CONSTELLATION_AMM_ADDRESS, CONSTELLATION_DEED_ADDRESS } from '@/lib/staking/amm'
@@ -410,9 +412,39 @@ export default function Web3TelemetryPanel() {
   const systemCompletionPct = Math.round((completedSubsystems / totalSubsystems) * 60)
   const checkpointCompletionPct = Math.round((completedCheckpoints / totalCheckpoints) * 40)
   const progressPct = 70 + Math.round((completedCheckpoints / totalCheckpoints) * 20) // Base of 70%, increases to 90% as checkpoints clear
+  const passedChecks = checks.filter(c => c.status === 'pass').length
+
+  const web3Stats: CoreStats = {
+    power: Math.min(99, 78 + Math.round(progressPct / 6)),
+    resonance: Math.min(99, 76 + completedSubsystems * 2),
+    wisdom: Math.min(99, 80 + completedCheckpoints * 3),
+    charisma: Math.min(99, 76 + passedChecks * 2),
+    intuition: Math.min(99, 82 + (verifyStatus === 'success' ? 14 : 6)),
+    adaptability: Math.min(99, 78 + completedSubsystems * 2),
+    vitality: Math.min(99, 80 + Math.round(progressPct / 6)),
+  }
+  const web3Rating = rateStats(web3Stats)
+  const web3Seals = earnedSeals(
+    evaluateSeals({
+      stats: web3Stats,
+      esmsBalances: {
+        spirit: Math.max(150, progressPct * 2),
+        essence: Math.max(130, completedSubsystems * 25),
+        matter: Math.max(120, completedCheckpoints * 35),
+        substance: Math.max(140, (passedChecks + 5) * 20),
+      },
+    })
+  )
 
   return (
     <div className="space-y-6">
+      <VesselRatingRibbon
+        ovr={web3Rating.ovr}
+        archetype={web3Rating.archetype}
+        seals={web3Seals}
+        compact
+      />
+
       {/* Top Section: Progress & Summary */}
       <div className="grid grid-cols-1 gap-6 md:grid-cols-3">
         {/* Progress Circular Gauge */}
@@ -534,6 +566,10 @@ export default function Web3TelemetryPanel() {
         <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {subsystems.map((sub, idx) => {
             const Icon = sub.icon
+            const subPvr = Math.min(
+              99,
+              Math.max(68, sub.pct + (sub.status === 'operational' ? 3 : 1))
+            )
             return (
               <div
                 key={idx}
@@ -544,17 +580,22 @@ export default function Web3TelemetryPanel() {
                     <div className="rounded-xl border border-white/5 bg-zinc-950/60 p-2.5 text-indigo-400">
                       <Icon className="h-5 w-5" />
                     </div>
-                    <span
-                      className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
-                        sub.status === 'operational'
-                          ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300'
-                          : sub.status === 'ready'
-                            ? 'border-amber-500/25 bg-amber-500/10 text-amber-300'
-                            : 'border-zinc-700 bg-zinc-800/50 text-zinc-400'
-                      }`}
-                    >
-                      {sub.status}
-                    </span>
+                    <div className="flex items-center gap-1.5">
+                      <span className="rounded-md border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                        PVR {subPvr}
+                      </span>
+                      <span
+                        className={`rounded-full border px-2 py-0.5 text-[10px] font-bold uppercase tracking-wider ${
+                          sub.status === 'operational'
+                            ? 'border-emerald-500/25 bg-emerald-500/10 text-emerald-300'
+                            : sub.status === 'ready'
+                              ? 'border-amber-500/25 bg-amber-500/10 text-amber-300'
+                              : 'border-zinc-700 bg-zinc-800/50 text-zinc-400'
+                        }`}
+                      >
+                        {sub.status}
+                      </span>
+                    </div>
                   </div>
                   <h4 className="mt-4 text-sm font-semibold text-zinc-100">{sub.name}</h4>
                   <p className="mt-1.5 text-xs text-zinc-400 leading-relaxed">{sub.desc}</p>
