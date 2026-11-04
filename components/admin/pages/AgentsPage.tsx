@@ -1,8 +1,10 @@
 'use client'
 
-import { useMemo, useState } from 'react'
+import { useCallback, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { AgentsReportSchema, type AgentsPayload } from '@/lib/admin/page-schemas'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import { AdminFrame } from './AdminFrame'
 import {
   AlertList,
@@ -105,6 +107,52 @@ export function AgentsView({ data }: { data: AgentsPayload }) {
   const linked = data.sync.ok ? data.sync.value.rows.filter(r => r.linked).length : null
   const reason = (s: { ok: boolean; reason?: string }) => (s.ok ? '' : (s.reason ?? 'unreadable'))
 
+  const getRosterAgentPvr = useCallback((agentId: string, chartStatus: string) => {
+    let hash = 0
+    for (let i = 0; i < agentId.length; i++) {
+      hash = (hash * 31 + agentId.charCodeAt(i)) >>> 0
+    }
+    const chartBonus = chartStatus === 'computed' ? 10 : chartStatus === 'authored' ? 6 : 0
+    const stats: CoreStats = {
+      power: Math.min(99, 64 + (hash % 22) + chartBonus),
+      resonance: Math.min(99, 65 + ((hash >> 3) % 21) + chartBonus),
+      wisdom: Math.min(99, 66 + ((hash >> 6) % 22) + chartBonus),
+      charisma: Math.min(99, 64 + ((hash >> 9) % 21) + chartBonus),
+      intuition: Math.min(99, 65 + ((hash >> 12) % 22) + chartBonus),
+      adaptability: Math.min(99, 63 + ((hash >> 15) % 21) + chartBonus),
+      vitality: Math.min(99, 64 + ((hash >> 18) % 22) + chartBonus),
+    }
+    return rateStats(stats).ovr
+  }, [])
+
+  const rosterCohortRating = useMemo(() => {
+    const coverageRatio = data.code.length > 0 ? catalog.length / data.code.length : 0.85
+    const base = Math.round(68 + coverageRatio * 18)
+    const stats: CoreStats = {
+      power: Math.min(99, base + 2),
+      resonance: Math.min(99, base + 4),
+      wisdom: Math.min(99, base + 5),
+      charisma: Math.min(99, base + 1),
+      intuition: Math.min(99, base + 4),
+      adaptability: Math.min(99, base + 2),
+      vitality: Math.min(99, base + 3),
+    }
+    const esmsBalances = {
+      spirit: 60,
+      essence: 58,
+      matter: 62,
+      substance: 60,
+    }
+    const sealProgress = evaluateSeals({ stats, esmsBalances })
+    const seals = earnedSeals(sealProgress)
+    const rated = rateStats(stats)
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+    }
+  }, [catalog.length, data.code.length])
+
   return (
     <>
       <AlertList alerts={data.alerts} />
@@ -175,6 +223,14 @@ export function AgentsView({ data }: { data: AgentsPayload }) {
               CATALOG_UNREPORTED
             )}
             sub="Generated from the likeness manifest"
+          />
+        </div>
+        <div className="mt-4">
+          <VesselRatingRibbon
+            ovr={rosterCohortRating.ovr}
+            archetype={rosterCohortRating.archetype}
+            seals={rosterCohortRating.seals}
+            compact
           />
         </div>
       </Card>
@@ -319,9 +375,14 @@ export function AgentsView({ data }: { data: AgentsPayload }) {
                   <td className={td}>
                     {agent.vessel ? (
                       <>
-                        <span className="block font-medium text-zinc-200">
-                          {agent.vessel.faction} ·{' '}
-                          <span className="capitalize">{agent.vessel.era}</span>
+                        <span className="flex items-center gap-1.5 font-medium text-zinc-200">
+                          <span>
+                            {agent.vessel.faction} ·{' '}
+                            <span className="capitalize">{agent.vessel.era}</span>
+                          </span>
+                          <span className="rounded-full border border-amber-400/35 bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                            PVR {getRosterAgentPvr(agent.agentId, agent.chart)}
+                          </span>
                         </span>
                         <span className="block text-xs text-zinc-400">
                           {agent.vessel.archetype ?? 'Archetype requires a non-placeholder chart'}
