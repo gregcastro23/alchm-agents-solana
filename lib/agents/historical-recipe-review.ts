@@ -16,61 +16,6 @@ const ALCHM_KITCHEN_BASE_URL =
   process.env.ALCHM_KITCHEN_BASE_URL ||
   'https://alchm.kitchen'
 
-/** Curated dishes from the authentic alchm.kitchen / WTEN catalog mapped by element */
-export const CATALOG_DISH_FALLBACKS: Record<
-  string,
-  Array<{ id: string; name: string; cuisine?: string }>
-> = {
-  fire: [
-    {
-      id: 'middle-eastern-shakshuka',
-      name: 'Spiced Shakshuka al Fuego',
-      cuisine: 'Middle Eastern',
-    },
-    { id: 'italian-arrabbiata', name: 'Penne all’Arrabbiata', cuisine: 'Italian' },
-    { id: 'korean-kimchi-jjigae', name: 'Kimchi Jjigae with Tofu', cuisine: 'Korean' },
-    { id: 'mexican-chiles-rellenos', name: 'Charred Chiles Rellenos', cuisine: 'Mexican' },
-    {
-      id: 'indian-tandoori-vegetables',
-      name: 'Flame-Roasted Tandoori Vegetables',
-      cuisine: 'Indian',
-    },
-  ],
-  water: [
-    { id: 'japanese-miso-soup', name: 'Traditional Kombu & Shiitake Miso', cuisine: 'Japanese' },
-    { id: 'french-bouillabaisse', name: 'Provençal Coastal Stew', cuisine: 'French' },
-    { id: 'thai-tom-yum', name: 'Lemongrass & Galangal Clear Broth', cuisine: 'Thai' },
-    { id: 'vietnamese-pho-chay', name: 'Simmered Star Anise Herb Pho', cuisine: 'Vietnamese' },
-    {
-      id: 'mediterranean-gazpacho',
-      name: 'Heirloom Tomato & Cucumber Velouté',
-      cuisine: 'Spanish',
-    },
-  ],
-  earth: [
-    {
-      id: 'italian-risotto-alla-milanese',
-      name: 'Saffron & Wild Mushroom Risotto',
-      cuisine: 'Italian',
-    },
-    { id: 'indian-dal-tadka', name: 'Earthen Slow-Braised Lentil Tadka', cuisine: 'Indian' },
-    { id: 'french-ratatouille', name: 'Confit of Summer Squash & Aubergine', cuisine: 'French' },
-    { id: 'greek-spanakopita', name: 'Wild Greens & Olive Hearth Pie', cuisine: 'Greek' },
-    { id: 'moroccan-tagine', name: 'Root Vegetable & Chickpea Clay Tagine', cuisine: 'Moroccan' },
-  ],
-  air: [
-    {
-      id: 'italian-fennel-citrus-salad',
-      name: 'Shaved Fennel & Blood Orange Carpaccio',
-      cuisine: 'Italian',
-    },
-    { id: 'vietnamese-summer-rolls', name: 'Crisp Herb & Rice Paper Rolls', cuisine: 'Vietnamese' },
-    { id: 'lebanese-fattoush', name: 'Crisp Sumac & Mint Tossed Salad', cuisine: 'Lebanese' },
-    { id: 'french-herb-souffle', name: 'Whipped Chervil & Gruyère Soufflé', cuisine: 'French' },
-    { id: 'japanese-sunomono', name: 'Pickled Cucumber & Wakame Ribbon Toss', cuisine: 'Japanese' },
-  ],
-}
-
 export interface ReviewRecipeInput {
   agentId: string
   recipeId?: string
@@ -155,9 +100,26 @@ export async function fetchCatalogDish(
     // Network or cold service fallback
   }
 
-  const pool = CATALOG_DISH_FALLBACKS[el] || CATALOG_DISH_FALLBACKS.fire
-  const idx = Math.floor(Date.now() / 900_000) % pool.length
-  return pool[idx]
+  // Zero fabricated recipes: query the synced WTEN database snapshot
+  try {
+    const { recipeCatalogService } = await import('@/lib/recipes/recipe-catalog-service')
+    const syncedCandidates = await recipeCatalogService.findRecipes({ element: el, limit: 20 })
+    if (syncedCandidates.length > 0) {
+      const idx = Math.floor(Date.now() / 900_000) % syncedCandidates.length
+      const match = syncedCandidates[idx]
+      return {
+        id: match.id,
+        name: match.name,
+        cuisine: match.cuisine,
+      }
+    }
+  } catch {
+    // Synced DB unavailable
+  }
+
+  throw new Error(
+    `Upstream alchm.kitchen catalog unreachable and no synced recipes found for element "${el}"`
+  )
 }
 
 /**

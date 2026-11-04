@@ -11,7 +11,6 @@ import { convertSignDegreesToLongitude, angularSeparation } from '../aspects-dyn
 import { prisma } from '../db'
 import { deliverToWten } from '../wten/delivery'
 import type { RenderBirthInfo, RenderImageMode } from './render-post-image'
-import { CATALOG_DISH_FALLBACKS } from './historical-recipe-review'
 import { type VesselAppearanceProfile, resolveAgentAppearance } from './vessel-appearance-manifest'
 
 export type WTENEventType =
@@ -447,11 +446,10 @@ export class FeedActivationEngine {
         return { id: recipes[idx].id, name: recipes[idx].name }
       }
     } catch (error) {
-      console.warn('[FeedActivationEngine] fetchCatalogRecipe failed, using fallback:', error)
+      console.warn('[FeedActivationEngine] fetchCatalogRecipe failed:', error)
     }
-    const fallbacks = CATALOG_DISH_FALLBACKS[el] || CATALOG_DISH_FALLBACKS.fire
-    const idx = Math.floor(Date.now() / 1_800_000) % fallbacks.length
-    return fallbacks[idx]
+    // Zero fabricated recipes: return null when upstream / synced catalog is unavailable
+    return null
   }
 
   private evaluateTransitToNatalAspects(

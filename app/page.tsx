@@ -1539,12 +1539,6 @@ export default function LandingPage() {
             Alchm Kitchen <ArrowUpRight className="w-3 h-3" />
           </a>
           <button
-            onClick={() => router.push('/culinary')}
-            className="font-mono-label text-[10px] tracking-widest text-[#c2cab0] hover:text-[#b8fc4b] transition-colors uppercase"
-          >
-            Culinary Reviews
-          </button>
-          <button
             onClick={() => router.push('/pentacles')}
             className="font-mono-label text-[10px] tracking-widest text-[#c2cab0] hover:text-[#b8fc4b] transition-colors uppercase"
           >

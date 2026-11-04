@@ -308,10 +308,14 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
                 size="sm"
                 className="border-amber-400/40 text-amber-100 hover:border-amber-400 font-mono-label text-[10px] uppercase bg-amber-500/10 h-[36px]"
               >
-                <Link href={`/culinary?agent=${encodeURIComponent(agent.id)}`}>
+                <a
+                  href={`https://alchm.kitchen/recipes?agent=${encodeURIComponent(agent.id)}`}
+                  target="_blank"
+                  rel="noreferrer"
+                >
                   <Utensils className="w-3.5 h-3.5 mr-1" />
-                  Kitchen Lab
-                </Link>
+                  Kitchen ↗
+                </a>
               </Button>
             </div>
             <div className="flex gap-2">
@@ -884,22 +888,16 @@ export default async function AgentProfilePage({ params }: { params: Promise<{ i
               </div>
               <div className="pt-sm border-t border-border-gold/15 flex flex-wrap items-center justify-between gap-2">
                 <span className="font-mono-label text-[10px] uppercase tracking-wider text-muted-text">
-                  WTEN 1,000-Recipe Bridge · Sky-to-Plate Resonance
+                  WTEN 1,000-Recipe Bridge · Sole Source: alchm.kitchen
                 </span>
                 <div className="flex flex-wrap items-center gap-2">
-                  <Link
-                    href={`/culinary?agent=${encodeURIComponent(agent.id)}`}
-                    className="inline-flex items-center gap-1.5 rounded border border-amber-400/40 bg-amber-400/15 px-3 py-1 font-mono-label text-[10px] uppercase tracking-wider text-amber-200 hover:bg-amber-400/25"
-                  >
-                    <Utensils className="w-3 h-3" />
-                    Open in Culinary Sanctum
-                  </Link>
                   <a
                     href={`https://alchm.kitchen/recipes?agent=${encodeURIComponent(agent.id)}`}
                     target="_blank"
                     rel="noreferrer"
-                    className="inline-flex items-center gap-1 rounded border border-border-gold/30 bg-[#0b0e19]/60 px-3 py-1 font-mono-label text-[10px] uppercase tracking-wider text-bright-gold hover:border-primary-gold"
+                    className="inline-flex items-center gap-1.5 rounded border border-amber-400/40 bg-amber-400/15 px-3 py-1 font-mono-label text-[10px] uppercase tracking-wider text-amber-200 hover:bg-amber-400/25"
                   >
+                    <Utensils className="w-3 h-3" />
                     alchm.kitchen ↗
                   </a>
                 </div>

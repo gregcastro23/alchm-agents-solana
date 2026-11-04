@@ -21,6 +21,58 @@ interface CachedExecution {
 const IDEMPOTENCY_CACHE = new Map<string, CachedExecution>()
 const MAX_CACHE_ENTRIES = 250
 
+const CULINARY_TOOLS = new Set([
+  'alchemize_ingredients',
+  'generate_cosmic_recipe',
+  'submit_recipe_reflection',
+])
+
+const KITCHEN_UPSTREAM = (
+  process.env.ALCHM_KITCHEN_SYNC_URL ||
+  process.env.ALCHM_KITCHEN_BASE_URL ||
+  process.env.NEXT_PUBLIC_KITCHEN_URL ||
+  process.env.ALCHM_KITCHEN_URL ||
+  'https://alchm.kitchen'
+).replace(/\/+$/, '')
+
+async function proxyCulinaryToolToUpstream(
+  toolName: string,
+  args: Record<string, unknown>
+): Promise<{ ok: boolean; data?: Record<string, unknown>; error?: string }> {
+  try {
+    const upstreamUrl = `${KITCHEN_UPSTREAM}/api/mcp/playground`
+    const res = await fetch(upstreamUrl, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        Accept: 'application/json',
+        ...(process.env.ALCHM_KITCHEN_SYNC_SECRET
+          ? { 'x-kitchen-secret': process.env.ALCHM_KITCHEN_SYNC_SECRET }
+          : {}),
+      },
+      body: JSON.stringify({
+        tool: toolName,
+        arguments: args,
+      }),
+      signal: AbortSignal.timeout(3500),
+    })
+
+    if (res.ok) {
+      const json = await res.json()
+      return { ok: true, data: (json?.result ?? json) as Record<string, unknown> }
+    }
+    return {
+      ok: false,
+      error: `Upstream alchm.kitchen responded with HTTP ${res.status}`,
+    }
+  } catch (err: any) {
+    return {
+      ok: false,
+      error: `Upstream alchm.kitchen unreachable (${err?.message || 'Network error'})`,
+    }
+  }
+}
+
 function synthesizeToolResult(
   toolName: string,
   args: Record<string, unknown>
@@ -53,45 +105,6 @@ function synthesizeToolResult(
           { pair: 'Sun △ Jupiter', aspect: 'Trine', orbDeg: 2.7, resonanceGain: 1.24 },
           { pair: 'Mars ∗ Saturn', aspect: 'Sextile', orbDeg: 1.4, resonanceGain: 1.12 },
         ],
-      }
-
-    case 'alchemize_ingredients': {
-      const list = Array.isArray(args.ingredients)
-        ? (args.ingredients as string[])
-        : ['saffron threads', 'black garlic', 'blood orange zest']
-      return {
-        ingredientsAnalyzed: list.length,
-        targetElement: args.targetElement ?? 'Fire',
-        thermodynamicVectors: {
-          spirit: 88,
-          essence: 82,
-          matter: 68,
-          substance: 76,
-        },
-        ingredientMappings: list.map((item, idx) => ({
-          ingredient: item,
-          rulingPlanet: ['Sun', 'Pluto', 'Mercury', 'Venus'][idx % 4],
-          element: ['Fire', 'Water', 'Air', 'Earth'][idx % 4],
-          potencyBps: 8400 + idx * 320,
-        })),
-      }
-    }
-
-    case 'generate_cosmic_recipe':
-      return {
-        recipeId: `wten-cosmic-${Date.now().toString(36)}`,
-        title: 'Solaris Saffron & Black Garlic Alchemical Broth',
-        agentId: args.agentId ?? 'mars-aries',
-        mealType: args.mealType ?? 'dinner',
-        dominantPlanet: args.dominantPlanet ?? 'Mars',
-        esmsMacroBalance: { spirit: 34, essence: 28, matter: 20, substance: 18 },
-        prepTimeMinutes: 25,
-        steps: [
-          'Toast saffron threads in a dry copper vessel for 45 seconds to awaken Solar Spirit.',
-          'Whisk fermented black garlic paste into simmering bone ormushroom dashi to anchor Saturnian Matter.',
-          'Finish with blood orange zest and wild fennel pollen right before service.',
-        ],
-        wtenPrewarmBudgetMs: 1420,
       }
 
     case 'compute_synastry_overlay':
@@ -145,16 +158,6 @@ function synthesizeToolResult(
         arcCommitmentHash: '0x9f84c2e17b09d4a6c1138a7c8b44e0a12f6d9e3c4b5a67890123456789abcdef',
         banachContractionVerified: true,
         tau: 0.99,
-      }
-
-    case 'submit_recipe_reflection':
-      return {
-        agentId: args.agentId ?? 'ibn-sina-avicenna',
-        recipeId: args.recipeId ?? 'wten-saffron-broth-042',
-        reflection: args.reflection ?? 'Harmonic culinary reflection recorded.',
-        rating: args.rating ?? 96,
-        feedPublished: true,
-        wtenSyncStatus: 'acknowledged',
       }
 
     default:
@@ -250,6 +253,35 @@ export async function POST(req: Request) {
     const nextCookieKeys = Array.from(new Set([cacheKey, ...cookieKeys])).slice(0, 24)
     const setCookieValue = `alchm_mcp_idem_keys=${encodeURIComponent(nextCookieKeys.join(','))}; Path=/api/mcp/playground; Max-Age=3600; SameSite=Lax`
 
+    let resolvedResult: Record<string, unknown>
+    if (cached) {
+      resolvedResult = cached.result
+    } else if (CULINARY_TOOLS.has(toolDef.name)) {
+      const proxy = await proxyCulinaryToolToUpstream(toolDef.name, preparedArgs)
+      if (!proxy.ok) {
+        return NextResponse.json(
+          {
+            ok: false,
+            package: '@alchm/mcp-server@1.4.0',
+            tool: toolDef.name,
+            error:
+              'alchm.kitchen upstream connection required for culinary tool execution. Local synthesis is strictly disallowed.',
+            code: 'UPSTREAM_KITCHEN_REQUIRED',
+            status: 503,
+            upstream: KITCHEN_UPSTREAM,
+            details: proxy.error,
+          },
+          { status: 503 }
+        )
+      }
+      resolvedResult = proxy.data ?? { ok: true }
+    } else {
+      resolvedResult = synthesizeToolResult(toolDef.name, {
+        ...rawArgs,
+        idempotencyKey,
+      })
+    }
+
     if (cached || isColdStartReplay) {
       const replayedReceipt = normalizeMcpBillingReceipt({
         status: 'replayed',
@@ -260,17 +292,10 @@ export async function POST(req: Request) {
         txReference: cached?.receipt.txReference ?? deterministicTxReference,
       })
 
-      const baseResult =
-        cached?.result ??
-        synthesizeToolResult(toolDef.name, {
-          ...rawArgs,
-          idempotencyKey,
-        })
-
       if (!cached) {
         IDEMPOTENCY_CACHE.set(cacheKey, {
           tool: toolDef.name,
-          result: baseResult,
+          result: resolvedResult,
           receipt: replayedReceipt,
           createdAt: new Date().toISOString(),
         })
@@ -293,7 +318,7 @@ export async function POST(req: Request) {
             },
           },
           result: {
-            ...baseResult,
+            ...resolvedResult,
             billing: replayedReceipt,
           },
           billing: replayedReceipt,
@@ -316,11 +341,6 @@ export async function POST(req: Request) {
       txReference: deterministicTxReference,
     })
 
-    const synthesized = synthesizeToolResult(toolDef.name, {
-      ...rawArgs,
-      idempotencyKey,
-    })
-
     if (IDEMPOTENCY_CACHE.size >= MAX_CACHE_ENTRIES) {
       const oldestKey = IDEMPOTENCY_CACHE.keys().next().value
       if (oldestKey) IDEMPOTENCY_CACHE.delete(oldestKey)
@@ -328,7 +348,7 @@ export async function POST(req: Request) {
 
     IDEMPOTENCY_CACHE.set(cacheKey, {
       tool: toolDef.name,
-      result: synthesized,
+      result: resolvedResult,
       receipt: chargedReceipt,
       createdAt: new Date().toISOString(),
     })
@@ -350,7 +370,7 @@ export async function POST(req: Request) {
           },
         },
         result: {
-          ...synthesized,
+          ...resolvedResult,
           billing: chargedReceipt,
         },
         billing: chargedReceipt,

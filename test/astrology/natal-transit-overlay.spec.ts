@@ -85,7 +85,7 @@ describe('Wave 20C — Natal × Live Transit Aspect & Mentor Engine', () => {
       expect(mentor.resonanceRationale.length).toBeGreaterThan(10)
       expect(mentor.links.agentProfile).toContain('/agent/')
       expect(mentor.links.synastry).toContain('/synastry/')
-      expect(mentor.links.culinary).toContain('/culinary?agent=')
+      expect(mentor.links.culinary).toContain('alchm.kitchen/recipes?agent=')
     }
   })
 
