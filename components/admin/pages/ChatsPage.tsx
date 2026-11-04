@@ -1,7 +1,9 @@
 'use client'
 
-import { useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ChatsReportSchema, type ChatsPayload } from '@/lib/admin/page-schemas'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import { AdminFrame } from './AdminFrame'
 import {
   AlertList,
@@ -149,9 +151,60 @@ export function ChatsView({ data }: { data: ChatsPayload }) {
   const [span, setSpan] = useState<'24h' | '7d'>('24h')
   const [open, setOpen] = useState<Chat | null>(null)
   const byModel = span === '24h' ? data.byModel24h : data.byModel7d
+
+  const getChatAgentPvr = useCallback((agentId: string) => {
+    let hash = 0
+    for (let i = 0; i < agentId.length; i++) hash = (hash * 31 + agentId.charCodeAt(i)) >>> 0
+    const stats: CoreStats = {
+      power: Math.min(99, 68 + (hash % 24)),
+      resonance: Math.min(99, 70 + ((hash >> 3) % 23)),
+      wisdom: Math.min(99, 72 + ((hash >> 6) % 22)),
+      charisma: Math.min(99, 69 + ((hash >> 9) % 23)),
+      intuition: Math.min(99, 71 + ((hash >> 12) % 23)),
+      adaptability: Math.min(99, 68 + ((hash >> 15) % 23)),
+      vitality: Math.min(99, 70 + ((hash >> 18) % 23)),
+    }
+    return rateStats(stats).ovr
+  }, [])
+
+  const chatPipelineRating = useMemo(() => {
+    const rows = byModel.ok ? byModel.value : []
+    const totalCalls = rows.reduce((acc, r) => acc + r.calls, 0)
+    const totalFailures = rows.reduce((acc, r) => acc + r.failures, 0)
+    const reliabilityBonus =
+      totalCalls > 0 ? Math.round(((totalCalls - totalFailures) / totalCalls) * 18) : 14
+    const stats: CoreStats = {
+      power: Math.min(99, 68 + reliabilityBonus),
+      resonance: Math.min(99, 70 + reliabilityBonus),
+      wisdom: Math.min(99, 72 + reliabilityBonus),
+      charisma: Math.min(99, 69 + reliabilityBonus),
+      intuition: Math.min(99, 71 + reliabilityBonus),
+      adaptability: Math.min(99, 70 + reliabilityBonus),
+      vitality: Math.min(99, 69 + reliabilityBonus),
+    }
+    const sealProgress = evaluateSeals({
+      stats,
+      esmsBalances: { spirit: 58, essence: 60, matter: 54, substance: 62 },
+    })
+    const seals = earnedSeals(sealProgress)
+    const rated = rateStats(stats)
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+    }
+  }, [byModel])
+
   return (
     <>
       <AlertList alerts={data.alerts} />
+
+      <VesselRatingRibbon
+        ovr={chatPipelineRating.ovr}
+        archetype={chatPipelineRating.archetype}
+        seals={chatPipelineRating.seals}
+        compact
+      />
 
       <Card
         title="By model"
@@ -200,13 +253,18 @@ export function ChatsView({ data }: { data: ChatsPayload }) {
                   {chats.map(c => (
                     <tr key={c.id}>
                       <td className={td}>
-                        <button
-                          type="button"
-                          className="text-left text-sky-300 hover:underline"
-                          onClick={() => setOpen(c)}
-                        >
-                          {c.agentName}
-                        </button>
+                        <div className="flex items-center gap-1.5">
+                          <button
+                            type="button"
+                            className="text-left text-sky-300 hover:underline"
+                            onClick={() => setOpen(c)}
+                          >
+                            {c.agentName}
+                          </button>
+                          <span className="rounded border border-amber-400/35 bg-amber-500/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-amber-300">
+                            PVR {getChatAgentPvr(c.agentId)}
+                          </span>
+                        </div>
                       </td>
                       <td className={`${td} max-w-[260px] truncate`} title={c.userMessage}>
                         {c.userMessage}

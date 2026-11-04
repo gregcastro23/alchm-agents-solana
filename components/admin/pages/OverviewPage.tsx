@@ -1,8 +1,11 @@
 'use client'
 
+import { useCallback, useMemo } from 'react'
 import CosmicTelemetryPanel from '@/components/admin/panels/CosmicTelemetryPanel'
 import SystemPulsePanel, { type PulsePayload } from '@/components/admin/panels/SystemPulsePanel'
 import { LegacyEnvelopeSchema, type DashboardPayload } from '@/lib/admin/page-schemas'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import { AdminFrame } from './AdminFrame'
 import { ProgressionOverview } from './ProgressionOverview'
 import { useAdminNavigate, useDashboard } from './hooks'
@@ -26,8 +29,63 @@ export function OverviewView({ data }: { data: DashboardPayload }) {
   const h = harmony.ok ? harmony.value : null
   const harmonyComplete =
     h && h.spirit !== null && h.essence !== null && h.matter !== null && h.substance !== null
+
+  const getConsultedAgentPvr = useCallback((id: string, interactions: number) => {
+    let hash = 0
+    for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0
+    const consultBoost = Math.min(18, Math.round(Math.log10(Math.max(10, interactions + 10)) * 5))
+    const stats: CoreStats = {
+      power: Math.min(99, 68 + (hash % 18) + consultBoost),
+      resonance: Math.min(99, 70 + ((hash >> 3) % 18) + consultBoost),
+      wisdom: Math.min(99, 72 + ((hash >> 6) % 18) + consultBoost),
+      charisma: Math.min(99, 69 + ((hash >> 9) % 18) + consultBoost),
+      intuition: Math.min(99, 71 + ((hash >> 12) % 18) + consultBoost),
+      adaptability: Math.min(99, 68 + ((hash >> 15) % 18) + consultBoost),
+      vitality: Math.min(99, 70 + ((hash >> 18) % 18) + consultBoost),
+    }
+    return rateStats(stats).ovr
+  }, [])
+
+  const overviewRating = useMemo(() => {
+    const sp = h?.spirit ?? 72
+    const es = h?.essence ?? 74
+    const ma = h?.matter ?? 70
+    const su = h?.substance ?? 73
+    const stats: CoreStats = {
+      power: Math.min(99, Math.max(66, Math.round(sp))),
+      resonance: Math.min(99, Math.max(66, Math.round(es))),
+      wisdom: Math.min(99, Math.max(68, Math.round(su))),
+      charisma: Math.min(99, Math.max(66, Math.round((sp + es) / 2))),
+      intuition: Math.min(99, Math.max(68, Math.round((es + su) / 2))),
+      adaptability: Math.min(99, Math.max(66, Math.round((su + ma) / 2))),
+      vitality: Math.min(99, Math.max(66, Math.round(ma))),
+    }
+    const sealProgress = evaluateSeals({
+      stats,
+      esmsBalances: {
+        spirit: Math.max(40, Math.round(sp)),
+        essence: Math.max(40, Math.round(es)),
+        matter: Math.max(40, Math.round(ma)),
+        substance: Math.max(40, Math.round(su)),
+      },
+    })
+    const seals = earnedSeals(sealProgress)
+    const rated = rateStats(stats)
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+    }
+  }, [h?.spirit, h?.essence, h?.matter, h?.substance])
+
   return (
     <>
+      <VesselRatingRibbon
+        ovr={overviewRating.ovr}
+        archetype={overviewRating.archetype}
+        seals={overviewRating.seals}
+        compact
+      />
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <Stat
           label="Users"
@@ -106,8 +164,13 @@ export function OverviewView({ data }: { data: DashboardPayload }) {
                     return (
                       <li key={a.id}>
                         <div className="flex justify-between gap-3">
-                          <span className="truncate text-zinc-100">
-                            {i + 1}. {a.name}
+                          <span className="inline-flex items-center gap-1.5 truncate text-zinc-100">
+                            <span>
+                              {i + 1}. {a.name}
+                            </span>
+                            <span className="rounded border border-amber-400/35 bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                              PVR {getConsultedAgentPvr(a.id, a.interactions)}
+                            </span>
                           </span>
                           <span className="tabular-nums text-zinc-300">
                             {a.interactions.toLocaleString('en-US')}

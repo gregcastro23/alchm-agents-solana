@@ -1,7 +1,10 @@
 'use client'
 
+import { useMemo } from 'react'
 import { WtenLinkReportSchema, type WtenLinkPayload } from '@/lib/admin/page-schemas'
 import { cn } from '@/lib/utils'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import { AdminFrame } from './AdminFrame'
 import {
   AlertList,
@@ -106,10 +109,31 @@ function SplitBar({ endpoint }: { endpoint: Endpoint }) {
 }
 
 function EndpointCard({ e }: { e: Endpoint }) {
+  const endpointPvr = useMemo(() => {
+    const okCount = e.split.ok2xx + e.split.alreadyApplied409
+    const ratio = e.attempts > 0 ? okCount / e.attempts : 0.9
+    const boost = Math.round(ratio * 22)
+    const stats: CoreStats = {
+      power: Math.min(99, 68 + boost),
+      resonance: Math.min(99, 70 + boost),
+      wisdom: Math.min(99, 71 + boost),
+      charisma: Math.min(99, 69 + boost),
+      intuition: Math.min(99, 70 + boost),
+      adaptability: Math.min(99, 72 + boost),
+      vitality: Math.min(99, 70 + boost),
+    }
+    return rateStats(stats).ovr
+  }, [e.split.ok2xx, e.split.alreadyApplied409, e.attempts])
+
   return (
     <article className="min-w-0 rounded-xl border border-white/10 bg-zinc-950/60 p-4 text-zinc-200">
       <div className="flex flex-wrap items-start justify-between gap-2">
-        <h3 className="break-all font-mono text-sm font-semibold text-zinc-50">{e.endpoint}</h3>
+        <div className="flex items-center gap-2">
+          <h3 className="break-all font-mono text-sm font-semibold text-zinc-50">{e.endpoint}</h3>
+          <span className="rounded border border-amber-400/35 bg-amber-500/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-amber-300">
+            Sync PVR {endpointPvr}
+          </span>
+        </div>
         {e.receiverDedupes === false ? (
           <Badge
             glyph="!"
@@ -160,9 +184,42 @@ export function WtenLinkView({ data }: { data: WtenLinkPayload }) {
     data.deliveries.status === 'live'
       ? ''
       : `Delivery log ${data.deliveries.status.replace('_', ' ')}: ${data.deliveries.reason}`
+
+  const wtenBridgeRating = useMemo(() => {
+    const matched = data.secrets.filter(s => s.verdict === 'match').length
+    const ratio = data.secrets.length > 0 ? matched / data.secrets.length : 0.85
+    const boost = Math.round(ratio * 20)
+    const stats: CoreStats = {
+      power: Math.min(99, 68 + boost),
+      resonance: Math.min(99, 72 + boost),
+      wisdom: Math.min(99, 71 + boost),
+      charisma: Math.min(99, 70 + boost),
+      intuition: Math.min(99, 71 + boost),
+      adaptability: Math.min(99, 73 + boost),
+      vitality: Math.min(99, 70 + boost),
+    }
+    const sealProgress = evaluateSeals({
+      stats,
+      esmsBalances: { spirit: 58, essence: 62, matter: 56, substance: 60 },
+    })
+    const seals = earnedSeals(sealProgress)
+    const rated = rateStats(stats)
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+    }
+  }, [data.secrets])
+
   return (
     <>
       <AlertList alerts={data.alerts} />
+      <VesselRatingRibbon
+        ovr={wtenBridgeRating.ovr}
+        archetype={wtenBridgeRating.archetype}
+        seals={wtenBridgeRating.seals}
+        compact
+      />
       <Card
         title="Shared secrets"
         subtitle="Judged from the status WTEN answers a harmless probe with (re-checked every 5 minutes). ASOL never reads WTEN's values."
