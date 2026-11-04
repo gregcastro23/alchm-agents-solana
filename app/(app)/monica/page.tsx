@@ -1,6 +1,6 @@
 'use client'
 
-import React, { useState, useEffect, useRef } from 'react'
+import React, { useState, useEffect, useRef, useMemo } from 'react'
 import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -10,11 +10,9 @@ import { Card, CardContent } from '@/components/ui/card'
 import {
   Crown,
   Sparkles,
-  HelpCircle,
   FlaskConical,
   Users,
   Star,
-  Brain,
   MessageCircle,
   Send,
   Activity,
@@ -32,6 +30,19 @@ import {
   formatMCChange,
   getConsciousnessColor,
 } from '@/hooks/useLiveConsciousness'
+import {
+  VesselRatingRibbon,
+  AlchemicalSealsCodex,
+  PentacleZoneSynergyPanel,
+} from '@/components/vessel/pentacle-rating-display'
+import {
+  rateStats,
+  evaluateSeals,
+  earnedSeals,
+  computeZoneSynergies,
+  bestZoneId,
+  type CoreStats,
+} from '@/lib/agents/rating'
 
 interface MonicaMessage {
   id: string
@@ -216,6 +227,40 @@ export default function MonicaPage() {
     }
   }
 
+  const monicaRating = useMemo(() => {
+    const mcVal = liveConsciousness?.liveMC ?? monicaConstant ?? 1.618
+    const mcBoost = Math.min(14, Math.max(0, Math.round(mcVal * 4)))
+    const stats: CoreStats = {
+      power: Math.min(99, 78 + mcBoost),
+      resonance: Math.min(99, 82 + mcBoost),
+      wisdom: Math.min(99, 84 + mcBoost),
+      charisma: Math.min(99, 79 + mcBoost),
+      intuition: Math.min(99, 83 + mcBoost),
+      adaptability: Math.min(99, 80 + mcBoost),
+      vitality: Math.min(99, 78 + mcBoost),
+    }
+    const q = liveConsciousness?.liveKalchm ?? alchmQuantities
+    const esmsBalances = {
+      spirit: Math.max(32, Math.round((q.spirit ?? 0.35) * 120)),
+      essence: Math.max(32, Math.round((q.essence ?? 0.35) * 120)),
+      matter: Math.max(28, Math.round((q.matter ?? 0.3) * 120)),
+      substance: Math.max(30, Math.round((q.substance ?? 0.3) * 120)),
+    }
+    const sealProgress = evaluateSeals({ stats, esmsBalances })
+    const seals = earnedSeals(sealProgress)
+    const rated = rateStats(stats)
+    const zoneSynergies = computeZoneSynergies({ ratings: rated.ratings, seals })
+    const topZone = bestZoneId({ ratings: rated.ratings, seals })
+    return {
+      stats,
+      sealProgress,
+      seals,
+      zoneSynergies,
+      topZone,
+      ...rated,
+    }
+  }, [liveConsciousness, monicaConstant, alchmQuantities])
+
   return (
     <div className="min-h-screen bg-[#070611] text-zinc-100 relative overflow-x-hidden py-8 pb-20">
       <div className="pointer-events-none fixed inset-0 z-0 bg-[radial-gradient(ellipse_at_top,rgba(124,58,237,0.16),transparent_60%),radial-gradient(ellipse_at_bottom_right,rgba(245,158,11,0.08),transparent_55%)]" />
@@ -248,6 +293,12 @@ export default function MonicaPage() {
             </div>
 
             <div className="flex flex-wrap items-center gap-2.5">
+              <VesselRatingRibbon
+                ovr={monicaRating.ovr}
+                archetype={monicaRating.archetype}
+                seals={monicaRating.seals}
+                compact
+              />
               <Link href="/philosophers-stone">
                 <Button className="bg-gradient-to-r from-amber-500 to-yellow-500 text-zinc-950 font-semibold hover:from-amber-400 hover:to-yellow-400">
                   <Flame className="h-4 w-4 mr-1.5" />
@@ -621,6 +672,21 @@ export default function MonicaPage() {
                 </span>
               </div>
             </section>
+
+            <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+              <div className="glass-panel rounded-2xl border border-white/10 p-5">
+                <AlchemicalSealsCodex
+                  sealProgress={monicaRating.sealProgress}
+                  esmsSource="derived"
+                />
+              </div>
+              <div className="glass-panel rounded-2xl border border-white/10 p-5">
+                <PentacleZoneSynergyPanel
+                  zoneSynergies={monicaRating.zoneSynergies}
+                  bestZoneId={monicaRating.topZone}
+                />
+              </div>
+            </div>
 
             <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
               <Card className="glass-panel border-white/10">

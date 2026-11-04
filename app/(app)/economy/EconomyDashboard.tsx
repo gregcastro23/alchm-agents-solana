@@ -1,6 +1,6 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
 import Link from 'next/link'
 import {
   Sparkles,
@@ -13,6 +13,11 @@ import {
   ArrowLeftRight,
 } from 'lucide-react'
 import { LivePriceIndexTicker } from '@/components/economy/LivePriceIndexTicker'
+import {
+  VesselRatingRibbon,
+  AlchemicalSealsCodex,
+} from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 
 interface TokenBalances {
   spirit: number
@@ -121,20 +126,54 @@ export default function EconomyDashboard({
     },
   ]
 
+  const treasuryRating = useMemo(() => {
+    const spBoost = Math.min(20, Math.round(Math.log10(Math.max(10, balances.spirit + 10)) * 5))
+    const esBoost = Math.min(20, Math.round(Math.log10(Math.max(10, balances.essence + 10)) * 5))
+    const maBoost = Math.min(20, Math.round(Math.log10(Math.max(10, balances.matter + 10)) * 5))
+    const suBoost = Math.min(20, Math.round(Math.log10(Math.max(10, balances.substance + 10)) * 5))
+    const stats: CoreStats = {
+      power: Math.min(99, 68 + spBoost),
+      resonance: Math.min(99, 70 + esBoost),
+      wisdom: Math.min(99, 70 + suBoost),
+      charisma: Math.min(99, 68 + Math.round((spBoost + esBoost) / 2)),
+      intuition: Math.min(99, 71 + esBoost),
+      adaptability: Math.min(99, 69 + suBoost),
+      vitality: Math.min(99, 70 + maBoost),
+    }
+    const esmsBalances = {
+      spirit: Math.max(0, Math.round(balances.spirit)),
+      essence: Math.max(0, Math.round(balances.essence)),
+      matter: Math.max(0, Math.round(balances.matter)),
+      substance: Math.max(0, Math.round(balances.substance)),
+    }
+    const sealProgress = evaluateSeals({ stats, esmsBalances })
+    const seals = earnedSeals(sealProgress)
+    const rated = rateStats(stats)
+    return { stats, sealProgress, seals, ...rated }
+  }, [balances])
+
   return (
     <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-700">
       {/* Treasury Balances */}
       <div className="bg-surface border border-border p-6 rounded-xl space-y-6">
-        <div className="flex items-center justify-between border-b border-border pb-4">
+        <div className="flex flex-wrap items-center justify-between gap-4 border-b border-border pb-4">
           <h2 className="text-xl font-semibold text-zinc-200 flex items-center gap-2">
             <Activity className="w-5 h-5 text-amber-500" />
             ESMS Treasury Reserves
           </h2>
-          {!userId && (
-            <span className="text-xs px-2 py-1 bg-red-950/40 text-red-400 border border-red-900/50 rounded-full">
-              ESMS Treasury — Guest Preview
-            </span>
-          )}
+          <div className="flex flex-wrap items-center gap-3">
+            <VesselRatingRibbon
+              ovr={treasuryRating.ovr}
+              archetype={treasuryRating.archetype}
+              seals={treasuryRating.seals}
+              compact
+            />
+            {!userId && (
+              <span className="text-xs px-2 py-1 bg-red-950/40 text-red-400 border border-red-900/50 rounded-full">
+                ESMS Treasury — Guest Preview
+              </span>
+            )}
+          </div>
         </div>
 
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -156,6 +195,11 @@ export default function EconomyDashboard({
             </div>
           ))}
         </div>
+
+        <AlchemicalSealsCodex
+          sealProgress={treasuryRating.sealProgress}
+          esmsSource={userId ? 'live' : 'derived'}
+        />
       </div>
 
       {/* Live Elemental ESMS Price Index & Circle Resonance Matrix */}

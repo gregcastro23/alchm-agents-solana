@@ -19,7 +19,16 @@ import {
   Users,
 } from 'lucide-react'
 import { usePentaclesWarState } from '@/lib/spacetime/hooks/usePentaclesWarState'
-import { ZONE_PROFILES, SEAL_TIER_MULTIPLIERS } from '@/lib/agents/rating'
+import ConnectNav from '../connect/ConnectNav'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import {
+  ZONE_PROFILES,
+  SEAL_TIER_MULTIPLIERS,
+  rateStats,
+  evaluateSeals,
+  earnedSeals,
+  type CoreStats,
+} from '@/lib/agents/rating'
 import { SEAL_TIERS } from '@/lib/agents/rating-contract'
 
 const FACTIONS = [
@@ -181,33 +190,29 @@ export default function PentaclesWarClient() {
   const recentBattles = live.battles.slice(0, 6)
   const intents = controller?.lastRun?.intents.slice(0, 8) ?? []
 
+  const warCommandRating = useMemo(() => {
+    const claimedZones = live.zones.filter(zone => zone.owner).length
+    const agentCount = live.agents.length
+    const stats: CoreStats = {
+      power: Math.min(99, 72 + claimedZones * 2 + activeTables.length * 3),
+      resonance: Math.min(99, 74 + Math.min(20, agentCount)),
+      wisdom: Math.min(99, 75 + Math.min(18, intents.length * 2)),
+      charisma: Math.min(99, 71 + claimedZones * 2),
+      intuition: Math.min(99, 73 + activeTables.length * 3),
+      adaptability: Math.min(99, 74 + Math.min(18, recentBattles.length * 2)),
+      vitality: Math.min(99, 76 + claimedZones * 2),
+    }
+    const esmsBalances = { spirit: 42, essence: 38, matter: 36, substance: 40 }
+    const seals = earnedSeals(evaluateSeals({ stats, esmsBalances }))
+    const rated = rateStats(stats)
+    return { stats, seals, ...rated }
+  }, [live.zones, live.agents.length, activeTables.length, intents.length, recentBattles.length])
+
   return (
     <main className="min-h-screen bg-[#060810] text-slate-100">
       <div className="pointer-events-none fixed inset-0 bg-[radial-gradient(circle_at_22%_0%,rgba(91,33,182,0.16),transparent_34%),radial-gradient(circle_at_86%_18%,rgba(14,116,144,0.13),transparent_30%)]" />
       <div className="relative mx-auto max-w-[1500px] px-4 pb-20 pt-5 sm:px-7 lg:px-10">
-        <nav className="flex flex-wrap items-center justify-between gap-4 border-b border-white/10 pb-5">
-          <div className="flex items-center gap-2 text-sm">
-            <Link className="text-slate-500 transition hover:text-slate-200" href="/pentacles">
-              Pentacles
-            </Link>
-            <ChevronRight className="h-4 w-4 text-slate-700" />
-            <span className="text-amber-300">War Table Command</span>
-          </div>
-          <div className="flex items-center gap-2">
-            <Link
-              href="/pentacles"
-              className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-slate-400 transition hover:border-white/20 hover:text-white"
-            >
-              Sky Vaults
-            </Link>
-            <Link
-              href="/pentacles/portfolio"
-              className="rounded-full border border-white/10 px-3 py-1.5 text-xs text-slate-400 transition hover:border-white/20 hover:text-white"
-            >
-              Portfolio
-            </Link>
-          </div>
-        </nav>
+        <ConnectNav />
 
         <header className="grid gap-7 py-9 lg:grid-cols-[1fr_auto] lg:items-end">
           <div>
@@ -222,15 +227,23 @@ export default function PentaclesWarClient() {
               synchronizes agents, scores intent, and executes only owner-authorized actions.
             </p>
           </div>
-          <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
-            <span
-              className={`h-2.5 w-2.5 rounded-full ${live.status === 'connected' ? 'bg-emerald-400 shadow-[0_0_14px_#34d399]' : 'bg-amber-400'}`}
+          <div className="flex flex-wrap items-center gap-3">
+            <VesselRatingRibbon
+              ovr={warCommandRating.ovr}
+              archetype={warCommandRating.archetype}
+              seals={warCommandRating.seals}
+              compact
             />
-            <div>
-              <p className="text-xs font-medium text-slate-200">SpacetimeDB {live.status}</p>
-              <p className="text-[11px] text-slate-500">
-                {live.isLive ? 'Authoritative tables streaming' : 'Waiting for gameplay state'}
-              </p>
+            <div className="flex items-center gap-3 rounded-2xl border border-white/10 bg-black/20 px-4 py-3">
+              <span
+                className={`h-2.5 w-2.5 rounded-full ${live.status === 'connected' ? 'bg-emerald-400 shadow-[0_0_14px_#34d399]' : 'bg-amber-400'}`}
+              />
+              <div>
+                <p className="text-xs font-medium text-slate-200">SpacetimeDB {live.status}</p>
+                <p className="text-[11px] text-slate-500">
+                  {live.isLive ? 'Authoritative tables streaming' : 'Waiting for gameplay state'}
+                </p>
+              </div>
             </div>
           </div>
         </header>
@@ -291,31 +304,42 @@ export default function PentaclesWarClient() {
                 </span>
               </div>
               <div className="divide-y divide-white/[0.06]">
-                {standings.map((standing, index) => (
-                  <div
-                    key={standing.faction}
-                    className="grid grid-cols-[36px_1fr_auto_auto] items-center gap-3 px-5 py-3.5"
-                  >
-                    <span className="font-mono text-xs text-slate-600">
-                      {String(index + 1).padStart(2, '0')}
-                    </span>
-                    <div className="flex items-center gap-3">
-                      <span
-                        className="h-2.5 w-2.5 rounded-full"
-                        style={{ background: FACTION_TONE[standing.faction] }}
-                      />
-                      <span className="text-sm font-medium">{standing.faction}</span>
+                {standings.map((standing, index) => {
+                  const factionPvr = Math.min(
+                    99,
+                    68 + standing.zones * 4 + Math.min(12, standing.agents * 2) + (10 - index)
+                  )
+                  return (
+                    <div
+                      key={standing.faction}
+                      className="grid grid-cols-[36px_1fr_auto_auto] items-center gap-3 px-5 py-3.5"
+                    >
+                      <span className="font-mono text-xs text-slate-600">
+                        {String(index + 1).padStart(2, '0')}
+                      </span>
+                      <div className="flex items-center gap-3">
+                        <span
+                          className="h-2.5 w-2.5 rounded-full"
+                          style={{ background: FACTION_TONE[standing.faction] }}
+                        />
+                        <span className="text-sm font-medium">{standing.faction}</span>
+                        <span className="rounded-full border border-amber-400/35 bg-amber-400/10 px-2 py-0.5 font-mono text-[10px] font-semibold text-amber-200">
+                          PVR {factionPvr}
+                        </span>
+                      </div>
+                      <div className="text-right">
+                        <p className="font-mono text-sm text-slate-200">{standing.zones}</p>
+                        <p className="text-[10px] uppercase tracking-wider text-slate-600">zones</p>
+                      </div>
+                      <div className="w-20 text-right">
+                        <p className="font-mono text-sm text-slate-400">{standing.agents}</p>
+                        <p className="text-[10px] uppercase tracking-wider text-slate-600">
+                          agents
+                        </p>
+                      </div>
                     </div>
-                    <div className="text-right">
-                      <p className="font-mono text-sm text-slate-200">{standing.zones}</p>
-                      <p className="text-[10px] uppercase tracking-wider text-slate-600">zones</p>
-                    </div>
-                    <div className="w-20 text-right">
-                      <p className="font-mono text-sm text-slate-400">{standing.agents}</p>
-                      <p className="text-[10px] uppercase tracking-wider text-slate-600">agents</p>
-                    </div>
-                  </div>
-                ))}
+                  )
+                })}
               </div>
             </section>
 

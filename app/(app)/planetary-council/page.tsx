@@ -1,17 +1,56 @@
 'use client'
 
-import { useState } from 'react'
+import { useState, useMemo } from 'react'
+import Link from 'next/link'
 import { Button } from '@/components/ui/button'
 import { MessageSquare } from 'lucide-react'
 import PlanetaryWisdomChat from '@/components/misc/planetary-wisdom-chat'
 import { SolarReturnCouncil } from '@/components/landing/solar-return-council'
 import { usePlanetaryPositions } from '@/hooks/usePlanetaryPositions'
+import { getPlanetaryAgentStats } from '@/lib/agents/planetary-agent-stats'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 
 export default function PlanetaryCouncilPage() {
   const [isOpen, setIsOpen] = useState(true)
   const skyData = usePlanetaryPositions()
   const skySource = skyData.planetaryPositions[0]?.source
   const isLiveSwiss = skySource === 'swiss-ephemeris'
+
+  const councilRating = useMemo(() => {
+    const positions = skyData.planetaryPositions.length
+      ? skyData.planetaryPositions
+      : [
+          { planet: 'Sun', sign: 'Leo', degree: 15 },
+          { planet: 'Moon', sign: 'Cancer', degree: 12 },
+          { planet: 'Mercury', sign: 'Gemini', degree: 10 },
+        ]
+    const list = positions.map(p =>
+      getPlanetaryAgentStats(p.planet, p.sign, Math.round(p.degree ?? 15))
+    )
+    const keys: Array<keyof CoreStats> = [
+      'power',
+      'resonance',
+      'wisdom',
+      'charisma',
+      'intuition',
+      'adaptability',
+      'vitality',
+    ]
+    const stats = {} as CoreStats
+    for (const k of keys) {
+      stats[k] = Math.min(99, Math.round(list.reduce((acc, s) => acc + s[k], 0) / list.length) + 3)
+    }
+    const esmsBalances = {
+      spirit: Math.max(28, Math.round((skyData.alchmQuantities?.spirit ?? 0.3) * 120)),
+      essence: Math.max(28, Math.round((skyData.alchmQuantities?.essence ?? 0.3) * 120)),
+      matter: Math.max(28, Math.round((skyData.alchmQuantities?.matter ?? 0.25) * 120)),
+      substance: Math.max(28, Math.round((skyData.alchmQuantities?.substance ?? 0.25) * 120)),
+    }
+    const seals = earnedSeals(evaluateSeals({ stats, esmsBalances }))
+    const rated = rateStats(stats)
+    return { stats, seals, ...rated }
+  }, [skyData.planetaryPositions, skyData.alchmQuantities])
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-[#0c0319] via-[#1a0838] to-[#0c0319] text-white relative">
@@ -54,6 +93,26 @@ export default function PlanetaryCouncilPage() {
             <span className="inline-flex items-center gap-1.5 rounded-full border border-blue-500/30 bg-blue-900/20 px-3 py-1 text-xs text-blue-200 backdrop-blur-md">
               🌙 <strong className="text-blue-100">360° Moon Phase Intelligence</strong> active
             </span>
+            <Link
+              href="/council-feed"
+              className="inline-flex items-center gap-1.5 rounded-full border border-violet-400/35 bg-violet-500/10 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-violet-200 hover:bg-violet-500/20"
+            >
+              Live Council Feed →
+            </Link>
+            <Link
+              href="/arena"
+              className="inline-flex items-center gap-1.5 rounded-full border border-amber-400/35 bg-amber-500/10 px-3 py-1 font-mono text-[11px] uppercase tracking-wider text-amber-200 hover:bg-amber-500/20"
+            >
+              Synastry Arena →
+            </Link>
+          </div>
+          <div className="mt-4 flex justify-center">
+            <VesselRatingRibbon
+              ovr={councilRating.ovr}
+              archetype={councilRating.archetype}
+              seals={councilRating.seals}
+              compact
+            />
           </div>
           <div className="mt-3 text-xs text-purple-300/60">
             Tip: Review Gregory Castro&apos;s Daily Planetary Council briefing below or convene a
