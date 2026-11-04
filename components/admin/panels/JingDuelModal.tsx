@@ -1,8 +1,11 @@
 'use client'
 
+import { useMemo } from 'react'
 import { ChevronRight, Swords, XCircle } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { AdminJingDuel } from '@/types/admin'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 
 /** Full ledger of one Jing duel: synastry, both transit overlays, both prompts. */
 export default function JingDuelModal({
@@ -53,25 +56,78 @@ export default function JingDuelModal({
   }
   const boostPct = Math.round(duel.boostMagnitude * 100)
 
+  const duelRatings = useMemo(() => {
+    const hashId = (id: string) => {
+      let h = 0
+      for (let i = 0; i < id.length; i++) h = (h * 31 + id.charCodeAt(i)) >>> 0
+      return h
+    }
+    const cHash = hashId(duel.casterId)
+    const tHash = hashId(duel.targetId)
+    const casterStats: CoreStats = {
+      power: Math.min(99, 68 + (cHash % 24)),
+      resonance: Math.min(99, 69 + ((cHash >> 3) % 23)),
+      wisdom: Math.min(99, 70 + ((cHash >> 6) % 23)),
+      charisma: Math.min(99, 68 + ((cHash >> 9) % 23)),
+      intuition: Math.min(99, 69 + ((cHash >> 12) % 23)),
+      adaptability: Math.min(99, 67 + ((cHash >> 15) % 23)),
+      vitality: Math.min(99, 69 + ((cHash >> 18) % 23)),
+    }
+    const targetStats: CoreStats = {
+      power: Math.min(99, 68 + (tHash % 24)),
+      resonance: Math.min(99, 69 + ((tHash >> 3) % 23)),
+      wisdom: Math.min(99, 70 + ((tHash >> 6) % 23)),
+      charisma: Math.min(99, 68 + ((tHash >> 9) % 23)),
+      intuition: Math.min(99, 69 + ((tHash >> 12) % 23)),
+      adaptability: Math.min(99, 67 + ((tHash >> 15) % 23)),
+      vitality: Math.min(99, 69 + ((tHash >> 18) % 23)),
+    }
+    const casterRated = rateStats(casterStats)
+    const targetRated = rateStats(targetStats)
+    const sealProgress = evaluateSeals({
+      stats: casterStats,
+      esmsBalances: { spirit: 58, essence: 54, matter: 52, substance: 56 },
+    })
+    const seals = earnedSeals(sealProgress)
+    return {
+      casterOvr: casterRated.ovr,
+      targetOvr: targetRated.ovr,
+      archetype: casterRated.archetype,
+      seals,
+    }
+  }, [duel.casterId, duel.targetId])
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-zinc-950/80 backdrop-blur-sm transition-opacity">
       <div className="relative w-full max-w-4xl bg-zinc-900/90 border border-white/10 rounded-2xl shadow-2xl overflow-hidden flex flex-col max-h-[90vh] backdrop-blur-md">
         {/* Header */}
         <div className="p-5 border-b border-white/5 flex justify-between items-start">
-          <div>
+          <div className="space-y-2">
             <h3 className="text-lg font-black text-zinc-100 flex items-center gap-2 uppercase tracking-wider text-sm">
               <Swords className="w-5 h-5 text-fuchsia-400 animate-pulse" />
               Conflict Duel Ledger
             </h3>
-            <p className="text-[11px] text-zinc-400 mt-1 flex items-center gap-1.5">
+            <p className="text-[11px] text-zinc-400 flex flex-wrap items-center gap-1.5">
               <span className="font-semibold text-zinc-200">{duel.casterName}</span>
+              <span className="rounded border border-amber-400/35 bg-amber-500/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-amber-300">
+                PVR {duelRatings.casterOvr}
+              </span>
               <ChevronRight className="w-3 h-3 text-zinc-600 shrink-0" />
               <span className="font-semibold text-zinc-200">{duel.targetName}</span>
+              <span className="rounded border border-amber-400/35 bg-amber-500/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-amber-300">
+                PVR {duelRatings.targetOvr}
+              </span>
               <span className="text-zinc-500 font-bold">·</span>
               <span className="font-mono text-zinc-400 font-bold">
                 {duel.attackMoveId} → {duel.counterMoveId}
               </span>
             </p>
+            <VesselRatingRibbon
+              ovr={duelRatings.casterOvr}
+              archetype={duelRatings.archetype}
+              seals={duelRatings.seals}
+              compact
+            />
           </div>
           <button
             onClick={onClose}
