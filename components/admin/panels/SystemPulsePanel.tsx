@@ -13,6 +13,8 @@ import {
   XCircle,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import type { AdminAlert, AlertSeverity } from '@/lib/admin/alerts'
 import {
   AlertRow,
@@ -164,6 +166,34 @@ export default function SystemPulsePanel({
     )
   }
 
+  const okSubsystems = data.subsystems.filter(s => s.ok).length
+  const configuredProviders = data.providers.filter(p => p.configured).length
+  const configuredSecrets = data.requiredSecrets.filter(s => s.configured).length
+  const pulseStats: CoreStats = {
+    power: Math.min(99, 78 + okSubsystems * 3 - data.counts.critical * 8),
+    resonance: Math.min(99, 80 + (data.database.ok ? 14 : -10)),
+    wisdom: Math.min(99, 78 + configuredProviders * 3),
+    charisma: Math.min(99, 76 + configuredSecrets * 3),
+    intuition: Math.min(
+      99,
+      80 + (data.posture === 'healthy' ? 14 : data.posture === 'warn' ? 6 : -4)
+    ),
+    adaptability: Math.min(99, 78 + okSubsystems * 3),
+    vitality: Math.min(99, 80 + (data.counts.critical === 0 ? 14 : 2)),
+  }
+  const pulseRating = rateStats(pulseStats)
+  const pulseSeals = earnedSeals(
+    evaluateSeals({
+      stats: pulseStats,
+      esmsBalances: {
+        spirit: Math.max(130, okSubsystems * 30),
+        essence: Math.max(120, configuredProviders * 35),
+        matter: Math.max(115, configuredSecrets * 30),
+        substance: Math.max(135, data.database.ok ? 180 : 80),
+      },
+    })
+  )
+
   return (
     <div className="space-y-6">
       <PanelHeader
@@ -184,6 +214,13 @@ export default function SystemPulsePanel({
             </p>
           </div>
         }
+      />
+
+      <VesselRatingRibbon
+        ovr={pulseRating.ovr}
+        archetype={pulseRating.archetype}
+        seals={pulseSeals}
+        compact
       />
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
@@ -226,28 +263,39 @@ export default function SystemPulsePanel({
         subtitle="Whether each subsystem answered — an unanswered subsystem is unknown, not healthy"
       >
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-4">
-          {data.subsystems.map(subsystem => (
-            <button
-              key={subsystem.id}
-              type="button"
-              onClick={() => onNavigate?.(subsystem.id)}
-              className="rounded-xl border border-white/5 bg-zinc-950/40 p-4 text-left transition hover:border-white/15 hover:bg-zinc-900/50"
-            >
-              <div className="flex items-start justify-between gap-2">
-                <span className="text-xs font-bold text-zinc-200">{subsystem.label}</span>
-                <StatusDot ok={subsystem.ok} label={subsystem.ok ? 'ok' : 'failed'} />
-              </div>
-              <p className="mt-2 font-mono text-[10px] text-zinc-500">
-                {subsystem.latencyMs}ms · {subsystem.alertCount} alert
-                {subsystem.alertCount === 1 ? '' : 's'}
-              </p>
-              {subsystem.error && (
-                <p className="mt-1 truncate font-mono text-[10px] text-rose-300/70">
-                  {subsystem.error}
+          {data.subsystems.map(subsystem => {
+            const subPvr = Math.min(
+              99,
+              Math.max(58, (subsystem.ok ? 88 : 62) + Math.max(0, 8 - subsystem.alertCount * 3))
+            )
+            return (
+              <button
+                key={subsystem.id}
+                type="button"
+                onClick={() => onNavigate?.(subsystem.id)}
+                className="rounded-xl border border-white/5 bg-zinc-950/40 p-4 text-left transition hover:border-white/15 hover:bg-zinc-900/50"
+              >
+                <div className="flex items-start justify-between gap-2">
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-xs font-bold text-zinc-200">{subsystem.label}</span>
+                    <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                      PVR {subPvr}
+                    </span>
+                  </div>
+                  <StatusDot ok={subsystem.ok} label={subsystem.ok ? 'ok' : 'failed'} />
+                </div>
+                <p className="mt-2 font-mono text-[10px] text-zinc-500">
+                  {subsystem.latencyMs}ms · {subsystem.alertCount} alert
+                  {subsystem.alertCount === 1 ? '' : 's'}
                 </p>
-              )}
-            </button>
-          ))}
+                {subsystem.error && (
+                  <p className="mt-1 truncate font-mono text-[10px] text-rose-300/70">
+                    {subsystem.error}
+                  </p>
+                )}
+              </button>
+            )
+          })}
         </div>
       </Section>
 

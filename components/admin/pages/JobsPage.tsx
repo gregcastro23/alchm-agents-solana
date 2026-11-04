@@ -1,6 +1,8 @@
 'use client'
 
 import { JobsReportSchema, type JobsReportPayload } from '@/lib/admin/page-schemas'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import { cn } from '@/lib/utils'
 import { AdminFrame } from './AdminFrame'
 import {
@@ -126,11 +128,25 @@ function LimitMeter({ p95, limit, reason }: { p95: number | null; limit: number;
 
 function JobCard({ job, reason }: { job: Job; reason: string }) {
   const neverReason = 'No heartbeat recorded yet, so misses cannot be counted.'
+  const jobPvr = Math.min(
+    99,
+    Math.max(
+      55,
+      68 +
+        (job.state === 'ok' ? 18 : job.state === 'retrying' ? 10 : job.state === 'never' ? 4 : -8) +
+        Math.round((job.successRate7d ?? 0.85) * 10)
+    )
+  )
   return (
     <article className="min-w-0 rounded-xl border border-white/10 bg-zinc-950/60 p-4 text-zinc-200">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0">
-          <h3 className="break-words font-mono text-sm font-semibold text-zinc-50">{job.name}</h3>
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="break-words font-mono text-sm font-semibold text-zinc-50">{job.name}</h3>
+            <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+              PVR {jobPvr}
+            </span>
+          </div>
           <p className="mt-0.5 text-[11px] text-zinc-400">
             <code className="text-zinc-300">{job.schedule}</code> UTC · every ≤{' '}
             {job.intervalMinutes >= 1440
@@ -337,8 +353,36 @@ export function JobsView({ data }: { data: JobsReportPayload }) {
   const clashes = data.minutes.filter(
     m => m.asolJobs.length > 1 || (m.asolJobs.length > 0 && m.wten)
   )
+  const okJobs = data.jobs.filter(j => j.state === 'ok').length
+  const jobsStats: CoreStats = {
+    power: Math.min(99, 78 + okJobs * 3),
+    resonance: Math.min(99, 80 + (clashes.length === 0 ? 14 : 4)),
+    wisdom: Math.min(99, 78 + (data.heartbeats.status === 'live' ? 16 : 6)),
+    charisma: Math.min(99, 76 + data.jobs.length * 2),
+    intuition: Math.min(99, 80 + (data.alerts.length === 0 ? 14 : 4)),
+    adaptability: Math.min(99, 78 + okJobs * 3),
+    vitality: Math.min(99, 80 + okJobs * 2),
+  }
+  const jobsRating = rateStats(jobsStats)
+  const jobsSeals = earnedSeals(
+    evaluateSeals({
+      stats: jobsStats,
+      esmsBalances: {
+        spirit: Math.max(130, data.jobs.length * 25),
+        essence: Math.max(120, okJobs * 30),
+        matter: Math.max(110, clashes.length === 0 ? 160 : 80),
+        substance: Math.max(125, data.heartbeats.status === 'live' ? 180 : 90),
+      },
+    })
+  )
   return (
     <>
+      <VesselRatingRibbon
+        ovr={jobsRating.ovr}
+        archetype={jobsRating.archetype}
+        seals={jobsSeals}
+        compact
+      />
       <SourceNotice status={data.heartbeats} />
       <AlertList alerts={data.alerts} />
       <Card
