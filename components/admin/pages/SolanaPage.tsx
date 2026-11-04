@@ -1,8 +1,10 @@
 'use client'
 
-import type { ReactNode } from 'react'
+import { useCallback, useMemo, type ReactNode } from 'react'
 import { SolanaChainReportSchema, type SolanaChainPayload } from '@/lib/admin/page-schemas'
 import { cn } from '@/lib/utils'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import { AdminFrame } from './AdminFrame'
 import {
   AlertList,
@@ -63,9 +65,67 @@ function KV({ label, children }: { label: string; children: ReactNode }) {
 
 export function SolanaView({ data }: { data: SolanaChainPayload }) {
   const passed = data.readiness.filter(i => i.state === 'pass').length
+
+  const getPoolPvr = useCallback(
+    (
+      poolId: string | number,
+      exists: boolean | null,
+      bootstrapped: boolean | null,
+      paused: boolean | null
+    ) => {
+      const key = String(poolId)
+      let hash = 0
+      for (let i = 0; i < key.length; i++) hash = (hash * 31 + key.charCodeAt(i)) >>> 0
+      const stateBonus = !exists ? -8 : paused ? -5 : bootstrapped ? 12 : 4
+      const stats: CoreStats = {
+        power: Math.min(99, Math.max(55, 68 + (hash % 18) + stateBonus)),
+        resonance: Math.min(99, Math.max(55, 70 + ((hash >> 3) % 18) + stateBonus)),
+        wisdom: Math.min(99, Math.max(55, 71 + ((hash >> 6) % 18) + stateBonus)),
+        charisma: Math.min(99, Math.max(55, 69 + ((hash >> 9) % 18) + stateBonus)),
+        intuition: Math.min(99, Math.max(55, 70 + ((hash >> 12) % 18) + stateBonus)),
+        adaptability: Math.min(99, Math.max(55, 69 + ((hash >> 15) % 18) + stateBonus)),
+        vitality: Math.min(99, Math.max(55, 71 + ((hash >> 18) % 18) + stateBonus)),
+      }
+      return rateStats(stats).ovr
+    },
+    []
+  )
+
+  const solanaRailRating = useMemo(() => {
+    const ratio = data.readiness.length > 0 ? passed / data.readiness.length : 0.8
+    const boost = Math.round(ratio * 20)
+    const stats: CoreStats = {
+      power: Math.min(99, 68 + boost),
+      resonance: Math.min(99, 70 + boost),
+      wisdom: Math.min(99, 72 + boost),
+      charisma: Math.min(99, 69 + boost),
+      intuition: Math.min(99, 71 + boost),
+      adaptability: Math.min(99, 70 + boost),
+      vitality: Math.min(99, 71 + boost),
+    }
+    const sealProgress = evaluateSeals({
+      stats,
+      esmsBalances: { spirit: 60, essence: 58, matter: 64, substance: 60 },
+    })
+    const seals = earnedSeals(sealProgress)
+    const rated = rateStats(stats)
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+    }
+  }, [passed, data.readiness.length])
+
   return (
     <>
       <AlertList alerts={data.alerts} />
+
+      <VesselRatingRibbon
+        ovr={solanaRailRating.ovr}
+        archetype={solanaRailRating.archetype}
+        seals={solanaRailRating.seals}
+        compact
+      />
 
       <Card
         title="Devnet → mainnet readiness"
@@ -224,7 +284,13 @@ export function SolanaView({ data }: { data: SolanaChainPayload }) {
                 {pools.map(p => (
                   <tr key={p.poolId}>
                     <td className={td}>
-                      {p.poolId} <Address value={p.address} />
+                      <span className="inline-flex items-center gap-1.5">
+                        <span>{p.poolId}</span>
+                        <Address value={p.address} />
+                        <span className="rounded border border-amber-400/35 bg-amber-500/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-amber-300">
+                          Pool PVR {getPoolPvr(p.poolId, p.exists, p.bootstrapped, p.paused)}
+                        </span>
+                      </span>
                     </td>
                     <td className={td}>{p.pair}</td>
                     <td className={td}>{grouped(p.reserveA) ?? '—'}</td>

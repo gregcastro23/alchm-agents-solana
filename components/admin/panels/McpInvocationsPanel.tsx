@@ -1,6 +1,6 @@
 'use client'
 
-import { useState, useEffect } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import {
   TerminalSquare,
   ShieldCheck,
@@ -12,6 +12,8 @@ import {
   Search,
 } from 'lucide-react'
 import { cn } from '@/lib/utils'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 
 interface McpItem {
   toolName: string
@@ -88,8 +90,54 @@ export default function McpInvocationsPanel({ data }: McpPanelProps) {
       (i.agentId && i.agentId.toLowerCase().includes(searchTerm.toLowerCase()))
   )
 
+  const getMcpAgentPvr = useCallback((agentId: string) => {
+    let hash = 0
+    for (let i = 0; i < agentId.length; i++) hash = (hash * 31 + agentId.charCodeAt(i)) >>> 0
+    const stats: CoreStats = {
+      power: Math.min(99, 68 + (hash % 23)),
+      resonance: Math.min(99, 70 + ((hash >> 3) % 22)),
+      wisdom: Math.min(99, 72 + ((hash >> 6) % 22)),
+      charisma: Math.min(99, 69 + ((hash >> 9) % 22)),
+      intuition: Math.min(99, 71 + ((hash >> 12) % 22)),
+      adaptability: Math.min(99, 70 + ((hash >> 15) % 22)),
+      vitality: Math.min(99, 69 + ((hash >> 18) % 22)),
+    }
+    return rateStats(stats).ovr
+  }, [])
+
+  const mcpBridgeRating = useMemo(() => {
+    const rate = data.successRate ?? 92
+    const boost = Math.min(20, Math.round(rate * 0.2))
+    const stats: CoreStats = {
+      power: Math.min(99, 68 + boost),
+      resonance: Math.min(99, 70 + boost),
+      wisdom: Math.min(99, 73 + boost),
+      charisma: Math.min(99, 69 + boost),
+      intuition: Math.min(99, 71 + boost),
+      adaptability: Math.min(99, 72 + boost),
+      vitality: Math.min(99, 70 + boost),
+    }
+    const sealProgress = evaluateSeals({
+      stats,
+      esmsBalances: { spirit: 60, essence: 58, matter: 56, substance: 64 },
+    })
+    const seals = earnedSeals(sealProgress)
+    const rated = rateStats(stats)
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+    }
+  }, [data.successRate])
+
   return (
     <div className="space-y-6">
+      <VesselRatingRibbon
+        ovr={mcpBridgeRating.ovr}
+        archetype={mcpBridgeRating.archetype}
+        seals={mcpBridgeRating.seals}
+        compact
+      />
       {/* Cards Row */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/* Total calls */}
@@ -513,9 +561,14 @@ export default function McpInvocationsPanel({ data }: McpPanelProps) {
                         )}
                         <span className="font-bold text-zinc-200 truncate">{item.toolName}</span>
                         {item.agentId && (
-                          <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold truncate bg-zinc-800/80 px-1.5 py-0.5 rounded">
-                            {item.agentId}
-                          </span>
+                          <>
+                            <span className="text-[9px] text-zinc-500 uppercase tracking-wider font-semibold truncate bg-zinc-800/80 px-1.5 py-0.5 rounded">
+                              {item.agentId}
+                            </span>
+                            <span className="rounded border border-amber-400/35 bg-amber-500/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-amber-300">
+                              PVR {getMcpAgentPvr(item.agentId)}
+                            </span>
+                          </>
                         )}
                       </div>
 
