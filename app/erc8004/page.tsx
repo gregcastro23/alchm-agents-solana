@@ -14,6 +14,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Bot, ExternalLink, RefreshCw, ShieldCheck, Star, Zap } from 'lucide-react'
 import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { McpX402Playground } from '@/components/mcp/McpX402Playground'
 import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 
 interface LeaderboardEntry {
@@ -180,6 +181,10 @@ export default function Erc8004LeaderboardPage() {
           </p>
         </div>
       )}
+
+      <div className="mb-8">
+        <McpX402Playground defaultExpanded />
+      </div>
 
       <div className="overflow-hidden rounded-2xl border border-slate-800 bg-slate-900/60 backdrop-blur">
         <table className="w-full text-left text-sm">
