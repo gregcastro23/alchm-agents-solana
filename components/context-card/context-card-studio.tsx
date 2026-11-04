@@ -7,6 +7,11 @@ import { ExportPanel } from './export-panel'
 import { buildOutput } from '@/lib/context-card/serializers'
 import { DEMO_SKY, type SkySource } from '@/lib/context-card/transit-engine'
 import type { ContextCardData, ExportFormat, ExportOptions } from '@/lib/context-card/types'
+import {
+  VesselRatingRibbon,
+  AlchemicalSealsCodex,
+} from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 
 const ACCENTS: Record<string, { gold: string; hi: string; border: string }> = {
   'Solar gold': { gold: '#e9b86f', hi: '#f5d195', border: 'rgba(245,181,66,0.42)' },
@@ -178,6 +183,38 @@ export function ContextCardStudio({ data, sky = DEMO_SKY, initialUnlocked = fals
   const hasSacredStats =
     Object.keys(data.alchm.sacred7).length > 0 || Object.keys(data.alchm.planetary12).length > 0
 
+  const contextCardRating = useMemo(() => {
+    const s7 = data.alchm.sacred7 || {}
+    const stats: CoreStats = {
+      power: Math.min(99, Math.max(55, Math.round(Number(s7.power ?? s7.Power ?? 74)))),
+      resonance: Math.min(99, Math.max(55, Math.round(Number(s7.resonance ?? s7.Resonance ?? 76)))),
+      wisdom: Math.min(99, Math.max(55, Math.round(Number(s7.wisdom ?? s7.Wisdom ?? 78)))),
+      charisma: Math.min(99, Math.max(55, Math.round(Number(s7.charisma ?? s7.Charisma ?? 73)))),
+      intuition: Math.min(99, Math.max(55, Math.round(Number(s7.intuition ?? s7.Intuition ?? 77)))),
+      adaptability: Math.min(
+        99,
+        Math.max(55, Math.round(Number(s7.adaptability ?? s7.Adaptability ?? 74)))
+      ),
+      vitality: Math.min(99, Math.max(55, Math.round(Number(s7.vitality ?? s7.Vitality ?? 75)))),
+    }
+    const perAxis = Math.max(12, Math.round(balance / 4))
+    const esmsBalances = {
+      spirit: Math.max(perAxis, Math.round(Number(data.alchm.esms?.spirit ?? 0) * 100)),
+      essence: Math.max(perAxis, Math.round(Number(data.alchm.esms?.essence ?? 0) * 100)),
+      matter: Math.max(perAxis, Math.round(Number(data.alchm.esms?.matter ?? 0) * 100)),
+      substance: Math.max(perAxis, Math.round(Number(data.alchm.esms?.substance ?? 0) * 100)),
+    }
+    const sealProgress = evaluateSeals({ stats, esmsBalances })
+    const seals = earnedSeals(sealProgress)
+    const rated = rateStats(stats)
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+      sealProgress,
+    }
+  }, [data.alchm.sacred7, data.alchm.esms, balance])
+
   return (
     <div className="acc-root" ref={rootRef}>
       <header className="studio-top">
@@ -187,6 +224,12 @@ export function ContextCardStudio({ data, sky = DEMO_SKY, initialUnlocked = fals
           <span className="crumb">Context Card</span>
         </div>
         <div className="spacer"></div>
+        <Link className="back-link" href="/profile">
+          My Natal Codex →
+        </Link>
+        <Link className="back-link" href="/pentacles">
+          Star Vaults →
+        </Link>
         <Link className="back-link" href="/council-feed">
           ← Council Feed
         </Link>
@@ -276,6 +319,14 @@ export function ContextCardStudio({ data, sky = DEMO_SKY, initialUnlocked = fals
           {hasSacredStats ? (
             <span className="ibadge">Sacred&nbsp;7 + Planetary&nbsp;12</span>
           ) : null}
+        </div>
+        <div style={{ marginTop: 16, maxWidth: 680 }}>
+          <VesselRatingRibbon
+            ovr={contextCardRating.ovr}
+            archetype={contextCardRating.archetype}
+            seals={contextCardRating.seals}
+            compact
+          />
         </div>
       </section>
 

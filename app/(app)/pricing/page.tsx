@@ -1,9 +1,12 @@
 'use client'
 
+import { useMemo } from 'react'
 import Link from 'next/link'
 import { Sparkles, Coins, Zap, ShieldCheck, ArrowRight, UserCheck, Eye } from 'lucide-react'
 import { Button } from '@/components/ui/button'
 import { TOKEN_BUNDLES } from '@/lib/shop/token-bundles'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 
 const VISITOR_CAPABILITIES = [
   'Unlimited base chat with 360+ planetary and historical agents',
@@ -24,6 +27,47 @@ const ACCOUNT_HOLDER_CAPABILITIES = [
 ]
 
 export default function PricingPage() {
+  const tierPreviewRatings = useMemo(() => {
+    const baseStats: CoreStats = {
+      power: 78,
+      resonance: 76,
+      wisdom: 80,
+      charisma: 75,
+      intuition: 79,
+      adaptability: 74,
+      vitality: 77,
+    }
+    const visitorSeals = earnedSeals(
+      evaluateSeals({
+        stats: baseStats,
+        esmsBalances: { spirit: 0, essence: 0, matter: 0, substance: 0 },
+      })
+    )
+    const visitorRated = rateStats(baseStats)
+
+    const accountStats: CoreStats = {
+      power: 84,
+      resonance: 85,
+      wisdom: 86,
+      charisma: 82,
+      intuition: 86,
+      adaptability: 83,
+      vitality: 84,
+    }
+    const accountSeals = earnedSeals(
+      evaluateSeals({
+        stats: accountStats,
+        esmsBalances: { spirit: 85, essence: 85, matter: 85, substance: 85 },
+      })
+    )
+    const accountRated = rateStats(accountStats)
+
+    return {
+      visitor: { ovr: visitorRated.ovr, archetype: visitorRated.archetype, seals: visitorSeals },
+      account: { ovr: accountRated.ovr, archetype: accountRated.archetype, seals: accountSeals },
+    }
+  }, [])
+
   return (
     <div className="min-h-screen bg-gradient-to-b from-[#0a0a1a] via-[#0d0a1e] to-[#11091e] text-white py-12 px-4">
       <div className="mx-auto max-w-5xl space-y-12">
@@ -59,6 +103,15 @@ export default function PricingPage() {
                 Explore the cosmos immediately without creating an account or providing payment
                 info.
               </p>
+
+              <div className="mt-4">
+                <VesselRatingRibbon
+                  ovr={tierPreviewRatings.visitor.ovr}
+                  archetype={tierPreviewRatings.visitor.archetype}
+                  seals={tierPreviewRatings.visitor.seals}
+                  compact
+                />
+              </div>
 
               <ul className="mt-6 space-y-3 text-sm text-zinc-300">
                 {VISITOR_CAPABILITIES.map(cap => (
@@ -100,6 +153,15 @@ export default function PricingPage() {
                 Sign in to activate your ESMS Treasury, hold Spirit, Essence, Matter, and Substance
                 balances, and redeem via ESMS across both sites.
               </p>
+
+              <div className="mt-4">
+                <VesselRatingRibbon
+                  ovr={tierPreviewRatings.account.ovr}
+                  archetype={tierPreviewRatings.account.archetype}
+                  seals={tierPreviewRatings.account.seals}
+                  compact
+                />
+              </div>
 
               <ul className="mt-6 space-y-3 text-sm text-zinc-200">
                 {ACCOUNT_HOLDER_CAPABILITIES.map(cap => (
@@ -150,25 +212,40 @@ export default function PricingPage() {
           </div>
 
           <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
-            {TOKEN_BUNDLES.map(bundle => (
-              <div
-                key={bundle.name}
-                className="rounded-xl border border-white/10 bg-black/30 p-4 space-y-2"
-              >
-                <div className="text-sm font-semibold text-amber-300">{bundle.name}</div>
-                <div className="text-2xl font-bold text-white">
-                  {bundle.tokens.toLocaleString('en-US')} ESMS Tokens
+            {TOKEN_BUNDLES.map(bundle => {
+              const sealTierLabel =
+                bundle.perAxis >= 1000
+                  ? 'Astral Seal (1.16x)'
+                  : bundle.perAxis >= 250
+                    ? 'Gold Seal (1.10x)'
+                    : bundle.perAxis >= 50
+                      ? 'Silver Seal (1.06x)'
+                      : 'Copper Seal (1.03x)'
+              return (
+                <div
+                  key={bundle.name}
+                  className="rounded-xl border border-white/10 bg-black/30 p-4 space-y-2"
+                >
+                  <div className="flex items-center justify-between gap-2">
+                    <div className="text-sm font-semibold text-amber-300">{bundle.name}</div>
+                    <span className="rounded-full border border-amber-400/35 bg-amber-500/15 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                      {sealTierLabel}
+                    </span>
+                  </div>
+                  <div className="text-2xl font-bold text-white">
+                    {bundle.tokens.toLocaleString('en-US')} ESMS Tokens
+                  </div>
+                  <div className="text-xs text-zinc-400">
+                    {bundle.bonusPercent
+                      ? `${bundle.bonusPercent}% bonus ESMS Tokens for advanced alchemical actions`
+                      : `${bundle.perAxis} each of Spirit, Essence, Matter, and Substance`}
+                  </div>
+                  <div className="pt-2 text-lg font-semibold text-emerald-400">
+                    ${(bundle.usdCents / 100).toFixed(0)}
+                  </div>
                 </div>
-                <div className="text-xs text-zinc-400">
-                  {bundle.bonusPercent
-                    ? `${bundle.bonusPercent}% bonus ESMS Tokens for advanced alchemical actions`
-                    : `${bundle.perAxis} each of Spirit, Essence, Matter, and Substance`}
-                </div>
-                <div className="pt-2 text-lg font-semibold text-emerald-400">
-                  ${(bundle.usdCents / 100).toFixed(0)}
-                </div>
-              </div>
-            ))}
+              )
+            })}
           </div>
         </div>
 

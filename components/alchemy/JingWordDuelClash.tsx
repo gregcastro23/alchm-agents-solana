@@ -1,10 +1,22 @@
 'use client'
 
-import React, { useState } from 'react'
+import React, { useCallback, useMemo, useState } from 'react'
 import { JING_MOVES, type JingMoveName } from '@/lib/agents/duel/jing-rules'
 import { PLANETS, type Planet } from '@/lib/agents/planetary-traits'
 import { Button } from '@/components/ui/button'
 import { Sparkles, Swords, Zap, RefreshCw, Trophy, ShieldAlert } from 'lucide-react'
+import {
+  VesselRatingRibbon,
+  PentacleZoneSynergyPanel,
+} from '@/components/vessel/pentacle-rating-display'
+import {
+  rateStats,
+  evaluateSeals,
+  earnedSeals,
+  computeZoneSynergies,
+  bestZoneId,
+  type CoreStats,
+} from '@/lib/agents/rating'
 
 export function JingWordDuelClash() {
   const [selectedPlanet, setSelectedPlanet] = useState<Planet>('Sun')
@@ -26,6 +38,42 @@ export function JingWordDuelClash() {
     rationale: string
     score: number
   } | null>(null)
+
+  const getPlanetStats = useCallback((planet: Planet): CoreStats => {
+    const idx = PLANETS.indexOf(planet)
+    const seed = (idx + 1) * 7
+    return {
+      power: Math.min(99, 72 + ((seed * 3) % 24)),
+      resonance: Math.min(99, 70 + ((seed * 5) % 25)),
+      wisdom: Math.min(99, 74 + ((seed * 7) % 22)),
+      charisma: Math.min(99, 71 + ((seed * 11) % 24)),
+      intuition: Math.min(99, 73 + ((seed * 13) % 23)),
+      adaptability: Math.min(99, 70 + ((seed * 17) % 24)),
+      vitality: Math.min(99, 72 + ((seed * 19) % 23)),
+    }
+  }, [])
+
+  const selectedPlanetRating = useMemo(() => {
+    const stats = getPlanetStats(selectedPlanet)
+    const esmsBalances = {
+      spirit: 65,
+      essence: 60,
+      matter: 55,
+      substance: 62,
+    }
+    const sealProgress = evaluateSeals({ stats, esmsBalances })
+    const seals = earnedSeals(sealProgress)
+    const rated = rateStats(stats)
+    const zoneSynergies = computeZoneSynergies({ ratings: rated.ratings, seals })
+    const bestZone = bestZoneId({ ratings: rated.ratings, seals })
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+      zoneSynergies,
+      bestZone,
+    }
+  }, [selectedPlanet, getPlanetStats])
 
   const handleCastJing = async () => {
     setLoadingJing(true)
@@ -126,24 +174,46 @@ export function JingWordDuelClash() {
 
       {/* Sphere Selection */}
       <div className="glass-panel p-6 rounded-2xl border border-white/10 space-y-4">
-        <label className="block text-xs font-mono uppercase tracking-wider text-amber-400 font-semibold">
-          Select Planetary Champion
-        </label>
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <label className="block text-xs font-mono uppercase tracking-wider text-amber-400 font-semibold">
+            Select Planetary Champion
+          </label>
+          <span className="rounded-full border border-amber-400/35 bg-amber-500/15 px-2.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+            {selectedPlanet} · PVR {selectedPlanetRating.ovr} ·{' '}
+            {selectedPlanetRating.archetype.title}
+          </span>
+        </div>
         <div className="grid grid-cols-5 md:grid-cols-10 gap-2">
-          {PLANETS.map(p => (
-            <button
-              key={p}
-              type="button"
-              onClick={() => setSelectedPlanet(p)}
-              className={`p-3 rounded-xl border text-center font-mono text-xs transition-all ${
-                selectedPlanet === p
-                  ? 'bg-spirit-violet/30 border-st-primary text-white shadow-[0_0_15px_rgba(168,85,247,0.3)] font-bold'
-                  : 'bg-black/30 border-white/10 text-zinc-400 hover:text-white hover:border-white/30'
-              }`}
-            >
-              {p}
-            </button>
-          ))}
+          {PLANETS.map(p => {
+            const pvr = rateStats(getPlanetStats(p)).ovr
+            return (
+              <button
+                key={p}
+                type="button"
+                onClick={() => setSelectedPlanet(p)}
+                className={`p-3 rounded-xl border text-center font-mono text-xs transition-all flex flex-col items-center gap-1 ${
+                  selectedPlanet === p
+                    ? 'bg-spirit-violet/30 border-st-primary text-white shadow-[0_0_15px_rgba(168,85,247,0.3)] font-bold'
+                    : 'bg-black/30 border-white/10 text-zinc-400 hover:text-white hover:border-white/30'
+                }`}
+              >
+                <span>{p}</span>
+                <span className="text-[9px] text-amber-300/90 font-semibold">PVR {pvr}</span>
+              </button>
+            )
+          })}
+        </div>
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 pt-2">
+          <VesselRatingRibbon
+            ovr={selectedPlanetRating.ovr}
+            archetype={selectedPlanetRating.archetype}
+            seals={selectedPlanetRating.seals}
+            compact
+          />
+          <PentacleZoneSynergyPanel
+            zoneSynergies={selectedPlanetRating.zoneSynergies}
+            bestZoneId={selectedPlanetRating.bestZone}
+          />
         </div>
       </div>
 

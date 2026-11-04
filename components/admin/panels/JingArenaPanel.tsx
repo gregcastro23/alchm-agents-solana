@@ -1,9 +1,11 @@
 'use client'
 
-import { useState } from 'react'
+import { useCallback, useMemo } from 'react'
 import { Swords, Activity, Clock, ShieldAlert, ChevronRight, Zap, Target } from 'lucide-react'
 import { cn } from '@/lib/utils'
 import type { AdminJingDuel } from '@/types/admin'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 
 interface JingArenaProps {
   data: {
@@ -31,6 +33,57 @@ export default function JingArenaPanel({ data, onSelectDuel }: JingArenaProps) {
   const aggregates = data.jingAggregates
   const duels = data.recentJingDuels
 
+  // Combat stances calculations
+  const clashCount = aggregates?.stanceHistogram.clash ?? 0
+  const absorbCount = aggregates?.stanceHistogram.absorb ?? 0
+  const mirrorCount = aggregates?.stanceHistogram.mirror ?? 0
+  const totalStances = clashCount + absorbCount + mirrorCount || 1
+
+  const getEntityPvr = useCallback((id: string) => {
+    let hash = 0
+    for (let i = 0; i < id.length; i++) {
+      hash = (hash * 31 + id.charCodeAt(i)) >>> 0
+    }
+    const stats: CoreStats = {
+      power: Math.min(99, 68 + (hash % 24)),
+      resonance: Math.min(99, 68 + ((hash >> 3) % 24)),
+      wisdom: Math.min(99, 70 + ((hash >> 6) % 23)),
+      charisma: Math.min(99, 67 + ((hash >> 9) % 24)),
+      intuition: Math.min(99, 69 + ((hash >> 12) % 23)),
+      adaptability: Math.min(99, 68 + ((hash >> 15) % 23)),
+      vitality: Math.min(99, 69 + ((hash >> 18) % 23)),
+    }
+    return rateStats(stats).ovr
+  }, [])
+
+  const arenaTelemetryRating = useMemo(() => {
+    const total = aggregates?.total ?? 0
+    const velocityBoost = Math.min(20, Math.round(Math.log10(Math.max(10, total + 10)) * 6))
+    const stats: CoreStats = {
+      power: Math.min(99, 70 + velocityBoost),
+      resonance: Math.min(99, 72 + velocityBoost),
+      wisdom: Math.min(99, 71 + velocityBoost),
+      charisma: Math.min(99, 69 + velocityBoost),
+      intuition: Math.min(99, 72 + velocityBoost),
+      adaptability: Math.min(99, 70 + velocityBoost),
+      vitality: Math.min(99, 71 + velocityBoost),
+    }
+    const esmsBalances = {
+      spirit: 55 + velocityBoost,
+      essence: 52 + velocityBoost,
+      matter: 50 + velocityBoost,
+      substance: 54 + velocityBoost,
+    }
+    const sealProgress = evaluateSeals({ stats, esmsBalances })
+    const seals = earnedSeals(sealProgress)
+    const rated = rateStats(stats)
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+    }
+  }, [aggregates?.total])
+
   if (!aggregates) {
     return (
       <div className="rounded-2xl border border-dashed border-zinc-800 bg-zinc-950/40 p-8 text-center text-sm text-zinc-500">
@@ -39,14 +92,14 @@ export default function JingArenaPanel({ data, onSelectDuel }: JingArenaProps) {
     )
   }
 
-  // Combat stances calculations
-  const clashCount = aggregates.stanceHistogram.clash ?? 0
-  const absorbCount = aggregates.stanceHistogram.absorb ?? 0
-  const mirrorCount = aggregates.stanceHistogram.mirror ?? 0
-  const totalStances = clashCount + absorbCount + mirrorCount || 1
-
   return (
     <div className="space-y-6">
+      <VesselRatingRibbon
+        ovr={arenaTelemetryRating.ovr}
+        archetype={arenaTelemetryRating.archetype}
+        seals={arenaTelemetryRating.seals}
+        compact
+      />
       {/* Metrics Row */}
       <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
         {/* Total Duels */}
@@ -305,15 +358,23 @@ export default function JingArenaPanel({ data, onSelectDuel }: JingArenaProps) {
                       onClick={() => onSelectDuel(duel)}
                     >
                       <td className="px-4 py-3.5">
-                        <div className="font-bold text-zinc-200 group-hover:text-violet-300 transition-colors">
-                          {duel.casterName}
+                        <div className="flex items-center gap-1.5 font-bold text-zinc-200 group-hover:text-violet-300 transition-colors">
+                          <span>{duel.casterName}</span>
+                          <span className="rounded border border-amber-400/35 bg-amber-500/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-amber-300">
+                            PVR {getEntityPvr(duel.casterId)}
+                          </span>
                         </div>
                         <div className="text-[10px] text-zinc-500 font-mono mt-0.5 truncate max-w-[130px]">
                           {duel.casterId}
                         </div>
                       </td>
                       <td className="px-4 py-3.5">
-                        <div className="font-bold text-zinc-200">{duel.targetName}</div>
+                        <div className="flex items-center gap-1.5 font-bold text-zinc-200">
+                          <span>{duel.targetName}</span>
+                          <span className="rounded border border-amber-400/35 bg-amber-500/15 px-1.5 py-0.5 font-mono text-[9px] font-bold text-amber-300">
+                            PVR {getEntityPvr(duel.targetId)}
+                          </span>
+                        </div>
                         <div className="text-[10px] text-zinc-500 font-mono mt-0.5 truncate max-w-[130px]">
                           {duel.targetId}
                         </div>
