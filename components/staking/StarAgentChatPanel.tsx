@@ -1,9 +1,11 @@
 'use client'
 
-import React, { useState, useEffect } from 'react'
-import Link from 'next/link'
+import React, { useState, useEffect, useMemo } from 'react'
 import { createUnifiedChatHeaders } from '@/lib/agents/unified-chat-request'
 import { ELEMENT_COLOR, ESMS_LABEL } from '@/lib/staking/ui'
+import ConnectNav from '@/app/(app)/pentacles/connect/ConnectNav'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import { Button } from '@/components/ui/button'
 import {
   Sparkles,
@@ -298,8 +300,71 @@ export function StarAgentChatPanel() {
     }
   }
 
+  const getStarAgentRating = (star: StarAgentProfile, livePos?: LiveStarPosition) => {
+    const effectiveApy = livePos?.effectiveApy ?? star.apy
+    const isRisen = livePos?.isRisen ?? true
+    const apyBoost = Math.min(18, Math.round(effectiveApy / 15))
+    const risenBonus = isRisen ? 5 : 0
+    const stats: CoreStats = {
+      power: Math.min(99, 74 + (star.element === 'Fire' ? 10 : 3) + apyBoost),
+      resonance: Math.min(99, 73 + (star.element === 'Water' ? 10 : 3) + risenBonus),
+      wisdom: Math.min(99, 74 + (star.element === 'Air' ? 10 : 4) + risenBonus),
+      charisma: Math.min(99, 75 + (star.element === 'Fire' ? 8 : 4) + risenBonus),
+      intuition: Math.min(99, 74 + (star.element === 'Water' ? 9 : 4) + Math.round(apyBoost * 0.6)),
+      adaptability: Math.min(99, 72 + (star.element === 'Air' ? 9 : 4) + risenBonus),
+      vitality: Math.min(99, 75 + (star.element === 'Earth' ? 10 : 4) + risenBonus),
+    }
+    const esmsBalances = {
+      spirit: star.esmsId === 0 ? 45 : 22,
+      essence: star.esmsId === 1 ? 45 : 22,
+      matter: star.esmsId === 2 ? 45 : 22,
+      substance: star.esmsId === 3 ? 45 : 22,
+    }
+    const seals = earnedSeals(evaluateSeals({ stats, esmsBalances }))
+    const rated = rateStats(stats)
+    return { stats, seals, ...rated }
+  }
+
+  const activeStarRating = useMemo(
+    () => getStarAgentRating(selectedStar, starPositions[selectedStar.name.toLowerCase()]),
+
+    [selectedStar, starPositions]
+  )
+
+  const councilRating = useMemo(() => {
+    const individual = BRIGHT_STAR_AGENTS.map(s =>
+      getStarAgentRating(s, starPositions[s.name.toLowerCase()])
+    )
+    const keys: Array<keyof CoreStats> = [
+      'power',
+      'resonance',
+      'wisdom',
+      'charisma',
+      'intuition',
+      'adaptability',
+      'vitality',
+    ]
+    const stats = {} as CoreStats
+    for (const k of keys) {
+      stats[k] = Math.min(
+        99,
+        Math.round(individual.reduce((acc, r) => acc + r.stats[k], 0) / individual.length) + 4
+      )
+    }
+    const seals = earnedSeals(
+      evaluateSeals({
+        stats,
+        esmsBalances: { spirit: 38, essence: 38, matter: 38, substance: 38 },
+      })
+    )
+    const rated = rateStats(stats)
+    return { stats, seals, ...rated }
+  }, [starPositions])
+
   return (
     <div className="max-w-6xl mx-auto space-y-8">
+      <ConnectNav />
+
       {/* Title & Mode Selector */}
       <div className="text-center space-y-3">
         <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-amber-400/10 border border-amber-400/30 text-amber-300 text-xs font-mono uppercase tracking-widest">
@@ -358,6 +423,7 @@ export function StarAgentChatPanel() {
               const effectiveApy = livePos?.effectiveApy || star.apy
               const isRisen = livePos?.isRisen ?? true
               const altitude = livePos?.altitude ?? 45.0
+              const starRating = getStarAgentRating(star, livePos)
 
               return (
                 <button
@@ -378,6 +444,9 @@ export function StarAgentChatPanel() {
                       />
                       <span className="font-bold text-white text-base">{star.name}</span>
                       <span className="text-xs text-zinc-400 font-mono">HIP {star.hipId}</span>
+                      <span className="rounded-full border border-amber-400/35 bg-amber-400/10 px-2 py-0.5 text-[10px] font-mono font-bold text-amber-200">
+                        PVR {starRating.ovr}
+                      </span>
                     </div>
                     <span className="font-mono text-xs font-bold text-amber-300 bg-amber-400/10 px-2.5 py-0.5 rounded-full border border-amber-400/20">
                       {effectiveApy}% APY{' '}
@@ -394,7 +463,7 @@ export function StarAgentChatPanel() {
                       <span
                         className={`w-1.5 h-1.5 rounded-full ${isRisen ? 'bg-emerald-400 animate-pulse' : 'bg-zinc-500'}`}
                       />
-                      {isRisen ? `Risen (${altitude}°)` : 'Setting'}
+                      {isRisen ? `Risen (${altitude}°)` : 'Setting'} · {starRating.archetype.title}
                     </span>
                     <span className="text-purple-300 font-semibold">
                       Yields {ESMS_LABEL[star.esmsId]} ({star.element})
@@ -407,9 +476,9 @@ export function StarAgentChatPanel() {
         </div>
 
         {/* Right Col: Interactive Chat & Staking Callout */}
-        <div className="lg:col-span-8 glass-panel rounded-2xl border border-white/10 p-6 flex flex-col h-[620px]">
+        <div className="lg:col-span-8 glass-panel rounded-2xl border border-white/10 p-6 flex flex-col h-[660px]">
           {/* Active Star Header */}
-          <div className="flex items-center justify-between pb-4 border-b border-white/10 mb-4">
+          <div className="flex flex-wrap items-center justify-between gap-3 pb-4 border-b border-white/10 mb-4">
             {chatMode === 'single' ? (
               <div className="flex items-center gap-3">
                 <div
@@ -452,16 +521,26 @@ export function StarAgentChatPanel() {
               </div>
             )}
 
-            <Button
-              size="sm"
-              onClick={() => {
-                setStakingResult(null)
-                setStakeModalOpen(true)
-              }}
-              className="bg-amber-500 hover:bg-amber-400 text-black font-bold gap-1.5 rounded-xl shadow-md text-xs"
-            >
-              <Coins className="w-3.5 h-3.5" /> Stake in {selectedStar.name} Vault
-            </Button>
+            <div className="flex flex-wrap items-center gap-3">
+              <VesselRatingRibbon
+                ovr={chatMode === 'single' ? activeStarRating.ovr : councilRating.ovr}
+                archetype={
+                  chatMode === 'single' ? activeStarRating.archetype : councilRating.archetype
+                }
+                seals={chatMode === 'single' ? activeStarRating.seals : councilRating.seals}
+                compact
+              />
+              <Button
+                size="sm"
+                onClick={() => {
+                  setStakingResult(null)
+                  setStakeModalOpen(true)
+                }}
+                className="bg-amber-500 hover:bg-amber-400 text-black font-bold gap-1.5 rounded-xl shadow-md text-xs"
+              >
+                <Coins className="w-3.5 h-3.5" /> Stake in {selectedStar.name} Vault
+              </Button>
+            </div>
           </div>
 
           {/* Chat Transcript Area */}

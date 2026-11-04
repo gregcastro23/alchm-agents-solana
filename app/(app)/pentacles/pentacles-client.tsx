@@ -14,7 +14,9 @@ import ZoneDetailCard from '@/components/staking/ZoneDetailCard'
 import ShootingStarToasts from '@/components/staking/ShootingStarToasts'
 import PentaclesNetworkStatus from '@/components/staking/PentaclesNetworkStatus'
 import useEsmsBalances from '@/lib/staking/useEsmsBalances'
-import Link from 'next/link'
+import ConnectNav from './connect/ConnectNav'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import { computeYieldRate } from '@/lib/staking/yield-rate'
 import { deriveSky } from '@/lib/staking/zone-pools'
 import { zoneForAltAz } from '@/lib/staking/pentacle-geometry'
@@ -125,6 +127,49 @@ export default function PentaclesClient() {
     [stars, yields]
   )
 
+  const skyVesselRating = useMemo(() => {
+    const activeCount = sky.activations.length
+    const poolCount = sky.pools.length
+    const topApy = leaderboard[0]?.y?.apyPct ?? 12
+    const stats: CoreStats = {
+      power: Math.min(99, Math.max(60, Math.round(72 + topApy * 0.55 + activeCount * 3))),
+      resonance: Math.min(99, Math.max(62, Math.round(74 + poolCount * 2.5 + activeCount * 2))),
+      wisdom: Math.min(99, Math.max(60, Math.round(71 + planets.length * 1.8))),
+      charisma: Math.min(99, Math.max(58, Math.round(70 + (selected ? 10 : 4) + activeCount * 2))),
+      intuition: Math.min(
+        99,
+        Math.max(62, Math.round(73 + (natalElement ? 8 : 3) + poolCount * 2))
+      ),
+      adaptability: Math.min(99, Math.max(60, Math.round(70 + sky.zones.size * 1.4))),
+      vitality: Math.min(99, Math.max(62, Math.round(75 + leaderboard.length * 2.5))),
+    }
+    const esmsBalances = esms.balances
+      ? {
+          spirit: Math.max(25, Math.round(esms.balances.spirit)),
+          essence: Math.max(25, Math.round(esms.balances.essence)),
+          matter: Math.max(25, Math.round(esms.balances.matter)),
+          substance: Math.max(25, Math.round(esms.balances.substance)),
+        }
+      : { spirit: 34, essence: 32, matter: 28, substance: 30 }
+    const seals = earnedSeals(evaluateSeals({ stats, esmsBalances }))
+    const rated = rateStats(stats)
+    return { stats, seals, ...rated }
+  }, [sky, leaderboard, planets.length, selected, natalElement, esms.balances])
+
+  const getStarPvr = (star: StakeableStar, apyPct = 12) => {
+    const magBoost = Math.max(0, Math.round((2.5 - star.magnitude) * 6))
+    const stats: CoreStats = {
+      power: Math.min(99, 68 + magBoost + Math.round(apyPct * 0.45)),
+      resonance: Math.min(99, 70 + magBoost + (star.esmsId === 1 ? 8 : 3)),
+      wisdom: Math.min(99, 67 + magBoost + (star.esmsId === 3 ? 8 : 3)),
+      charisma: Math.min(99, 69 + magBoost + (star.esmsId === 0 ? 8 : 3)),
+      intuition: Math.min(99, 68 + magBoost + Math.round(apyPct * 0.35)),
+      adaptability: Math.min(99, 66 + ((star.hipId % 19) + 4)),
+      vitality: Math.min(99, 70 + magBoost + (star.esmsId === 2 ? 8 : 3)),
+    }
+    return rateStats(stats).ovr
+  }
+
   const handleScrollToLP = () => {
     if (selectedZoneId === null && sky.zones.size > 0) {
       const activeZone = Array.from(sky.zones.values()).find(z => z.pools.length > 0)
@@ -139,67 +184,33 @@ export default function PentaclesClient() {
   return (
     <div style={{ maxWidth: 1180, margin: '0 auto', padding: '24px 18px', color: '#e7e9ff' }}>
       <header style={{ marginBottom: 16 }}>
-        <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0 }}>Pentacle Star Vaults</h1>
-        <p style={{ color: '#9aa0d8', margin: '6px 0 0', maxWidth: 760 }}>
-          Stake USDC on a star and earn <strong>elemental essence</strong> while it is risen. The 11
-          zones host <strong>element-pair pools</strong> set by the planets&apos; live aspects, and
-          stars crossing your <strong>ascendant</strong> burst-boost the zone they sit in. Settles
-          on Circle Arc.
-        </p>
-        <PentaclesNetworkStatus />
         <div
           style={{
             display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
             gap: 16,
-            marginTop: 12,
-            borderBottom: '1px solid rgba(122, 128, 200, 0.2)',
-            paddingBottom: 10,
           }}
         >
-          <span style={{ color: '#ffd76a', fontWeight: 600, fontSize: 14 }}>Sky Vaults</span>
-          <Link
-            href="/pentacles/portfolio"
-            style={{
-              color: '#9aa0d8',
-              fontWeight: 500,
-              textDecoration: 'none',
-              fontSize: 14,
-              transition: 'color 0.2s',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.color = '#e7e9ff')}
-            onMouseLeave={e => (e.currentTarget.style.color = '#9aa0d8')}
-          >
-            Your Portfolio
-          </Link>
-          <Link
-            href="/pentacles/connect"
-            style={{
-              color: '#9aa0d8',
-              fontWeight: 500,
-              textDecoration: 'none',
-              fontSize: 14,
-              transition: 'color 0.2s',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.color = '#e7e9ff')}
-            onMouseLeave={e => (e.currentTarget.style.color = '#9aa0d8')}
-          >
-            Arc Onboarding
-          </Link>
-          <Link
-            href="/pentacles/war"
-            style={{
-              color: '#9aa0d8',
-              fontWeight: 500,
-              textDecoration: 'none',
-              fontSize: 14,
-              transition: 'color 0.2s',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.color = '#e7e9ff')}
-            onMouseLeave={e => (e.currentTarget.style.color = '#9aa0d8')}
-          >
-            War Table Command
-          </Link>
+          <div>
+            <h1 style={{ fontSize: 28, fontWeight: 800, margin: 0 }}>Pentacle Star Vaults</h1>
+            <p style={{ color: '#9aa0d8', margin: '6px 0 0', maxWidth: 680 }}>
+              Stake USDC on a star and earn <strong>elemental essence</strong> while it is risen.
+              The 11 zones host <strong>element-pair pools</strong> set by the planets&apos; live
+              aspects, and stars crossing your <strong>ascendant</strong> burst-boost the zone they
+              sit in. Settles on Circle Arc.
+            </p>
+          </div>
+          <VesselRatingRibbon
+            ovr={skyVesselRating.ovr}
+            archetype={skyVesselRating.archetype}
+            seals={skyVesselRating.seals}
+            compact
+          />
         </div>
+        <PentaclesNetworkStatus />
+        <ConnectNav />
       </header>
 
       <div style={{ display: 'flex', flexWrap: 'wrap', gap: 20, alignItems: 'flex-start' }}>
@@ -336,42 +347,60 @@ export default function PentaclesClient() {
             {leaderboard.length === 0 && (
               <div style={{ fontSize: 13, color: '#6b72a8' }}>No stars risen.</div>
             )}
-            {leaderboard.map(({ star, y }) => (
-              <button
-                key={star.hipId}
-                onClick={() => setSelectedHipId(star.hipId)}
-                style={{
-                  width: '100%',
-                  display: 'flex',
-                  justifyContent: 'space-between',
-                  alignItems: 'center',
-                  background:
-                    star.hipId === selectedHipId ? 'rgba(122,128,200,0.16)' : 'transparent',
-                  border: 'none',
-                  borderRadius: 8,
-                  padding: '7px 8px',
-                  color: '#dfe2ff',
-                  cursor: 'pointer',
-                }}
-              >
-                <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <span
-                    style={{
-                      width: 9,
-                      height: 9,
-                      borderRadius: '50%',
-                      background: ELEMENT_COLOR[star.element],
-                    }}
-                  />
-                  {star.name}
-                  <span style={{ fontSize: 11, color: '#9aa0d8' }}>{ESMS_LABEL[star.esmsId]}</span>
-                  {(y?.zoneBoost ?? 1) > 1.05 && (
-                    <span style={{ fontSize: 10, color: '#ffe9a8' }}>★boost</span>
-                  )}
-                </span>
-                <span style={{ fontWeight: 700 }}>{(y?.apyPct ?? 0).toFixed(0)}%</span>
-              </button>
-            ))}
+            {leaderboard.map(({ star, y }) => {
+              const starPvr = getStarPvr(star, y?.apyPct ?? 12)
+              return (
+                <button
+                  key={star.hipId}
+                  onClick={() => setSelectedHipId(star.hipId)}
+                  style={{
+                    width: '100%',
+                    display: 'flex',
+                    justifyContent: 'space-between',
+                    alignItems: 'center',
+                    background:
+                      star.hipId === selectedHipId ? 'rgba(122,128,200,0.16)' : 'transparent',
+                    border: 'none',
+                    borderRadius: 8,
+                    padding: '7px 8px',
+                    color: '#dfe2ff',
+                    cursor: 'pointer',
+                  }}
+                >
+                  <span style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span
+                      style={{
+                        width: 9,
+                        height: 9,
+                        borderRadius: '50%',
+                        background: ELEMENT_COLOR[star.element],
+                      }}
+                    />
+                    {star.name}
+                    <span style={{ fontSize: 11, color: '#9aa0d8' }}>
+                      {ESMS_LABEL[star.esmsId]}
+                    </span>
+                    <span
+                      style={{
+                        fontSize: 10,
+                        fontFamily: 'var(--font-mono), monospace',
+                        color: '#ffd76a',
+                        border: '1px solid rgba(255,215,106,0.35)',
+                        background: 'rgba(255,215,106,0.08)',
+                        padding: '1px 5px',
+                        borderRadius: 999,
+                      }}
+                    >
+                      PVR {starPvr}
+                    </span>
+                    {(y?.zoneBoost ?? 1) > 1.05 && (
+                      <span style={{ fontSize: 10, color: '#ffe9a8' }}>★boost</span>
+                    )}
+                  </span>
+                  <span style={{ fontWeight: 700 }}>{(y?.apyPct ?? 0).toFixed(0)}%</span>
+                </button>
+              )
+            })}
           </div>
         </div>
       </div>

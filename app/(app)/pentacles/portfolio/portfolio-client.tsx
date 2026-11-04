@@ -1,9 +1,11 @@
 'use client'
 
 import { useEffect, useMemo, useRef, useState } from 'react'
-import Link from 'next/link'
 import useLiveEphemeris from '@/lib/spacetime/hooks/useLiveEphemeris'
 import useLiveStars from '@/lib/spacetime/hooks/useLiveStars'
+import ConnectNav from '../connect/ConnectNav'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import { computeYieldRate } from '@/lib/staking/yield-rate'
 import { deriveSky } from '@/lib/staking/zone-pools'
 import { zoneForAltAz } from '@/lib/staking/pentacle-geometry'
@@ -89,62 +91,77 @@ export default function PortfolioClient() {
   const positions = portfolio?.positions ?? []
   const explorer = staking.lastTx ? `${ARC_TESTNET.explorer}/tx/${staking.lastTx}` : null
 
+  const portfolioVesselRating = useMemo(() => {
+    const totalStaked = portfolio?.totalStakedUsdc ?? 0
+    const dailyEssence = portfolio?.totalEssencePerDay ?? 0
+    const risenCount = positions.filter(p => p.visible).length
+    const stakeBoost = Math.min(20, Math.round(Math.log10(Math.max(10, totalStaked + 10)) * 5))
+    const stats: CoreStats = {
+      power: Math.min(99, 68 + stakeBoost + risenCount * 3),
+      resonance: Math.min(99, 71 + positions.length * 4 + risenCount * 2),
+      wisdom: Math.min(99, 70 + Math.min(18, Math.round(dailyEssence * 1.5))),
+      charisma: Math.min(99, 69 + stakeBoost),
+      intuition: Math.min(99, 72 + risenCount * 4),
+      adaptability: Math.min(99, 68 + positions.length * 3),
+      vitality: Math.min(99, 73 + stakeBoost + risenCount * 2),
+    }
+    const esmsBalances = { spirit: 36, essence: 34, matter: 32, substance: 30 }
+    const seals = earnedSeals(evaluateSeals({ stats, esmsBalances }))
+    const rated = rateStats(stats)
+    return { stats, seals, ...rated }
+  }, [portfolio, positions])
+
+  const getPositionPvr = (star: StakeableStar, apyPct: number) => {
+    const magBoost = Math.max(0, Math.round((2.5 - star.magnitude) * 6))
+    const stats: CoreStats = {
+      power: Math.min(99, 68 + magBoost + Math.round(apyPct * 0.45)),
+      resonance: Math.min(99, 70 + magBoost + (star.esmsId === 1 ? 8 : 3)),
+      wisdom: Math.min(99, 67 + magBoost + (star.esmsId === 3 ? 8 : 3)),
+      charisma: Math.min(99, 69 + magBoost + (star.esmsId === 0 ? 8 : 3)),
+      intuition: Math.min(99, 68 + magBoost + Math.round(apyPct * 0.35)),
+      adaptability: Math.min(99, 66 + ((star.hipId % 19) + 4)),
+      vitality: Math.min(99, 70 + magBoost + (star.esmsId === 2 ? 8 : 3)),
+    }
+    return rateStats(stats).ovr
+  }
+
   return (
     <div style={{ maxWidth: 1100, margin: '0 auto', padding: '28px 18px 120px', color: '#e7e9ff' }}>
       <header style={{ marginBottom: 24 }}>
-        <h1
-          style={{
-            fontFamily: 'Playfair Display, serif',
-            fontSize: 34,
-            fontWeight: 700,
-            color: GOLD,
-            margin: 0,
-          }}
-        >
-          Your constellations
-        </h1>
-        <p style={{ color: '#9aa0d8', margin: '6px 0 0', maxWidth: 640 }}>
-          The stars holding your staked USDC. Align with the ascendant to maximize essence accrual.
-        </p>
         <div
           style={{
             display: 'flex',
+            flexWrap: 'wrap',
+            justifyContent: 'space-between',
+            alignItems: 'flex-start',
             gap: 16,
-            marginTop: 12,
-            borderBottom: '1px solid rgba(122, 128, 200, 0.2)',
-            paddingBottom: 10,
           }}
         >
-          <Link
-            href="/pentacles"
-            style={{
-              color: '#9aa0d8',
-              fontWeight: 500,
-              textDecoration: 'none',
-              fontSize: 14,
-              transition: 'color 0.2s',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.color = '#e7e9ff')}
-            onMouseLeave={e => (e.currentTarget.style.color = '#9aa0d8')}
-          >
-            Sky Vaults
-          </Link>
-          <span style={{ color: '#ffd76a', fontWeight: 600, fontSize: 14 }}>Your Portfolio</span>
-          <Link
-            href="/pentacles/connect"
-            style={{
-              color: '#9aa0d8',
-              fontWeight: 500,
-              textDecoration: 'none',
-              fontSize: 14,
-              transition: 'color 0.2s',
-            }}
-            onMouseEnter={e => (e.currentTarget.style.color = '#e7e9ff')}
-            onMouseLeave={e => (e.currentTarget.style.color = '#9aa0d8')}
-          >
-            Arc Onboarding
-          </Link>
+          <div>
+            <h1
+              style={{
+                fontFamily: 'Playfair Display, serif',
+                fontSize: 34,
+                fontWeight: 700,
+                color: GOLD,
+                margin: 0,
+              }}
+            >
+              Your constellations
+            </h1>
+            <p style={{ color: '#9aa0d8', margin: '6px 0 0', maxWidth: 640 }}>
+              The stars holding your staked USDC. Align with the ascendant to maximize essence
+              accrual.
+            </p>
+          </div>
+          <VesselRatingRibbon
+            ovr={portfolioVesselRating.ovr}
+            archetype={portfolioVesselRating.archetype}
+            seals={portfolioVesselRating.seals}
+            compact
+          />
         </div>
+        <ConnectNav />
       </header>
 
       {/* Stat cards */}
@@ -289,6 +306,7 @@ export default function PortfolioClient() {
             <tbody>
               {positions.map(pos => {
                 const color = ELEMENT_COLOR[pos.star.element]
+                const posPvr = getPositionPvr(pos.star, pos.apyPct)
                 return (
                   <tr
                     key={pos.star.hipId}
@@ -311,7 +329,20 @@ export default function PortfolioClient() {
                           boxShadow: `0 0 8px ${color}`,
                         }}
                       />
-                      {pos.star.name}
+                      <span>{pos.star.name}</span>
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontFamily: 'var(--font-mono), monospace',
+                          color: GOLD,
+                          border: `1px solid ${GOLD}55`,
+                          background: 'rgba(255,215,106,0.08)',
+                          padding: '1px 6px',
+                          borderRadius: 999,
+                        }}
+                      >
+                        PVR {posPvr}
+                      </span>
                     </td>
                     <td style={{ padding: '12px 16px', color }}>{ESMS_LABEL[pos.star.esmsId]}</td>
                     <td style={{ padding: '12px 16px' }}>{pos.principalUsdc.toFixed(2)} USDC</td>

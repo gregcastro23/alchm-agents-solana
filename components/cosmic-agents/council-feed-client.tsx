@@ -11,6 +11,7 @@ import { AgentDrawer } from './agent-drawer'
 import { JING_MOVES, PLANETS, ASP_SYM } from './constants'
 import { compatibility, isActivated } from './agent-adapter'
 import { spriteTierLabel } from '@/lib/agents/agent-type-model'
+import { rateStats } from '@/lib/agents/rating'
 import { SEED_FEED_EVENTS } from './seed-data'
 import type {
   ChartOfMoment,
@@ -972,6 +973,7 @@ function RosterColumn({
           {ranked.map(({ agent, activation, userResonance, dormant }) => {
             const isSel = !!selected && selected.id === agent.id
             const activationBars = Math.max(1, Math.min(7, Math.round(activation / 14)))
+            const pvr = rateStats(agent.stats).ovr
             // Sky sprites don't level — show their dignity/phase tier instead of Lv.
             const tier =
               agent.kind === 'planetary' || agent.kind === 'lunar'
@@ -995,6 +997,22 @@ function RosterColumn({
                     style={{ fontSize: 14, fontFamily: 'var(--ff-display)', lineHeight: 1.1 }}
                   >
                     {agent.name}
+                    <span
+                      title="Pentacle Vessel Rating"
+                      style={{
+                        marginLeft: 6,
+                        fontSize: 9,
+                        fontFamily: 'var(--ff-mono)',
+                        padding: '1px 5px',
+                        borderRadius: 999,
+                        background: 'rgba(255, 215, 106, 0.12)',
+                        border: '1px solid rgba(255, 215, 106, 0.45)',
+                        color: '#ffd76a',
+                        verticalAlign: 'middle',
+                      }}
+                    >
+                      PVR {pvr}
+                    </span>
                     {tier ? (
                       <span
                         title="Sky sprite — dignity/phase tier (sprites don't level)"
@@ -1099,6 +1117,7 @@ function UserAgentRow({
     (a, b) => b[1] - a[1]
   )[0][0]
   const alignWithSky = Math.min(7, Math.round(agent.elemental[sky] / 5))
+  const pvr = rateStats(agent.stats).ovr
   return (
     <div className={'agent-row user-self ' + (isSel ? 'selected' : '')} onClick={onClick}>
       <Avatar agent={agent} />
@@ -1108,6 +1127,22 @@ function UserAgentRow({
           style={{ fontSize: 14, fontFamily: 'var(--ff-display)', lineHeight: 1.1 }}
         >
           {agent.name}
+          <span
+            title="Your Pentacle Vessel Rating"
+            style={{
+              marginLeft: 6,
+              fontSize: 9,
+              fontFamily: 'var(--ff-mono)',
+              padding: '1px 5px',
+              borderRadius: 999,
+              background: 'rgba(255, 215, 106, 0.14)',
+              border: '1px solid rgba(255, 215, 106, 0.45)',
+              color: '#ffd76a',
+              verticalAlign: 'middle',
+            }}
+          >
+            PVR {pvr}
+          </span>
         </div>
         <div
           className="sub"
