@@ -33,6 +33,7 @@ import { ALCHM_DESKTOP_AGENT_UNLOCK_LABEL } from '@/lib/desktop-download'
 import { hasTauriInvokeRuntime, requestDesktopSidecar } from '@/lib/desktop-sidecar'
 import { rateStats } from '@/lib/agents/rating'
 import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { McpX402Playground } from '@/components/mcp/McpX402Playground'
 
 type DesktopView = 'onboarding' | 'chat' | 'agents' | 'ledger' | 'tray'
 
@@ -59,12 +60,12 @@ interface DesktopGalleryAgent {
 }
 
 const MCP_V140_TOOLS = [
-  'get_live_transits',
-  'calculate_natal_chart',
-  'compute_synastry',
+  'get_live_sky_transits',
+  'alchemize_ingredients',
+  'generate_cosmic_recipe',
+  'compute_synastry_overlay',
+  'get_transit_natal_overlay',
   'compute_triplicate_synastry',
-  'query_agent_persona',
-  'chat_with_agent',
   'create_evidence_snapshot',
   'submit_recipe_reflection',
 ] as const
@@ -1710,6 +1711,10 @@ export default function App() {
                     </span>
                   ))}
                 </div>
+              </div>
+
+              <div className="mb-8">
+                <McpX402Playground defaultExpanded={false} />
               </div>
 
               {loadingAgents ? (
