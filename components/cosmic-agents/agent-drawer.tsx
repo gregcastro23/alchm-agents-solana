@@ -13,6 +13,18 @@ import {
 } from './agent-atoms'
 import { compatibility } from './agent-adapter'
 import type { CouncilAgent, ChartOfMoment, Element, JingMoveId } from './types'
+import {
+  VesselRatingRibbon,
+  AlchemicalSealsCodex,
+  PentacleZoneSynergyPanel,
+} from '@/components/vessel/pentacle-rating-display'
+import {
+  rateStats,
+  evaluateSeals,
+  earnedSeals,
+  computeZoneSynergies,
+  bestZoneId,
+} from '@/lib/agents/rating'
 
 interface Props {
   agent: CouncilAgent
@@ -36,13 +48,36 @@ export function AgentDrawer({ agent, agents, onClose }: Props) {
     [agent, agents]
   )
 
+  const vesselRating = React.useMemo(() => {
+    const esmsBalances = agent.esms
+      ? {
+          spirit: agent.esms.spirit,
+          essence: agent.esms.essence,
+          matter: agent.esms.matter,
+          substance: agent.esms.substance,
+        }
+      : { spirit: 30, essence: 30, matter: 30, substance: 30 }
+    const sealProgress = evaluateSeals({ stats: agent.stats, esmsBalances })
+    const seals = earnedSeals(sealProgress)
+    const rated = rateStats(agent.stats)
+    const zoneSynergies = computeZoneSynergies({ ratings: rated.ratings, seals })
+    const topZone = bestZoneId({ ratings: rated.ratings, seals })
+    return {
+      ...rated,
+      sealProgress,
+      seals,
+      zoneSynergies,
+      topZone,
+    }
+  }, [agent.stats, agent.esms])
+
   return (
     <>
       <div className="drawer-backdrop" onClick={onClose} />
       <div className="drawer">
         <div className="drawer-head">
           <Avatar agent={agent} size="large" />
-          <div>
+          <div style={{ flex: 1 }}>
             <div style={{ fontFamily: 'var(--ff-display)', fontSize: 22 }}>{agent.name}</div>
             <div className="hint" style={{ marginTop: 4 }}>
               {agent.sun} ☉ · {agent.moon} ☽{agent.rising ? ` · ${agent.rising} ↑` : ''} &nbsp; ·
@@ -65,6 +100,14 @@ export function AgentDrawer({ agent, agents, onClose }: Props) {
               <span className="chip" style={{ cursor: 'default' }}>
                 M-const {agent.monicaConstant === null ? 'not computed' : agent.monicaConstant}
               </span>
+            </div>
+            <div style={{ marginTop: 12 }}>
+              <VesselRatingRibbon
+                ovr={vesselRating.ovr}
+                archetype={vesselRating.archetype}
+                seals={vesselRating.seals}
+                compact
+              />
             </div>
           </div>
           <button className="close" onClick={onClose}>
@@ -89,6 +132,20 @@ export function AgentDrawer({ agent, agents, onClose }: Props) {
           <div className="section">
             <h4>Sacred 7 · core archetypes</h4>
             <Sacred7Display stats={agent.stats} />
+          </div>
+
+          <div className="section">
+            <h4>Alchemical Seals &amp; Pentacle Zone Synergy</h4>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              <AlchemicalSealsCodex
+                sealProgress={vesselRating.sealProgress}
+                esmsSource={agent.esms ? 'live' : 'derived'}
+              />
+              <PentacleZoneSynergyPanel
+                zoneSynergies={vesselRating.zoneSynergies}
+                bestZoneId={vesselRating.topZone}
+              />
+            </div>
           </div>
 
           <div className="section">
@@ -133,8 +190,12 @@ export function AgentDrawer({ agent, agents, onClose }: Props) {
               <Link href={`/agent/${agent.id}`} className="btn primary" onClick={onClose}>
                 View full profile
               </Link>
-              <button className="btn">Pair for Duel</button>
-              <button className="btn ghost">Follow</button>
+              <Link href="/arena" className="btn" onClick={onClose}>
+                Pair in Synastry Arena
+              </Link>
+              <Link href="/pentacles" className="btn ghost" onClick={onClose}>
+                Star Vaults
+              </Link>
             </div>
           </div>
         </div>
