@@ -4,6 +4,8 @@ import CodebaseHealthPanel, {
   type CodebaseHealthPayload,
 } from '@/components/admin/panels/CodebaseHealthPanel'
 import { BuildHealthReportSchema, type BuildHealthPayload } from '@/lib/admin/page-schemas'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import { AdminFrame } from './AdminFrame'
 import { useAdminNavigate, useEnvelopePanel } from './hooks'
 import {
@@ -40,8 +42,38 @@ const LINK = 'text-sky-300 underline-offset-2 hover:underline'
 
 export function BuildView({ data }: { data: BuildHealthPayload }) {
   const failing = data.ci.ok ? data.ci.value.filter(r => r.state === 'failure').length : null
+  const passingCount = data.ci.ok ? data.ci.value.filter(r => r.state === 'success').length : 4
+  const openPrs = data.pulls.ok ? data.pulls.value.length : 0
+  const buildStats: CoreStats = {
+    power: Math.min(99, 80 + passingCount * 3 - (failing ?? 0) * 6),
+    resonance: Math.min(99, 82 + (failing === 0 ? 12 : 0)),
+    wisdom: Math.min(99, 84 + (data.main.ok ? 10 : 0)),
+    charisma: Math.min(99, 78 + Math.min(16, (openPrs + 2) * 3)),
+    intuition: Math.min(99, 82 + (data.alerts.length === 0 ? 12 : 4)),
+    adaptability: Math.min(99, 80 + (data.behind.ok && data.behind.value.commits === 0 ? 14 : 6)),
+    vitality: Math.min(99, 82 + passingCount * 3),
+  }
+  const buildRating = rateStats(buildStats)
+  const buildSeals = earnedSeals(
+    evaluateSeals({
+      stats: buildStats,
+      esmsBalances: {
+        spirit: Math.max(150, passingCount * 40),
+        essence: Math.max(140, failing === 0 ? 180 : 90),
+        matter: Math.max(130, (openPrs + 3) * 35),
+        substance: Math.max(145, data.authenticated ? 180 : 120),
+      },
+    })
+  )
+
   return (
     <>
+      <VesselRatingRibbon
+        ovr={buildRating.ovr}
+        archetype={buildRating.archetype}
+        seals={buildSeals}
+        compact
+      />
       <AlertList alerts={data.alerts} />
 
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
@@ -133,23 +165,38 @@ export function BuildView({ data }: { data: BuildHealthPayload }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {runs.map(r => (
-                    <tr key={r.workflow}>
-                      <td className={td}>
-                        <a className={LINK} href={r.url} target="_blank" rel="noreferrer">
-                          {r.workflow}
-                        </a>
-                      </td>
-                      <td className={td}>
-                        <CiBadge state={r.state} />
-                      </td>
-                      <td className={`${td} font-mono`}>{r.sha.slice(0, 7)}</td>
-                      <td className={td}>{formatAgo(r.startedAt)}</td>
-                      <td className={td}>
-                        {r.durationMs === null ? 'running' : formatDuration(r.durationMs)}
-                      </td>
-                    </tr>
-                  ))}
+                  {runs.map(r => {
+                    const wfPvr =
+                      r.state === 'success'
+                        ? 94
+                        : r.state === 'pending'
+                          ? 82
+                          : r.state === 'failure'
+                            ? 62
+                            : 74
+                    return (
+                      <tr key={r.workflow}>
+                        <td className={td}>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <a className={LINK} href={r.url} target="_blank" rel="noreferrer">
+                              {r.workflow}
+                            </a>
+                            <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                              PVR {wfPvr}
+                            </span>
+                          </div>
+                        </td>
+                        <td className={td}>
+                          <CiBadge state={r.state} />
+                        </td>
+                        <td className={`${td} font-mono`}>{r.sha.slice(0, 7)}</td>
+                        <td className={td}>{formatAgo(r.startedAt)}</td>
+                        <td className={td}>
+                          {r.durationMs === null ? 'running' : formatDuration(r.durationMs)}
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </ScrollTable>
             )
@@ -177,23 +224,40 @@ export function BuildView({ data }: { data: BuildHealthPayload }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {pulls.map(p => (
-                    <tr key={p.number}>
-                      <td className={td}>
-                        <a className={LINK} href={p.url} target="_blank" rel="noreferrer">
-                          #{p.number}
-                        </a>{' '}
-                        <span className="text-zinc-200">{p.title}</span>
-                        {p.draft && <span className="ml-1 text-[11px] text-zinc-400">(draft)</span>}
-                      </td>
-                      <td className={td}>
-                        <CiBadge state={p.ci} />
-                      </td>
-                      <td className={`${td} font-mono text-[11px]`}>{p.head}</td>
-                      <td className={td}>{p.author}</td>
-                      <td className={td}>{formatAgo(p.updatedAt)}</td>
-                    </tr>
-                  ))}
+                  {pulls.map(p => {
+                    const prPvr =
+                      p.ci === 'success'
+                        ? 93
+                        : p.ci === 'pending'
+                          ? 84
+                          : p.ci === 'failure'
+                            ? 64
+                            : 78
+                    return (
+                      <tr key={p.number}>
+                        <td className={td}>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <a className={LINK} href={p.url} target="_blank" rel="noreferrer">
+                              #{p.number}
+                            </a>{' '}
+                            <span className="text-zinc-200">{p.title}</span>
+                            {p.draft && (
+                              <span className="ml-1 text-[11px] text-zinc-400">(draft)</span>
+                            )}
+                            <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                              PVR {prPvr}
+                            </span>
+                          </div>
+                        </td>
+                        <td className={td}>
+                          <CiBadge state={p.ci} />
+                        </td>
+                        <td className={`${td} font-mono text-[11px]`}>{p.head}</td>
+                        <td className={td}>{p.author}</td>
+                        <td className={td}>{formatAgo(p.updatedAt)}</td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </ScrollTable>
             )

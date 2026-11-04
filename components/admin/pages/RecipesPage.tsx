@@ -6,6 +6,8 @@ import {
   RecipeActivityReportSchema,
   type RecipeActivityPayload,
 } from '@/lib/admin/recipe-activity-schema'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import { cn } from '@/lib/utils'
 import { AdminFrame } from './AdminFrame'
 import {
@@ -35,8 +37,38 @@ function Stat({ label, children, note }: { label: string; children: ReactNode; n
 }
 
 export function RecipeActivityView({ data }: { data: RecipeActivityPayload }) {
+  const cat = data.catalog.ok ? data.catalog.value : null
+  const act = data.activity7d.ok ? data.activity7d.value : null
+  const recipeStats: CoreStats = {
+    power: Math.min(99, 76 + Math.min(20, Math.round((cat?.recipes ?? 50) / 10))),
+    resonance: Math.min(99, 78 + Math.min(18, (act?.feedAcknowledged ?? 4) * 3)),
+    wisdom: Math.min(99, 80 + Math.min(16, Math.round((cat?.withElements ?? 40) / 10))),
+    charisma: Math.min(99, 76 + Math.min(20, (act?.alterations ?? 3) * 4)),
+    intuition: Math.min(99, 78 + Math.min(18, (act?.catalogReviews ?? 3) * 4)),
+    adaptability: Math.min(99, 80 + (data.alerts.length === 0 ? 14 : 6)),
+    vitality: Math.min(99, 78 + Math.min(18, Math.round((cat?.withNutrition ?? 40) / 10))),
+  }
+  const recipeRating = rateStats(recipeStats)
+  const recipeSeals = earnedSeals(
+    evaluateSeals({
+      stats: recipeStats,
+      esmsBalances: {
+        spirit: Math.max(120, (cat?.recipes ?? 60) * 2),
+        essence: Math.max(110, (act?.events ?? 10) * 15),
+        matter: Math.max(100, (cat?.withNutrition ?? 50) * 2),
+        substance: Math.max(115, (cat?.withElements ?? 50) * 2),
+      },
+    })
+  )
+
   return (
     <>
+      <VesselRatingRibbon
+        ovr={recipeRating.ovr}
+        archetype={recipeRating.archetype}
+        seals={recipeSeals}
+        compact
+      />
       <AlertList alerts={data.alerts} />
       <Card
         title="Catalog coverage"
@@ -134,44 +166,63 @@ export function RecipeActivityView({ data }: { data: RecipeActivityPayload }) {
                   </tr>
                 </thead>
                 <tbody>
-                  {rows.map(row => (
-                    <tr key={row.id}>
-                      <td className={td} title={new Date(row.createdAt).toLocaleString()}>
-                        {formatAgo(row.createdAt)}
-                      </td>
-                      <td className={cn(td, 'font-mono')}>{row.agentId}</td>
-                      <td className={td}>
-                        <span>{row.recipeName ?? row.recipeId ?? 'Recipe not recorded'}</span>
-                        <span className="block text-[11px] text-zinc-400">
-                          {row.source === 'recipe_alteration' ? 'Alteration' : 'Catalog review'}
-                        </span>
-                      </td>
-                      <td className={td}>
-                        {num(row.substitutions, 'Substitutions were not recorded for this event.')}
-                      </td>
-                      <td className={td}>
-                        {row.instructionReviewRequired === true
-                          ? 'Required'
-                          : row.instructionReviewRequired === false
-                            ? 'Not flagged'
-                            : 'Not recorded'}
-                      </td>
-                      <td className={td}>{row.status}</td>
-                      <td className={td}>
-                        <Badge
-                          glyph={row.feedPublished === true ? '✓' : '○'}
-                          label={
-                            row.feedPublished === true
-                              ? 'Acknowledged'
-                              : row.feedPublished === false
-                                ? 'Not acknowledged'
-                                : 'Unknown'
-                          }
-                          tone={row.feedPublished === true ? 'ok' : 'muted'}
-                        />
-                      </td>
-                    </tr>
-                  ))}
+                  {rows.map(row => {
+                    const rowPvr = Math.min(
+                      99,
+                      74 +
+                        (row.feedPublished === true ? 10 : 4) +
+                        Math.min(10, row.substitutions ?? 2) +
+                        (row.status === 'published' || row.status === 'completed' ? 4 : 0)
+                    )
+                    return (
+                      <tr key={row.id}>
+                        <td className={td} title={new Date(row.createdAt).toLocaleString()}>
+                          {formatAgo(row.createdAt)}
+                        </td>
+                        <td className={cn(td, 'font-mono')}>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span>{row.agentId}</span>
+                            <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                              PVR {rowPvr}
+                            </span>
+                          </div>
+                        </td>
+                        <td className={td}>
+                          <span>{row.recipeName ?? row.recipeId ?? 'Recipe not recorded'}</span>
+                          <span className="block text-[11px] text-zinc-400">
+                            {row.source === 'recipe_alteration' ? 'Alteration' : 'Catalog review'}
+                          </span>
+                        </td>
+                        <td className={td}>
+                          {num(
+                            row.substitutions,
+                            'Substitutions were not recorded for this event.'
+                          )}
+                        </td>
+                        <td className={td}>
+                          {row.instructionReviewRequired === true
+                            ? 'Required'
+                            : row.instructionReviewRequired === false
+                              ? 'Not flagged'
+                              : 'Not recorded'}
+                        </td>
+                        <td className={td}>{row.status}</td>
+                        <td className={td}>
+                          <Badge
+                            glyph={row.feedPublished === true ? '✓' : '○'}
+                            label={
+                              row.feedPublished === true
+                                ? 'Acknowledged'
+                                : row.feedPublished === false
+                                  ? 'Not acknowledged'
+                                  : 'Unknown'
+                            }
+                            tone={row.feedPublished === true ? 'ok' : 'muted'}
+                          />
+                        </td>
+                      </tr>
+                    )
+                  })}
                 </tbody>
               </ScrollTable>
             )
@@ -293,14 +344,24 @@ export function RecipesView({ data }: { data: RecipeLatencyPayload }) {
               </tr>
             </thead>
             <tbody>
-              {providers.map(([name, p]) => (
-                <tr key={name}>
-                  <td className={cn(td, 'font-mono')}>{name}</td>
-                  <td className={td}>{p.count}</td>
-                  <td className={td}>{num(p.p50Ms, 'No samples', formatDuration)}</td>
-                  <td className={td}>{num(p.p95Ms, 'No samples', formatDuration)}</td>
-                </tr>
-              ))}
+              {providers.map(([name, p]) => {
+                const provPvr = Math.min(99, 78 + Math.min(16, p.count * 2))
+                return (
+                  <tr key={name}>
+                    <td className={cn(td, 'font-mono')}>
+                      <div className="flex flex-wrap items-center gap-1.5">
+                        <span>{name}</span>
+                        <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                          PVR {provPvr}
+                        </span>
+                      </div>
+                    </td>
+                    <td className={td}>{p.count}</td>
+                    <td className={td}>{num(p.p50Ms, 'No samples', formatDuration)}</td>
+                    <td className={td}>{num(p.p95Ms, 'No samples', formatDuration)}</td>
+                  </tr>
+                )
+              })}
             </tbody>
           </ScrollTable>
         )}

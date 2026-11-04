@@ -44,6 +44,8 @@ import {
   PolarAngleAxis,
 } from 'recharts'
 import { RAGMonitor } from '@/components/rag/rag-monitor'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import type { RAGAnalytics, RAGQueryLog } from '@/lib/rag/rag-analytics'
 import { fetchRagAdminSnapshot } from '@/lib/rag/rag-admin-snapshot'
 
@@ -131,6 +133,31 @@ export default function RAGAnalyticsPage() {
     )
   }
 
+  const ragAnalyticsStats: CoreStats = {
+    power: Math.min(99, 78 + Math.min(18, Math.round((analytics?.totalQueries ?? 20) / 5))),
+    resonance: Math.min(99, 76 + Math.round((analytics?.successRate ?? 0.9) * 20)),
+    wisdom: Math.min(99, 80 + Math.round((analytics?.avgRelevanceScore ?? 0.85) * 16)),
+    charisma: Math.min(99, 76 + Math.min(20, (analytics?.topAgents?.length ?? 5) * 3)),
+    intuition: Math.min(99, 80 + Math.round((analytics?.ragUsageRate ?? 0.8) * 16)),
+    adaptability: Math.min(
+      99,
+      78 + Math.min(18, Math.round((analytics?.avgSourcesPerQuery ?? 3) * 4))
+    ),
+    vitality: Math.min(99, 80 + (analytics?.healthStatus === 'poor' ? -8 : 14)),
+  }
+  const ragAnalyticsRating = rateStats(ragAnalyticsStats)
+  const ragAnalyticsSeals = earnedSeals(
+    evaluateSeals({
+      stats: ragAnalyticsStats,
+      esmsBalances: {
+        spirit: Math.max(140, (analytics?.totalQueries ?? 30) * 5),
+        essence: Math.max(130, Math.round((analytics?.successRate ?? 0.9) * 180)),
+        matter: Math.max(120, (analytics?.ragEnabledQueries ?? 20) * 6),
+        substance: Math.max(135, Math.round((analytics?.avgRelevanceScore ?? 0.85) * 180)),
+      },
+    })
+  )
+
   return (
     <div className="container mx-auto p-6 space-y-6">
       {/* Header */}
@@ -155,6 +182,13 @@ export default function RAGAnalyticsPage() {
           </Button>
         </div>
       </div>
+
+      <VesselRatingRibbon
+        ovr={ragAnalyticsRating.ovr}
+        archetype={ragAnalyticsRating.archetype}
+        seals={ragAnalyticsSeals}
+        compact
+      />
 
       {loadError && analytics && (
         <Card className="border-yellow-200">
@@ -700,26 +734,34 @@ export default function RAGAnalyticsPage() {
                 </TableHeader>
                 <TableBody>
                   {analytics?.topAgents && analytics.topAgents.length > 0 ? (
-                    analytics.topAgents.map((agent, index) => (
-                      <TableRow key={agent.agentId}>
-                        <TableCell className="font-medium">#{index + 1}</TableCell>
-                        <TableCell>
-                          <div>
-                            <div className="font-medium">{agent.agentName}</div>
-                            <div className="text-xs text-muted-foreground">{agent.agentId}</div>
-                          </div>
-                        </TableCell>
-                        <TableCell className="text-right font-semibold">
-                          {agent.queryCount}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {analytics.totalQueries > 0
-                            ? ((agent.queryCount / analytics.totalQueries) * 100).toFixed(1)
-                            : 0}
-                          %
-                        </TableCell>
-                      </TableRow>
-                    ))
+                    analytics.topAgents.map((agent, index) => {
+                      const agentPvr = Math.min(99, 76 + Math.min(20, agent.queryCount * 2))
+                      return (
+                        <TableRow key={agent.agentId}>
+                          <TableCell className="font-medium">#{index + 1}</TableCell>
+                          <TableCell>
+                            <div>
+                              <div className="flex flex-wrap items-center gap-1.5 font-medium">
+                                <span>{agent.agentName}</span>
+                                <span className="rounded border border-amber-500/30 bg-amber-500/10 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                                  PVR {agentPvr}
+                                </span>
+                              </div>
+                              <div className="text-xs text-muted-foreground">{agent.agentId}</div>
+                            </div>
+                          </TableCell>
+                          <TableCell className="text-right font-semibold">
+                            {agent.queryCount}
+                          </TableCell>
+                          <TableCell className="text-right">
+                            {analytics.totalQueries > 0
+                              ? ((agent.queryCount / analytics.totalQueries) * 100).toFixed(1)
+                              : 0}
+                            %
+                          </TableCell>
+                        </TableRow>
+                      )
+                    })
                   ) : (
                     <TableRow>
                       <TableCell colSpan={4} className="text-center text-muted-foreground py-8">
