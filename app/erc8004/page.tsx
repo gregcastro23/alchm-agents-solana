@@ -10,9 +10,11 @@
  * BigQuery-backed API route, so it renders an empty/error state without GCP creds.
  */
 
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import Link from 'next/link'
 import { Bot, ExternalLink, RefreshCw, ShieldCheck, Star, Zap } from 'lucide-react'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 
 interface LeaderboardEntry {
   agentId: string
@@ -65,6 +67,55 @@ export default function Erc8004LeaderboardPage() {
     void load()
   }, [load])
 
+  const getAgentPvr = useCallback((a: LeaderboardEntry) => {
+    const scoreBoost = Math.min(25, Math.round((a.score || 0) * 0.25))
+    const feedbackBoost = Math.min(20, Math.round((a.avgFeedback ?? 3.8) * 4))
+    const passBoost = Math.min(20, Math.round((a.validationPassRate ?? 0.75) * 20))
+    const x402Boost = a.prizeEligible ? 8 : 0
+    const stats: CoreStats = {
+      power: Math.min(99, Math.max(58, 56 + scoreBoost + x402Boost)),
+      resonance: Math.min(99, Math.max(58, 56 + feedbackBoost + x402Boost)),
+      wisdom: Math.min(
+        99,
+        Math.max(58, 56 + Math.min(20, a.supportedTrust.length * 6) + scoreBoost)
+      ),
+      charisma: Math.min(99, Math.max(62, 60 + scoreBoost + x402Boost)),
+      intuition: Math.min(99, Math.max(60, 58 + Math.round((feedbackBoost + passBoost) / 2))),
+      adaptability: Math.min(99, Math.max(60, 58 + scoreBoost)),
+      vitality: Math.min(99, Math.max(58, 56 + passBoost + x402Boost)),
+    }
+    return rateStats(stats).ovr
+  }, [])
+
+  const registryCohortRating = useMemo(() => {
+    const x402Count = agents.filter(a => a.prizeEligible).length
+    const avgScore =
+      agents.length > 0 ? agents.reduce((acc, a) => acc + (a.score || 0), 0) / agents.length : 74
+    const stats: CoreStats = {
+      power: Math.min(99, Math.max(70, Math.round(68 + Math.min(26, avgScore * 0.25)))),
+      resonance: Math.min(99, Math.max(70, Math.round(70 + Math.min(24, x402Count * 2)))),
+      wisdom: Math.min(99, Math.max(70, Math.round(70 + Math.min(25, avgScore * 0.22)))),
+      charisma: Math.min(99, Math.max(74, Math.round(74 + Math.min(22, x402Count * 2.5)))),
+      intuition: Math.min(99, Math.max(72, Math.round(72 + Math.min(22, avgScore * 0.2)))),
+      adaptability: Math.min(99, Math.max(72, Math.round(71 + Math.min(22, x402Count * 2)))),
+      vitality: Math.min(99, Math.max(72, Math.round(72 + Math.min(22, agents.length * 0.3)))),
+    }
+    const esmsBalances = {
+      spirit: 48,
+      essence: 44,
+      matter: 52,
+      substance: 46,
+    }
+    const sealProgress = evaluateSeals({ stats, esmsBalances })
+    const seals = earnedSeals(sealProgress)
+    const rated = rateStats(stats)
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+    }
+  }, [agents])
+
   return (
     <main className="mx-auto max-w-6xl px-4 py-10 text-slate-100">
       <header className="mb-8">
@@ -79,6 +130,14 @@ export default function Erc8004LeaderboardPage() {
             <Zap className="h-3.5 w-3.5" /> = accepts x402 payments
           </span>
         </p>
+        <div className="mt-4 max-w-xl">
+          <VesselRatingRibbon
+            ovr={registryCohortRating.ovr}
+            archetype={registryCohortRating.archetype}
+            seals={registryCohortRating.seals}
+            compact
+          />
+        </div>
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <button
             onClick={() => void load()}
@@ -156,6 +215,9 @@ export default function Erc8004LeaderboardPage() {
                     <div className="flex items-center gap-2">
                       <span className="font-medium text-slate-100">
                         {a.file?.name || `Agent #${a.agentId}`}
+                      </span>
+                      <span className="rounded-full border border-amber-400/35 bg-amber-500/15 px-2 py-0.5 font-mono text-[10px] font-bold text-amber-300">
+                        PVR {getAgentPvr(a)}
                       </span>
                       {a.prizeEligible && (
                         <span

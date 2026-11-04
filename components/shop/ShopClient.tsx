@@ -1,8 +1,10 @@
 'use client'
 
-import { useState, type KeyboardEvent } from 'react'
+import { useMemo, useState, type KeyboardEvent } from 'react'
 import Link from 'next/link'
 import { useRouter } from 'next/navigation'
+import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import { PrivyProvider, useWallets } from '@privy-io/react-auth'
 import { base } from 'viem/chains'
 import {
@@ -539,6 +541,39 @@ function WalletStrip({
   const activeAddress = isSolana ? solanaAddress : evmAddress
   const hasWallet = isSolana ? hasSolanaWallet : hasEvmWallet
 
+  const walletSealRating = useMemo(() => {
+    const sp = Number(activeBalances?.spirit ?? 20)
+    const es = Number(activeBalances?.essence ?? 20)
+    const ma = Number(activeBalances?.matter ?? 20)
+    const su = Number(activeBalances?.substance ?? 20)
+    const stats: CoreStats = {
+      power: Math.min(99, Math.max(64, Math.round(62 + Math.min(35, sp * 0.45)))),
+      resonance: Math.min(99, Math.max(64, Math.round(62 + Math.min(35, es * 0.45)))),
+      wisdom: Math.min(99, Math.max(64, Math.round(62 + Math.min(35, su * 0.45)))),
+      charisma: Math.min(
+        99,
+        Math.max(68, Math.round(68 + (hasWallet ? 12 : 0) + (signedIn ? 8 : 0)))
+      ),
+      intuition: Math.min(99, Math.max(68, Math.round(68 + (activeBalances ? 14 : 0)))),
+      adaptability: Math.min(99, Math.max(66, Math.round(66 + Math.min(30, su * 0.35)))),
+      vitality: Math.min(99, Math.max(64, Math.round(62 + Math.min(35, ma * 0.45)))),
+    }
+    const esmsBalances = {
+      spirit: Math.max(10, Math.round(sp)),
+      essence: Math.max(10, Math.round(es)),
+      matter: Math.max(10, Math.round(ma)),
+      substance: Math.max(10, Math.round(su)),
+    }
+    const sealProgress = evaluateSeals({ stats, esmsBalances })
+    const seals = earnedSeals(sealProgress)
+    const rated = rateStats(stats)
+    return {
+      ovr: rated.ovr,
+      archetype: rated.archetype,
+      seals,
+    }
+  }, [activeBalances, hasWallet, signedIn])
+
   return (
     <div className="bg-surface border border-border rounded-xl p-5 space-y-4">
       <div className="flex items-center justify-between gap-3 flex-wrap">
@@ -611,6 +646,23 @@ function WalletStrip({
             </span>
           </div>
         ))}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
+        <div className="flex-1 min-w-[260px]">
+          <VesselRatingRibbon
+            ovr={walletSealRating.ovr}
+            archetype={walletSealRating.archetype}
+            seals={walletSealRating.seals}
+            compact
+          />
+        </div>
+        <Link
+          href="/pentacles"
+          className="inline-flex items-center gap-1.5 rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-1.5 font-mono text-xs font-semibold text-amber-300 hover:bg-amber-500/20 transition-colors"
+        >
+          Pentacle Star Vaults →
+        </Link>
       </div>
 
       {!isSolana && !onchainConfigured && (
