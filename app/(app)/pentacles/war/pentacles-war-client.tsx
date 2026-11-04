@@ -21,6 +21,7 @@ import {
 import { usePentaclesWarState } from '@/lib/spacetime/hooks/usePentaclesWarState'
 import ConnectNav from '../connect/ConnectNav'
 import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
+import { WarTableSquadSimulator } from '@/components/war/WarTableSquadSimulator'
 import {
   ZONE_PROFILES,
   SEAL_TIER_MULTIPLIERS,
@@ -446,6 +447,13 @@ export default function PentaclesWarClient() {
                 })}
               </div>
             </section>
+
+            <WarTableSquadSimulator
+              liveZones={live.zones}
+              liveAgents={live.agents}
+              liveMyMeleeHand={live.myMeleeHand}
+              activeTrumpSuit={activeTables[0]?.trumpSuit}
+            />
 
             <section className="rounded-3xl border border-white/10 bg-[#0b0e18]/90 p-5">
               <div className="mb-5 flex items-center justify-between">
