@@ -1,6 +1,6 @@
 import { rateStats, type CoreStats } from '@/lib/agents/rating'
 
-export type McpV140ToolName =
+export type McpToolName =
   | 'get_live_sky_transits'
   | 'alchemize_ingredients'
   | 'generate_cosmic_recipe'
@@ -9,6 +9,13 @@ export type McpV140ToolName =
   | 'compute_triplicate_synastry'
   | 'create_evidence_snapshot'
   | 'submit_recipe_reflection'
+  | 'get_user_allowance'
+  | 'substitute_ingredient'
+  | 'build_consolidated_grocery_list'
+  | 'what_to_cook_now'
+  | 'update_culinary_profile'
+
+export type McpV140ToolName = McpToolName
 
 export type McpSettlementRail = 'arc-eip3009' | 'solana-amm' | 'base-x402'
 
@@ -33,9 +40,9 @@ export interface NormalizedMcpBillingReceipt {
 }
 
 export interface McpToolDefinition {
-  name: McpV140ToolName
+  name: McpToolName
   title: string
-  category: 'ephemeris' | 'culinary' | 'synastry' | 'attestation'
+  category: 'ephemeris' | 'culinary' | 'synastry' | 'attestation' | 'account'
   description: string
   mutating: boolean
   esmsCost: McpBillingAmounts
@@ -238,7 +245,127 @@ export const MCP_V140_TOOL_CATALOG: readonly McpToolDefinition[] = [
       vitality: 93,
     },
   },
+  {
+    name: 'get_user_allowance',
+    title: 'User Allowance & Balances',
+    category: 'account',
+    description:
+      'Inspect ESMS token balances, subscription tier, and tool token costs for the calling account. Free pre-flight tool.',
+    mutating: false,
+    esmsCost: { spirit: 0, essence: 0, matter: 0, substance: 0 },
+    x402AtomicUsdc: '0',
+    defaultArgs: {},
+    stats: {
+      power: 85,
+      resonance: 90,
+      wisdom: 95,
+      charisma: 88,
+      intuition: 92,
+      adaptability: 94,
+      vitality: 90,
+    },
+  },
+  {
+    name: 'substitute_ingredient',
+    title: 'Substitute Ingredient',
+    category: 'culinary',
+    description:
+      'Provide dish-context-aware culinary ingredient swaps with exact conversion ratios, flavor/texture impact, and alchemical elemental shifts.',
+    mutating: false,
+    esmsCost: { spirit: 0, essence: 0, matter: 0, substance: 0 },
+    x402AtomicUsdc: '0',
+    defaultArgs: {
+      ingredient: 'buttermilk',
+      dishContext: 'pancakes',
+      dietaryRestriction: 'vegan',
+    },
+    stats: {
+      power: 88,
+      resonance: 93,
+      wisdom: 94,
+      charisma: 90,
+      intuition: 94,
+      adaptability: 96,
+      vitality: 91,
+    },
+  },
+  {
+    name: 'build_consolidated_grocery_list',
+    title: 'Consolidated Grocery List',
+    category: 'culinary',
+    description:
+      'Accepts multiple recipe IDs/names, scales ingredient quantities by a serving multiplier, subtracts ingredients already in the pantry, and groups items by supermarket aisle.',
+    mutating: false,
+    esmsCost: { spirit: 0, essence: 0, matter: 0, substance: 0 },
+    x402AtomicUsdc: '0',
+    defaultArgs: {
+      recipeIds: ['ancient-spelt-sourdough'],
+      servingsMultiplier: 2,
+      pantryHave: ['salt', 'water'],
+    },
+    stats: {
+      power: 87,
+      resonance: 89,
+      wisdom: 95,
+      charisma: 86,
+      intuition: 91,
+      adaptability: 95,
+      vitality: 92,
+    },
+  },
+  {
+    name: 'what_to_cook_now',
+    title: 'What to Cook Now',
+    category: 'culinary',
+    description:
+      'Single-call composite meal recommender matching pantry ingredients, active prep/cook times, mood/craving, Solar Return ephemeris year, and planetary weather.',
+    mutating: true,
+    esmsCost: { spirit: 2.5, essence: 2.5, matter: 2.5, substance: 2.5 },
+    x402AtomicUsdc: '15000',
+    defaultArgs: {
+      availableIngredients: ['cabbage', 'tahini', 'chicken thighs'],
+      maxActiveMinutes: 45,
+      moodOrCraving: 'warming, comforting',
+      solarReturnYear: 2000,
+      limit: 3,
+    },
+    stats: {
+      power: 96,
+      resonance: 98,
+      wisdom: 97,
+      charisma: 95,
+      intuition: 97,
+      adaptability: 98,
+      vitality: 96,
+    },
+  },
+  {
+    name: 'update_culinary_profile',
+    title: 'Update Caller Culinary Profile',
+    category: 'account',
+    description:
+      'Safely patch persistent culinary memory (allergens, dislikes, dietary frameworks, spice tolerance, kitchen equipment) in the caller’s account profile without wiping existing safety restrictions.',
+    mutating: true,
+    esmsCost: { spirit: 0, essence: 0, matter: 0, substance: 0 },
+    x402AtomicUsdc: '0',
+    defaultArgs: {
+      addAllergens: ['peanuts'],
+      addDislikes: ['cilantro'],
+      spiceTolerance: 'medium',
+    },
+    stats: {
+      power: 86,
+      resonance: 91,
+      wisdom: 93,
+      charisma: 89,
+      intuition: 93,
+      adaptability: 95,
+      vitality: 89,
+    },
+  },
 ] as const
+
+export const MCP_TOOL_CATALOG = MCP_V140_TOOL_CATALOG
 
 export function getMcpToolDefinition(name: string): McpToolDefinition | undefined {
   return MCP_V140_TOOL_CATALOG.find(t => t.name === name)

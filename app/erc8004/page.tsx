@@ -167,7 +167,7 @@ export default function Erc8004LeaderboardPage() {
             href="/desktop"
             className="inline-flex items-center gap-1.5 rounded-lg border border-violet-400/35 bg-violet-500/10 px-3 py-1.5 font-mono text-xs font-semibold text-violet-200 hover:bg-violet-500/20 transition-colors"
           >
-            @alchm/mcp-server@1.4.0 Bridge
+            @alchm/mcp-server@1.5.0 Bridge
           </Link>
         </div>
       </header>

@@ -228,8 +228,11 @@ export default function MonicaPage() {
   }
 
   const monicaRating = useMemo(() => {
-    const mcVal = liveConsciousness?.liveMC ?? monicaConstant ?? 1.618
-    const mcBoost = Math.min(14, Math.max(0, Math.round(mcVal * 4)))
+    const liveVal = liveConsciousness?.liveMC
+    const constantVal = monicaConstant
+    const mcVal =
+      typeof liveVal === 'number' ? liveVal : typeof constantVal === 'number' ? constantVal : null
+    const mcBoost = mcVal != null ? Math.min(14, Math.max(0, Math.round(mcVal * 4))) : 0
     const stats: CoreStats = {
       power: Math.min(99, 78 + mcBoost),
       resonance: Math.min(99, 82 + mcBoost),
