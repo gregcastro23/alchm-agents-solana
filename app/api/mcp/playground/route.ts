@@ -25,6 +25,11 @@ const CULINARY_TOOLS = new Set([
   'alchemize_ingredients',
   'generate_cosmic_recipe',
   'submit_recipe_reflection',
+  'get_user_allowance',
+  'substitute_ingredient',
+  'build_consolidated_grocery_list',
+  'what_to_cook_now',
+  'update_culinary_profile',
 ])
 
 const KITCHEN_UPSTREAM = (
@@ -40,26 +45,32 @@ async function proxyCulinaryToolToUpstream(
   args: Record<string, unknown>
 ): Promise<{ ok: boolean; data?: Record<string, unknown>; error?: string }> {
   try {
-    const upstreamUrl = `${KITCHEN_UPSTREAM}/api/mcp/playground`
+    const upstreamUrl = `${KITCHEN_UPSTREAM}/api/mcp`
     const res = await fetch(upstreamUrl, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         Accept: 'application/json',
         ...(process.env.ALCHM_KITCHEN_SYNC_SECRET
-          ? { 'x-kitchen-secret': process.env.ALCHM_KITCHEN_SYNC_SECRET }
+          ? { Authorization: `Bearer ${process.env.ALCHM_KITCHEN_SYNC_SECRET}` }
           : {}),
       },
       body: JSON.stringify({
-        tool: toolName,
-        arguments: args,
+        jsonrpc: '2.0',
+        id: `pa_${Date.now()}`,
+        method: 'tools/call',
+        params: {
+          name: toolName,
+          arguments: args,
+        },
       }),
-      signal: AbortSignal.timeout(3500),
+      signal: AbortSignal.timeout(5000),
     })
 
     if (res.ok) {
       const json = await res.json()
-      return { ok: true, data: (json?.result ?? json) as Record<string, unknown> }
+      const structured = json?.result?.structuredContent ?? json?.result ?? json
+      return { ok: true, data: structured as Record<string, unknown> }
     }
     return {
       ok: false,
@@ -177,7 +188,7 @@ export async function GET() {
 
   return NextResponse.json({
     ok: true,
-    package: '@alchm/mcp-server@1.4.0',
+    package: '@alchm/mcp-server@1.5.0',
     protocolVersion: '2025-06-18',
     toolCount: tools.length,
     tools,
@@ -201,7 +212,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           ok: false,
-          error: `Unknown MCP tool '${toolName}'. Must be one of the 8 canonical @alchm/mcp-server@1.4.0 tools.`,
+          error: `Unknown MCP tool '${toolName}'. Must be one of the 13 canonical @alchm/mcp-server@1.5.0 tools.`,
         },
         { status: 400 }
       )
@@ -262,7 +273,7 @@ export async function POST(req: Request) {
         return NextResponse.json(
           {
             ok: false,
-            package: '@alchm/mcp-server@1.4.0',
+            package: '@alchm/mcp-server@1.5.0',
             tool: toolDef.name,
             error:
               'alchm.kitchen upstream connection required for culinary tool execution. Local synthesis is strictly disallowed.',
@@ -304,7 +315,7 @@ export async function POST(req: Request) {
       return NextResponse.json(
         {
           ok: true,
-          package: '@alchm/mcp-server@1.4.0',
+          package: '@alchm/mcp-server@1.5.0',
           tool: toolDef.name,
           pvr: pvrRating.ovr,
           archetype: pvrRating.archetype.title,
@@ -356,7 +367,7 @@ export async function POST(req: Request) {
     return NextResponse.json(
       {
         ok: true,
-        package: '@alchm/mcp-server@1.4.0',
+        package: '@alchm/mcp-server@1.5.0',
         tool: toolDef.name,
         pvr: pvrRating.ovr,
         archetype: pvrRating.archetype.title,

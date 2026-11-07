@@ -74,7 +74,7 @@ const MCP_CONFIG_SNIPPET = `{
   "mcpServers": {
     "alchm-agents": {
       "command": "npx",
-      "args": ["-y", "@alchm/mcp-server@1.4.0"],
+      "args": ["-y", "@alchm/mcp-server@1.5.0"],
       "env": {
         "ALCHM_AGENTS_URL": "https://api.agents.alchm.kitchen"
       }
@@ -1657,16 +1657,16 @@ export default function App() {
                 </button>
               </div>
 
-              {/* @alchm/mcp-server@1.4.0 Protocol & Connect Panel */}
+              {/* @alchm/mcp-server@1.5.0 Protocol & Connect Panel */}
               <div className="mb-8 rounded-2xl border border-amber-400/25 bg-zinc-950/75 p-5 space-y-4">
                 <div className="flex flex-wrap items-center justify-between gap-3">
                   <div>
                     <div className="flex items-center gap-2">
                       <span className="rounded-md border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 font-mono text-[10px] font-bold uppercase tracking-wider text-amber-200">
-                        @alchm/mcp-server@1.4.0
+                        @alchm/mcp-server@1.5.0
                       </span>
                       <span className="font-mono text-xs font-semibold text-white">
-                        Agent Protocol &amp; MCP Bridge (8 Canonical Tools)
+                        Agent Protocol &amp; MCP Bridge (13 Canonical Tools)
                       </span>
                     </div>
                     <p className="mt-1 text-xs text-zinc-400">
