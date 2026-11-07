@@ -145,6 +145,15 @@ build_pa_mcp() {
   local arch="$1"
   local out="$BIN_DIR/pa-mcp-$arch"
   local tmp="$out.tmp"
+  local pa_mcp_ts_src="$ROOT_DIR/mcp/index.ts"
+
+  if [[ "${PA_MCP_USE_PYINSTALLER:-0}" != "1" && -f "$pa_mcp_ts_src" ]]; then
+    log "Building pa-mcp (Bun TS serverFactory v1.5.0) → $out"
+    rm -f "$tmp"
+    bun build "$pa_mcp_ts_src" --compile --outfile "$tmp"
+    atomic_move "$tmp" "$out"
+    return 0
+  fi
 
   local target_arch=""
   local venv=""
