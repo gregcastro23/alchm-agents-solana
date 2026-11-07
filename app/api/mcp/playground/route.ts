@@ -50,7 +50,7 @@ async function proxyCulinaryToolToUpstream(
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
-        Accept: 'application/json',
+        Accept: 'application/json, text/event-stream',
         ...(process.env.ALCHM_KITCHEN_SYNC_SECRET
           ? { Authorization: `Bearer ${process.env.ALCHM_KITCHEN_SYNC_SECRET}` }
           : {}),
@@ -68,9 +68,48 @@ async function proxyCulinaryToolToUpstream(
     })
 
     if (res.ok) {
-      const json = await res.json()
-      const structured = json?.result?.structuredContent ?? json?.result ?? json
-      return { ok: true, data: structured as Record<string, unknown> }
+      const contentType = res.headers.get('content-type') ?? ''
+      let json: any = null
+
+      if (contentType.includes('text/event-stream')) {
+        const rawText = await res.text()
+        const lines = rawText.split('\n')
+        for (const line of lines) {
+          const trimmed = line.trim()
+          if (trimmed.startsWith('data:')) {
+            try {
+              json = JSON.parse(trimmed.slice(5).trim())
+              break
+            } catch {
+              // continue scanning lines
+            }
+          }
+        }
+        if (!json) {
+          try {
+            json = JSON.parse(rawText)
+          } catch {
+            // ignore fallback
+          }
+        }
+      } else {
+        json = await res.json()
+      }
+
+      const structured =
+        json?.result?.structuredContent ??
+        (json?.result?.content?.[0]?.text
+          ? (() => {
+              try {
+                return JSON.parse(json.result.content[0].text)
+              } catch {
+                return null
+              }
+            })()
+          : null) ??
+        json?.result ??
+        json
+      return { ok: true, data: (structured ?? { ok: true }) as Record<string, unknown> }
     }
     return {
       ok: false,
