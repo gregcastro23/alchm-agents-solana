@@ -116,11 +116,21 @@ export default function OnboardingFunnelPanel({
       ? data.recent.reduce((sum, u) => sum + u.completedSteps, 0) / data.recent.length
       : 3
 
+  let monicaWithProgress = 0
+  let monicaActiveStreaks = 0
+  let monicaMatter = 4
+  if (data.monica) {
+    if (typeof data.monica.withProgress === 'number') monicaWithProgress = data.monica.withProgress
+    if (typeof data.monica.activeStreaks === 'number')
+      monicaActiveStreaks = data.monica.activeStreaks
+    if (typeof data.monica.withProgress === 'number') monicaMatter = data.monica.withProgress
+  }
+
   const onboardingStats: CoreStats = {
     power: Math.min(99, 74 + Math.min(22, signups * 3)),
     resonance: Math.min(99, 72 + Math.round(avgCompleted * 5)),
-    wisdom: Math.min(99, 76 + Math.min(20, (data.monica?.withProgress ?? 0) * 4)),
-    charisma: Math.min(99, 74 + Math.min(22, (data.monica?.activeStreaks ?? 0) * 5)),
+    wisdom: Math.min(99, 76 + Math.min(20, monicaWithProgress * 4)),
+    charisma: Math.min(99, 74 + Math.min(22, monicaActiveStreaks * 5)),
     intuition: Math.min(99, 76 + (data.alerts.length === 0 ? 18 : 6)),
     adaptability: Math.min(99, 75 + Math.round(avgCompleted * 4)),
     vitality: Math.min(99, 76 + Math.min(20, data.recent.filter(u => u.hasChatted).length * 4)),
@@ -132,7 +142,7 @@ export default function OnboardingFunnelPanel({
       esmsBalances: {
         spirit: Math.max(110, signups * 15),
         essence: Math.max(100, Math.round(avgCompleted * 35)),
-        matter: Math.max(90, (data.monica?.withProgress ?? 4) * 20),
+        matter: Math.max(90, monicaMatter * 20),
         substance: Math.max(85, data.recent.filter(u => u.hasWallet).length * 25),
       },
     })
