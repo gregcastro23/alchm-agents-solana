@@ -101,6 +101,15 @@ const IGNORED_PATTERNS = [
   '!app/api/agents/council-voice/',
   '!app/api/agents/council-voice/**',
 
+  // Planetary Agents MCP server & Meta Muse discovery surface — written clean
+  // and held to correctness lint rules.
+  '!lib/mcp/',
+  '!lib/mcp/**',
+  '!app/api/mcp/',
+  '!app/api/mcp/**',
+  '!app/.well-known/',
+  '!app/.well-known/**',
+
   '**/*.json',
   '**/*.md',
   '**/*.log',
