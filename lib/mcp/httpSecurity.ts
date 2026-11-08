@@ -25,6 +25,13 @@ const TRUSTED_ORIGIN_PATTERNS: RegExp[] = [
   /^https:\/\/(.*\.)?whattoeatnext\.com$/,
   /^https:\/\/(.*\.)?muse\.ai$/,
   /^https:\/\/(.*\.)?meta\.ai$/,
+  /^https:\/\/(.*\.)?google\.com$/,
+  /^https:\/\/(.*\.)?claude\.ai$/,
+  /^https:\/\/(.*\.)?chatgpt\.com$/,
+  /^https:\/\/(.*\.)?openai\.com$/,
+  /^https:\/\/(.*\.)?modelcontextprotocol\.io$/,
+  /^https:\/\/(.*\.)?smithery\.ai$/,
+  /^https:\/\/(.*\.)?glama\.ai$/,
 ]
 
 export function isLocalDevHost(host: string): boolean {
