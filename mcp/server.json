@@ -1,0 +1,46 @@
+{
+  "$schema": "https://static.modelcontextprotocol.io/schemas/2025-12-11/server.schema.json",
+  "name": "io.github.gregcastro23/planetary-agents-mcp",
+  "description": "Eight Planetary Agents tools + 4 resources + 2 RFC 6570 templates + 3 prompts: 72 historical mentor vessels, Natal-Sky Bi-Wheel resonance, Pentacle Vessel Ratings (25-99 OVR, 7 Seals, 11-zone ECR, 4D ESMS diamond), and multi-agent council deliberation.",
+  "version": "1.5.0",
+  "repository": {
+    "url": "https://github.com/gregcastro23/alchm-agents-solana",
+    "source": "github",
+    "subfolder": "mcp"
+  },
+  "remotes": [
+    {
+      "transportType": "streamable-http",
+      "url": "https://agents.alchm.kitchen/api/mcp"
+    }
+  ],
+  "openapi": {
+    "version": "3.1.0",
+    "url": "https://agents.alchm.kitchen/api/mcp/openapi.json",
+    "restBaseUrl": "https://agents.alchm.kitchen/api/mcp/rest"
+  },
+  "packages": [
+    {
+      "registryType": "pypi",
+      "identifier": "alchm-planetary-agents-mcp",
+      "version": "1.5.0",
+      "transport": {
+        "type": "stdio"
+      },
+      "environmentVariables": [
+        {
+          "name": "ALCHM_MCP_API_KEY",
+          "description": "Optional agents.alchm.kitchen / alchm.kitchen API key (sk_alchm_...). 5 read-only tools and all resources/prompts work with zero authentication on the Free tier; metered council and duel tools require a Bearer key.",
+          "isSecret": true,
+          "isRequired": false
+        },
+        {
+          "name": "PA_MCP_API_KEY",
+          "description": "Alias for ALCHM_MCP_API_KEY.",
+          "isSecret": true,
+          "isRequired": false
+        }
+      ]
+    }
+  ]
+}

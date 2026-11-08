@@ -37,6 +37,8 @@ export async function GET(req: Request): Promise<Response> {
     mcp: {
       transport: 'streamable-http',
       endpoint: `${origin}/api/mcp`,
+      openapi_endpoint: `${origin}/api/mcp/openapi.json`,
+      rest_base_endpoint: `${origin}/api/mcp/rest`,
       protocol_version: '2025-03-26',
       stateless: true,
       capabilities: {
