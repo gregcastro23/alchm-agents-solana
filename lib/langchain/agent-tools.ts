@@ -17,8 +17,16 @@ import { TemporalAnalysisEngine } from '../temporal-analysis-engine'
 import { setSubname, getNames } from '../namestone'
 import { writeMemory, recallMemory } from '../walrus/memory'
 import { backend } from '../backend'
-import { runRectifyScore, runRectifyWindows } from '../rectification/server-runner'
-import { normalizeEvidenceList } from '../rectification/types'
+import {
+  executeGeocodeLocationTool,
+  executeRectifyApplyTool,
+  executeRectifyScoreTool,
+  executeRectifyWindowsTool,
+  geocodeLocationInputSchema,
+  rectifyApplyInputSchema,
+  rectifyScoreInputSchema,
+  rectifyWindowsInputSchema,
+} from '../rectification/tool-handlers'
 
 /**
  * Tool 1: Semantic Agent Search
@@ -658,50 +666,14 @@ export const cosmicRecipeGeneratorTool = new DynamicStructuredTool({
 export const rectifyWindowsTool = new DynamicStructuredTool({
   name: 'rectify_windows',
   description:
-    'Scan 24-hour candidate rising windows for a birth date and geographic location. Computes sunrise/sunset LMT, exact Moon sign ingress minutes, Shannon entropy (bits), and Expected Information Gain (EIG) next_best_questions so the assistant can ask one high-leverage question at a time.',
-  schema: z.object({
-    year: z.number().describe('Birth year (e.g. 1879)'),
-    month: z.number().min(1).max(12).describe('Birth month (1-12)'),
-    day: z.number().min(1).max(31).describe('Birth day (1-31)'),
-    latitude: z.number().describe('Geographic latitude of birth place'),
-    longitude: z.number().describe('Geographic longitude of birth place'),
-    calendar: z
-      .enum(['gregorian', 'julian'])
-      .optional()
-      .default('gregorian')
-      .describe('Calendar system (default: gregorian)'),
-  }),
-  func: async ({ year, month, day, latitude, longitude, calendar = 'gregorian' }) => {
-    return withErrorHandling(
-      async () => {
-        logger.info('Tool call: rectify_windows', {
-          system: 'langchain-tools',
-          operation: 'rectify_windows',
-          metadata: { year, month, day, latitude, longitude, calendar },
-        })
-
-        const res = await runRectifyWindows({
-          year,
-          month,
-          day,
-          latitude,
-          longitude,
-          calendar,
-        })
-
-        return JSON.stringify({
-          success: true,
-          entropyBits: res.entropy_bits,
-          recommendedNextQuestion: res.next_best_questions?.[0] ?? null,
-          data: res || {},
-        })
-      },
-      {
-        system: 'langchain-tools',
-        operation: 'rectify_windows',
-        severity: 'medium',
-      }
-    ).then(res => (typeof res === 'string' ? res : JSON.stringify(res)))
+    'Scan 24-hour candidate rising windows for a birth date and geographic location (accepts either a city/place string `location` OR explicit `latitude`/`longitude`). Computes sunrise/sunset LMT, exact Moon sign ingress minutes, Shannon entropy (bits), and Expected Information Gain (EIG) next_best_questions so the assistant can ask one high-leverage question at a time.',
+  schema: rectifyWindowsInputSchema,
+  func: async input => {
+    return withErrorHandling(async () => JSON.stringify(await executeRectifyWindowsTool(input)), {
+      system: 'langchain-tools',
+      operation: 'rectify_windows',
+      severity: 'medium',
+    }).then(res => (typeof res === 'string' ? res : JSON.stringify(res)))
   },
 })
 
@@ -712,146 +684,50 @@ export const rectifyWindowsTool = new DynamicStructuredTool({
 export const rectifyScoreTool = new DynamicStructuredTool({
   name: 'rectify_score',
   description:
-    'Execute systematic Bayesian Ascendant rectification across candidate minutes using Western timing techniques (angular transits, secondary progressions, annual profections, primary directions) calibrated against null random-date baselines. Returns 12-sign posterior distribution, MAP working Ascendant degree/time, 80% credible window, entropy_bits, calculation eligibility (>=70% & <=180m), and ranked EIG next_best_questions.',
-  schema: z.object({
-    year: z.number().describe('Birth year'),
-    month: z.number().min(1).max(12).describe('Birth month (1-12)'),
-    day: z.number().min(1).max(31).describe('Birth day (1-31)'),
-    latitude: z.number().describe('Geographic latitude of birth place'),
-    longitude: z.number().describe('Geographic longitude of birth place'),
-    calendar: z.enum(['gregorian', 'julian']).optional().default('gregorian'),
-    evidence: z
-      .array(
-        z.object({
-          type: z
-            .enum([
-              'life_event',
-              'recorded_time',
-              'time_clue',
-              'moon_sign',
-              'angular_transits',
-              'secondary_progressions',
-              'annual_profections',
-              'primary_directions',
-              'physical_temperament',
-            ])
-            .describe('Type of evidence'),
-          description: z.string().optional().describe('Biographical description or event title'),
-          category: z
-            .enum(['career', 'marriage', 'relocation', 'illness', 'general'])
-            .optional()
-            .describe('Domain category for life_event cusp routing (MC/DSC/IC/ASC)'),
-          date: z.string().optional().describe('ISO date of event (YYYY-MM-DD)'),
-          event_date: z.string().optional().describe('ISO date of event (YYYY-MM-DD)'),
-          time: z
-            .string()
-            .optional()
-            .describe('Recorded birth time (HH:MM) if type is recorded_time'),
-          reported_minute: z
-            .number()
-            .min(0)
-            .max(1439)
-            .optional()
-            .describe('Reported LMT minute (0-1439) if type is recorded_time'),
-          rodden_rating: z
-            .enum(['AA', 'A', 'B', 'C', 'DD'])
-            .optional()
-            .describe('Rodden rating reliability'),
-          start_minute: z
-            .number()
-            .min(0)
-            .max(1439)
-            .optional()
-            .describe('Window start minute LMT (0-1439) for time_clue'),
-          end_minute: z
-            .number()
-            .min(0)
-            .max(1439)
-            .optional()
-            .describe('Window end minute LMT (0-1439) for time_clue'),
-          margin_minutes: z
-            .number()
-            .min(5)
-            .max(240)
-            .optional()
-            .describe('Soft Gaussian margin in minutes for time_clue'),
-          window: z
-            .enum(['dawn', 'morning', 'afternoon', 'dusk', 'night'])
-            .optional()
-            .describe('Solar diurnal window shorthand if start_minute/end_minute omitted'),
-          moon_sign: z.string().optional().describe('Moon sign if type is moon_sign'),
-          expected_sign: z.string().optional().describe('Alias for moon_sign if type is moon_sign'),
-          affinity: z
-            .record(z.number())
-            .optional()
-            .describe('Capped sign affinity weights [0.67..1.50] for physical_temperament'),
-        })
-      )
-      .describe('List of historical evidence items, dated milestones, or recorded clues'),
-    step_minutes: z
-      .number()
-      .optional()
-      .default(5)
-      .describe('Sampling resolution in minutes (1 to 10, default: 5)'),
-  }),
-  func: async ({
-    year,
-    month,
-    day,
-    latitude,
-    longitude,
-    calendar = 'gregorian',
-    evidence,
-    step_minutes = 5,
-  }) => {
-    return withErrorHandling(
-      async () => {
-        const normalizedEvidence = normalizeEvidenceList(evidence)
-        const clampedStep = Math.min(10, Math.max(1, Math.round(step_minutes)))
-        logger.info('Tool call: rectify_score', {
-          system: 'langchain-tools',
-          operation: 'rectify_score',
-          metadata: {
-            year,
-            month,
-            day,
-            latitude,
-            longitude,
-            step_minutes: clampedStep,
-            evidenceCount: normalizedEvidence.length,
-          },
-        })
+    'Execute systematic Bayesian Ascendant rectification across candidate minutes using Western timing techniques (angular transits, secondary progressions, annual profections, primary directions) calibrated against null random-date baselines. Accepts either a city string `location` OR explicit `latitude`/`longitude`. Returns 12-sign posterior distribution, MAP working Ascendant degree/time, 80% credible window, entropy_bits, calculation eligibility (>=70% & <=180m), and ranked EIG next_best_questions.',
+  schema: rectifyScoreInputSchema,
+  func: async input => {
+    return withErrorHandling(async () => JSON.stringify(await executeRectifyScoreTool(input)), {
+      system: 'langchain-tools',
+      operation: 'rectify_score',
+      severity: 'medium',
+    }).then(res => (typeof res === 'string' ? res : JSON.stringify(res)))
+  },
+})
 
-        const res = await runRectifyScore({
-          year,
-          month,
-          day,
-          latitude,
-          longitude,
-          calendar,
-          evidence: normalizedEvidence,
-          step_minutes: clampedStep,
-        })
+/**
+ * Tool 15: Geocode Birth City Location
+ * Resolves city/country strings to latitude, longitude, timezone, and LMT offset.
+ */
+export const geocodeLocationTool = new DynamicStructuredTool({
+  name: 'geocode_location',
+  description:
+    'Resolve a birth city/state/country name (e.g. "Chicago, IL", "Bangkok, Thailand") into geographic latitude, longitude, IANA timezone, UTC offset, LMT offset, and signed clock-to-LMT conversion minutes.',
+  schema: geocodeLocationInputSchema,
+  func: async input => {
+    return withErrorHandling(async () => JSON.stringify(await executeGeocodeLocationTool(input)), {
+      system: 'langchain-tools',
+      operation: 'geocode_location',
+      severity: 'medium',
+    }).then(res => (typeof res === 'string' ? res : JSON.stringify(res)))
+  },
+})
 
-        return JSON.stringify({
-          success: true,
-          topSign: res.top_sign,
-          topSignProbability: res.top_sign_probability,
-          workingTime: res.working_time,
-          workingLongitude: res.working_longitude,
-          window80Minutes: res.window_80_minutes,
-          entropyBits: res.entropy_bits,
-          calculationEligible: res.is_calculations_eligible,
-          recommendedNextQuestion: res.next_best_questions?.[0] ?? null,
-          data: res || {},
-        })
-      },
-      {
-        system: 'langchain-tools',
-        operation: 'rectify_score',
-        severity: 'medium',
-      }
-    ).then(res => (typeof res === 'string' ? res : JSON.stringify(res)))
+/**
+ * Tool 16: Persist Rectified Ascendant
+ * Saves rectified Ascendant and working birth time to the authenticated user’s profile/chart.
+ */
+export const rectifyApplyTool = new DynamicStructuredTool({
+  name: 'rectify_apply',
+  description:
+    'Persist the authenticated user’s rectified Ascendant (`ascendantProvenance: "rectified"`, `ascendantEstimate`) and working birth time to their user profile and/or primary natal chart once calculation eligibility (>=70% top sign probability & <=180m credible window) is met, or when `allowUnconfirmed=true` is explicitly requested.',
+  schema: rectifyApplyInputSchema,
+  func: async input => {
+    return withErrorHandling(async () => JSON.stringify(await executeRectifyApplyTool(input)), {
+      system: 'langchain-tools',
+      operation: 'rectify_apply',
+      severity: 'medium',
+    }).then(res => (typeof res === 'string' ? res : JSON.stringify(res)))
   },
 })
 
@@ -871,8 +747,10 @@ export const planetaryAgentTools = [
   walrusMemoryRecallTool,
   liveSkyTransitsTool,
   cosmicRecipeGeneratorTool,
+  geocodeLocationTool,
   rectifyWindowsTool,
   rectifyScoreTool,
+  rectifyApplyTool,
 ]
 
 /**

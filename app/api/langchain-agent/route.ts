@@ -6,8 +6,10 @@ interface LangChainAgentRequest {
   query: string
   agentId?: string
   sessionId?: string
+  chartId?: string
   model?: 'openai' | 'anthropic' | 'groq'
   temperature?: number
+  history?: Array<{ role?: string; content?: string }>
 }
 
 export const dynamic = 'force-dynamic'
@@ -16,9 +18,19 @@ export async function POST(request: NextRequest) {
   try {
     const session = await auth()
     const userId = session?.user?.id
+    const userName = session?.user?.name
+    const userEmail = session?.user?.email
 
     const body: LangChainAgentRequest = await request.json()
-    const { query, agentId = 'orchestrator', sessionId, model = 'openai', temperature = 0.7 } = body
+    const {
+      query,
+      agentId = 'orchestrator',
+      sessionId,
+      chartId,
+      model = 'openai',
+      temperature = 0.7,
+      history,
+    } = body
 
     if (!query || query.trim() === '') {
       return NextResponse.json(
@@ -69,17 +81,21 @@ export async function POST(request: NextRequest) {
       balances = debitResult.balances
     }
 
-    // Initialize the AgentRouter with the user request options
+    // Initialize the AgentRouter with user identity & session options
     const router = await getAgentRouter({
       model,
       temperature,
       sessionId,
       agentId,
+      userId,
+      userName,
+      userEmail,
+      chartId,
       enableMemory: true,
     })
 
     // Execute the agent query
-    const result = await router.execute(query)
+    const result = await router.execute(query, { history })
 
     // Log the transaction telemetry to Galileo logger if available
     try {

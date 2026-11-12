@@ -3,6 +3,11 @@
 import React, { useState, useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Image from 'next/image'
+import {
+  buildMonicaHistoryPayload,
+  getOrCreateMonicaSessionId,
+  setMonicaStoredSessionId,
+} from '@/lib/monica/client-session'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
 import { Button } from '@/components/ui/button'
 import { Badge } from '@/components/ui/badge'
@@ -145,6 +150,9 @@ export function MonicaOmnipresent() {
   const [chatMessages, setChatMessages] = useState<MonicaMessage[]>([])
   const [currentMessage, setCurrentMessage] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [sessionId, setSessionId] = useState<string>(() =>
+    getOrCreateMonicaSessionId(`monica-omnipresent-session-${pathname || '/'}`, 'monica-omni')
+  )
   const [_contextualHelp, setContextualHelp] = useState<ContextualHelp | null>(null)
   const [currentMC, setCurrentMC] = useState<number | null>(null)
   const [consciousnessResult, setConsciousnessResult] = useState<PhiAxisIndexAnalysis | null>(null)
@@ -244,6 +252,9 @@ export function MonicaOmnipresent() {
   useEffect(() => {
     const handlePageChange = async () => {
       try {
+        setSessionId(
+          getOrCreateMonicaSessionId(`monica-omnipresent-session-${pathname || '/'}`, 'monica-omni')
+        )
         // Load chat history for current page
         const pageKey = `monica-chat-${pathname}`
         const savedMessages = localStorage.getItem(pageKey)
@@ -454,12 +465,14 @@ export function MonicaOmnipresent() {
 
   // Send message to Monica
   const sendMessage = async () => {
-    if (!currentMessage.trim() || isLoading) return
+    const trimmedMessage = currentMessage.trim()
+    if (!trimmedMessage || isLoading) return
 
+    const priorHistory = buildMonicaHistoryPayload(chatMessages)
     const userMessage: MonicaMessage = {
       id: Date.now().toString(),
       type: 'user',
-      content: currentMessage,
+      content: trimmedMessage,
       timestamp: new Date(),
       context: { page: pathname },
     }
@@ -473,7 +486,9 @@ export function MonicaOmnipresent() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          message: currentMessage,
+          message: trimmedMessage,
+          sessionId,
+          history: priorHistory,
           context: {
             page: pathname,
             userLevel: userProgress.level,
@@ -484,6 +499,10 @@ export function MonicaOmnipresent() {
       })
 
       const data = await response.json()
+      if (typeof data.sessionId === 'string' && data.sessionId && data.sessionId !== sessionId) {
+        setSessionId(data.sessionId)
+        setMonicaStoredSessionId(`monica-omnipresent-session-${pathname || '/'}`, data.sessionId)
+      }
       const rawText = data.text || data.response || data.content || data.message
 
       const monicaMessage: MonicaMessage = {
@@ -1137,13 +1156,17 @@ export function MonicaOmnipresent() {
                   }
                   placeholder="Ask Monica anything about consciousness, astrology, or this page..."
                   className="flex-1 border-emerald-300 focus:border-emerald-500"
-                  onKeyPress={(e: React.KeyboardEvent<HTMLInputElement>) =>
-                    e.key === 'Enter' && sendMessage()
-                  }
+                  onKeyDown={(e: React.KeyboardEvent<HTMLInputElement>) => {
+                    if (e.key === 'Enter' && !e.shiftKey) {
+                      e.preventDefault()
+                      sendMessage()
+                    }
+                  }}
                   disabled={isLoading}
                 />
                 <Button
                   onClick={sendMessage}
+                  aria-label="Send message"
                   disabled={!currentMessage.trim() || isLoading}
                   className="bg-gradient-to-r from-emerald-600 to-green-600 hover:from-emerald-700 hover:to-green-700"
                 >

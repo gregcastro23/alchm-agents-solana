@@ -1,18 +1,19 @@
 import { NextResponse } from 'next/server'
 import { z } from 'zod'
 import { auth } from '@/lib/auth'
-import { prisma } from '@/lib/db'
-import { generateAccurateHoroscope } from '@/lib/monica/horoscope-generator'
-import { utcDateFromParts } from '@/lib/enhanced-astronomical-calculator'
-import { getAlchemicalQuantitiesLegacy } from '@/lib/backend'
-import { analyzePhiAxisIndex } from '@/lib/monica/monica-constant'
-import { applyRectifiedBirthTimeToChart, getNatalChart } from '@/lib/services/natal-chart-storage'
+import { resolveRectificationCoordinates } from '@/lib/rectification/location'
+import {
+  persistRectifiedChart,
+  persistRectifiedProfile,
+  RectificationEligibilityError,
+  RectificationNotFoundError,
+} from '@/lib/rectification/persistence'
 import {
   RectificationUnavailableError,
   runRectifyScore,
   runRectifyWindows,
 } from '@/lib/rectification/server-runner'
-import { buildAscendantEstimateFromScore, normalizeEvidenceList } from '@/lib/rectification/types'
+import { normalizeEvidenceList } from '@/lib/rectification/types'
 
 export const revalidate = 0
 
@@ -49,8 +50,9 @@ const CoordsSchema = {
   year: z.number().int().min(1).max(2200),
   month: z.number().int().min(1).max(12),
   day: z.number().int().min(1).max(31),
-  latitude: z.number().min(-90).max(90),
-  longitude: z.number().min(-180).max(180),
+  location: z.string().min(1).max(200).optional(),
+  latitude: z.number().min(-90).max(90).optional(),
+  longitude: z.number().min(-180).max(180).optional(),
   calendar: z.enum(['gregorian', 'julian']).optional().default('gregorian'),
 }
 
@@ -92,13 +94,14 @@ const RectifyRequestSchema = z.discriminatedUnion('action', [
   ApplyChartActionSchema,
 ])
 
-function parseWorkingHourMinute(timeStr: string): { hour: number; minute: number } {
-  const m = /^(\d{1,2}):(\d{2})$/.exec(timeStr.trim())
-  if (!m) return { hour: 12, minute: 0 }
-  return {
-    hour: Math.min(23, Math.max(0, parseInt(m[1], 10))),
-    minute: Math.min(59, Math.max(0, parseInt(m[2], 10))),
-  }
+function hasLocationOrCoords(body: {
+  location?: string
+  latitude?: number
+  longitude?: number
+}): boolean {
+  const hasCoords = typeof body.latitude === 'number' && typeof body.longitude === 'number'
+  const hasLocation = typeof body.location === 'string' && body.location.trim().length > 0
+  return hasCoords || hasLocation
 }
 
 export async function POST(req: Request) {
@@ -119,25 +122,39 @@ export async function POST(req: Request) {
     const body = parsed.data
 
     if (body.action === 'windows') {
+      if (!hasLocationOrCoords(body)) {
+        return NextResponse.json(
+          { error: 'Either location or latitude and longitude are required' },
+          { status: 400 }
+        )
+      }
+      const coords = await resolveRectificationCoordinates(body)
       const result = await runRectifyWindows({
         year: body.year,
         month: body.month,
         day: body.day,
-        latitude: body.latitude,
-        longitude: body.longitude,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
         calendar: body.calendar,
       })
       return NextResponse.json({ ok: true, action: 'windows', data: result })
     }
 
     if (body.action === 'score') {
+      if (!hasLocationOrCoords(body)) {
+        return NextResponse.json(
+          { error: 'Either location or latitude and longitude are required' },
+          { status: 400 }
+        )
+      }
+      const coords = await resolveRectificationCoordinates(body)
       const evidence = normalizeEvidenceList(body.evidence)
       const result = await runRectifyScore({
         year: body.year,
         month: body.month,
         day: body.day,
-        latitude: body.latitude,
-        longitude: body.longitude,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
         calendar: body.calendar,
         evidence,
         step_minutes: body.step_minutes,
@@ -153,187 +170,54 @@ export async function POST(req: Request) {
     const userId = session.user.id
 
     if (body.action === 'apply_profile') {
-      const evidence = normalizeEvidenceList(body.evidence)
-      const score = await runRectifyScore({
-        year: body.year,
-        month: body.month,
-        day: body.day,
-        latitude: body.latitude,
-        longitude: body.longitude,
-        calendar: body.calendar,
-        evidence,
-        step_minutes: body.step_minutes,
-      })
-
-      if (!score.is_calculations_eligible && !body.allowUnconfirmed) {
+      if (!hasLocationOrCoords(body)) {
         return NextResponse.json(
-          {
-            error:
-              'Rectification posterior has not reached calculation eligibility (>= 70% top sign and <= 180m window). Answer more questions or pass allowUnconfirmed=true to save a tentative working chart.',
-            isCalculationsEligible: false,
-            score,
-          },
-          { status: 409 }
+          { error: 'Either location or latitude and longitude are required' },
+          { status: 400 }
         )
       }
-
-      const estimate = buildAscendantEstimateFromScore(score, evidence)
-      const { hour, minute } = parseWorkingHourMinute(score.working_time)
-      const birthDate = utcDateFromParts(body.year, body.month, body.day, hour, minute)
-
-      const horoscope = generateAccurateHoroscope({
+      const coords = await resolveRectificationCoordinates(body)
+      const result = await persistRectifiedProfile({
+        userId,
+        userName: session.user.name,
         year: body.year,
         month: body.month,
         day: body.day,
-        hour,
-        minute,
-        latitude: body.latitude,
-        longitude: body.longitude,
-      }) as Record<string, any>
-
-      horoscope.ascendant = score.working_longitude
-      horoscope.ascendantProvenance = 'rectified'
-      horoscope.ascendantEstimate = estimate
-
-      const alchm = await getAlchemicalQuantitiesLegacy(birthDate, body.latitude, body.longitude)
-      const spirit = alchm?.['Alchemy Effects']?.['Total Spirit'] || 0
-      const essence = alchm?.['Alchemy Effects']?.['Total Essence'] || 0
-      const matter = alchm?.['Alchemy Effects']?.['Total Matter'] || 0
-      const substance = alchm?.['Alchemy Effects']?.['Total Substance'] || 0
-
-      const phiAxis = analyzePhiAxisIndex({
-        spirit,
-        essence,
-        matter,
-        substance,
-        Heat: alchm?.Heat || 0,
-        Entropy: alchm?.Entropy || 0,
-        Reactivity: alchm?.Reactivity || 0,
-        Energy: alchm?.Energy || 0,
+        latitude: coords.latitude,
+        longitude: coords.longitude,
+        calendar: body.calendar,
+        locationName: body.locationName || coords.locationName,
+        name: body.name,
+        evidence: body.evidence,
+        stepMinutes: body.step_minutes,
+        allowUnconfirmed: body.allowUnconfirmed,
       })
-
-      const zeroBasedMonth = body.month - 1
-      const profile = await prisma.user_profiles.upsert({
-        where: { userId },
-        update: {
-          birthDate,
-          birthTime: score.working_time,
-          birthLocation: {
-            name: body.locationName || 'Unknown',
-            latitude: body.latitude,
-            longitude: body.longitude,
-          },
-          natalChart: horoscope as any,
-          monicaConstant: phiAxis.value,
-          dominantElement: (alchm as any)?.['Dominant Element'] || 'Fire',
-        },
-        create: {
-          userId,
-          birthDate,
-          birthTime: score.working_time,
-          birthLocation: {
-            name: body.locationName || 'Unknown',
-            latitude: body.latitude,
-            longitude: body.longitude,
-          },
-          natalChart: horoscope as any,
-          monicaConstant: phiAxis.value,
-          dominantElement: (alchm as any)?.['Dominant Element'] || 'Fire',
-        },
-      })
-
-      await prisma.profiles.upsert({
-        where: { userId },
-        update: {
-          ...(body.name ? { name: body.name } : {}),
-          birthInfo: {
-            year: body.year,
-            month: zeroBasedMonth,
-            day: body.day,
-            hour,
-            minute,
-            latitude: body.latitude,
-            longitude: body.longitude,
-          },
-        },
-        create: {
-          userId,
-          name: body.name || session.user.name || 'Explorer',
-          avatarUrl: null,
-          birthInfo: {
-            year: body.year,
-            month: zeroBasedMonth,
-            day: body.day,
-            hour,
-            minute,
-            latitude: body.latitude,
-            longitude: body.longitude,
-          },
-        },
-      })
-
-      return NextResponse.json({
-        ok: true,
-        action: 'apply_profile',
-        isCalculationsEligible: score.is_calculations_eligible,
-        workingTime: score.working_time,
-        estimate,
-        score,
-        profile,
-      })
+      return NextResponse.json(result)
     }
 
     // action === 'apply_chart'
-    const existingChart = await getNatalChart(body.chartId, userId)
-    if (!existingChart) {
-      return NextResponse.json({ error: 'Natal chart not found' }, { status: 404 })
-    }
-
-    const loc = (existingChart.birthLocation || {}) as { lat?: number; lon?: number }
-    const bd = new Date(existingChart.birthDate)
-    const evidence = normalizeEvidenceList(body.evidence)
-
-    const score = await runRectifyScore({
-      year: bd.getUTCFullYear(),
-      month: bd.getUTCMonth() + 1,
-      day: bd.getUTCDate(),
-      latitude: typeof loc.lat === 'number' ? loc.lat : 0,
-      longitude: typeof loc.lon === 'number' ? loc.lon : 0,
-      calendar: 'gregorian',
-      evidence,
-      step_minutes: body.step_minutes,
+    const result = await persistRectifiedChart({
+      userId,
+      chartId: body.chartId,
+      evidence: body.evidence,
+      stepMinutes: body.step_minutes,
+      allowUnconfirmed: body.allowUnconfirmed,
     })
-
-    if (!score.is_calculations_eligible && !body.allowUnconfirmed) {
+    return NextResponse.json(result)
+  } catch (err: any) {
+    if (err instanceof RectificationEligibilityError) {
       return NextResponse.json(
         {
-          error:
-            'Rectification posterior has not reached calculation eligibility (>= 70% top sign and <= 180m window). Answer more questions or pass allowUnconfirmed=true to save a tentative working chart.',
+          error: err.message,
           isCalculationsEligible: false,
-          score,
+          score: err.score,
         },
         { status: 409 }
       )
     }
-
-    const estimate = buildAscendantEstimateFromScore(score, evidence)
-    const updatedChart = await applyRectifiedBirthTimeToChart(
-      body.chartId,
-      userId,
-      score.working_time,
-      estimate
-    )
-
-    return NextResponse.json({
-      ok: true,
-      action: 'apply_chart',
-      isCalculationsEligible: score.is_calculations_eligible,
-      workingTime: score.working_time,
-      estimate,
-      score,
-      chart: updatedChart,
-    })
-  } catch (err: any) {
+    if (err instanceof RectificationNotFoundError) {
+      return NextResponse.json({ error: err.message }, { status: 404 })
+    }
     if (err instanceof RectificationUnavailableError) {
       return NextResponse.json({ error: err.message }, { status: 503 })
     }

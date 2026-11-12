@@ -79,6 +79,12 @@ export class MonicaRouter {
         'horoscope',
         'astrology',
         'planetary',
+        'rising sign',
+        'ascendant',
+        'birth time',
+        'time of birth',
+        'rectify',
+        'rectification',
       ],
       historical: ['what would', 'how did', 'historical', 'era', 'period', 'philosophy', 'teach'],
       consciousness: [

@@ -24,6 +24,11 @@ import {
   TreePine,
 } from 'lucide-react'
 import { ErrorBoundary } from '@/components/ui/error-boundary'
+import {
+  buildMonicaHistoryPayload,
+  getOrCreateMonicaSessionId,
+  setMonicaStoredSessionId,
+} from '@/lib/monica/client-session'
 // Type imports removed to prevent circular dependency issues
 // Using inline interfaces instead
 
@@ -86,6 +91,10 @@ export default function MonicaChatInterface({
   ])
   const [inputValue, setInputValue] = useState('')
   const [isLoading, setIsLoading] = useState(false)
+  const [internalSessionId, setInternalSessionId] = useState<string>(
+    () => sessionId || getOrCreateMonicaSessionId('monica-interface-session', 'monica-session')
+  )
+  const activeSessionId = sessionId || internalSessionId
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
   // Auto-scroll to bottom when new messages arrive
@@ -95,18 +104,23 @@ export default function MonicaChatInterface({
     }
   }, [messages])
 
-  const sendMessage = async () => {
-    if (!inputValue.trim() || isLoading) return
+  const sendMessage = async (overrideText?: string | React.MouseEvent) => {
+    const rawCandidate = typeof overrideText === 'string' ? overrideText : inputValue
+    const messageText = rawCandidate.trim()
+    if (!messageText || (isLoading && typeof overrideText !== 'string')) return
 
-    const userMessage: MonicaChatMessage = {
-      id: Date.now().toString(),
-      type: 'user',
-      content: inputValue,
-      timestamp: new Date(),
+    const priorHistory = buildMonicaHistoryPayload(messages)
+    if (typeof overrideText !== 'string') {
+      const userMessage: MonicaChatMessage = {
+        id: Date.now().toString(),
+        type: 'user',
+        content: messageText,
+        timestamp: new Date(),
+      }
+
+      setMessages(prev => [...prev, userMessage])
+      setInputValue('')
     }
-
-    setMessages(prev => [...prev, userMessage])
-    setInputValue('')
     setIsLoading(true)
 
     try {
@@ -116,9 +130,10 @@ export default function MonicaChatInterface({
           'Content-Type': 'application/json',
         },
         body: JSON.stringify({
-          message: inputValue,
+          message: messageText,
           userId: null, // Could be passed in as prop
-          sessionId: sessionId || `monica-session-${Date.now()}`,
+          sessionId: activeSessionId,
+          history: priorHistory,
           includeCharacterVector: !!userCharacterVector,
           includeConsciousness: !!userConsciousnessProfile,
           includeAlchm: true,
@@ -133,19 +148,40 @@ export default function MonicaChatInterface({
       })
 
       const data = await response.json()
+      if (
+        !sessionId &&
+        typeof data.sessionId === 'string' &&
+        data.sessionId &&
+        data.sessionId !== activeSessionId
+      ) {
+        setInternalSessionId(data.sessionId)
+        setMonicaStoredSessionId('monica-interface-session', data.sessionId)
+      }
 
-      if (data.response) {
+      const responseText = data.text || data.response || data.content || data.message
+      const envelopeData = data.metadata?.envelope || data.envelope || data.structured
+
+      if (responseText) {
         const monicaMessage: MonicaChatMessage = {
           id: `${Date.now().toString()}_monica`,
           type: 'monica',
-          content: data.response,
+          content: responseText,
           timestamp: new Date(),
-          envelope: data.structured
+          envelope: envelopeData
             ? {
                 suggestedPractices:
-                  data.structured?.interactive_elements?.suggested_practices || [],
-                nextStep: data.structured?.educational_guidance?.next_learning_step || '',
-                followUps: data.followUpQuestions || [],
+                  envelopeData.suggestedPractices ||
+                  envelopeData.interactive_elements?.suggested_practices ||
+                  [],
+                nextStep:
+                  envelopeData.nextStep ||
+                  envelopeData.educational_guidance?.next_learning_step ||
+                  '',
+                followUps:
+                  envelopeData.followUps ||
+                  envelopeData.interactive_elements?.reflection_questions ||
+                  data.followUpQuestions ||
+                  [],
               }
             : undefined,
         }
@@ -161,7 +197,6 @@ export default function MonicaChatInterface({
           id: `${Date.now().toString()}_error`,
           type: 'monica',
           content:
-            data.response ||
             "I'm having a moment of cosmic static, dear one. Let's try that again - I'm here for you! 💚",
           timestamp: new Date(),
         }
@@ -184,15 +219,16 @@ export default function MonicaChatInterface({
 
   // Optional streaming path with graceful fallback
   const sendMessageStream = async () => {
-    if (!inputValue.trim() || isLoading) return
+    const current = inputValue.trim()
+    if (!current || isLoading) return
+    const priorHistory = buildMonicaHistoryPayload(messages)
     const userMessage: MonicaChatMessage = {
       id: Date.now().toString(),
       type: 'user',
-      content: inputValue,
+      content: current,
       timestamp: new Date(),
     }
     setMessages(prev => [...prev, userMessage])
-    const current = inputValue
     setInputValue('')
     setIsLoading(true)
     try {
@@ -201,12 +237,14 @@ export default function MonicaChatInterface({
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           message: current,
+          sessionId: activeSessionId,
+          history: priorHistory,
           conversationStage: messages.length <= 1 ? 'greeting' : 'teaching',
           preferredStyle: { temperature: 0.4 },
         }),
       })
       if (!resp.ok || !resp.body) {
-        await sendMessage()
+        await sendMessage(current)
         return
       }
       const reader = resp.body.getReader()
@@ -246,8 +284,11 @@ export default function MonicaChatInterface({
         envelope,
       }
       setMessages(prev => [...prev, monicaMsg])
+      if (onNewMessage) {
+        onNewMessage(monicaMsg)
+      }
     } catch (e) {
-      await sendMessage()
+      await sendMessage(current)
     } finally {
       setIsLoading(false)
     }
@@ -417,13 +458,14 @@ export default function MonicaChatInterface({
             <Input
               value={inputValue}
               onChange={e => setInputValue(e.target.value)}
-              onKeyPress={handleKeyPress}
+              onKeyDown={handleKeyPress}
               placeholder="Ask Monica about astrology, tarot, character vectors, A-Numbers, or anything cosmic..."
               className="flex-1"
               disabled={isLoading}
             />
             <Button
               onClick={sendMessageStream}
+              aria-label="Send message"
               disabled={!inputValue.trim() || isLoading}
               className="bg-green-600 hover:bg-green-700"
             >

@@ -5,13 +5,16 @@
 
 import { ChatOpenAI } from '@langchain/openai'
 import { ChatAnthropic } from '@langchain/anthropic'
-import { AgentExecutor, createOpenAIFunctionsAgent } from '@langchain/classic/agents'
+import type { BaseChatModel } from '@langchain/core/language_models/chat_models'
+import { AgentExecutor, createToolCallingAgent } from '@langchain/classic/agents'
 import { ChatPromptTemplate } from '@langchain/core/prompts'
 import { planetaryAgentTools } from './agent-tools'
 import { BufferMemory } from '@langchain/classic/memory'
 import type { BaseMessage } from '@langchain/core/messages'
 import { CLAUDE, OPENAI } from '../models/registry'
 import { getMemoryManager } from './memory-manager'
+import { runWithToolExecutionContext } from './tool-context'
+import { RECTIFICATION_INTERVIEW_INSTRUCTIONS } from '../rectification/intent'
 import { logger } from '@/lib/structured-logger'
 
 export interface AgentRouterConfig {
@@ -22,6 +25,15 @@ export interface AgentRouterConfig {
   enableMemory?: boolean
   sessionId?: string
   agentId?: string
+  userId?: string
+  userName?: string | null
+  userEmail?: string | null
+  chartId?: string
+  llmOverride?: BaseChatModel
+}
+
+export interface AgentRouterExecuteOptions {
+  history?: Array<{ role?: string; content?: string }>
 }
 
 export interface AgentRouterResponse {
@@ -49,13 +61,29 @@ export class AgentRouter {
   constructor(config: AgentRouterConfig = {}) {
     this.config = {
       model: config.model || 'openai',
-      temperature: config.temperature || 0.7,
-      maxIterations: config.maxIterations || 5,
+      temperature: config.temperature ?? 0.7,
+      maxIterations: config.maxIterations || 8,
       timeoutMs: config.timeoutMs || 30000,
       enableMemory: config.enableMemory !== false,
       sessionId: config.sessionId,
       agentId: config.agentId,
+      userId: config.userId,
+      userName: config.userName,
+      userEmail: config.userEmail,
+      chartId: config.chartId,
+      llmOverride: config.llmOverride,
     }
+  }
+
+  updateRuntimeContext(config: AgentRouterConfig): void {
+    if (config.userName !== undefined) this.config.userName = config.userName
+    if (config.userEmail !== undefined) this.config.userEmail = config.userEmail
+    if (config.chartId !== undefined) this.config.chartId = config.chartId
+  }
+
+  matchesLlmOverride(llmOverride?: BaseChatModel): boolean {
+    if (!llmOverride) return true
+    return this.config.llmOverride === llmOverride
   }
 
   /**
@@ -66,14 +94,22 @@ export class AgentRouter {
       logger.info('Initializing AgentRouter', {
         system: 'langchain',
         operation: 'initialize',
-        metadata: this.config,
+        metadata: {
+          model: this.config.model,
+          sessionId: this.config.sessionId,
+          agentId: this.config.agentId,
+          hasUserId: Boolean(this.config.userId),
+          hasOverride: Boolean(this.config.llmOverride),
+        },
       })
 
-      // Initialize LLM based on model choice
       const aiGatewayEnabled = String(process.env.AI_GATEWAY_ENABLED).toLowerCase() === 'true'
 
-      let llm
-      if (this.config.model === 'anthropic') {
+      let llm: BaseChatModel
+      if (this.config.llmOverride) {
+        this.modelName = 'custom-llm-override'
+        llm = this.config.llmOverride
+      } else if (this.config.model === 'anthropic') {
         this.modelName = CLAUDE.SONNET
         llm = new ChatAnthropic({
           modelName: CLAUDE.SONNET,
@@ -110,10 +146,16 @@ export class AgentRouter {
         if (this.config.sessionId && this.config.agentId) {
           const memoryManager = getMemoryManager()
           this.memory = await memoryManager.getMemory(this.config.sessionId, this.config.agentId)
+          if (this.memory) {
+            this.memory.inputKey = this.memory.inputKey || 'input'
+            this.memory.outputKey = this.memory.outputKey || 'output'
+          }
         } else {
           this.memory = new BufferMemory({
             returnMessages: true,
             memoryKey: 'chat_history',
+            inputKey: 'input',
+            outputKey: 'output',
           })
         }
       }
@@ -122,12 +164,12 @@ export class AgentRouter {
       const prompt = ChatPromptTemplate.fromMessages([
         [
           'system',
-          `You are an intelligent orchestrator for the Planetary Agents system.
-You have access to tools for semantic search, knowledge retrieval, consciousness analysis, and multi-agent coordination.
+          `You are an intelligent orchestrator and astrological guide for the Planetary Agents system.
+You serve both general astrology chats (for humans discovering or refining their own natal charts and rising signs) and historical/planetary council inquiries.
 
 Your role is to:
-1. Understand user queries about agents, wisdom, and consciousness
-2. Use available tools to find relevant information
+1. Understand user queries about agents, wisdom, consciousness, and natal chart rectification
+2. Use available tools to compute real astronomical data rather than guessing
 3. Coordinate multiple agents when needed for complex questions
 4. Provide insightful, context-aware responses
 
@@ -137,14 +179,12 @@ Available tools:
 - consciousness_analysis: Analyze agent consciousness and synergy
 - multi_agent_coordinator: Assemble agent councils for complex queries
 - memory_retrieval: Access conversation history and context
-- rectify_windows: Scan 24-hour candidate rising sign windows, sunrise/sunset, Moon ingress, prior entropy (bits), and EIG next_best_questions
-- rectify_score: Execute Bayesian Ascendant rectification against life events, time clues, and Rodden ratings, returning posterior distribution, calculation eligibility (>=70% top sign and <=180m 80% window), and updated EIG next_best_questions
+- geocode_location: Resolve any city/place string (e.g. "Chicago, IL", "Bangkok, Thailand") to latitude, longitude, timezone, and clockToLmtMinutes
+- rectify_windows: Scan 24-hour candidate rising sign windows (accepts a city \`location\` or coordinates), sunrise/sunset LMT, Moon ingress, entropy (bits), and EIG next_best_questions
+- rectify_score: Execute Bayesian Ascendant rectification against dated life events and time clues (accepts \`location\` or coordinates), returning posterior distribution, calculation eligibility (>=70% top sign and <=180m window), and updated EIG next_best_questions
+- rectify_apply: Save the authenticated user’s verified rectified Ascendant and working birth time to their profile/primary natal chart
 
-When interviewing a user or investigating an agent with an unknown birth time:
-1. Run rectify_windows first (or rectify_score after each new answer) and inspect next_best_questions[0].
-2. NEVER dump a static personality quiz; ask ONE high-leverage EIG question at a time (coarse time-of-day window first, Moon sign split on ingress days, then specific dated career/marriage/relocation/illness milestones).
-3. After each user answer, re-score with the cumulative evidence array and report the updated top rising sign, posterior probability, 80% credible time window, and remaining entropy bits.
-4. Only declare the Ascendant calculation-eligible when is_calculations_eligible is true (topSignProbability >= 0.70 and window80Minutes <= 180); otherwise stay honest about remaining uncertainty.
+${RECTIFICATION_INTERVIEW_INSTRUCTIONS}
 
 Be thoughtful, precise, and leverage the tools effectively.`,
         ],
@@ -154,8 +194,8 @@ Be thoughtful, precise, and leverage the tools effectively.`,
       ])
 
       // Create agent
-      const agent = await createOpenAIFunctionsAgent({
-        llm,
+      const agent = createToolCallingAgent({
+        llm: llm as any,
         tools: planetaryAgentTools,
         prompt,
       })
@@ -166,7 +206,8 @@ Be thoughtful, precise, and leverage the tools effectively.`,
         tools: planetaryAgentTools,
         maxIterations: this.config.maxIterations,
         memory: this.memory || undefined,
-        verbose: true,
+        returnIntermediateSteps: true,
+        verbose: process.env.NODE_ENV === 'development',
       })
 
       logger.info('AgentRouter initialized successfully', {
@@ -185,31 +226,63 @@ Be thoughtful, precise, and leverage the tools effectively.`,
     }
   }
 
+  private async seedMemoryIfEmpty(
+    history?: Array<{ role?: string; content?: string }>
+  ): Promise<void> {
+    if (!this.memory || !history || history.length === 0) return
+    try {
+      const existing = await this.memory.chatHistory.getMessages()
+      if (existing.length > 0) return
+      for (const msg of history) {
+        if (!msg.content || typeof msg.content !== 'string') continue
+        if (msg.role === 'assistant' || msg.role === 'ai') {
+          await this.memory.chatHistory.addAIMessage(msg.content)
+        } else if (msg.role === 'user' || msg.role === 'human') {
+          await this.memory.chatHistory.addUserMessage(msg.content)
+        }
+      }
+    } catch {
+      // Non-fatal if history seeding fails
+    }
+  }
+
   /**
    * Execute agent with query
    */
-  async execute(query: string): Promise<AgentRouterResponse> {
+  async execute(query: string, options?: AgentRouterExecuteOptions): Promise<AgentRouterResponse> {
     if (!this.executor) {
       throw new Error('Agent router not initialized. Call initialize() first.')
     }
 
     const startTime = Date.now()
+    let timeoutHandle: ReturnType<typeof setTimeout> | undefined
     const timeoutPromise = new Promise<never>((_, reject) => {
-      setTimeout(() => reject(new Error('Agent execution timed out')), this.config.timeoutMs)
+      timeoutHandle = setTimeout(
+        () => reject(new Error('Agent execution timed out')),
+        this.config.timeoutMs
+      )
     })
 
     try {
+      await this.seedMemoryIfEmpty(options?.history)
+
       logger.info('Executing agent query', {
         system: 'langchain',
         operation: 'execute',
-        metadata: { queryLength: query.length },
+        metadata: { queryLength: query.length, sessionId: this.config.sessionId },
       })
 
-      // Race against timeout
       const result = await Promise.race([
-        this.executor.invoke({
-          input: query,
-        }),
+        runWithToolExecutionContext(
+          {
+            userId: this.config.userId,
+            userName: this.config.userName,
+            userEmail: this.config.userEmail,
+            sessionId: this.config.sessionId,
+            chartId: this.config.chartId,
+          },
+          () => this.executor!.invoke({ input: query })
+        ),
         timeoutPromise,
       ])
 
@@ -218,6 +291,13 @@ Be thoughtful, precise, and leverage the tools effectively.`,
         system: 'langchain',
         metadata: { model: this.modelName, iterations: result.intermediateSteps?.length || 0 },
       })
+
+      if (this.config.enableMemory && this.config.sessionId && this.config.agentId) {
+        const memoryManager = getMemoryManager()
+        await memoryManager
+          .saveConversation(this.config.sessionId, this.config.agentId, query, result.output || '')
+          .catch(() => {})
+      }
 
       return {
         output: result.output,
@@ -252,6 +332,8 @@ Be thoughtful, precise, and leverage the tools effectively.`,
           timedOut: isTimeout,
         },
       }
+    } finally {
+      if (timeoutHandle) clearTimeout(timeoutHandle)
     }
   }
 
@@ -293,26 +375,64 @@ Be thoughtful, precise, and leverage the tools effectively.`,
   }
 }
 
-/**
- * Global agent router instance
- */
-let agentRouterInstance: AgentRouter | null = null
+const MAX_ROUTER_CACHE = 50
+const routerCache = new Map<string, AgentRouter>()
+
+function buildRouterCacheKey(config: AgentRouterConfig = {}): string {
+  return [
+    config.sessionId || 'default-session',
+    config.agentId || 'orchestrator',
+    config.model || 'openai',
+    config.userId || 'anon',
+  ].join(':')
+}
+
+export function clearAgentRouterCache(): void {
+  routerCache.clear()
+}
 
 /**
- * Get or create agent router
+ * Get or create an isolated agent router keyed by (sessionId, agentId, model, userId)
  */
 export async function getAgentRouter(config?: AgentRouterConfig): Promise<AgentRouter> {
-  if (!agentRouterInstance) {
-    agentRouterInstance = new AgentRouter(config)
-    await agentRouterInstance.initialize()
+  // Custom unkeyed LLM overrides bypass the shared default-session cache to stay test-isolated
+  if (config?.llmOverride && !config.sessionId) {
+    const ephemeral = new AgentRouter(config)
+    await ephemeral.initialize()
+    return ephemeral
   }
-  return agentRouterInstance
+
+  const key = buildRouterCacheKey(config)
+  const existing = routerCache.get(key)
+  if (existing && existing.matchesLlmOverride(config?.llmOverride)) {
+    routerCache.delete(key)
+    existing.updateRuntimeContext(config || {})
+    routerCache.set(key, existing)
+    return existing
+  }
+
+  const router = new AgentRouter(config)
+  await router.initialize()
+
+  if (routerCache.has(key)) {
+    routerCache.delete(key)
+  } else if (routerCache.size >= MAX_ROUTER_CACHE) {
+    const oldestKey = routerCache.keys().next().value
+    if (oldestKey !== undefined) {
+      routerCache.delete(oldestKey)
+    }
+  }
+  routerCache.set(key, router)
+  return router
 }
 
 /**
  * Execute query with agent router (convenience function)
  */
-export async function executeAgentQuery(query: string): Promise<AgentRouterResponse> {
-  const router = await getAgentRouter()
+export async function executeAgentQuery(
+  query: string,
+  config?: AgentRouterConfig
+): Promise<AgentRouterResponse> {
+  const router = await getAgentRouter(config)
   return await router.execute(query)
 }

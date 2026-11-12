@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
-import { streamText } from 'ai'
+import { stepCountIs, streamText } from 'ai'
+import { auth } from '@/lib/auth'
 import { verifyApiKeys } from '../../secure-config'
 import {
   buildMonicaPrompt,
@@ -12,6 +13,14 @@ import { decideModel } from '@/lib/monica/router'
 import { MonicaResponseHandler } from '@/lib/monica/monica-response-handler'
 import { selectKnowledge } from '@/lib/monica/knowledge'
 import { resolveDefaultModel } from '@/lib/models/registry'
+import { runWithToolExecutionContext } from '@/lib/langchain/tool-context'
+import { getRectificationAiTools } from '@/lib/rectification/ai-tools'
+import {
+  appendRectificationSessionTurns,
+  getRectificationSessionHistory,
+  isRectificationIntent,
+  RECTIFICATION_INTERVIEW_INSTRUCTIONS,
+} from '@/lib/rectification/intent'
 
 // Supervisor routing imports
 import { monicaRouter } from '@/lib/monica/enhanced-router'
@@ -27,6 +36,9 @@ export async function POST(req: Request) {
       headers: { 'Content-Type': 'text/event-stream' },
     })
   }
+  const session = await auth().catch(() => null)
+  const userId = session?.user?.id
+
   const {
     message,
     model,
@@ -37,8 +49,17 @@ export async function POST(req: Request) {
     quickProfile = null,
     tarotContext = null,
     spreadContext = null,
+    sessionId,
+    history: bodyHistory,
+    context = null,
   } = await req.json()
   const userMsg = sanitizeUserInput(message || '', 1000)
+  const priorHistory = getRectificationSessionHistory(
+    sessionId,
+    userId,
+    Array.isArray(bodyHistory) ? bodyHistory : context?.history
+  )
+  const wantsRectification = isRectificationIntent(userMsg, priorHistory)
 
   // Minimal prompt assembly (reuse of base context only for streaming path)
   const ctx = getMonicaContextPrompt({ conversationStage, birthData, userPreferences })
@@ -82,6 +103,10 @@ Reason for routing: ${routingDecision.reason}
 
 Please weave these recommendations naturally into your response to guide the user to the correct workspace or agent, explaining how their unique alchemical/astrological profiles fit the user's inquiry.`
   }
+  if (wantsRectification) {
+    specialized = `${specialized}\n\n${RECTIFICATION_INTERVIEW_INSTRUCTIONS}`
+  }
+
   const knowledgeSnippets = selectKnowledge(['elemental', 'tarot'])
     .map(k => k.content)
     .join('\n')
@@ -103,7 +128,7 @@ Please weave these recommendations naturally into your response to guide the use
   const analyzed = MonicaResponseHandler.analyzeUserMessage(userMsg)
   const routing = decideModel({
     defaultModel: model || process.env.MONICA_DEFAULT_MODEL,
-    complexity: analyzed.topicComplexity,
+    complexity: wantsRectification ? 'complex' : analyzed.topicComplexity,
   })
   const activeModel = routing.model
   const temp = clampTemperature(
@@ -140,26 +165,61 @@ Please weave these recommendations naturally into your response to guide the use
       try {
         const start = Date.now()
 
-        const result = await streamText({
-          model: activeModel,
-          system: sys,
-          prompt: userMsg,
-          maxOutputTokens: 800,
-          temperature: temp,
-        } as any)
+        const executeStream = async () => {
+          const result = wantsRectification
+            ? await streamText({
+                model: activeModel,
+                system: sys,
+                ...(priorHistory.length > 0
+                  ? {
+                      messages: [
+                        ...priorHistory.map(t => ({ role: t.role, content: t.content })),
+                        { role: 'user' as const, content: userMsg },
+                      ],
+                    }
+                  : { prompt: userMsg }),
+                tools: getRectificationAiTools(),
+                stopWhen: stepCountIs(6),
+                maxOutputTokens: 1000,
+                temperature: temp,
+              } as any)
+            : await streamText({
+                model: activeModel,
+                system: sys,
+                prompt: userMsg,
+                maxOutputTokens: 800,
+                temperature: temp,
+              } as any)
 
-        let isFirstChunk = true
+          let isFirstChunk = true
 
-        for await (const chunk of result.textStream) {
-          if (isFirstChunk) {
-            const ttfb = Date.now() - start
-            send({ type: 'meta', ttfbMs: ttfb, routing })
-            isFirstChunk = false
+          for await (const chunk of result.textStream) {
+            if (isFirstChunk) {
+              const ttfb = Date.now() - start
+              send({ type: 'meta', ttfbMs: ttfb, routing })
+              isFirstChunk = false
+            }
+            send({ type: 'token', token: chunk })
           }
-          send({ type: 'token', token: chunk })
+
+          return await result.text
         }
 
-        const fullText = await result.text
+        const fullText = wantsRectification
+          ? await runWithToolExecutionContext(
+              {
+                userId,
+                userName: session?.user?.name,
+                userEmail: session?.user?.email,
+                sessionId,
+              },
+              executeStream
+            )
+          : await executeStream()
+
+        if (wantsRectification && sessionId) {
+          appendRectificationSessionTurns(sessionId, userId, userMsg, fullText)
+        }
 
         // envelope
         const envelope = MonicaResponseHandler.formatResponse(fullText, {

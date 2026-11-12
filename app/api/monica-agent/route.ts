@@ -3,8 +3,16 @@ import { auth } from '@/lib/auth'
 import { backend, BackendError } from '@/lib/backend'
 import { prisma } from '@/lib/db'
 
-import { generateText } from 'ai'
+import { generateText, stepCountIs } from 'ai'
 import { decideModel } from '@/lib/monica/router'
+import { runWithToolExecutionContext } from '@/lib/langchain/tool-context'
+import { getRectificationAiTools } from '@/lib/rectification/ai-tools'
+import {
+  appendRectificationSessionTurns,
+  getRectificationSessionHistory,
+  isRectificationIntent,
+  RECTIFICATION_INTERVIEW_INSTRUCTIONS,
+} from '@/lib/rectification/intent'
 import {
   buildMonicaPrompt,
   getMonicaContextPrompt,
@@ -37,17 +45,25 @@ export async function POST(req: NextRequest) {
       model,
       preferredStyle,
       conversationStage = 'teaching',
+      history: bodyHistory,
     } = body
 
     if (!message) {
       return NextResponse.json({ error: 'Message is required' }, { status: 400 })
     }
 
+    const resolvedSessionId = sessionId || `session-${Date.now()}`
     const userMsg = sanitizeUserInput(message, 1000)
+    const priorHistory = getRectificationSessionHistory(
+      sessionId,
+      userId,
+      Array.isArray(bodyHistory) ? bodyHistory : context?.history
+    )
+    const wantsRectification = isRectificationIntent(userMsg, priorHistory)
     const analyzed = MonicaResponseHandler.analyzeUserMessage(userMsg)
     const routing = decideModel({
       defaultModel: model || process.env.MONICA_DEFAULT_MODEL,
-      complexity: analyzed.topicComplexity,
+      complexity: wantsRectification ? 'complex' : analyzed.topicComplexity,
     })
 
     const activeModel = routing.model
@@ -87,15 +103,49 @@ Reason for routing: ${routingDecision.reason}
 Please weave these recommendations naturally into your response to guide the user to the correct workspace or agent, explaining how their unique alchemical/astrological profiles fit the user's inquiry.`
     }
 
+    if (wantsRectification) {
+      specialized = `${specialized}\n\n${RECTIFICATION_INTERVIEW_INSTRUCTIONS}`
+    }
+
     const sys = buildMonicaPrompt(MONICA_BASE_SYSTEM_PROMPT, ctx, specialized)
 
-    const result = await generateText({
-      model: activeModel,
-      system: sys,
-      prompt: userMsg,
-      maxTokens: 800,
-      temperature: temp,
-    } as any)
+    const result = wantsRectification
+      ? await runWithToolExecutionContext(
+          {
+            userId,
+            userName: session?.user?.name,
+            userEmail: session?.user?.email,
+            sessionId: resolvedSessionId,
+          },
+          () =>
+            generateText({
+              model: activeModel,
+              system: sys,
+              ...(priorHistory.length > 0
+                ? {
+                    messages: [
+                      ...priorHistory.map(t => ({ role: t.role, content: t.content })),
+                      { role: 'user' as const, content: userMsg },
+                    ],
+                  }
+                : { prompt: userMsg }),
+              tools: getRectificationAiTools(),
+              stopWhen: stepCountIs(6),
+              maxTokens: 1000,
+              temperature: temp,
+            } as any)
+        )
+      : await generateText({
+          model: activeModel,
+          system: sys,
+          prompt: userMsg,
+          maxTokens: 800,
+          temperature: temp,
+        } as any)
+
+    if (wantsRectification) {
+      appendRectificationSessionTurns(resolvedSessionId, userId, userMsg, result.text)
+    }
 
     const envelope = MonicaResponseHandler.formatResponse(result.text, {
       userMessage: userMsg,

@@ -64,6 +64,8 @@ export class MemoryManager {
       chatHistory,
       returnMessages: true,
       memoryKey: 'chat_history',
+      inputKey: 'input',
+      outputKey: 'output',
     })
 
     this.bufferMemories.set(key, bufferMemory)

@@ -22,6 +22,7 @@ import {
 } from 'lucide-react'
 import MonicaTarotOracle from '@/components/tarot/monica-tarot-oracle'
 import MonicaTarotSpreads from '@/components/tarot/monica-tarot-spreads'
+import { buildMonicaHistoryPayload } from '@/lib/monica/client-session'
 import { type ConsciousnessCraftingInsight } from '@/lib/monica/tarot-oracle'
 import { type SpreadReading } from '@/lib/monica/tarot-spreads'
 import { usePlanetaryPositions } from '@/hooks/usePlanetaryPositions'
@@ -140,6 +141,7 @@ export default function MonicaPage() {
       timestamp: new Date(),
     }
 
+    const priorHistory = buildMonicaHistoryPayload(messages)
     setMessages(prev => [...prev, userMessage])
     if (!textToSend) setInputValue('')
     setIsSending(true)
@@ -154,6 +156,7 @@ export default function MonicaPage() {
         body: JSON.stringify({
           message: text,
           sessionId,
+          history: priorHistory,
           conversationStage: tarotInsight || spreadReading ? 'tarot' : 'teaching',
           tarotContext: tarotInsight
             ? {

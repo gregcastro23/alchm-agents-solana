@@ -12,6 +12,11 @@ import { MessageCircle, Send, Heart, Sparkles, Brain, X, Minimize2, Eye, Info } 
 import { useLiveOracleChat } from '@/lib/spacetime/hooks/useLiveOracleChat'
 import { AiGeneratedPill } from '@/components/ui/ai-generated-pill'
 import { AiDisclaimer } from '@/components/ui/ai-disclaimer'
+import {
+  buildMonicaHistoryPayload,
+  getOrCreateMonicaSessionId,
+  setMonicaStoredSessionId,
+} from '@/lib/monica/client-session'
 
 interface MonicaChatMessage {
   id: string
@@ -134,6 +139,9 @@ export function MonicaChatBubble({
   // REST local fallback chat states
   const [restMessages, setRestMessages] = useState<MonicaChatMessage[]>([])
   const [isRestThinking, setIsRestThinking] = useState(false)
+  const [sessionId, setSessionId] = useState<string>(() =>
+    getOrCreateMonicaSessionId(`monica-bubble-session-${pathname}`, 'monica-bubble')
+  )
 
   const scrollAreaRef = useRef<HTMLDivElement>(null)
 
@@ -148,9 +156,10 @@ export function MonicaChatBubble({
 
   const isSpacetimeAvailable = status === 'connected'
 
-  // Load local chat history for the page if using REST fallback
+  // Load local chat history and stable sessionId for the page if using REST fallback
   useEffect(() => {
     try {
+      setSessionId(getOrCreateMonicaSessionId(`monica-bubble-session-${pathname}`, 'monica-bubble'))
       const pageKey = `monica-chat-${pathname}`
       const savedMessages = localStorage.getItem(pageKey)
       if (savedMessages) {
@@ -239,6 +248,7 @@ export function MonicaChatBubble({
     } else {
       // Use REST fallback API
       setIsRestThinking(true)
+      const priorHistory = buildMonicaHistoryPayload(restMessages)
       const userMsg: MonicaChatMessage = {
         id: Date.now().toString(),
         type: 'user',
@@ -255,12 +265,18 @@ export function MonicaChatBubble({
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             message: text,
+            sessionId,
+            history: priorHistory,
             context: { page: pathname },
           }),
         })
 
         if (!response.ok) throw new Error('API failed')
         const data = await response.json()
+        if (typeof data.sessionId === 'string' && data.sessionId && data.sessionId !== sessionId) {
+          setSessionId(data.sessionId)
+          setMonicaStoredSessionId(`monica-bubble-session-${pathname}`, data.sessionId)
+        }
 
         // Safely parse text and envelope response
         const rawText = data.text || data.response || data.content || data.message

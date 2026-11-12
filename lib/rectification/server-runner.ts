@@ -119,18 +119,31 @@ export async function runRectifyWindows(
     calendar: payload.calendar || 'gregorian',
   }
 
+  let partialBackendResult: RectifyWindowsResult | null = null
   try {
     if (backend?.rectify?.windows) {
       const res = await backend.rectify.windows(body)
       if (res && Array.isArray(res.rising_windows)) {
-        return res as RectifyWindowsResult
+        const hasPhase3Fields =
+          typeof res.entropy_bits === 'number' && Array.isArray(res.next_best_questions)
+        if (hasPhase3Fields) {
+          return res as RectifyWindowsResult
+        }
+        partialBackendResult = res as RectifyWindowsResult
       }
     }
   } catch {
     // FastAPI service offline — fall back transparently to standalone Swiss Ephemeris CLI
   }
 
-  return await runPythonRectifyCli<RectifyWindowsResult>('windows', body)
+  try {
+    return await runPythonRectifyCli<RectifyWindowsResult>('windows', body)
+  } catch (err) {
+    if (partialBackendResult) {
+      return partialBackendResult
+    }
+    throw err
+  }
 }
 
 export async function runRectifyScore(payload: RectifyScorePayload): Promise<RectifyScoreResult> {
@@ -148,16 +161,29 @@ export async function runRectifyScore(payload: RectifyScorePayload): Promise<Rec
     step_minutes: stepMinutes,
   }
 
+  let partialBackendResult: RectifyScoreResult | null = null
   try {
     if (backend?.rectify?.score) {
       const res = await backend.rectify.score(body)
       if (res && res.distribution && typeof res.top_sign === 'string') {
-        return res as RectifyScoreResult
+        const hasPhase3Fields =
+          typeof res.entropy_bits === 'number' && Array.isArray(res.next_best_questions)
+        if (hasPhase3Fields) {
+          return res as RectifyScoreResult
+        }
+        partialBackendResult = res as RectifyScoreResult
       }
     }
   } catch {
     // FastAPI service offline — fall back transparently to standalone Swiss Ephemeris CLI
   }
 
-  return await runPythonRectifyCli<RectifyScoreResult>('score', body)
+  try {
+    return await runPythonRectifyCli<RectifyScoreResult>('score', body)
+  } catch (err) {
+    if (partialBackendResult) {
+      return partialBackendResult
+    }
+    throw err
+  }
 }
