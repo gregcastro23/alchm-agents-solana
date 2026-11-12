@@ -26,12 +26,31 @@ export const isGatewayEnabled = !!GATEWAY_API_KEY
 // ─── Provider factories ───────────────────────────────────────────────────────
 
 /**
+ * Force `@ai-sdk/openai` v2 providers onto `/v1/chat/completions` (`provider.chat(...)`)
+ * instead of the default OpenAI Responses API (`provider(...)`).
+ *
+ * Stateless multi-step tool calling (`stopWhen: stepCountIs(n)`) through Vercel AI
+ * Gateway (`https://ai-gateway.vercel.sh/v1`) and non-OpenAI chat models fails under
+ * `openai.responses` with "No tool call found for function call output with call_id ...".
+ * Keeps a transparent passthrough when `@ai-sdk/openai` is mocked as a bare function in tests.
+ */
+function asChatCompletionsProvider<T extends ReturnType<typeof createOpenAI>>(provider: T): T {
+  if (typeof (provider as { chat?: unknown }).chat === 'function') {
+    const factory = (modelId: string) => provider.chat(modelId)
+    return Object.assign(factory, provider) as T
+  }
+  return provider
+}
+
+/**
  * OpenAI — GPT-4o, GPT-4o-mini, embeddings
  * Gateway model prefix: "openai/<modelId>"
  */
-export const gatewayOpenAI = isGatewayEnabled
-  ? createOpenAI({ apiKey: GATEWAY_API_KEY, baseURL: GATEWAY_BASE_URL })
-  : createOpenAI({ apiKey: process.env.OPENAI_API_KEY })
+export const gatewayOpenAI = asChatCompletionsProvider(
+  isGatewayEnabled
+    ? createOpenAI({ apiKey: GATEWAY_API_KEY, baseURL: GATEWAY_BASE_URL })
+    : createOpenAI({ apiKey: process.env.OPENAI_API_KEY })
+)
 
 /**
  * Anthropic — Claude Opus/Sonnet/Haiku
@@ -41,7 +60,7 @@ export const gatewayOpenAI = isGatewayEnabled
  * otherwise calls fail without OPENAI_API_KEY.
  */
 export const gatewayAnthropic = isGatewayEnabled
-  ? createOpenAI({ apiKey: GATEWAY_API_KEY, baseURL: GATEWAY_BASE_URL })
+  ? asChatCompletionsProvider(createOpenAI({ apiKey: GATEWAY_API_KEY, baseURL: GATEWAY_BASE_URL }))
   : createAnthropic({ apiKey: process.env.ANTHROPIC_API_KEY })
 
 /**
@@ -49,7 +68,7 @@ export const gatewayAnthropic = isGatewayEnabled
  * Gateway model prefix: "google/<modelId>"
  */
 export const gatewayGoogle = isGatewayEnabled
-  ? createOpenAI({ apiKey: GATEWAY_API_KEY, baseURL: GATEWAY_BASE_URL })
+  ? asChatCompletionsProvider(createOpenAI({ apiKey: GATEWAY_API_KEY, baseURL: GATEWAY_BASE_URL }))
   : createGoogleGenerativeAI({ apiKey: process.env.GOOGLE_GENERATIVE_AI_API_KEY })
 
 /**
@@ -57,7 +76,7 @@ export const gatewayGoogle = isGatewayEnabled
  * Gateway uses the model creator, e.g. "meta/llama-3.3-70b".
  */
 export const gatewayGroq = isGatewayEnabled
-  ? createOpenAI({ apiKey: GATEWAY_API_KEY, baseURL: GATEWAY_BASE_URL })
+  ? asChatCompletionsProvider(createOpenAI({ apiKey: GATEWAY_API_KEY, baseURL: GATEWAY_BASE_URL }))
   : createGroq({ apiKey: process.env.GROQ_API_KEY })
 
 /**
@@ -65,9 +84,11 @@ export const gatewayGroq = isGatewayEnabled
  * Gateway model prefix: "openrouter/<modelId>"
  * Direct OpenRouter base URL when gateway is disabled.
  */
-export const gatewayOpenRouter = isGatewayEnabled
-  ? createOpenAI({ apiKey: GATEWAY_API_KEY, baseURL: GATEWAY_BASE_URL })
-  : createOpenAI({
-      apiKey: process.env.OPENROUTER_API_KEY,
-      baseURL: 'https://openrouter.ai/api/v1',
-    })
+export const gatewayOpenRouter = asChatCompletionsProvider(
+  isGatewayEnabled
+    ? createOpenAI({ apiKey: GATEWAY_API_KEY, baseURL: GATEWAY_BASE_URL })
+    : createOpenAI({
+        apiKey: process.env.OPENROUTER_API_KEY,
+        baseURL: 'https://openrouter.ai/api/v1',
+      })
+)

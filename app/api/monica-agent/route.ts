@@ -131,7 +131,7 @@ Please weave these recommendations naturally into your response to guide the use
                 : { prompt: userMsg }),
               tools: getRectificationAiTools(),
               stopWhen: stepCountIs(6),
-              maxTokens: 1000,
+              maxOutputTokens: 1000,
               temperature: temp,
             } as any)
         )
@@ -139,7 +139,7 @@ Please weave these recommendations naturally into your response to guide the use
           model: activeModel,
           system: sys,
           prompt: userMsg,
-          maxTokens: 800,
+          maxOutputTokens: 800,
           temperature: temp,
         } as any)
 

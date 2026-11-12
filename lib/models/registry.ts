@@ -81,9 +81,13 @@ export type GroqModelId = (typeof GROQ)[keyof typeof GROQ]
  * direct Groq and Anthropic callers retain the names their APIs accept.
  */
 export const GATEWAY_MODELS = {
+  LLAMA_8B: 'meta/llama-3.1-8b',
   LLAMA_70B: 'meta/llama-3.3-70b',
   CLAUDE_HAIKU_4_5: 'anthropic/claude-haiku-4.5',
   CLAUDE_SONNET_4_6: 'anthropic/claude-sonnet-4.6',
+  CLAUDE_OPUS_4_7: 'anthropic/claude-opus-4.7',
+  GEMINI_25_FLASH: 'google/gemini-2.5-flash',
+  GEMINI_25_FLASH_LITE: 'google/gemini-2.5-flash-lite',
 } as const
 
 // ============================================================================
@@ -239,6 +243,10 @@ export function resolveDefaultModel(
  * Resolve a Groq LanguageModel — free tier fallback, blazing fast inference.
  */
 export function resolveGroqModel(tier: 'powerful' | 'default' | 'fast' = 'default'): LanguageModel {
+  if (isGatewayEnabled) {
+    const gatewayModelId = tier === 'fast' ? GATEWAY_MODELS.LLAMA_8B : GATEWAY_MODELS.LLAMA_70B
+    return gatewayGroq(gatewayModelId) as unknown as LanguageModel
+  }
   let modelId: string
   switch (tier) {
     case 'powerful':
@@ -251,8 +259,7 @@ export function resolveGroqModel(tier: 'powerful' | 'default' | 'fast' = 'defaul
       modelId = MODEL_TIERS.DEFAULT.groq
       break
   }
-  const finalModelId = isGatewayEnabled ? `groq/${modelId}` : modelId
-  return gatewayGroq(finalModelId) as unknown as LanguageModel
+  return gatewayGroq(modelId) as unknown as LanguageModel
 }
 
 /**
@@ -266,6 +273,17 @@ export function resolveGoogleModel(
 
   // Only use env override if it looks like a Gemini model
   if (modelId && !modelId.startsWith('gemini')) modelId = undefined
+
+  if (isGatewayEnabled) {
+    // Vercel AI Gateway serves 2.5 Flash family (`google/gemini-2.5-flash*`); 2.0 IDs 404.
+    const normalizedGatewayId =
+      modelId && !modelId.startsWith('gemini-2.0')
+        ? `google/${modelId}`
+        : tier === 'fast'
+          ? GATEWAY_MODELS.GEMINI_25_FLASH_LITE
+          : GATEWAY_MODELS.GEMINI_25_FLASH
+    return gatewayGoogle(normalizedGatewayId) as unknown as LanguageModel
+  }
 
   if (!modelId) {
     switch (tier) {
@@ -281,8 +299,7 @@ export function resolveGoogleModel(
     }
   }
 
-  const finalModelId = isGatewayEnabled ? `google/${modelId}` : modelId
-  return gatewayGoogle(finalModelId) as unknown as LanguageModel
+  return gatewayGoogle(modelId) as unknown as LanguageModel
 }
 
 /**
@@ -292,6 +309,32 @@ export function resolveClaudeModel(
   tier: 'powerful' | 'default' | 'fast' = 'default'
 ): LanguageModel {
   const envModel = process.env.CLAUDE_DEFAULT_MODEL
+  if (isGatewayEnabled) {
+    let gatewayModelId: string
+    if (envModel === CLAUDE.OPUS || envModel === GATEWAY_MODELS.CLAUDE_OPUS_4_7) {
+      gatewayModelId = GATEWAY_MODELS.CLAUDE_OPUS_4_7
+    } else if (envModel === CLAUDE.SONNET || envModel === GATEWAY_MODELS.CLAUDE_SONNET_4_6) {
+      gatewayModelId = GATEWAY_MODELS.CLAUDE_SONNET_4_6
+    } else if (envModel === CLAUDE.HAIKU || envModel === GATEWAY_MODELS.CLAUDE_HAIKU_4_5) {
+      gatewayModelId = GATEWAY_MODELS.CLAUDE_HAIKU_4_5
+    } else if (envModel?.startsWith('anthropic/')) {
+      gatewayModelId = envModel
+    } else {
+      switch (tier) {
+        case 'powerful':
+          gatewayModelId = GATEWAY_MODELS.CLAUDE_OPUS_4_7
+          break
+        case 'fast':
+          gatewayModelId = GATEWAY_MODELS.CLAUDE_HAIKU_4_5
+          break
+        default:
+          gatewayModelId = GATEWAY_MODELS.CLAUDE_SONNET_4_6
+          break
+      }
+    }
+    return gatewayAnthropic(gatewayModelId) as unknown as LanguageModel
+  }
+
   let modelId = envModel
 
   if (!modelId) {
@@ -308,8 +351,7 @@ export function resolveClaudeModel(
     }
   }
 
-  const finalModelId = isGatewayEnabled ? `anthropic/${modelId}` : modelId
-  return gatewayAnthropic(finalModelId) as unknown as LanguageModel
+  return gatewayAnthropic(modelId) as unknown as LanguageModel
 }
 
 /**
