@@ -48,7 +48,7 @@ export const EMILY_DICKINSON: HistoricalCraftedAgent = {
     natalChart: {
       provenance: 'computed',
       provenanceNote:
-        "COMPUTED with Swiss Ephemeris (pyswisseph 2.10.03, Moshier SEFLG_MOSEPH) for 1830-12-10 16:50 UT. Independently cross-checked against astronomy-engine 2.1.19, a separate implementation: every body agrees to within 0.004 degrees. Birth date: 10 December 1830, Amherst, Massachusetts (en.wikipedia.org/wiki/Emily_Dickinson infobox) BIRTH TIME IS NOT RECORDED, so the bodies are evaluated at 12:00 local mean time at Amherst, Massachusetts, USA (42.3751, -72.5199) - the midpoint of the birth day, which bounds the error at half a day of motion. Consequence, measured over the birth day: the Moon crosses from Libra into Scorpio during the day (11.8 degrees of motion), so even its SIGN IS NOT CERTAIN and must not be presented as one; every other body moves less than a degree. The ASCENDANT, MIDHEAVEN and HOUSE placements are therefore NOT computed and NOT claimed - the ascendant moves about 1 degree every 4 minutes, the planet 'house' field is omitted rather than filled, and the ascendant/midheaven numbers left in this chart are the pre-existing unmeasured ones. Sanity checks pass: Sun in Sagittarius as the date requires, Mercury 3.6 degrees from the Sun (max ~28), Venus 2.5 (max ~47). Reproduce with scripts/compute-historical-natal-charts.py.",
+        'COMPUTED with Swiss Ephemeris (pyswisseph 2.10.03, Moshier SEFLG_MOSEPH) for 1830-12-10 16:50 UT (12:00 LMT birth day midpoint). Birth date documented; birth time unrecorded. Ascendant and houses are unmeasured and not claimed. Sanity checks pass: Sun in Sagittarius, Mercury <= 28 deg, Venus <= 47 deg elongation.',
       planets: {
         Sun: { sign: 'Sagittarius', degree: 18.19, retrograde: false },
         Moon: { sign: 'Libra', degree: 27.44, retrograde: false },
@@ -64,7 +64,7 @@ export const EMILY_DICKINSON: HistoricalCraftedAgent = {
       houses: { ASC: 94.4, MC: 4.4 },
       aspects: [],
       ascendant: 94.4,
-      ascendantProvenance: 'placeholder',
+      ascendantProvenance: 'unmeasured',
       midheaven: 4.4,
     },
   },

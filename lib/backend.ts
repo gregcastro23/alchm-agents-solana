@@ -708,6 +708,46 @@ export const backend = {
         body: JSON.stringify({ agentIds, alchmData, currentPlanets }),
       }),
   },
+
+  /**
+   * Ascendant Rectification Engine (FastAPI /api/rectify endpoints).
+   */
+  rectify: {
+    windows: (payload: {
+      year: number
+      month: number
+      day: number
+      latitude: number
+      longitude: number
+      calendar?: 'gregorian' | 'julian'
+    }) =>
+      agentRequest<any>('/api/rectify/windows', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        headers: { 'Content-Type': 'application/json' },
+      }),
+
+    score: (payload: {
+      year: number
+      month: number
+      day: number
+      latitude: number
+      longitude: number
+      calendar?: 'gregorian' | 'julian'
+      evidence: Array<Record<string, any>>
+      step_minutes?: number
+    }) =>
+      agentRequest<any>('/api/rectify/score', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+        headers: { 'Content-Type': 'application/json' },
+      }),
+
+    benchmark: (stepMinutes = 10) =>
+      agentRequest<any>(`/api/rectify/benchmark?step_minutes=${stepMinutes}`, {
+        method: 'GET',
+      }),
+  },
 }
 
 // ============================================================================

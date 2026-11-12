@@ -64,7 +64,7 @@ export const FRIDA_KAHLO: HistoricalCraftedAgent = {
     natalChart: {
       provenance: 'computed',
       provenanceNote:
-        'COMPUTED with Swiss Ephemeris (pyswisseph 2.10.03, Moshier SEFLG_MOSEPH) for 1907-07-06 15:06:48 UT, which is the birth-record 08:30 local mean time at Coyoacan, Mexico (19.3N 99.2W; Mexico kept local mean time until 1922). Placidus house cusps. Independently cross-checked against astronomy-engine 2.1.19, a separate implementation: every body agrees to within 0.002 degrees. Sanity checks pass - Sun in Cancer as the 6 July birth date requires, Mercury 23.0 degrees from the Sun (max ~28), Venus 19.0 (max ~47). Caveat: the Ascendant and therefore the house numbers depend on the birth time, and the Ascendant moves about 1 degree every 4 minutes; the planets themselves are insensitive to that uncertainty.',
+        'COMPUTED with Swiss Ephemeris (pyswisseph 2.10.03, Moshier SEFLG_MOSEPH) for 1907-07-06 15:07 UT, corresponding to 08:30 at Coyoacán, Mexico (19.3, -99.2). Source: Birth certificate quoted in Astro-Databank (Rodden AA). Placidus house cusps. Sanity checks pass: Sun in Cancer, Mercury <= 28 deg, Venus <= 47 deg elongation.',
       planets: {
         Sun: { sign: 'Cancer', degree: 13.38, retrograde: false, house: 11 },
         Moon: { sign: 'Taurus', degree: 29.71, retrograde: false, house: 10 },
@@ -77,11 +77,17 @@ export const FRIDA_KAHLO: HistoricalCraftedAgent = {
         Neptune: { sign: 'Cancer', degree: 12.4, retrograde: false, house: 11 },
         Pluto: { sign: 'Gemini', degree: 23.75, retrograde: false, house: 10 },
       },
-      houses: { ASC: 143.51, MC: 53.34 },
-      aspects: [],
-      ascendant: 143.51,
+      houses: { ASC: 143.5096, MC: 53.3381 },
+      aspects: [
+        { planet1: 'Sun', planet2: 'Mars', type: 'opposition', orb: 0.02, exact: true },
+        { planet1: 'Sun', planet2: 'Uranus', type: 'opposition', orb: 2.76, exact: false },
+        { planet1: 'Sun', planet2: 'Neptune', type: 'conjunction', orb: 0.98, exact: true },
+        { planet1: 'Moon', planet2: 'Saturn', type: 'sextile', orb: 2.27, exact: false },
+        { planet1: 'Venus', planet2: 'Saturn', type: 'square', orb: 3.11, exact: false },
+      ],
+      ascendant: 143.5096,
       ascendantProvenance: 'measured',
-      midheaven: 53.34,
+      midheaven: 53.3381,
     },
     monicaConstant: 4.67,
     level: 'Advanced' as ConsciousnessLevel,

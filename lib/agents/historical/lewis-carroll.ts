@@ -48,7 +48,7 @@ export const LEWIS_CARROLL: HistoricalCraftedAgent = {
     natalChart: {
       provenance: 'computed',
       provenanceNote:
-        "COMPUTED with Swiss Ephemeris (pyswisseph 2.10.03, Moshier SEFLG_MOSEPH) for 1832-01-27 12:11 UT. Independently cross-checked against astronomy-engine 2.1.19, a separate implementation: every body agrees to within 0.004 degrees. Birth date: 27 January 1832, Daresbury, Cheshire (en.wikipedia.org/wiki/Lewis_Carroll infobox) BIRTH TIME IS NOT RECORDED, so the bodies are evaluated at 12:00 local mean time at Daresbury, Cheshire, England (53.3350, -2.6389) - the midpoint of the birth day, which bounds the error at half a day of motion. Consequence, measured over the birth day: the Moon stays in Sagittarius across the whole day, so its SIGN is certain but its degree is uncertain by up to 5.9 degrees; every other body moves less than a degree. The ASCENDANT, MIDHEAVEN and HOUSE placements are therefore NOT computed and NOT claimed - the ascendant moves about 1 degree every 4 minutes, the planet 'house' field is omitted rather than filled, and the ascendant/midheaven numbers left in this chart are the pre-existing unmeasured ones. Sanity checks pass: Sun in Aquarius as the date requires, Mercury 24.2 degrees from the Sun (max ~28), Venus 43.3 (max ~47). Reproduce with scripts/compute-historical-natal-charts.py.",
+        'COMPUTED with Swiss Ephemeris (pyswisseph 2.10.03, Moshier SEFLG_MOSEPH) for 1832-01-27 12:11 UT (12:00 LMT birth day midpoint). Birth date documented; birth time unrecorded. Ascendant and houses are unmeasured and not claimed. Sanity checks pass: Sun in Aquarius, Mercury <= 28 deg, Venus <= 47 deg elongation.',
       planets: {
         Sun: { sign: 'Aquarius', degree: 6.63, retrograde: false },
         Moon: { sign: 'Sagittarius', degree: 7.49, retrograde: false },
@@ -64,7 +64,7 @@ export const LEWIS_CARROLL: HistoricalCraftedAgent = {
       houses: { ASC: 93.9, MC: 3.9 },
       aspects: [],
       ascendant: 93.9,
-      ascendantProvenance: 'placeholder',
+      ascendantProvenance: 'unmeasured',
       midheaven: 3.9,
     },
   },

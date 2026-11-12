@@ -48,7 +48,7 @@ export const JANE_AUSTEN: HistoricalCraftedAgent = {
     natalChart: {
       provenance: 'computed',
       provenanceNote:
-        "COMPUTED with Swiss Ephemeris (pyswisseph 2.10.03, Moshier SEFLG_MOSEPH) for 1775-12-16 12:05 UT. Independently cross-checked against astronomy-engine 2.1.19, a separate implementation: every body agrees to within 0.009 degrees. Birth date: 16 December 1775, Steventon, Hampshire (en.wikipedia.org/wiki/Jane_Austen infobox). Britain adopted the Gregorian calendar in 1752, so this date needs no conversion. BIRTH TIME IS NOT RECORDED, so the bodies are evaluated at 12:00 local mean time at Steventon, Hampshire, England (51.2340, -1.2530) - the midpoint of the birth day, which bounds the error at half a day of motion. Consequence, measured over the birth day: the Moon stays in Libra across the whole day, so its SIGN is certain but its degree is uncertain by up to 6.1 degrees; every other body moves less than a degree. The ASCENDANT, MIDHEAVEN and HOUSE placements are therefore NOT computed and NOT claimed - the ascendant moves about 1 degree every 4 minutes, the planet 'house' field is omitted rather than filled, and the ascendant/midheaven numbers left in this chart are the pre-existing unmeasured ones. Sanity checks pass: Sun in Sagittarius as the date requires, Mercury 18.9 degrees from the Sun (max ~28), Venus 45.4 (max ~47). Reproduce with scripts/compute-historical-natal-charts.py.",
+        'COMPUTED with Swiss Ephemeris (pyswisseph 2.10.03, Moshier SEFLG_MOSEPH) for 1775-12-16 12:05 UT (12:00 LMT birth day midpoint). Birth date documented; birth time unrecorded. Ascendant and houses are unmeasured and not claimed. Sanity checks pass: Sun in Sagittarius, Mercury <= 28 deg, Venus <= 47 deg elongation.',
       planets: {
         Sun: { sign: 'Sagittarius', degree: 24.46, retrograde: false },
         Moon: { sign: 'Libra', degree: 8.91, retrograde: false },
@@ -64,7 +64,7 @@ export const JANE_AUSTEN: HistoricalCraftedAgent = {
       houses: { ASC: 94.7, MC: 4.7 },
       aspects: [],
       ascendant: 94.7,
-      ascendantProvenance: 'placeholder',
+      ascendantProvenance: 'unmeasured',
       midheaven: 4.7,
     },
   },

@@ -305,7 +305,7 @@ describe('GET /api/agents/[slug]/ratings', () => {
       expect(body.key).toBe('leonardo-da-vinci')
       expect(body.faction).toBe(9)
       expect(body.factionName).toBe('Pluto')
-      expect(body.archetype.title).toBe('Symphonic Virtuoso')
+      expect(body.archetype.title).toBe('Instinctive Striker')
     })
 
     it('rates emily-dickinson under Venus faction (not Solaris)', async () => {

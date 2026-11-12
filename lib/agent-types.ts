@@ -55,7 +55,12 @@ export interface BirthData {
  * `'computed'`. Historical agents are held to the stronger `AttributedNatalChart`, where the
  * field is required.
  */
-export type NatalChartProvenance = 'computed' | 'authored' | 'placeholder' | 'unattributed'
+export type NatalChartProvenance =
+  | 'computed'
+  | 'authored'
+  | 'placeholder'
+  | 'unattributed'
+  | 'undated'
 
 /**
  * Where a chart's **Ascendant specifically** came from.
@@ -63,82 +68,73 @@ export type NatalChartProvenance = 'computed' | 'authored' | 'placeholder' | 'un
  * The Ascendant needs its own provenance because it does not share the bodies' provenance. A
  * planet's longitude depends only on the birth *date*; the Ascendant depends on the birth *time
  * and place*, and moves ~1 degree every 4 minutes. So a chart can have hand-transcribed but
- * plausible planets and an Ascendant that was never derived from anything at all. Round 3 gave
- * the chart a provenance and the Ascendant silently inherited it — that inheritance is what this
- * type ends.
- *
- * It is also the only angle with no sign beside it to cross-check: `ascendant` is a bare number,
- * and **0 of the 72 historical charts carry an `Ascendant` entry in `natalChart.planets`**. The
- * number alone is therefore the entire claim, and consumers convert it to a rising sign by
- * dividing by 30 (`lib/agents/historical-feed-contract.ts:157`,
- * `app/(app)/agent/[id]/page.tsx:171-173`).
- *
- * Measured over the corpus (see `test/agents/ascendant-provenance.spec.ts`, which re-derives
- * every number below rather than trusting this comment):
- *   - 26 of 72 ascendants are exact multiples of 30 — the *first degree of a sign*;
- *   - 24 more are whole degrees;
- *   - 0 of 72 carry 4+ decimal places, which a real Swiss Ephemeris ascendant does;
- *   - read as absolute ecliptic longitudes, 19 land in Aries and 18 in Cancer against ~6
- *     expected per sign if these were real angles;
- *   - `midheaven === (ascendant - 90) mod 360` in 49 of 72 charts, which is equal-house
- *     schematic arithmetic, not a measurement (the MC/ASC angle is latitude-dependent, and
- *     neither of the two genuinely computed charts satisfies it).
+ * plausible planets and an Ascendant that was never derived from anything at all.
  *
  * - `'measured'`        — derived by a verified ephemeris from a *known* birth time and place, and
  *                         reproducible. Only this value may be presented as an angle or a rising
- *                         sign. The chart's `provenanceNote` must record the caveat that the
- *                         Ascendant is the least robust number in a computed chart.
+ *                         sign.
+ * - `'rectified'`       — estimated via systematic Bayesian rectification against dated life events
+ *                         and candidate window sweeps. Qualified with an {@link AscendantEstimate}.
  * - `'sign-resolution'` — the number encodes only *which sign*, not an angle: it is
  *                         `signIndex * 30`. Presenting it as a degree over-claims ~30 degrees of
  *                         precision that was never there.
- * - `'unmeasured'`      — a number of hand-chosen or unrecorded origin sitting in the field. Not
- *                         an observation. It may not even be an ecliptic longitude: many of these
- *                         are bare sub-30 values, i.e. a degree-within-sign whose sign was lost,
- *                         which silently collapses the Ascendant into Aries.
+ * - `'unmeasured'`      — a number of hand-chosen or unrecorded origin sitting in the field.
  * - `'placeholder'`     — belongs to a chart that is not this person's at all (filler birth data,
- *                         or a chart shared verbatim with other agents). Whatever the number is,
- *                         it is not this individual's Ascendant.
+ *                         or a chart shared verbatim with other agents).
+ * - `'undated'`         — legendary, mythological, or undated historical figure where birth date
+ *                         and time are absent or unrecoverable. Ascendant is null.
  * - `'unattributed'`    — never recorded. **Absent means `'unattributed'`**; it never means
  *                         `'measured'`.
- *
- * Why the number is still present rather than `null`: making `ascendant` nullable was tried and
- * *measured* to produce **zero** TypeScript errors under `strict`, because every read site
- * already absorbs a null — `lib/agents/persona/derive-sacred-stats.ts:41` (`?? 0`) and
- * `app/(app)/agent/[id]/page.tsx:173` (`|| 0`). Nulling would therefore not propagate absence; it
- * would silently substitute 0, which `getZodiacSign(0)` renders as **Aries** — trading an
- * unmeasured number for an invented one, and mutating every persona block through the Sacred 7
- * stats as a side effect. Absence is propagated through this field instead, which consumers must
- * read explicitly. Nulling the value is the correct *next* step and becomes safe once those two
- * sentinels are removed.
  */
 export type AscendantProvenance =
   | 'measured'
+  | 'rectified'
   | 'sign-resolution'
   | 'unmeasured'
   | 'placeholder'
+  | 'undated'
   | 'unattributed'
+
+export interface AscendantEstimate {
+  distribution: Record<string, number>
+  topSign: string
+  topSignProbability: number
+  workingLongitude: number
+  workingSign: string
+  window80Minutes: number
+  credibleWindow80: { startLocal: string; endLocal: string }
+  certainty: number
+  evidence: Array<{
+    type: string
+    description: string
+    citation?: string
+    approvedBy?: string
+    approvedAt?: string
+    likelihoodWeight?: number
+  }>
+  method: string
+}
 
 export interface NatalChart {
   planets: Record<string, PlanetPosition>
   houses: Record<string, number>
   aspects: Aspect[]
   /**
-   * Ecliptic longitude of the Ascendant in degrees, [0, 360).
+   * Ecliptic longitude of the Ascendant in degrees, [0, 360), or null if undated.
    *
    * **This number is not a measurement unless `ascendantProvenance === 'measured'`.** Do not
    * render it as a degree, and do not divide it by 30 to name a rising sign, without checking
-   * {@link isAscendantMeasured} first. See {@link AscendantProvenance} for the corpus
-   * measurements that make this warning necessary.
+   * {@link isAscendantMeasured} or {@link isAscendantCalculationsEligible} first.
    */
-  ascendant: number
-  midheaven: number
+  ascendant: number | null
+  midheaven: number | null
+  /**
+   * Rectification analysis and credible intervals when `ascendantProvenance === 'rectified'`.
+   */
+  ascendantEstimate?: AscendantEstimate
   /**
    * How these numbers were obtained. Absent is read as `'unattributed'` — a chart with no
    * provenance must never be presented as measured. See {@link NatalChartProvenance}.
-   *
-   * This covers the **bodies**. It deliberately says nothing about the Ascendant, which carries
-   * its own {@link ascendantProvenance} because it depends on the birth time and place rather
-   * than the date, and is routinely absent where the bodies are not.
    */
   provenance?: NatalChartProvenance
   /**
@@ -182,6 +178,36 @@ export function isAscendantMeasured(
   chart: Pick<NatalChart, 'ascendantProvenance'> | null | undefined
 ): boolean {
   return chart?.ascendantProvenance === 'measured'
+}
+
+/**
+ * Threshold-Gated check for whether an Ascendant should feed Sacred 7 stats and persona blocks.
+ *
+ * Per protocol rules:
+ * - All 'measured' charts are eligible.
+ * - 'rectified' charts are eligible IF topSignProbability >= 0.70 AND window80Minutes <= 180.
+ * - All other states ('unmeasured', 'placeholder', 'undated', 'sign-resolution', or low-confidence rectified)
+ *   are NOT eligible.
+ */
+export function isAscendantCalculationsEligible(
+  chart:
+    | Pick<NatalChart, 'ascendantProvenance' | 'ascendantEstimate' | 'ascendant'>
+    | null
+    | undefined
+): boolean {
+  if (!chart) return false
+  if (chart.ascendantProvenance === 'measured') return true
+  if (chart.ascendantProvenance === 'rectified' && chart.ascendantEstimate) {
+    return (
+      chart.ascendantEstimate.topSignProbability >= 0.7 &&
+      chart.ascendantEstimate.window80Minutes <= 180
+    )
+  }
+  // For user-forged or non-historical charts without explicit provenance metadata:
+  if (chart.ascendantProvenance === undefined && typeof chart.ascendant === 'number') {
+    return true
+  }
+  return false
 }
 
 export interface PlanetPosition {

@@ -650,6 +650,165 @@ export const cosmicRecipeGeneratorTool = new DynamicStructuredTool({
 })
 
 /**
+ * Tool 13: Ascendant Rectification Candidate Windows
+ * Computes 24-hour candidate rising windows, sunrise/sunset, and Moon sign ingress.
+ */
+export const rectifyWindowsTool = new DynamicStructuredTool({
+  name: 'rectify_windows',
+  description:
+    'Scan 24-hour candidate rising windows for a birth date and geographic location. Computes sunrise/sunset LMT, exact Moon sign ingress minutes, and duration of each rising sign to constrain birth time hypotheses.',
+  schema: z.object({
+    year: z.number().describe('Birth year (e.g. 1879)'),
+    month: z.number().min(1).max(12).describe('Birth month (1-12)'),
+    day: z.number().min(1).max(31).describe('Birth day (1-31)'),
+    latitude: z.number().describe('Geographic latitude of birth place'),
+    longitude: z.number().describe('Geographic longitude of birth place'),
+    calendar: z
+      .enum(['gregorian', 'julian'])
+      .optional()
+      .default('gregorian')
+      .describe('Calendar system (default: gregorian)'),
+  }),
+  func: async ({ year, month, day, latitude, longitude, calendar = 'gregorian' }) => {
+    return withErrorHandling(
+      async () => {
+        logger.info('Tool call: rectify_windows', {
+          system: 'langchain-tools',
+          operation: 'rectify_windows',
+          metadata: { year, month, day, latitude, longitude, calendar },
+        })
+
+        const res = await backend.rectify.windows({
+          year,
+          month,
+          day,
+          latitude,
+          longitude,
+          calendar,
+        })
+
+        return JSON.stringify({
+          success: true,
+          data: res || {},
+        })
+      },
+      {
+        system: 'langchain-tools',
+        operation: 'rectify_windows',
+        severity: 'medium',
+      }
+    ).then(res => (typeof res === 'string' ? res : JSON.stringify(res)))
+  },
+})
+
+/**
+ * Tool 14: Ascendant Rectification Bayesian Scorer
+ * Scores candidate minutes against dated life events, time clues, and Rodden ratings.
+ */
+export const rectifyScoreTool = new DynamicStructuredTool({
+  name: 'rectify_score',
+  description:
+    'Execute systematic Bayesian Ascendant rectification across candidate minutes using Western timing techniques (angular transits, secondary progressions, annual profections, primary directions) calibrated against null random-date baselines. Returns 12-sign posterior distribution, MAP working Ascendant degree/time, 80% credible window, normalized certainty, and calculation eligibility.',
+  schema: z.object({
+    year: z.number().describe('Birth year'),
+    month: z.number().min(1).max(12).describe('Birth month (1-12)'),
+    day: z.number().min(1).max(31).describe('Birth day (1-31)'),
+    latitude: z.number().describe('Geographic latitude of birth place'),
+    longitude: z.number().describe('Geographic longitude of birth place'),
+    calendar: z.enum(['gregorian', 'julian']).optional().default('gregorian'),
+    evidence: z
+      .array(
+        z.object({
+          type: z
+            .enum([
+              'life_event',
+              'recorded_time',
+              'time_clue',
+              'moon_sign',
+              'angular_transits',
+              'secondary_progressions',
+              'annual_profections',
+              'primary_directions',
+              'physical_temperament',
+            ])
+            .describe('Type of evidence'),
+          description: z.string().optional().describe('Biographical description or event title'),
+          date: z.string().optional().describe('ISO date of event (YYYY-MM-DD)'),
+          event_date: z.string().optional().describe('ISO date of event (YYYY-MM-DD)'),
+          time: z
+            .string()
+            .optional()
+            .describe('Recorded birth time (HH:MM) if type is recorded_time'),
+          rodden_rating: z
+            .enum(['AA', 'A', 'B', 'C', 'DD'])
+            .optional()
+            .describe('Rodden rating reliability'),
+          window: z
+            .enum(['dawn', 'morning', 'afternoon', 'dusk', 'night'])
+            .optional()
+            .describe('Solar diurnal window if type is time_clue'),
+          expected_sign: z.string().optional().describe('Expected Moon sign if type is moon_sign'),
+        })
+      )
+      .describe('List of historical evidence items, dated milestones, or recorded clues'),
+    step_minutes: z
+      .number()
+      .optional()
+      .default(5)
+      .describe('Sampling resolution in minutes (1 to 15, default: 5)'),
+  }),
+  func: async ({
+    year,
+    month,
+    day,
+    latitude,
+    longitude,
+    calendar = 'gregorian',
+    evidence,
+    step_minutes = 5,
+  }) => {
+    return withErrorHandling(
+      async () => {
+        logger.info('Tool call: rectify_score', {
+          system: 'langchain-tools',
+          operation: 'rectify_score',
+          metadata: {
+            year,
+            month,
+            day,
+            latitude,
+            longitude,
+            step_minutes,
+            evidenceCount: evidence.length,
+          },
+        })
+
+        const res = await backend.rectify.score({
+          year,
+          month,
+          day,
+          latitude,
+          longitude,
+          calendar,
+          evidence,
+          step_minutes,
+        })
+
+        return JSON.stringify({
+          success: true,
+          data: res || {},
+        })
+      },
+      {
+        system: 'langchain-tools',
+        operation: 'rectify_score',
+        severity: 'medium',
+      }
+    ).then(res => (typeof res === 'string' ? res : JSON.stringify(res)))
+  },
+})
+
+/**
  * Export all tools as an array
  */
 export const planetaryAgentTools = [
@@ -665,6 +824,8 @@ export const planetaryAgentTools = [
   walrusMemoryRecallTool,
   liveSkyTransitsTool,
   cosmicRecipeGeneratorTool,
+  rectifyWindowsTool,
+  rectifyScoreTool,
 ]
 
 /**

@@ -65,34 +65,32 @@ export const ISAAC_ASIMOV: HistoricalCraftedAgent = {
   ],
   consciousness: {
     natalChart: {
-      provenance: 'authored',
+      provenance: 'computed',
+      provenanceNote:
+        'COMPUTED with Swiss Ephemeris (pyswisseph 2.10.03, Moshier SEFLG_MOSEPH) for 1920-01-02 13:26 UT, corresponding to 15:35 at Petrovichi, Russia (53.9753, 32.1583). Source: Biographical record (Astro-Databank B standard 15:35). Placidus house cusps. Sanity checks pass: Sun in Capricorn, Mercury <= 28 deg, Venus <= 47 deg elongation.',
       planets: {
-        Sun: { sign: 'Capricorn', degree: 10.67, retrograde: false, house: 12 }, // 12th house - behind the scenes writer
-        Moon: { sign: 'Taurus', degree: 21.88, retrograde: false, house: 5 }, // 5th house - creative output
-        Mercury: { sign: 'Sagittarius', degree: 21.6, retrograde: false, house: 12 }, // 12th house - philosophical writing
-        Venus: { sign: 'Scorpio', degree: 27.63, retrograde: false, house: 11 }, // 11th house - future-focused relationships
-        Mars: { sign: 'Libra', degree: 17.17, retrograde: false, house: 10 }, // 10th house - career drive
-        Jupiter: { sign: 'Leo', degree: 16.88, retrograde: true, house: 8 }, // 8th house - transformative knowledge
-        Saturn: { sign: 'Virgo', degree: 11.58, retrograde: true, house: 9 }, // 9th house - disciplined philosophy
-        Uranus: { sign: 'Aquarius', degree: 29.02, retrograde: false, house: 2 }, // 2nd house - revolutionary values
-        Neptune: { sign: 'Leo', degree: 10.92, retrograde: true, house: 8 }, // 8th house - mystical transformation
-        Pluto: { sign: 'Cancer', degree: 6.65, retrograde: true, house: 7 }, // 7th house - transformative partnerships
+        Sun: { sign: 'Capricorn', degree: 10.87, retrograde: false, house: 7 },
+        Moon: { sign: 'Taurus', degree: 24.61, retrograde: false, house: 11 },
+        Mercury: { sign: 'Sagittarius', degree: 21.87, retrograde: false, house: 6 },
+        Venus: { sign: 'Scorpio', degree: 27.85, retrograde: false, house: 6 },
+        Mars: { sign: 'Libra', degree: 17.27, retrograde: false, house: 5 },
+        Jupiter: { sign: 'Leo', degree: 16.87, retrograde: true, house: 3 },
+        Saturn: { sign: 'Virgo', degree: 11.58, retrograde: true, house: 4 },
+        Uranus: { sign: 'Aquarius', degree: 29.03, retrograde: false, house: 9 },
+        Neptune: { sign: 'Leo', degree: 10.92, retrograde: true, house: 3 },
+        Pluto: { sign: 'Cancer', degree: 6.65, retrograde: true, house: 12 },
       },
-      houses: { ASC: 282.57, MC: 192.57 }, // Capricorn Rising 12.57° - calculated from 15:35 birth time
+      houses: { ASC: 99.6898, MC: 332.6806 },
       aspects: [
-        { planet1: 'Mars', planet2: 'Jupiter', type: 'sextile', orb: 1.0, exact: true },
-        { planet1: 'Sun', planet2: 'Saturn', type: 'trine', orb: 1.0, exact: true },
-        { planet1: 'Venus', planet2: 'Uranus', type: 'square', orb: 2.0, exact: true },
-        { planet1: 'Mercury', planet2: 'Mars', type: 'sextile', orb: 4.0, exact: false },
-        { planet1: 'Pluto', planet2: 'Chiron', type: 'square', orb: 4.0, exact: false },
-        { planet1: 'Sun', planet2: 'Pluto', type: 'opposition', orb: 4.0, exact: false },
-        { planet1: 'Saturn', planet2: 'Pluto', type: 'sextile', orb: 5.0, exact: false },
-        { planet1: 'Moon', planet2: 'Jupiter', type: 'square', orb: 5.0, exact: false },
-        { planet1: 'Jupiter', planet2: 'Neptune', type: 'conjunction', orb: 6.0, exact: false },
+        { planet1: 'Sun', planet2: 'Saturn', type: 'trine', orb: 0.71, exact: true },
+        { planet1: 'Sun', planet2: 'Pluto', type: 'opposition', orb: 4.22, exact: false },
+        { planet1: 'Moon', planet2: 'Venus', type: 'opposition', orb: 3.24, exact: false },
+        { planet1: 'Moon', planet2: 'Uranus', type: 'square', orb: 4.42, exact: false },
+        { planet1: 'Mercury', planet2: 'Jupiter', type: 'trine', orb: 5.0, exact: false },
       ],
-      ascendant: 282.57, // 12.57° Capricorn Rising
-      ascendantProvenance: 'unmeasured',
-      midheaven: 192.57, // 12.57° Libra MC
+      ascendant: 99.6898,
+      ascendantProvenance: 'measured',
+      midheaven: 332.6806,
     },
     monicaConstant: 4.82,
     level: 'Advanced' as ConsciousnessLevel, // High constant reflecting his systematic genius and prolific output

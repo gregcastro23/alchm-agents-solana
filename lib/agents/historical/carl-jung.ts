@@ -64,7 +64,7 @@ export const CARL_JUNG: HistoricalCraftedAgent = {
     natalChart: {
       provenance: 'computed',
       provenanceNote:
-        'COMPUTED with Swiss Ephemeris (pyswisseph 2.10.03, Moshier SEFLG_MOSEPH) for 1875-07-26 18:54:48 UT, which is the documented 19:32 local mean time at Kesswil, Switzerland (47.6N 9.3E; Switzerland kept local mean time until 1894). Placidus house cusps. Independently cross-checked against astronomy-engine 2.1.19, a separate implementation: every body agrees to within 0.002 degrees. Sanity checks pass - Sun in Leo as the 26 July birth date requires, Mercury 19.5 degrees from the Sun (max ~28), Venus 15.8 (max ~47). Caveat: the Ascendant and therefore the house numbers depend on the birth time, and the Ascendant moves about 1 degree every 4 minutes; the planets themselves are insensitive to that uncertainty.',
+        'COMPUTED with Swiss Ephemeris (pyswisseph 2.10.03, Moshier SEFLG_MOSEPH) for 1875-07-26 18:55 UT, corresponding to 19:32 at Kesswil, Switzerland (47.6, 9.3). Source: Birth certificate quoted in Astro-Databank (Rodden AA). Placidus house cusps. Sanity checks pass: Sun in Leo, Mercury <= 28 deg, Venus <= 47 deg elongation.',
       planets: {
         Sun: { sign: 'Leo', degree: 3.31, retrograde: false, house: 7 },
         Moon: { sign: 'Taurus', degree: 15.51, retrograde: false, house: 3 },
@@ -77,11 +77,17 @@ export const CARL_JUNG: HistoricalCraftedAgent = {
         Neptune: { sign: 'Taurus', degree: 3.04, retrograde: false, house: 2 },
         Pluto: { sign: 'Taurus', degree: 23.51, retrograde: false, house: 3 },
       },
-      houses: { ASC: 301.55, MC: 239.27 },
-      aspects: [],
-      ascendant: 301.55,
+      houses: { ASC: 301.5513, MC: 239.2715 },
+      aspects: [
+        { planet1: 'Sun', planet2: 'Neptune', type: 'square', orb: 0.27, exact: true },
+        { planet1: 'Moon', planet2: 'Mercury', type: 'sextile', orb: 1.74, exact: false },
+        { planet1: 'Moon', planet2: 'Venus', type: 'sextile', orb: 1.99, exact: false },
+        { planet1: 'Moon', planet2: 'Uranus', type: 'square', orb: 0.71, exact: true },
+        { planet1: 'Mercury', planet2: 'Venus', type: 'conjunction', orb: 3.73, exact: false },
+      ],
+      ascendant: 301.5513,
       ascendantProvenance: 'measured',
-      midheaven: 239.27,
+      midheaven: 239.2715,
     },
     monicaConstant: 4.82,
     level: 'Advanced' as ConsciousnessLevel,

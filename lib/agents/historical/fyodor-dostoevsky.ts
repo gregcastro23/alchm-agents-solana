@@ -48,7 +48,7 @@ export const FYODOR_DOSTOEVSKY: HistoricalCraftedAgent = {
     natalChart: {
       provenance: 'computed',
       provenanceNote:
-        "COMPUTED with Swiss Ephemeris (pyswisseph 2.10.03, Moshier SEFLG_MOSEPH) for 1821-11-11 09:30 UT. Independently cross-checked against astronomy-engine 2.1.19, a separate implementation: every body agrees to within 0.004 degrees. Birth date: 11 November 1821 New Style (30 October Old Style), Moscow (en.wikipedia.org/wiki/Fyodor_Dostoevsky infobox). Russia kept the Julian calendar until 1918; the New Style date is the one used here, so no further conversion applies. BIRTH TIME IS NOT RECORDED, so the bodies are evaluated at 12:00 local mean time at Moscow, Russia (55.7558, 37.6173) - the midpoint of the birth day, which bounds the error at half a day of motion. Consequence, measured over the birth day: the Moon stays in Gemini across the whole day, so its SIGN is certain but its degree is uncertain by up to 7.5 degrees; every other body moves less than a degree. The ASCENDANT, MIDHEAVEN and HOUSE placements are therefore NOT computed and NOT claimed - the ascendant moves about 1 degree every 4 minutes, the planet 'house' field is omitted rather than filled, and the ascendant/midheaven numbers left in this chart are the pre-existing unmeasured ones. Sanity checks pass: Sun in Scorpio as the date requires, Mercury 18.0 degrees from the Sun (max ~28), Venus 42.4 (max ~47). Reproduce with scripts/compute-historical-natal-charts.py.",
+        'COMPUTED with Swiss Ephemeris (pyswisseph 2.10.03, Moshier SEFLG_MOSEPH) for 1821-11-11 09:30 UT (12:00 LMT birth day midpoint). Birth date documented; birth time unrecorded. Ascendant and houses are unmeasured and not claimed. Sanity checks pass: Sun in Scorpio, Mercury <= 28 deg, Venus <= 47 deg elongation.',
       planets: {
         Sun: { sign: 'Scorpio', degree: 18.71, retrograde: false },
         Moon: { sign: 'Gemini', degree: 12.32, retrograde: false },
@@ -64,7 +64,7 @@ export const FYODOR_DOSTOEVSKY: HistoricalCraftedAgent = {
       houses: { ASC: 94.5, MC: 4.5 },
       aspects: [],
       ascendant: 94.5,
-      ascendantProvenance: 'placeholder',
+      ascendantProvenance: 'unmeasured',
       midheaven: 4.5,
     },
   },

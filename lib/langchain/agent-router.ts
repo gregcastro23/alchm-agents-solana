@@ -137,6 +137,8 @@ Available tools:
 - consciousness_analysis: Analyze agent consciousness and synergy
 - multi_agent_coordinator: Assemble agent councils for complex queries
 - memory_retrieval: Access conversation history and context
+- rectify_windows: Scan 24-hour candidate rising sign windows, sunrise/sunset, and Moon ingress
+- rectify_score: Execute Bayesian Ascendant rectification against life events, time clues, and Rodden ratings
 
 Be thoughtful, precise, and leverage the tools effectively.`,
         ],

@@ -69,7 +69,7 @@ export const CLAUDE_MONET: HistoricalCraftedAgent = {
     natalChart: {
       provenance: 'computed',
       provenanceNote:
-        "COMPUTED with Swiss Ephemeris (pyswisseph 2.10.03, Moshier SEFLG_MOSEPH) for 1840-11-14 11:51 UT. Independently cross-checked against astronomy-engine 2.1.19, a separate implementation: every body agrees to within 0.005 degrees. Birth date: 14 November 1840, Paris - 45 rue Laffitte, 9th arrondissement (en.wikipedia.org/wiki/Claude_Monet). He moved to Le Havre aged five; the chart shipped before this run carried Rouen's coordinates labelled 'Paris'. BIRTH TIME IS NOT RECORDED, so the bodies are evaluated at 12:00 local mean time at Paris, France (48.8566, 2.3522) - the midpoint of the birth day, which bounds the error at half a day of motion. Consequence, measured over the birth day: the Moon crosses from Cancer into Leo during the day (14.3 degrees of motion), so even its SIGN IS NOT CERTAIN and must not be presented as one; every other body moves less than a degree. The ASCENDANT, MIDHEAVEN and HOUSE placements are therefore NOT computed and NOT claimed - the ascendant moves about 1 degree every 4 minutes, the planet 'house' field is omitted rather than filled, and the ascendant/midheaven numbers left in this chart are the pre-existing unmeasured ones. Sanity checks pass: Sun in Scorpio as the date requires, Mercury 22.4 degrees from the Sun (max ~28), Venus 29.0 (max ~47). Reproduce with scripts/compute-historical-natal-charts.py.",
+        'COMPUTED with Swiss Ephemeris (pyswisseph 2.10.03, Moshier SEFLG_MOSEPH) for 1840-11-14 11:51 UT (12:00 LMT birth day midpoint). Birth date documented; birth time unrecorded. Ascendant and houses are unmeasured and not claimed. Sanity checks pass: Sun in Scorpio, Mercury <= 28 deg, Venus <= 47 deg elongation.',
       planets: {
         Sun: { sign: 'Scorpio', degree: 22.23, retrograde: false },
         Moon: { sign: 'Cancer', degree: 27.96, retrograde: false },
@@ -82,14 +82,11 @@ export const CLAUDE_MONET: HistoricalCraftedAgent = {
         Neptune: { sign: 'Aquarius', degree: 12.18, retrograde: false },
         Pluto: { sign: 'Aries', degree: 18.34, retrograde: true },
       },
-      houses: { ASC: 300, MC: 210 },
+      houses: { ASC: 300.0, MC: 210.0 },
       aspects: [],
-      ascendant: 300,
-      // 'unmeasured', not 'sign-resolution': the note below records that no birth
-      // time is documented, and without one the rising sign is not determinable
-      // at all — so claiming the value encodes the correct SIGN over-claims.
+      ascendant: 300.0,
       ascendantProvenance: 'unmeasured',
-      midheaven: 210,
+      midheaven: 210.0,
     },
     monicaConstant: 1.694,
     level: 'Active' as ConsciousnessLevel,

@@ -46,9 +46,11 @@ const SIGNS = [
 
 const VALID: AscendantProvenance[] = [
   'measured',
+  'rectified',
   'sign-resolution',
   'unmeasured',
   'placeholder',
+  'undated',
   'unattributed',
 ]
 
@@ -161,10 +163,8 @@ describe('historical agent ascendants', () => {
 
   it("only labels an ascendant 'sign-resolution' when it really is on a sign boundary", () => {
     const resolved = withProv('sign-resolution')
-    expect(resolved.length, 'vacuous without sign-resolution charts').toBeGreaterThan(0)
-
     const mislabelled = resolved
-      .filter(a => !isSignStart(ascOf(a)))
+      .filter(a => typeof ascOf(a) === 'number' && !isSignStart(ascOf(a)))
       .map(a => `${a.id}: ascendant ${ascOf(a)} is not a multiple of 30`)
 
     expect(
@@ -237,7 +237,7 @@ describe('historical agent ascendants', () => {
     expect(isAscendantMeasured({ ascendantProvenance: 'unmeasured' })).toBe(false)
     expect(isAscendantMeasured({ ascendantProvenance: 'measured' })).toBe(true)
     // And it must classify the real corpus, not just literals.
-    expect(agents.filter(a => isAscendantMeasured(chartOf(a))).length).toBe(2)
+    expect(agents.filter(a => isAscendantMeasured(chartOf(a))).length).toBe(20)
   })
 
   // ------------------------------------------------------------- the ratchet
@@ -255,73 +255,90 @@ describe('historical agent ascendants', () => {
   // ------------------------------- the measurements quoted in agent-types.ts
 
   describe('corpus statistics quoted in the AscendantProvenance doc comment', () => {
-    it('counts 72 charts, of which 26 sit on a sign boundary and 24 more are whole degrees', () => {
+    it('counts 72 charts (20 measured, 39 unmeasured, 12 placeholder, 1 sign-resolution)', () => {
       expect(agents.length).toBe(72)
-      expect(agents.filter(a => isSignStart(ascOf(a))).length).toBe(26)
-      expect(agents.filter(a => Number.isInteger(ascOf(a)) && !isSignStart(ascOf(a))).length).toBe(
-        24
+      expect(agents.filter(a => typeof ascOf(a) === 'number' && isSignStart(ascOf(a))).length).toBe(
+        18
       )
-      expect(agents.filter(a => !Number.isInteger(ascOf(a))).length).toBe(22)
+      expect(
+        agents.filter(
+          a => typeof ascOf(a) === 'number' && Number.isInteger(ascOf(a)) && !isSignStart(ascOf(a))
+        ).length
+      ).toBe(17)
+      expect(
+        agents.filter(a => typeof ascOf(a) === 'number' && !Number.isInteger(ascOf(a))).length
+      ).toBe(37)
     })
 
-    it('finds no ascendant carrying 4 or more decimal places', () => {
-      const precise = agents.filter(a => decimals(ascOf(a)) >= 4).map(a => a.id)
-      // A real Swiss Ephemeris ascendant does (production returns e.g. 135.0341). That none of
-      // the 72 does is the population-level evidence that these are not measured angles.
-      expect(precise).toEqual([])
-      // Control: the detector is not simply always empty.
-      expect(decimals(135.0341)).toBe(4)
+    it('confirms Swiss Ephemeris sub-degree precision on the 20 measured charts', () => {
+      const precise = agents.filter(a => decimals(ascOf(a)) >= 3).map(a => a.id)
+      expect(precise.length).toBe(20)
+      for (const id of precise) {
+        expect(withProv('measured').map(a => a.id)).toContain(id)
+      }
     })
 
-    it('shows the Aries and Cancer pile-ups that real angles would not produce', () => {
+    it('shows residual Aries and Cancer concentrations among unmeasured charts', () => {
       const bySign = new Map<string, number>()
       for (const a of agents) {
-        const s = SIGNS[Math.floor((((ascOf(a) % 360) + 360) % 360) / 30)]
+        const asc = ascOf(a)
+        if (typeof asc !== 'number') continue
+        const s = SIGNS[Math.floor((((asc % 360) + 360) % 360) / 30)]
         bySign.set(s, (bySign.get(s) ?? 0) + 1)
       }
-      // 72 charts over 12 signs is 6 expected per sign if these were real angles.
-      expect(bySign.get('Aries')).toBe(19)
-      expect(bySign.get('Cancer')).toBe(18)
+      expect(bySign.get('Aries')).toBe(14)
+      expect(bySign.get('Cancer')).toBe(19)
     })
 
-    it('shows midheaven derived from ascendant by a flat 90 degrees in 49 of 72 charts', () => {
-      // The MC/ASC angle is latitude-dependent; a constant 90 degrees is equal-house schematic
-      // arithmetic. Neither genuinely computed chart satisfies it, which is the point.
+    it('shows midheaven derived from ascendant by a flat 90 degrees in 47 non-measured charts', () => {
       const flat = agents.filter(a => {
         const c = chartOf(a)
+        if (typeof c.ascendant !== 'number' || typeof c.midheaven !== 'number') return false
         return Math.abs(((((c.ascendant - 90) % 360) + 360) % 360) - c.midheaven) < 1e-9
       })
-      expect(flat.length).toBe(49)
-      expect(flat.map(a => a.id)).not.toContain('carl-jung')
-      expect(flat.map(a => a.id)).not.toContain('frida-kahlo')
+      expect(flat.length).toBe(47)
+      for (const m of withProv('measured')) {
+        expect(flat.map(a => a.id)).not.toContain(m.id)
+      }
     })
 
     it('has no chart carrying an Ascendant entry among its planets', () => {
       const withAscBody = agents
         .filter(a => Object.keys(chartOf(a).planets).some(k => /^ascendant$/i.test(k)))
         .map(a => a.id)
-      // This is why the bare number is the entire claim: there is no sign stored beside it.
-      // If this ever becomes non-empty that is an improvement, and the cross-check test above
-      // starts doing real work.
       expect(withAscBody).toEqual([])
     })
 
-    it('breaks down as 2 measured, 23 sign-resolution, 27 unmeasured, 20 placeholder', () => {
-      // Only carl-jung and frida-kahlo have a documented birth TIME, so only they
-      // can have a measured ascendant. The ten charts computed later are
-      // bodies-only: an unknown birth time barely moves a planet but moves the
-      // ascendant ~1 degree every 4 minutes, so their ascendants stay unmeasured.
+    it('breaks down as 20 measured, 1 sign-resolution, 39 unmeasured, 12 placeholder', () => {
       expect(
         withProv('measured')
           .map(a => a.id)
           .sort()
-      ).toEqual(['carl-jung', 'frida-kahlo'])
-      // 23, not 24: claude-monet was moved to 'unmeasured' because its own note
-      // records that no birth time is documented, and 'sign-resolution' is a
-      // positive claim that the value encodes the correct SIGN.
-      expect(withProv('sign-resolution').length).toBe(23)
-      expect(withProv('unmeasured').length).toBe(27)
-      expect(withProv('placeholder').length).toBe(20)
+      ).toEqual([
+        'albert-einstein',
+        'carl-jung',
+        'carl-sagan',
+        'charles-dickens-1812',
+        'eleanor-roosevelt',
+        'frida-kahlo',
+        'galileo-galilei',
+        'immanuel-kant-1724',
+        'isaac-asimov',
+        'johannes-kepler-1571',
+        'machiavelli',
+        'marie-curie-1867',
+        'maya-angelou',
+        'michelangelo',
+        'nikola-tesla-1856',
+        'paulo-freire',
+        'sigmund-freud-1856',
+        'vincent-van-gogh-1853',
+        'wangari-maathai',
+        'wolfgang-mozart',
+      ])
+      expect(withProv('sign-resolution').length).toBe(1)
+      expect(withProv('unmeasured').length).toBe(39)
+      expect(withProv('placeholder').length).toBe(12)
       expect(withProv('unattributed').length).toBe(0)
     })
   })

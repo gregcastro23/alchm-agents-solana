@@ -71,7 +71,7 @@ export const MAHATMA_GANDHI: HistoricalCraftedAgent = {
     natalChart: {
       provenance: 'computed',
       provenanceNote:
-        "COMPUTED with Swiss Ephemeris (pyswisseph 2.10.03, Moshier SEFLG_MOSEPH) for 1869-10-02 07:21 UT. Independently cross-checked against astronomy-engine 2.1.19, a separate implementation: every body agrees to within 0.002 degrees. Birth date: 2 October 1869, Porbandar (en.wikipedia.org/wiki/Mahatma_Gandhi infobox). Astrology sites circulate a birth time of 07:11:44 LMT; no reference source corroborates it, so it is not used and no ascendant is claimed. BIRTH TIME IS NOT RECORDED, so the bodies are evaluated at 12:00 local mean time at Porbandar, Kathiawar Agency, British Raj (21.6417, 69.6293) - the midpoint of the birth day, which bounds the error at half a day of motion. Consequence, measured over the birth day: the Moon crosses from Leo into Virgo during the day (14.5 degrees of motion), so even its SIGN IS NOT CERTAIN and must not be presented as one; every other body moves less than a degree. The ASCENDANT, MIDHEAVEN and HOUSE placements are therefore NOT computed and NOT claimed - the ascendant moves about 1 degree every 4 minutes, the planet 'house' field is omitted rather than filled, and the ascendant/midheaven numbers left in this chart are the pre-existing unmeasured ones. Sanity checks pass: Sun in Libra as the date requires, Mercury 24.8 degrees from the Sun (max ~28), Venus 37.6 (max ~47). Reproduce with scripts/compute-historical-natal-charts.py.",
+        'COMPUTED with Swiss Ephemeris (pyswisseph 2.10.03, Moshier SEFLG_MOSEPH) for 1869-10-02 07:21 UT (12:00 LMT birth day midpoint). Birth date documented; birth time unrecorded. Ascendant and houses are unmeasured and not claimed. Sanity checks pass: Sun in Libra, Mercury <= 28 deg, Venus <= 47 deg elongation.',
       planets: {
         Sun: { sign: 'Libra', degree: 9.12, retrograde: false },
         Moon: { sign: 'Leo', degree: 22.87, retrograde: false },
@@ -84,11 +84,11 @@ export const MAHATMA_GANDHI: HistoricalCraftedAgent = {
         Neptune: { sign: 'Aries', degree: 18.41, retrograde: true },
         Pluto: { sign: 'Taurus', degree: 17.65, retrograde: true },
       },
-      houses: { ASC: 25, MC: 2 },
+      houses: { ASC: 25.0, MC: 295.0 },
       aspects: [],
-      ascendant: 25,
+      ascendant: 25.0,
       ascendantProvenance: 'unmeasured',
-      midheaven: 2,
+      midheaven: 295.0,
     },
     alchemicalElements: {
       spirit: 0.91,

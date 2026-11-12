@@ -45,6 +45,7 @@ const VALID_PROVENANCE: NatalChartProvenance[] = [
   'authored',
   'placeholder',
   'unattributed',
+  'undated',
 ]
 
 /** Maximum elongation from the Sun, in degrees, for the two inferior planets. */
@@ -126,7 +127,13 @@ describe('historical agent natal charts', () => {
     const sharedGroups = [...byFingerprint.values()].filter(group => group.length > 1)
 
     const claimedAsOwn = sharedGroups
-      .filter(group => group.some(a => a.consciousness.natalChart.provenance !== 'placeholder'))
+      .filter(group =>
+        group.some(
+          a =>
+            a.consciousness.natalChart.provenance !== 'placeholder' &&
+            a.consciousness.natalChart.provenance !== 'undated'
+        )
+      )
       .map(group =>
         group
           .map(a => `${a.id}:${a.consciousness.natalChart.provenance}`)
@@ -213,12 +220,16 @@ describe('historical agent natal charts', () => {
     ).toEqual([])
   })
 
-  it('explains every placeholder chart so it is never mistaken for a measurement', () => {
-    const placeholders = agents.filter(a => a.consciousness.natalChart.provenance === 'placeholder')
+  it('explains every placeholder or undated chart so it is never mistaken for a measurement', () => {
+    const placeholders = agents.filter(
+      a =>
+        a.consciousness.natalChart.provenance === 'placeholder' ||
+        a.consciousness.natalChart.provenance === 'undated'
+    )
     // Control, same reason as above.
     expect(
       placeholders.length,
-      'no placeholder charts to check — assertion would be vacuous'
+      'no placeholder or undated charts to check — assertion would be vacuous'
     ).toBeGreaterThan(0)
     const unexplained = placeholders
       .filter(a => (a.consciousness.natalChart.provenanceNote ?? '').trim().length < 40)
@@ -226,7 +237,7 @@ describe('historical agent natal charts', () => {
 
     expect(
       unexplained,
-      'a placeholder chart must say what the filler is and what would be needed to replace it'
+      'a placeholder or undated chart must say what the status is and what would be needed to replace it'
     ).toEqual([])
   })
 

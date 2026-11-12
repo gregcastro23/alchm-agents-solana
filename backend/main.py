@@ -148,6 +148,13 @@ except Exception as _e:
     ephemeris_service = None  # _planetary_positions_for answers 503 rather than invent positions
     print(f"[ephemeris] Swiss Ephemeris router failed to load: {_e}", flush=True)
 
+try:
+    import rectification_service
+    app.include_router(rectification_service.router, prefix="/api/rectify", tags=["Birth Time Rectification"])
+except Exception as _e:
+    rectification_service = None
+    print(f"[rectification] Rectification router failed to load: {_e}", flush=True)
+
 
 # Configuration
 ALCHM_KITCHEN_URL = os.getenv("ALCHM_KITCHEN_URL", "https://alchm.kitchen")
