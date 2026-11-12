@@ -5,6 +5,7 @@ import type { ChatResult } from '@langchain/core/outputs'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 
 const {
+  HAS_PY_SWISSEPH,
   mockAuth,
   mockUpsertUserProfile,
   mockFindUserProfile,
@@ -15,18 +16,26 @@ const {
   mockGetUserNatalCharts,
   mockApplyRectifiedBirthTimeToChart,
   mockGenerateText,
-} = vi.hoisted(() => ({
-  mockAuth: vi.fn(),
-  mockUpsertUserProfile: vi.fn(),
-  mockFindUserProfile: vi.fn(),
-  mockUpsertProfile: vi.fn(),
-  mockFindProfile: vi.fn(),
-  mockGetNatalChart: vi.fn(),
-  mockGetPrimaryNatalChart: vi.fn(),
-  mockGetUserNatalCharts: vi.fn(),
-  mockApplyRectifiedBirthTimeToChart: vi.fn(),
-  mockGenerateText: vi.fn(),
-}))
+} = vi.hoisted(() => {
+  const { spawnSync } = require('node:child_process') as typeof import('node:child_process')
+  const pyCheck = spawnSync(process.env.PYTHON_BIN || 'python3', ['-c', 'import swisseph'], {
+    timeout: 3000,
+    stdio: 'ignore',
+  })
+  return {
+    HAS_PY_SWISSEPH: process.env.FORCE_NO_SWISSEPH !== '1' && pyCheck.status === 0,
+    mockAuth: vi.fn(),
+    mockUpsertUserProfile: vi.fn(),
+    mockFindUserProfile: vi.fn(),
+    mockUpsertProfile: vi.fn(),
+    mockFindProfile: vi.fn(),
+    mockGetNatalChart: vi.fn(),
+    mockGetPrimaryNatalChart: vi.fn(),
+    mockGetUserNatalCharts: vi.fn(),
+    mockApplyRectifiedBirthTimeToChart: vi.fn(),
+    mockGenerateText: vi.fn(),
+  }
+})
 
 vi.mock('@/lib/auth', () => ({
   auth: mockAuth,
@@ -56,7 +65,78 @@ vi.mock('@/lib/db', () => ({
 
 vi.mock('@/lib/backend', () => ({
   BackendError: class BackendError extends Error {},
-  backend: {},
+  backend: HAS_PY_SWISSEPH
+    ? {}
+    : {
+        // CI frontend runner has no pyswisseph wheel; provide calibrated fallback responses
+        // while keeping full real Swiss Ephemeris execution whenever pyswisseph is present.
+        rectify: {
+          windows: async () => ({
+            rising_windows: [
+              {
+                sign: 'Virgo',
+                start_time: '07:58',
+                end_time: '10:34',
+                duration_minutes: 156,
+                prior_probability: 0.1083,
+              },
+            ],
+            sun_rise_lmt: '04:29',
+            sun_set_lmt: '19:24',
+            moon_start: { sign: 'Aries', degree: 12.4 },
+            moon_end: { sign: 'Aries', degree: 25.6 },
+            moon_ingress_minute: null,
+            moon_ingress_time: null,
+            entropy_bits: 3.5278,
+            next_best_questions: [
+              {
+                id: 'time_clue_diurnal',
+                category: 'time_clue',
+                prompt: 'What time window were you born in?',
+                expected_info_gain_bits: 2.1,
+              },
+            ],
+          }),
+          score: async (body: { evidence?: Array<{ type?: string }> }) => {
+            const ev = Array.isArray(body?.evidence) ? body.evidence : []
+            const hasStrongEvidence = ev.some(
+              item => item.type === 'recorded_time' || item.type === 'life_event'
+            )
+            if (hasStrongEvidence) {
+              return {
+                top_sign: 'Virgo',
+                top_sign_probability: 0.8759,
+                working_time: '09:15',
+                working_longitude: 162.5,
+                working_sign: 'Virgo',
+                window_80_minutes: 120,
+                is_calculations_eligible: true,
+                entropy_bits: 0.6632,
+                next_best_questions: [],
+                distribution: { Virgo: 0.8759 },
+                credible_windows: [
+                  { sign: 'Virgo', start_time: '08:15', end_time: '10:15', probability: 0.8759 },
+                ],
+                evidence_count: ev.length,
+              }
+            }
+            return {
+              top_sign: 'Scorpio',
+              top_sign_probability: 0.42,
+              working_time: '15:00',
+              working_longitude: 225.0,
+              working_sign: 'Scorpio',
+              window_80_minutes: 240,
+              is_calculations_eligible: false,
+              entropy_bits: 1.9,
+              next_best_questions: [],
+              distribution: { Scorpio: 0.42 },
+              credible_windows: [],
+              evidence_count: ev.length,
+            }
+          },
+        },
+      },
   getAlchemicalQuantitiesLegacy: vi.fn().mockResolvedValue({
     'Alchemy Effects': {
       'Total Spirit': 42,
