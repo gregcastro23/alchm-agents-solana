@@ -27,6 +27,7 @@ export const ADMIN_NAV: Array<{ group: string; items: AdminNavItem[] }> = [
     group: 'Agents',
     items: [
       { href: '/admin/agents', label: 'Roster & sync', ids: ['agents'] },
+      { href: '/admin/rectification', label: 'Ascendant rectification', ids: ['rectification'] },
       { href: '/admin/chats', label: 'Chats & providers', ids: ['chats', 'providers'] },
       { href: '/admin/councils', label: 'Council convenings', ids: ['groupChats', 'councils'] },
       { href: '/admin/leveling', label: 'Vessel progression', ids: ['leveling'] },

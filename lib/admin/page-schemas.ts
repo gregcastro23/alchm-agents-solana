@@ -18,6 +18,7 @@ import type { AgentsReport } from '@/lib/admin/agents'
 import type { BuildHealthReport } from '@/lib/admin/build-health'
 import type { ChatsReport } from '@/lib/admin/chats'
 import type { DashboardReport } from '@/lib/admin/dashboard'
+import type { RectificationAdminReport } from '@/lib/admin/rectification'
 import type { PulsePayload } from '@/components/admin/panels/SystemPulsePanel'
 import type { EconomyPayload } from '@/components/admin/panels/TokenEconomyPanel'
 import type { PlanetaryPayload } from '@/components/admin/panels/PlanetaryAgentsPanel'
@@ -578,3 +579,159 @@ export type _EconomyEnvelopeDrift = AssertTrue<ServerSatisfies<EconomyPayload, E
 export type _PlanetaryEnvelopeDrift = AssertTrue<ServerSatisfies<PlanetaryPayload, Envelope>>
 export type _CodebaseEnvelopeDrift = AssertTrue<ServerSatisfies<CodebaseHealthPayload, Envelope>>
 export type _OnboardingEnvelopeDrift = AssertTrue<ServerSatisfies<OnboardingPayload, Envelope>>
+
+const RectificationScoreResultSchema = z.object({
+  distribution: z.record(z.string(), z.number()),
+  top_sign: z.string(),
+  top_sign_probability: z.number(),
+  working_longitude: z.number(),
+  working_sign: z.string(),
+  working_time: z.string(),
+  window_80_minutes: z.number(),
+  credible_window_80: z.object({
+    startLocal: z.string(),
+    endLocal: z.string(),
+  }),
+  certainty: z.number(),
+  is_calculations_eligible: z.boolean(),
+  evidence_breakdown: z.array(
+    z.object({
+      evidence: z.string().optional(),
+      type: z.string().optional(),
+      max_log_shift: z.number().optional(),
+      min_log_shift: z.number().optional(),
+      null_discount_applied: z.boolean().optional(),
+    })
+  ),
+})
+
+export const RectificationProposalSchema = z.object({
+  agentId: z.string(),
+  fileSlug: z.string(),
+  name: z.string(),
+  classification: z.enum([
+    'archival_clue',
+    'date_known_milestones',
+    'approximate_or_symbolic_date',
+  ]),
+  rectifiable: z.boolean(),
+  roddenRating: z.string(),
+  dateConfidence: z.string(),
+  dateUncertaintyReason: z.string().nullable(),
+  birth: z.object({
+    year: z.number(),
+    month: z.number(),
+    day: z.number(),
+    lat: z.number(),
+    lon: z.number(),
+    calendar: z.string(),
+    locationName: z.string(),
+  }),
+  timeClue: z
+    .object({
+      source: z.string(),
+      recordedMinuteLmt: z.number().nullable().optional(),
+      startMinute: z.number().nullable().optional(),
+      endMinute: z.number().nullable().optional(),
+      marginMinutes: z.number().nullable().optional(),
+      rodden: z.string().nullable().optional(),
+      expectedSign: z.string().nullable().optional(),
+    })
+    .nullable(),
+  events: z.array(z.record(z.string(), z.unknown())),
+  notes: z.string().nullable(),
+  score: RectificationScoreResultSchema.nullable().optional(),
+  recommendedProvenance: z.string().optional(),
+  calculationsEligible: z.boolean().optional(),
+})
+
+const AscendantEstimateSchema = z.object({
+  distribution: z.record(z.string(), z.number()),
+  topSign: z.string(),
+  topSignProbability: z.number(),
+  workingLongitude: z.number(),
+  workingSign: z.string(),
+  window80Minutes: z.number(),
+  credibleWindow80: z.object({
+    startLocal: z.string(),
+    endLocal: z.string(),
+  }),
+  certainty: z.number(),
+  evidence: z.array(
+    z.object({
+      type: z.string(),
+      description: z.string(),
+      citation: z.string().optional(),
+      approvedBy: z.string().optional(),
+      approvedAt: z.string().optional(),
+      likelihoodWeight: z.number().optional(),
+    })
+  ),
+  method: z.string(),
+})
+
+const AscendantProvenanceSchema = z.enum([
+  'measured',
+  'rectified',
+  'sign-resolution',
+  'unmeasured',
+  'placeholder',
+  'undated',
+  'unattributed',
+])
+
+export const RectificationReportSchema = z.object({
+  generatedAt: z.string(),
+  dossiersSource: z.enum(['fastapi', 'python-cli', 'unavailable']),
+  dossiers: sectionOf(z.array(RectificationProposalSchema)),
+  dbStates: sectionOf(
+    z.array(
+      z.object({
+        agentId: z.string(),
+        presentInDb: z.boolean(),
+        codeAscendantProvenance: AscendantProvenanceSchema,
+        codeAscendantDeg: z.number().nullable(),
+        dbAscendantProvenance: AscendantProvenanceSchema.nullable(),
+        dbAscendantDeg: z.number().nullable(),
+        dbCalculationsEligible: z.boolean(),
+        dbEstimate: AscendantEstimateSchema.nullable(),
+        reviewStatus: z.enum(['pending', 'approved', 'rejected', 'non-rectifiable']),
+        lastAudit: z
+          .object({
+            action: z.string(),
+            actorEmail: z.string().nullable(),
+            at: z.string(),
+            note: z.string().nullable(),
+          })
+          .nullable(),
+      })
+    )
+  ),
+  auditTrail: sectionOf(
+    z.array(
+      z.object({
+        id: z.string(),
+        action: z.string(),
+        actorEmail: z.string().nullable(),
+        actorSource: z.string(),
+        targetId: z.string().nullable(),
+        note: z.string().nullable(),
+        createdAt: z.string(),
+      })
+    )
+  ),
+  counts: z.object({
+    total: z.number().nullable(),
+    archivalClue: z.number().nullable(),
+    dateKnownMilestones: z.number().nullable(),
+    nonRectifiable: z.number().nullable(),
+    approvedInDb: z.number().nullable(),
+    rejectedInAudit: z.number().nullable(),
+    calculationsEligibleInDb: z.number().nullable(),
+  }),
+  alerts: z.array(AdminAlertSchema),
+})
+export type RectificationPayload = z.infer<typeof RectificationReportSchema>
+export type _RectificationDrift = AssertTrue<
+  ServerSatisfies<RectificationAdminReport, RectificationPayload>
+>

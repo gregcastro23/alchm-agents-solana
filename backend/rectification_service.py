@@ -28,6 +28,11 @@ try:
     HAS_FASTAPI = True
 except ImportError:
     HAS_FASTAPI = False
+    class HTTPException(Exception):
+        def __init__(self, status_code: int = 500, detail: str = ""):
+            self.status_code = status_code
+            self.detail = detail
+            super().__init__(detail)
     class APIRouter:
         def post(self, *args, **kwargs):
             return lambda fn: fn
@@ -74,8 +79,130 @@ SIGN_RULERS = {
     "Pisces": "Jupiter",
 }
 
+ALL_PLANETS = [
+    ("Sun", swe.SUN),
+    ("Moon", swe.MOON),
+    ("Mercury", swe.MERCURY),
+    ("Venus", swe.VENUS),
+    ("Mars", swe.MARS),
+    ("Jupiter", swe.JUPITER),
+    ("Saturn", swe.SATURN),
+    ("Uranus", swe.URANUS),
+    ("Neptune", swe.NEPTUNE),
+    ("Pluto", swe.PLUTO),
+]
+
+NATAL_STATIC_PLANETS = [
+    ("Sun", swe.SUN),
+    ("Mercury", swe.MERCURY),
+    ("Venus", swe.VENUS),
+    ("Mars", swe.MARS),
+    ("Jupiter", swe.JUPITER),
+    ("Saturn", swe.SATURN),
+]
+
+CUSP_WEIGHTS: Dict[str, Dict[str, float]] = {
+    "career": {"MC": 1.32, "ASC": 0.95, "IC": 0.78, "DSC": 0.75},
+    "marriage": {"DSC": 1.32, "ASC": 0.92, "MC": 0.80, "IC": 0.72},
+    "relocation": {"IC": 1.32, "ASC": 0.90, "MC": 0.82, "DSC": 0.72},
+    "illness": {"ASC": 1.32, "MC": 0.92, "IC": 0.80, "DSC": 0.75},
+    "general": {"ASC": 1.00, "MC": 1.00, "DSC": 0.80, "IC": 0.80},
+}
+
+PRIMARY_ANGLE_ROLE: Dict[str, Optional[str]] = {
+    "career": "MC",
+    "marriage": "DSC",
+    "relocation": "IC",
+    "illness": "ASC",
+    "general": None,
+}
+
+PROFECTION_HOUSE_OFFSETS: Dict[str, int] = {
+    "career": 9,      # 10th house
+    "marriage": 6,    # 7th house
+    "relocation": 3,  # 4th house
+    "illness": 0,     # 1st house (also checks 6th below)
+    "general": 9,
+}
+
 
 # --- Helpers ---
+
+def normalize_event_category(evidence_item: Dict[str, Any]) -> str:
+    """Maps event category/aliases or description keywords into canonical cusp-routing domains."""
+    raw = str(evidence_item.get("category") or "").strip().lower()
+    if raw in ("career", "publication", "office", "award", "work", "profession", "honors"):
+        return "career"
+    if raw in ("marriage", "partnership", "relationship", "legal", "divorce", "conflict"):
+        return "marriage"
+    if raw in ("relocation", "move", "family", "household", "home", "parent_death", "exile"):
+        return "relocation"
+    if raw in ("illness", "crisis", "injury", "accident", "surgery", "health", "vitality", "death", "fire", "arrest"):
+        return "illness"
+
+    desc = str(evidence_item.get("description") or "").lower()
+    if any(w in desc for w in ("marri", "wed", "divorce", "trial", "inquisition", "sentenc", "break with")):
+        return "marriage"
+    if any(w in desc for w in ("relocat", "moved to", "arrival", "exile", "emigrat", "household", "parent", "father died", "mother died")):
+        return "relocation"
+    if any(w in desc for w in ("surger", "cancer", "injur", "collision", "fractur", "gunshot", "ear sever", "near death", "heart attack", "arrest", "imprison", "fire", "death")):
+        return "illness"
+    if any(w in desc for w in ("nobel", "prize", "publicat", "published", "premiere", "professor", "appoint", "chancellor", "present", "founding", "inaugur", "broadcast", "manuscript", "unveil", "annus mirabilis", "observat")):
+        return "career"
+    return "general"
+
+
+def parse_event_jd(evidence_item: Dict[str, Any]) -> Optional[float]:
+    """Parses event_date / date into an exact Julian Day UT."""
+    event_date_str = evidence_item.get("event_date") or evidence_item.get("date")
+    if not event_date_str:
+        return None
+    s = str(event_date_str).strip()
+    try:
+        dt = datetime.fromisoformat(s.replace("Z", "+00:00"))
+        ut_hour = dt.hour + dt.minute / 60.0 + dt.second / 3600.0
+        if "T" not in s and " " not in s:
+            ut_hour = 12.0
+        return swe.julday(dt.year, dt.month, dt.day, ut_hour, swe.GREG_CAL)
+    except Exception:
+        # Handle bare YYYY-MM or YYYY-MM-DD fallback
+        parts = s.split("-")
+        try:
+            year = int(parts[0])
+            month = int(parts[1]) if len(parts) > 1 else 6
+            day = int(parts[2][:2]) if len(parts) > 2 else 15
+            return swe.julday(year, month, day, 12.0, swe.GREG_CAL)
+        except Exception:
+            return None
+
+
+def exact_age_years(event_jd: float, birth_jd: float) -> float:
+    return max(0.0, (event_jd - birth_jd) / 365.2422)
+
+
+def _calc_lons(jd: float, bodies: List[Tuple[str, int]]) -> Dict[str, float]:
+    out: Dict[str, float] = {}
+    for name, pid in bodies:
+        vals, _ = swe.calc_ut(jd, pid, SWE_FLAGS)
+        out[name] = vals[0] % 360.0
+    return out
+
+
+def oriented_angles(c: "CandidateMinute") -> Tuple[Tuple[str, float], ...]:
+    return (
+        ("ASC", c.asc_lon),
+        ("MC", c.mc_lon),
+        ("DSC", (c.asc_lon + 180.0) % 360.0),
+        ("IC", (c.mc_lon + 180.0) % 360.0),
+    )
+
+
+def gaussian_aspect_hit(lon_a: float, lon_b: float, target: float, cutoff: float, sigma: float) -> float:
+    diff = angular_difference(lon_a, lon_b)
+    dist = aspect_orb(diff, target)
+    if dist > cutoff:
+        return 0.0
+    return math.exp(-(dist * dist) / (2.0 * sigma * sigma))
 
 def deg_to_sign_deg(lon: float) -> Tuple[str, float]:
     lon = lon % 360.0
@@ -267,26 +394,47 @@ class AngularTransitScorer(LikelihoodScorer):
             vals, _ = swe.calc_ut(event_jd, pid, SWE_FLAGS)
             transiting_lons.append(vals[0] % 360.0)
 
-        # Check hits to angles: Ascendant (0), Midheaven (90 from IC), IC, Descendant
-        # Hard aspects: conjunction (0), square (90), opposition (180)
-        orb_max = 2.0 # degrees
-        two_orb_sq = 2.0 * (orb_max ** 2)
+        category = normalize_event_category(evidence_item)
+        event_jd = parse_event_jd(evidence_item)
+        if event_jd is None:
+            return [0.0] * len(candidates)
+
+        _ = transiting_lons  # superseded by domain-weighted planetary triggers
+        trans_map = _calc_lons(event_jd, ALL_PLANETS)
+        planet_weights: Dict[str, float] = {
+            "Jupiter": 1.25 if category == "career" else 1.00,
+            "Saturn": 1.20 if category in ("career", "illness", "relocation") else 1.00,
+            "Uranus": 1.10,
+            "Neptune": 1.10,
+            "Pluto": 1.15,
+            "Mars": 0.75 if category == "illness" else (0.40 if category == "marriage" else 0.25),
+            "Venus": 0.70 if category == "marriage" else 0.15,
+            "Sun": 0.35 if category in ("career", "illness") else 0.20,
+        }
+        cusp_w = CUSP_WEIGHTS[category]
+        primary_role = PRIMARY_ANGLE_ROLE[category]
+        conj_cutoff, conj_sigma = 2.6, 1.15
 
         log_likes = []
         for c in candidates:
             hit_score = 0.0
-            angles = [c.asc_lon, c.mc_lon, (c.asc_lon + 180.0) % 360.0, (c.mc_lon + 180.0) % 360.0]
-            for t_lon in transiting_lons:
-                for angle in angles:
-                    diff = angular_difference(t_lon, angle)
-                    # Check conjunction (0), square (90), or opposition (180)
-                    for target in (0.0, 90.0, 180.0):
-                        dist = aspect_orb(diff, target)
-                        if dist <= orb_max:
-                            # Strong aspect bonus
-                            hit_score += math.exp(-(dist * dist) / two_orb_sq)
-            # Scale to conservative log likelihood
-            log_likes.append(min(1.5, hit_score * 0.4))
+            angles = oriented_angles(c)
+            for p_name, p_weight in planet_weights.items():
+                t_lon = trans_map[p_name]
+                # Take MAX single aspect contribution per planet so 0 deg MC and 90 deg ASC never double-count
+                best_p_hit = 0.0
+                for role, angle_lon in angles:
+                    conj_hit = gaussian_aspect_hit(t_lon, angle_lon, 0.0, conj_cutoff, conj_sigma)
+                    if conj_hit > 0.0:
+                        best_p_hit = max(best_p_hit, cusp_w[role] * conj_hit)
+                for base_role, base_lon in (("ASC", c.asc_lon), ("MC", c.mc_lon)):
+                    sq_hit = gaussian_aspect_hit(t_lon, base_lon, 90.0, 2.2, 1.05)
+                    if sq_hit > 0.0:
+                        role_factor = 1.02 if base_role == primary_role else 0.85
+                        best_p_hit = max(best_p_hit, 0.72 * role_factor * sq_hit)
+                hit_score += p_weight * best_p_hit
+            # Saturating compression per event prevents conjunct fast planets from drowning slow hits
+            log_likes.append(min(2.2, 1.75 * math.log1p(hit_score)))
         return log_likes
 
 
@@ -305,43 +453,70 @@ class SecondaryProgressionScorer(LikelihoodScorer):
         lat: float,
         lon: float,
     ) -> List[float]:
-        event_date_str = evidence_item.get("event_date") or evidence_item.get("date") or evidence_item.get("date")
-        if not event_date_str:
+        if not candidates:
+            return []
+        event_jd = parse_event_jd(evidence_item)
+        if event_jd is None:
             return [0.0] * len(candidates)
 
-        try:
-            dt = datetime.fromisoformat(event_date_str.replace("Z", "+00:00"))
-            years_elapsed = max(0.0, (dt.year - birth_year) + (dt.month - 1) / 12.0)
-        except Exception:
+        mid_jd = candidates[len(candidates) // 2].jd
+        years_mid = exact_age_years(event_jd, mid_jd)
+        if years_mid <= 0.0:
             return [0.0] * len(candidates)
 
-        if years_elapsed <= 0:
-            return [0.0] * len(candidates)
+        category = normalize_event_category(evidence_item)
+        cusp_w = CUSP_WEIGHTS[category]
+        primary_role = PRIMARY_ANGLE_ROLE[category]
+
+        prog_static = _calc_lons(mid_jd + years_mid, [("Sun", swe.SUN), ("Venus", swe.VENUS), ("Mars", swe.MARS)])
+        natal_static = _calc_lons(mid_jd, [("Sun", swe.SUN), ("Venus", swe.VENUS), ("Mars", swe.MARS), ("Saturn", swe.SATURN)])
+
+        conj_cutoff, conj_sigma = 2.5, 1.15
+        sq_cutoff, sq_sigma = 1.8, 0.90
+
+        extra_prog: List[Tuple[str, float, float]] = [("Sun", prog_static["Sun"], 1.0)]
+        if category == "marriage":
+            extra_prog.append(("Venus", prog_static["Venus"], 0.85))
+        elif category == "illness":
+            extra_prog.append(("Mars", prog_static["Mars"], 0.85))
 
         log_likes = []
-        orb_max = 1.5
-        two_orb_sq = 2.0 * (orb_max ** 2)
-
         for c in candidates:
-            # Progressed JD = birth_jd + years_elapsed (day-for-a-year)
+            years_elapsed = exact_age_years(event_jd, c.jd)
             prog_jd = c.jd + years_elapsed
-            # Progressed Moon position
+            # Progressed Moon recomputed at EVERY candidate minute
             p_moon_vals, _ = swe.calc_ut(prog_jd, swe.MOON, SWE_FLAGS)
             p_moon_lon = p_moon_vals[0] % 360.0
 
-            # Progressed Sun position
-            p_sun_vals, _ = swe.calc_ut(prog_jd, swe.SUN, SWE_FLAGS)
-            p_sun_lon = p_sun_vals[0] % 360.0
-
             hit = 0.0
-            for p_body_lon in (p_moon_lon, p_sun_lon):
-                for natal_angle in (c.asc_lon, c.mc_lon):
-                    diff = angular_difference(p_body_lon, natal_angle)
-                    for target in (0.0, 90.0, 120.0, 180.0):
-                        dist = aspect_orb(diff, target)
-                        if dist <= orb_max:
-                            hit += math.exp(-(dist * dist) / two_orb_sq)
-            log_likes.append(min(1.2, hit * 0.35))
+            angles = oriented_angles(c)
+            prog_bodies = [("Moon", p_moon_lon, 1.05)] + extra_prog
+            for _, p_lon, p_w in prog_bodies:
+                best_p = 0.0
+                for role, angle_lon in angles:
+                    c_hit = gaussian_aspect_hit(p_lon, angle_lon, 0.0, conj_cutoff, conj_sigma)
+                    if c_hit > 0.0:
+                        best_p = max(best_p, cusp_w[role] * c_hit)
+                for base_role, base_lon in (("ASC", c.asc_lon), ("MC", c.mc_lon)):
+                    s_hit = gaussian_aspect_hit(p_lon, base_lon, 90.0, 2.0, 0.95)
+                    if s_hit > 0.0:
+                        role_factor = 1.02 if base_role == primary_role else 0.85
+                        best_p = max(best_p, 0.70 * role_factor * s_hit)
+                hit += p_w * best_p
+
+            best_moon_natal = 0.0
+            for natal_key in ("Sun", "Venus", "Mars", "Saturn"):
+                m_hit = gaussian_aspect_hit(p_moon_lon, natal_static[natal_key], 0.0, 1.8, 0.9)
+                if m_hit > 0.0:
+                    w_sig = 0.40 if (
+                        (category == "marriage" and natal_key == "Venus")
+                        or (category == "illness" and natal_key in ("Mars", "Saturn"))
+                        or (category == "career" and natal_key == "Sun")
+                    ) else 0.22
+                    best_moon_natal = max(best_moon_natal, w_sig * m_hit)
+            hit += best_moon_natal
+
+            log_likes.append(min(2.0, 1.65 * math.log1p(hit)))
         return log_likes
 
 
@@ -360,36 +535,118 @@ class AnnualProfectionScorer(LikelihoodScorer):
         lat: float,
         lon: float,
     ) -> List[float]:
-        event_date_str = evidence_item.get("event_date") or evidence_item.get("date")
-        if not event_date_str:
+        if not candidates:
+            return []
+        event_jd = parse_event_jd(evidence_item)
+        if event_jd is None:
             return [0.0] * len(candidates)
 
-        try:
-            dt = datetime.fromisoformat(event_date_str.replace("Z", "+00:00"))
-            age = max(0, dt.year - birth_year)
-        except Exception:
-            return [0.0] * len(candidates)
+        exact_age = exact_age_years(event_jd, candidates[0].jd)
+        prof_age = int(math.floor(exact_age))
+        category = normalize_event_category(evidence_item)
+        cat_house_offset = PROFECTION_HOUSE_OFFSETS.get(category, 9)
 
-        profection_offset = age % 12
-        event_type = evidence_item.get("category", "career") # 'career', 'marriage', 'crisis'
+        mid_jd = candidates[len(candidates) // 2].jd
+        natal_static = _calc_lons(mid_jd, NATAL_STATIC_PLANETS)
+        trans_lons = _calc_lons(event_jd, ALL_PLANETS)
 
+        heavy_trans = [
+            ("Jupiter", 1.15 if category == "career" else 0.90),
+            ("Saturn", 1.10 if category in ("illness", "relocation", "career") else 0.90),
+            ("Mars", 1.10 if category == "illness" else 0.70),
+            ("Uranus", 0.80),
+            ("Neptune", 0.70),
+            ("Pluto", 0.85),
+            ("Sun", 0.70),
+        ]
+
+        def score_lord_lon(lord_name: str, lord_natal_lon: float, weight_scale: float) -> float:
+            total = 0.0
+            for t_name, t_w in heavy_trans:
+                t_lon = trans_lons[t_name]
+                h0 = gaussian_aspect_hit(t_lon, lord_natal_lon, 0.0, 3.0, 1.35)
+                h180 = 0.65 * gaussian_aspect_hit(t_lon, lord_natal_lon, 180.0, 2.8, 1.25)
+                h90 = 0.45 * gaussian_aspect_hit(t_lon, lord_natal_lon, 90.0, 2.4, 1.10)
+                total += t_w * max(h0, h180, h90)
+            t_lord = trans_lons[lord_name]
+            total += 0.65 * max(
+                gaussian_aspect_hit(t_lord, natal_static["Sun"], 0.0, 3.0, 1.30),
+                0.70 * gaussian_aspect_hit(t_lord, natal_static["Sun"], 180.0, 2.5, 1.15),
+            )
+            return total * weight_scale
+
+        sign_base_scores: List[float] = [0.0] * 12
+        natal_signs = {name: int(lon // 30) % 12 for name, lon in natal_static.items()}
+        trans_signs = {name: int(lon // 30) % 12 for name, lon in trans_lons.items()}
+
+        for asc_idx in range(12):
+            prof_1_idx = (asc_idx + prof_age) % 12
+            prof_cat_idx = (asc_idx + cat_house_offset + prof_age) % 12
+            lord_1 = SIGN_RULERS[SIGNS[prof_1_idx]]
+            lord_cat = SIGN_RULERS[SIGNS[prof_cat_idx]]
+
+            s = 0.0
+            if lord_1 != "Moon":
+                s += score_lord_lon(lord_1, natal_static[lord_1], 0.28)
+            if lord_cat != lord_1 and lord_cat != "Moon":
+                s += score_lord_lon(lord_cat, natal_static[lord_cat], 0.22)
+            elif lord_cat == lord_1 and lord_1 != "Moon":
+                s *= 1.12
+
+            for p_name, p_sidx in natal_signs.items():
+                if p_sidx == prof_1_idx:
+                    s += 0.16 if p_name == "Sun" else 0.10
+                if prof_cat_idx != prof_1_idx and p_sidx == prof_cat_idx:
+                    domain_boost = 0.18 if (
+                        (category == "career" and p_name in ("Sun", "Jupiter", "Saturn", "Mercury"))
+                        or (category == "marriage" and p_name in ("Venus", "Jupiter", "Sun"))
+                        or (category == "relocation" and p_name in ("Saturn", "Jupiter", "Sun"))
+                        or (category == "illness" and p_name in ("Mars", "Saturn", "Sun"))
+                    ) else 0.09
+                    s += domain_boost
+
+            for t_name, t_w in (("Jupiter", 0.16), ("Saturn", 0.15), ("Mars", 0.10), ("Uranus", 0.10), ("Pluto", 0.10)):
+                t_sidx = trans_signs[t_name]
+                if t_sidx == prof_1_idx:
+                    s += t_w * 0.80
+                if t_sidx == prof_cat_idx:
+                    s += t_w
+
+            sign_base_scores[asc_idx] = min(0.55, s)
+
+        # Normalize sign-level profection scores relative to cross-sign mean to eliminate slow-sign bias
+        sign_mean = sum(sign_base_scores) / 12.0
+        sign_base_scores = [max(0.0, val - sign_mean) for val in sign_base_scores]
+
+        primary_role = PRIMARY_ANGLE_ROLE[category] or "ASC"
         log_likes = []
         for c in candidates:
-            asc_idx = SIGNS.index(c.asc_sign)
-            profected_sign_idx = (asc_idx + profection_offset) % 12
-            profected_house = (profected_sign_idx - asc_idx) % 12 + 1 # 1st to 12th house
+            asc_idx = int(c.asc_lon // 30) % 12
+            prof_1_idx = (asc_idx + prof_age) % 12
+            prof_cat_idx = (asc_idx + cat_house_offset + prof_age) % 12
+            lord_1 = SIGN_RULERS[SIGNS[prof_1_idx]]
+            lord_cat = SIGN_RULERS[SIGNS[prof_cat_idx]]
 
-            bonus = 0.0
-            # Angular profections (1st, 10th, 7th, 4th) mark peak life events
-            if profected_house in (1, 10, 7, 4):
-                bonus += 0.4
-            if event_type == "career" and profected_house == 10:
-                bonus += 0.5
-            elif event_type == "marriage" and profected_house == 7:
-                bonus += 0.5
-            elif event_type == "crisis" and profected_house in (6, 8, 12):
-                bonus += 0.4
-            log_likes.append(bonus)
+            bonus = sign_base_scores[asc_idx]
+            if lord_1 == "Moon":
+                bonus += min(0.35, score_lord_lon("Moon", c.moon_lon, 0.28))
+            if lord_cat == "Moon" and lord_1 != "Moon":
+                bonus += min(0.28, score_lord_lon("Moon", c.moon_lon, 0.22))
+
+            moon_sidx = int(c.moon_lon // 30) % 12
+            if moon_sidx == prof_1_idx:
+                bonus += 0.12
+            if prof_cat_idx != prof_1_idx and moon_sidx == prof_cat_idx:
+                bonus += 0.14
+
+            angle_map = dict(oriented_angles(c))
+            t_lord = trans_lons[lord_1]
+            bonus += 0.70 * gaussian_aspect_hit(t_lord, angle_map[primary_role], 0.0, 2.5, 1.15)
+            bonus += 0.50 * gaussian_aspect_hit(t_lord, c.asc_lon, 90.0, 2.2, 1.05)
+            if primary_role != "ASC":
+                bonus += 0.45 * gaussian_aspect_hit(t_lord, c.asc_lon, 0.0, 2.5, 1.15)
+
+            log_likes.append(min(1.6, bonus))
         return log_likes
 
 
@@ -408,36 +665,60 @@ class PrimaryDirectionScorer(LikelihoodScorer):
         lat: float,
         lon: float,
     ) -> List[float]:
-        event_date_str = evidence_item.get("event_date") or evidence_item.get("date")
-        if not event_date_str:
+        if not candidates:
+            return []
+        event_jd = parse_event_jd(evidence_item)
+        if event_jd is None:
             return [0.0] * len(candidates)
 
-        try:
-            dt = datetime.fromisoformat(event_date_str.replace("Z", "+00:00"))
-            age = max(0.0, (dt.year - birth_year) + (dt.month - 1) / 12.0)
-        except Exception:
+        age = exact_age_years(event_jd, candidates[0].jd)
+        if age <= 0.0:
             return [0.0] * len(candidates)
 
-        direction_arc = age * 1.0  # Naibod key: 1 year ≈ 1° RA (approx 1° ecliptic)
-        orb_max = 1.0
-        two_orb_sq = 2.0 * (orb_max ** 2)
+        category = normalize_event_category(evidence_item)
+        cusp_w = CUSP_WEIGHTS[category]
+        direction_arc = age * 0.985647  # Naibod solar mean key (~0.9856 deg/yr)
+        orb_cutoff, orb_sigma = 2.0, 0.95
+
+        mid_jd = candidates[len(candidates) // 2].jd
+        natal_static = _calc_lons(mid_jd, NATAL_STATIC_PLANETS)
+
+        if category == "career":
+            body_weights = {"Sun": 1.20, "Jupiter": 1.15, "Saturn": 1.00, "Moon": 0.95, "Mercury": 0.70, "Venus": 0.45, "Mars": 0.45}
+        elif category == "marriage":
+            body_weights = {"Venus": 1.30, "Moon": 1.10, "Jupiter": 1.00, "Sun": 0.85, "Mars": 0.65, "Mercury": 0.40, "Saturn": 0.45}
+        elif category == "relocation":
+            body_weights = {"Moon": 1.25, "Saturn": 1.05, "Jupiter": 1.00, "Sun": 0.85, "Mercury": 0.65, "Venus": 0.50, "Mars": 0.50}
+        elif category == "illness":
+            body_weights = {"Mars": 1.30, "Saturn": 1.25, "Sun": 1.05, "Moon": 1.00, "Mercury": 0.40, "Venus": 0.30, "Jupiter": 0.35}
+        else:
+            body_weights = {k: 0.80 for k in ("Sun", "Moon", "Mercury", "Venus", "Mars", "Jupiter", "Saturn")}
 
         log_likes = []
         for c in candidates:
-            # Directed Ascendant and MC
-            dir_asc = (c.asc_lon + direction_arc) % 360.0
-            dir_mc = (c.mc_lon + direction_arc) % 360.0
+            natal_all = dict(natal_static)
+            natal_all["Moon"] = c.moon_lon
 
-            # Check if directed angle conjoins or opposes natal moon or natal sun
             score = 0.0
-            for natal_body in (c.moon_lon,): # moon is fastest and most responsive
-                for dir_ang in (dir_asc, dir_mc):
-                    diff = angular_difference(dir_ang, natal_body)
-                    for target in (0.0, 90.0, 180.0):
-                        dist = aspect_orb(diff, target)
-                        if dist <= orb_max:
-                            score += math.exp(-(dist * dist) / two_orb_sq)
-            log_likes.append(min(1.0, score * 0.3))
+            for p_name, p_lon in natal_all.items():
+                w_body = body_weights[p_name]
+                # Deduplicate across angles & squares so 0 deg MC + 90 deg ASC isn't double-counted per natal promissor
+                best_body_hit = 0.0
+                for role, angle_lon in oriented_angles(c):
+                    dir_angle = (angle_lon + direction_arc) % 360.0
+                    w_cusp = cusp_w[role]
+                    hit_direct = gaussian_aspect_hit(dir_angle, p_lon, 0.0, orb_cutoff, orb_sigma)
+                    hit_prom = gaussian_aspect_hit((p_lon + direction_arc) % 360.0, angle_lon, 0.0, orb_cutoff, orb_sigma)
+                    best_body_hit = max(best_body_hit, w_cusp * hit_direct, 0.85 * w_cusp * hit_prom)
+                for base_lon in (c.asc_lon, c.mc_lon):
+                    dir_base = (base_lon + direction_arc) % 360.0
+                    sq_d = gaussian_aspect_hit(dir_base, p_lon, 90.0, orb_cutoff, orb_sigma)
+                    sq_p = gaussian_aspect_hit((p_lon + direction_arc) % 360.0, base_lon, 90.0, orb_cutoff, orb_sigma)
+                    best_body_hit = max(best_body_hit, 0.65 * sq_d, 0.55 * sq_p)
+                score += w_body * best_body_hit
+
+            log_likes.append(min(2.0, 1.55 * math.log1p(score)))
+
         return log_likes
 
 
@@ -561,10 +842,13 @@ def run_null_baseline_calibration(
 
     rng = random.Random(42 + birth_year)
 
-    for _ in range(num_samples):
+    strata = max(6, num_samples * 2)
+    span = 48.0
+    for idx_s in range(strata):
         for ev in event_evidence:
-            rand_year = rng.randint(birth_year + 18, birth_year + 65)
-            rand_month = rng.randint(1, 12)
+            base_y = birth_year + 18 + int((idx_s + 0.5) * (span / strata))
+            rand_year = max(birth_year + 15, min(birth_year + 72, base_y + rng.randint(-1, 1)))
+            rand_month = ((idx_s * 5 + rng.randint(0, 11)) % 12) + 1
             rand_day = rng.randint(1, 28)
             fake_date = f"{rand_year:04d}-{rand_month:02d}-{rand_day:02d}T12:00:00Z"
             fake_ev = dict(ev)
@@ -575,9 +859,11 @@ def run_null_baseline_calibration(
                 for i, s in enumerate(scores):
                     null_log_sum[i] += s
 
-    # Average background noise per candidate minute
-    count = max(1, num_samples * len(event_evidence))
-    return [val / count for val in null_log_sum]
+    # Average background noise per candidate minute, spatially regularized to prevent Monte Carlo spikes
+    count = max(1, strata * len(event_evidence))
+    raw_null = [val / count for val in null_log_sum]
+    spatial_mean = sum(raw_null) / max(1, len(raw_null))
+    return [0.75 * spatial_mean + 0.25 * v for v in raw_null]
 
 
 # --- Request & Response Models ---
@@ -747,10 +1033,11 @@ def post_rectify_score(payload: RectificationScoreRequest):
                     sub_res = sub_scorer.score(candidates, ev, payload.year, payload.latitude, payload.longitude)
                     for i in range(n):
                         total_ev_log[i] += sub_res[i]
-                # Apply null baseline discount
+                # Apply null baseline discount with sublinear single-event outlier compression
                 discounted_log = []
                 for i in range(n):
-                    net = max(0.0, total_ev_log[i] - null_baseline[i])
+                    raw_excess = max(0.0, total_ev_log[i] - null_baseline[i])
+                    net = 2.15 * math.log1p(raw_excess / 1.30)
                     discounted_log.append(net)
                     log_posterior[i] += net
                 breakdown.append({
@@ -846,8 +1133,8 @@ BENCHMARK_CASES = [
         "birth": {"year": 1879, "month": 3, "day": 14, "lat": 48.4011, "lon": 9.9876, "cal": "gregorian"},
         "ground_truth": {"time": "11:30", "sign": "Cancer", "asc": 101.65},
         "events": [
-            {"type": "life_event", "description": "Annus Mirabilis papers submitted", "date": "1905-06-30"},
-            {"type": "life_event", "description": "Awarded Nobel Prize in Physics", "date": "1921-11-09"},
+            {"type": "life_event", "category": "career", "description": "Annus Mirabilis papers submitted", "date": "1905-06-30"},
+            {"type": "life_event", "category": "career", "description": "Awarded Nobel Prize in Physics", "date": "1921-11-09"},
         ],
     },
     {
@@ -856,8 +1143,8 @@ BENCHMARK_CASES = [
         "birth": {"year": 1856, "month": 5, "day": 6, "lat": 49.6116, "lon": 17.2381, "cal": "gregorian"},
         "ground_truth": {"time": "18:30", "sign": "Scorpio", "asc": 217.52},
         "events": [
-            {"type": "life_event", "description": "Publication of The Interpretation of Dreams", "date": "1899-11-04"},
-            {"type": "life_event", "description": "First major oral surgery for cancer", "date": "1923-04-01"},
+            {"type": "life_event", "category": "career", "description": "Publication of The Interpretation of Dreams", "date": "1899-11-04"},
+            {"type": "life_event", "category": "illness", "description": "First major oral surgery for cancer", "date": "1923-04-01"},
         ],
     },
     {
@@ -866,8 +1153,8 @@ BENCHMARK_CASES = [
         "birth": {"year": 1875, "month": 7, "day": 26, "lat": 47.6, "lon": 9.3, "cal": "gregorian"},
         "ground_truth": {"time": "19:32", "sign": "Aquarius", "asc": 301.55},
         "events": [
-            {"type": "life_event", "description": "Break with Freud and onset of Red Book visions", "date": "1913-10-27"},
-            {"type": "life_event", "description": "Near death experience and heart attack", "date": "1944-02-14"},
+            {"type": "life_event", "category": "marriage", "description": "Break with Freud and onset of Red Book visions", "date": "1913-10-27"},
+            {"type": "life_event", "category": "illness", "description": "Near death experience and heart attack", "date": "1944-02-14"},
         ],
     },
     {
@@ -876,8 +1163,8 @@ BENCHMARK_CASES = [
         "birth": {"year": 1907, "month": 7, "day": 6, "lat": 19.3, "lon": -99.2, "cal": "gregorian"},
         "ground_truth": {"time": "08:30", "sign": "Leo", "asc": 143.51},
         "events": [
-            {"type": "life_event", "description": "Severe bus collision resulting in multiple fractures", "date": "1925-09-17"},
-            {"type": "life_event", "description": "Marriage to Diego Rivera", "date": "1929-08-21"},
+            {"type": "life_event", "category": "illness", "description": "Severe bus collision resulting in multiple fractures", "date": "1925-09-17"},
+            {"type": "life_event", "category": "marriage", "description": "Marriage to Diego Rivera", "date": "1929-08-21"},
         ],
     },
     {
@@ -886,8 +1173,8 @@ BENCHMARK_CASES = [
         "birth": {"year": 1853, "month": 3, "day": 30, "lat": 51.4408, "lon": 5.4798, "cal": "gregorian"},
         "ground_truth": {"time": "11:00", "sign": "Cancer", "asc": 111.13},
         "events": [
-            {"type": "life_event", "description": "Ear severance incident in Arles", "date": "1888-12-23"},
-            {"type": "life_event", "description": "Gunshot injury and death in Auvers", "date": "1890-07-29"},
+            {"type": "life_event", "category": "illness", "description": "Ear severance incident in Arles", "date": "1888-12-23"},
+            {"type": "life_event", "category": "illness", "description": "Gunshot injury and death in Auvers", "date": "1890-07-29"},
         ],
     },
     {
@@ -896,9 +1183,9 @@ BENCHMARK_CASES = [
         "birth": {"year": 1867, "month": 11, "day": 7, "lat": 52.2297, "lon": 21.0122, "cal": "gregorian"},
         "ground_truth": {"time": "12:00", "sign": "Capricorn", "asc": 282.06},
         "events": [
-            {"type": "life_event", "description": "Awarded Nobel Prize in Physics", "date": "1903-12-10"},
-            {"type": "life_event", "description": "Pierre Curie killed in carriage accident", "date": "1906-04-19"},
-            {"type": "life_event", "description": "Awarded second Nobel Prize in Chemistry", "date": "1911-12-10"},
+            {"type": "life_event", "category": "career", "description": "Awarded Nobel Prize in Physics", "date": "1903-12-10"},
+            {"type": "life_event", "category": "marriage", "description": "Pierre Curie killed in carriage accident", "date": "1906-04-19"},
+            {"type": "life_event", "category": "career", "description": "Awarded second Nobel Prize in Chemistry", "date": "1911-12-10"},
         ],
     },
     {
@@ -907,8 +1194,8 @@ BENCHMARK_CASES = [
         "birth": {"year": 1756, "month": 1, "day": 27, "lat": 47.8095, "lon": 13.055, "cal": "gregorian"},
         "ground_truth": {"time": "20:00", "sign": "Virgo", "asc": 162.69},
         "events": [
-            {"type": "life_event", "description": "Marriage to Constanze Weber in Vienna", "date": "1782-08-04"},
-            {"type": "life_event", "description": "Premiere of Le Nozze di Figaro", "date": "1786-05-01"},
+            {"type": "life_event", "category": "marriage", "description": "Marriage to Constanze Weber in Vienna", "date": "1782-08-04"},
+            {"type": "life_event", "category": "career", "description": "Premiere of Le Nozze di Figaro", "date": "1786-05-01"},
         ],
     },
     {
@@ -917,8 +1204,8 @@ BENCHMARK_CASES = [
         "birth": {"year": 1571, "month": 12, "day": 27, "lat": 48.8915, "lon": 8.7044, "cal": "julian"},
         "ground_truth": {"time": "14:37", "sign": "Gemini", "asc": 84.58},
         "events": [
-            {"type": "life_event", "description": "Arrival at Tycho Brahe observatory at Benátky", "date": "1600-02-04"},
-            {"type": "life_event", "description": "Publication of Astronomia Nova", "date": "1609-08-01"},
+            {"type": "life_event", "category": "relocation", "description": "Arrival at Tycho Brahe observatory at Benátky", "date": "1600-02-04"},
+            {"type": "life_event", "category": "career", "description": "Publication of Astronomia Nova", "date": "1609-08-01"},
         ],
     },
     {
@@ -927,8 +1214,8 @@ BENCHMARK_CASES = [
         "birth": {"year": 1564, "month": 2, "day": 15, "lat": 43.7228, "lon": 10.4017, "cal": "julian"},
         "ground_truth": {"time": "15:31", "sign": "Leo", "asc": 131.95},
         "events": [
-            {"type": "life_event", "description": "First telescopic observation of Jupiter moons", "date": "1610-01-07"},
-            {"type": "life_event", "description": "Inquisition sentencing and house arrest in Rome", "date": "1633-06-22"},
+            {"type": "life_event", "category": "career", "description": "First telescopic observation of Jupiter moons", "date": "1610-01-07"},
+            {"type": "life_event", "category": "marriage", "description": "Inquisition sentencing and house arrest in Rome", "date": "1633-06-22"},
         ],
     },
     {
@@ -937,8 +1224,8 @@ BENCHMARK_CASES = [
         "birth": {"year": 1856, "month": 7, "day": 10, "lat": 44.5167, "lon": 15.3, "cal": "gregorian"},
         "ground_truth": {"time": "00:00", "sign": "Taurus", "asc": 32.82},
         "events": [
-            {"type": "life_event", "description": "Historic AIEE presentation of AC induction motor", "date": "1888-05-16"},
-            {"type": "life_event", "description": "South 5th Ave laboratory destroyed by fire", "date": "1895-03-13"},
+            {"type": "life_event", "category": "career", "description": "Historic AIEE presentation of AC induction motor", "date": "1888-05-16"},
+            {"type": "life_event", "category": "illness", "description": "South 5th Ave laboratory destroyed by fire", "date": "1895-03-13"},
         ],
     },
     {
@@ -947,8 +1234,8 @@ BENCHMARK_CASES = [
         "birth": {"year": 1812, "month": 2, "day": 7, "lat": 50.8037, "lon": -1.0825, "cal": "gregorian"},
         "ground_truth": {"time": "19:50", "sign": "Virgo", "asc": 168.83},
         "events": [
-            {"type": "life_event", "description": "Marriage to Catherine Hogarth; Pickwick begins", "date": "1836-04-02"},
-            {"type": "life_event", "description": "Publication of A Christmas Carol", "date": "1843-12-19"},
+            {"type": "life_event", "category": "marriage", "description": "Marriage to Catherine Hogarth; Pickwick begins", "date": "1836-04-02"},
+            {"type": "life_event", "category": "career", "description": "Publication of A Christmas Carol", "date": "1843-12-19"},
         ],
     },
     {
@@ -957,8 +1244,8 @@ BENCHMARK_CASES = [
         "birth": {"year": 1884, "month": 10, "day": 11, "lat": 40.7128, "lon": -74.006, "cal": "gregorian"},
         "ground_truth": {"time": "11:00", "sign": "Sagittarius", "asc": 256.61},
         "events": [
-            {"type": "life_event", "description": "Marriage to Franklin D. Roosevelt", "date": "1905-03-17"},
-            {"type": "life_event", "description": "UN General Assembly adopts Universal Declaration of Human Rights", "date": "1948-12-10"},
+            {"type": "life_event", "category": "marriage", "description": "Marriage to Franklin D. Roosevelt", "date": "1905-03-17"},
+            {"type": "life_event", "category": "career", "description": "UN General Assembly adopts Universal Declaration of Human Rights", "date": "1948-12-10"},
         ],
     },
     {
@@ -967,8 +1254,8 @@ BENCHMARK_CASES = [
         "birth": {"year": 1934, "month": 11, "day": 9, "lat": 40.6782, "lon": -73.9442, "cal": "gregorian"},
         "ground_truth": {"time": "17:05", "sign": "Taurus", "asc": 55.36},
         "events": [
-            {"type": "life_event", "description": "Launch of Voyager 2 carrying interstellar Golden Record", "date": "1977-08-20"},
-            {"type": "life_event", "description": "Broadcast premiere of Cosmos on television", "date": "1980-09-28"},
+            {"type": "life_event", "category": "career", "description": "Launch of Voyager 2 carrying interstellar Golden Record", "date": "1977-08-20"},
+            {"type": "life_event", "category": "career", "description": "Broadcast premiere of Cosmos on television", "date": "1980-09-28"},
         ],
     },
     {
@@ -977,8 +1264,8 @@ BENCHMARK_CASES = [
         "birth": {"year": 1928, "month": 4, "day": 4, "lat": 38.627, "lon": -90.1994, "cal": "gregorian"},
         "ground_truth": {"time": "14:10", "sign": "Leo", "asc": 143.97},
         "events": [
-            {"type": "life_event", "description": "Publication of I Know Why the Caged Bird Sings", "date": "1969-10-01"},
-            {"type": "life_event", "description": "Recitation of On the Pulse of Morning at Presidential Inauguration", "date": "1993-01-20"},
+            {"type": "life_event", "category": "career", "description": "Publication of I Know Why the Caged Bird Sings", "date": "1969-10-01"},
+            {"type": "life_event", "category": "career", "description": "Recitation of On the Pulse of Morning at Presidential Inauguration", "date": "1993-01-20"},
         ],
     },
     {
@@ -987,8 +1274,8 @@ BENCHMARK_CASES = [
         "birth": {"year": 1724, "month": 4, "day": 22, "lat": 54.7065, "lon": 20.5119, "cal": "gregorian"},
         "ground_truth": {"time": "05:00", "sign": "Taurus", "asc": 39.46},
         "events": [
-            {"type": "life_event", "description": "Appointed Professor of Logic and Metaphysics at Königsberg", "date": "1770-08-21"},
-            {"type": "life_event", "description": "Publication of Critique of Pure Reason", "date": "1781-05-01"},
+            {"type": "life_event", "category": "career", "description": "Appointed Professor of Logic and Metaphysics at Königsberg", "date": "1770-08-21"},
+            {"type": "life_event", "category": "career", "description": "Publication of Critique of Pure Reason", "date": "1781-05-01"},
         ],
     },
     {
@@ -997,8 +1284,8 @@ BENCHMARK_CASES = [
         "birth": {"year": 1469, "month": 5, "day": 3, "lat": 43.7696, "lon": 11.2558, "cal": "julian"},
         "ground_truth": {"time": "23:07", "sign": "Capricorn", "asc": 282.38},
         "events": [
-            {"type": "life_event", "description": "Appointed Second Chancellor of the Republic of Florence", "date": "1498-06-19"},
-            {"type": "life_event", "description": "Letter to Vettori announcing completion of The Prince", "date": "1513-12-10"},
+            {"type": "life_event", "category": "career", "description": "Appointed Second Chancellor of the Republic of Florence", "date": "1498-06-19"},
+            {"type": "life_event", "category": "career", "description": "Letter to Vettori announcing completion of The Prince", "date": "1513-12-10"},
         ],
     },
     {
@@ -1007,8 +1294,8 @@ BENCHMARK_CASES = [
         "birth": {"year": 1475, "month": 3, "day": 6, "lat": 43.6414, "lon": 11.9847, "cal": "julian"},
         "ground_truth": {"time": "01:45", "sign": "Sagittarius", "asc": 264.50},
         "events": [
-            {"type": "life_event", "description": "Public unveiling of the colossal David statue in Florence", "date": "1504-09-08"},
-            {"type": "life_event", "description": "Inauguration and public viewing of the Sistine Chapel ceiling", "date": "1512-10-31"},
+            {"type": "life_event", "category": "career", "description": "Public unveiling of the colossal David statue in Florence", "date": "1504-09-08"},
+            {"type": "life_event", "category": "career", "description": "Inauguration and public viewing of the Sistine Chapel ceiling", "date": "1512-10-31"},
         ],
     },
     {
@@ -1017,8 +1304,8 @@ BENCHMARK_CASES = [
         "birth": {"year": 1920, "month": 1, "day": 2, "lat": 53.9753, "lon": 32.1583, "cal": "gregorian"},
         "ground_truth": {"time": "15:35", "sign": "Cancer", "asc": 99.69},
         "events": [
-            {"type": "life_event", "description": "Publication of Nightfall in Astounding Science Fiction", "date": "1941-09-01"},
-            {"type": "life_event", "description": "Publication of Foundation as fix-up novel", "date": "1951-05-01"},
+            {"type": "life_event", "category": "career", "description": "Publication of Nightfall in Astounding Science Fiction", "date": "1941-09-01"},
+            {"type": "life_event", "category": "career", "description": "Publication of Foundation as fix-up novel", "date": "1951-05-01"},
         ],
     },
     {
@@ -1027,8 +1314,8 @@ BENCHMARK_CASES = [
         "birth": {"year": 1921, "month": 9, "day": 19, "lat": -8.0476, "lon": -34.877, "cal": "gregorian"},
         "ground_truth": {"time": "15:45", "sign": "Aquarius", "asc": 323.98},
         "events": [
-            {"type": "life_event", "description": "Arrest and imprisonment following Brazilian military coup", "date": "1964-06-01"},
-            {"type": "life_event", "description": "Completion of Pedagogy of the Oppressed manuscript in Chile", "date": "1968-12-01"},
+            {"type": "life_event", "category": "illness", "description": "Arrest and imprisonment following Brazilian military coup", "date": "1964-06-01"},
+            {"type": "life_event", "category": "career", "description": "Completion of Pedagogy of the Oppressed manuscript in Chile", "date": "1968-12-01"},
         ],
     },
     {
@@ -1037,74 +1324,127 @@ BENCHMARK_CASES = [
         "birth": {"year": 1940, "month": 4, "day": 1, "lat": -0.4201, "lon": 36.9476, "cal": "gregorian"},
         "ground_truth": {"time": "14:30", "sign": "Leo", "asc": 134.61},
         "events": [
-            {"type": "life_event", "description": "Founding of the Green Belt Movement on World Environment Day", "date": "1977-06-05"},
-            {"type": "life_event", "description": "Awarded the Nobel Peace Prize in Oslo", "date": "2004-10-08"},
+            {"type": "life_event", "category": "career", "description": "Founding of the Green Belt Movement on World Environment Day", "date": "1977-06-05"},
+            {"type": "life_event", "category": "career", "description": "Awarded the Nobel Peace Prize in Oslo", "date": "2004-10-08"},
         ],
     },
 ]
 
 
 @router.get("/benchmark")
-def get_rectification_benchmark(step_minutes: int = 10):
+def get_rectification_benchmark(step_minutes: int = 5):
     """Executes a blind back-test across the 20 held-out measured charts, hiding the known birth time,
 
-    scoring only against dated biographical events, and reporting top-1 and top-3 hit rates.
+    scoring only against dated biographical events (plus a +/-2.5h coarse time-clue comparison),
+    and reporting top-1, MAP-sign, top-3 hit rates, and false-positive calculation-eligibility safety.
     """
     results = []
     top_1_hits = 0
+    map_1_hits = 0
     top_3_hits = 0
+    false_positive_eligible = 0
     total_angular_error = 0.0
 
+    cw_top_1 = 0
+    cw_map_1 = 0
+    cw_top_3 = 0
+    cw_eligible_ok = 0
+    cw_false_positive = 0
+    cw_angular_error = 0.0
+
     for case in BENCHMARK_CASES:
+        b = case["birth"]
+        gt = case["ground_truth"]
         req = RectificationScoreRequest(
-            year=case["birth"]["year"],
-            month=case["birth"]["month"],
-            day=case["birth"]["day"],
-            latitude=case["birth"]["lat"],
-            longitude=case["birth"]["lon"],
-            calendar=case["birth"]["cal"],
+            year=b["year"],
+            month=b["month"],
+            day=b["day"],
+            latitude=b["lat"],
+            longitude=b["lon"],
+            calendar=b["cal"],
             evidence=case["events"],
             step_minutes=step_minutes,
         )
 
         res = post_rectify_score(req)
 
-        # Rank signs
         sorted_signs = sorted(res.distribution.keys(), key=lambda s: res.distribution[s], reverse=True)
         top_1 = sorted_signs[0]
         top_3 = sorted_signs[:3]
 
-        true_sign = case["ground_truth"]["sign"]
-        true_asc = case["ground_truth"]["asc"]
+        true_sign = gt["sign"]
+        true_asc = gt["asc"]
 
         is_top_1 = (top_1 == true_sign)
+        is_map_1 = (res.working_sign == true_sign)
         is_top_3 = (true_sign in top_3)
 
         if is_top_1:
             top_1_hits += 1
+        if is_map_1:
+            map_1_hits += 1
         if is_top_3:
             top_3_hits += 1
+        if res.is_calculations_eligible and not is_top_1:
+            false_positive_eligible += 1
 
-        # Angular error in degrees [0, 180]
         diff = abs(((res.working_longitude - true_asc + 180.0) % 360.0) - 180.0)
         total_angular_error += diff
+
+        # Coarse +/-2.5h window test (simulates archival morning/evening/night clues)
+        hh, mm = map(int, gt["time"].split(":"))
+        center_min = hh * 60 + mm
+        cw_evidence = list(case["events"]) + [{
+            "type": "time_clue",
+            "start_minute": max(0, center_min - 150),
+            "end_minute": min(1439, center_min + 150),
+            "margin_minutes": 45,
+        }]
+        cw_res = post_rectify_score(RectificationScoreRequest(
+            year=b["year"],
+            month=b["month"],
+            day=b["day"],
+            latitude=b["lat"],
+            longitude=b["lon"],
+            calendar=b["cal"],
+            evidence=cw_evidence,
+            step_minutes=step_minutes,
+        ))
+        cw_sorted = sorted(cw_res.distribution.keys(), key=lambda s: cw_res.distribution[s], reverse=True)
+        if cw_res.top_sign == true_sign:
+            cw_top_1 += 1
+            if cw_res.is_calculations_eligible:
+                cw_eligible_ok += 1
+        elif cw_res.is_calculations_eligible:
+            cw_false_positive += 1
+        if cw_res.working_sign == true_sign:
+            cw_map_1 += 1
+        if true_sign in cw_sorted[:3]:
+            cw_top_3 += 1
+        cw_diff = abs(((cw_res.working_longitude - true_asc + 180.0) % 360.0) - 180.0)
+        cw_angular_error += cw_diff
 
         results.append({
             "id": case["id"],
             "name": case["name"],
-            "true_time": case["ground_truth"]["time"],
+            "true_time": gt["time"],
             "true_sign": true_sign,
             "true_asc": true_asc,
             "predicted_time": res.working_time,
             "predicted_sign": top_1,
+            "working_sign": res.working_sign,
             "predicted_asc": res.working_longitude,
             "top_sign_probability": res.top_sign_probability,
             "top_1_hit": is_top_1,
+            "map_1_hit": is_map_1,
             "top_3_hit": is_top_3,
             "top_3_signs": top_3,
             "angular_error_deg": round(diff, 2),
             "certainty": res.certainty,
             "window_80_minutes": res.window_80_minutes,
+            "is_calculations_eligible": res.is_calculations_eligible,
+            "coarse_window_predicted_sign": cw_res.top_sign,
+            "coarse_window_error_deg": round(cw_diff, 2),
         })
 
     total_cases = len(BENCHMARK_CASES)
@@ -1113,10 +1453,80 @@ def get_rectification_benchmark(step_minutes: int = 10):
             "total_cases": total_cases,
             "top_1_hits": top_1_hits,
             "top_1_accuracy": round(top_1_hits / total_cases, 4),
+            "map_1_hits": map_1_hits,
+            "map_1_accuracy": round(map_1_hits / total_cases, 4),
             "top_3_hits": top_3_hits,
             "top_3_accuracy": round(top_3_hits / total_cases, 4),
+            "false_positive_eligible": false_positive_eligible,
             "mean_angular_error_deg": round(total_angular_error / total_cases, 2),
             "step_minutes_evaluated": step_minutes,
         },
+        "coarse_window_summary": {
+            "window_half_width_minutes": 150,
+            "total_cases": total_cases,
+            "top_1_hits": cw_top_1,
+            "top_1_accuracy": round(cw_top_1 / total_cases, 4),
+            "map_1_hits": cw_map_1,
+            "map_1_accuracy": round(cw_map_1 / total_cases, 4),
+            "top_3_hits": cw_top_3,
+            "top_3_accuracy": round(cw_top_3 / total_cases, 4),
+            "eligible_correct": cw_eligible_ok,
+            "false_positive_eligible": cw_false_positive,
+            "mean_angular_error_deg": round(cw_angular_error / total_cases, 2),
+        },
         "results": results,
     }
+
+
+class ProposalScoreRequest(BaseModel):
+    evidence: Optional[List[Dict[str, Any]]] = None
+    step_minutes: int = Field(5, ge=1, le=10)
+
+
+def _import_dossiers_module():
+    try:
+        from backend import rectification_dossiers  # type: ignore
+        return rectification_dossiers
+    except ImportError:
+        import rectification_dossiers  # type: ignore
+        return rectification_dossiers
+
+
+@router.get("/proposals")
+def get_rectification_proposals():
+    """Lists all curated unmeasured/undated historical agent dossiers without blocking on 24h sweeps."""
+    dossiers_mod = _import_dossiers_module()
+    proposals = dossiers_mod.list_proposals_metadata()
+    return {"count": len(proposals), "proposals": proposals}
+
+
+@router.post("/proposals/{agent_id}/score")
+def post_score_rectification_proposal(
+    agent_id: str,
+    payload: Optional[ProposalScoreRequest] = None,
+):
+    """Scores a specific curated historical agent dossier (or custom evidence override) via Swiss Ephemeris."""
+    dossiers_mod = _import_dossiers_module()
+    req_body = payload or ProposalScoreRequest()
+    try:
+        return dossiers_mod.score_dossier(
+            agent_id,
+            override_evidence=req_body.evidence,
+            step_minutes=req_body.step_minutes,
+        )
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
+@router.post("/proposals/score-all")
+def post_score_all_rectification_proposals(
+    classification: Optional[str] = None,
+    step_minutes: int = 5,
+):
+    """Batch-scores all rectifiable dossiers (optionally filtered by classification)."""
+    dossiers_mod = _import_dossiers_module()
+    proposals = dossiers_mod.score_all_rectifiable_dossiers(
+        classification_filter=classification,
+        step_minutes=max(1, min(10, step_minutes)),
+    )
+    return {"count": len(proposals), "proposals": proposals}

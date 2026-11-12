@@ -747,6 +747,31 @@ export const backend = {
       agentRequest<any>(`/api/rectify/benchmark?step_minutes=${stepMinutes}`, {
         method: 'GET',
       }),
+
+    proposals: () =>
+      agentRequest<any>('/api/rectify/proposals', {
+        method: 'GET',
+      }),
+
+    scoreProposal: (
+      agentId: string,
+      payload?: { evidence?: Array<Record<string, any>>; step_minutes?: number }
+    ) =>
+      agentRequest<any>(`/api/rectify/proposals/${encodeURIComponent(agentId)}/score`, {
+        method: 'POST',
+        body: JSON.stringify(payload ?? {}),
+        headers: { 'Content-Type': 'application/json' },
+      }),
+
+    scoreAllProposals: (params?: { classification?: string; step_minutes?: number }) => {
+      const sp = new URLSearchParams()
+      if (params?.classification) sp.set('classification', params.classification)
+      if (params?.step_minutes !== undefined) sp.set('step_minutes', String(params.step_minutes))
+      const qs = sp.toString()
+      return agentRequest<any>(`/api/rectify/proposals/score-all${qs ? `?${qs}` : ''}`, {
+        method: 'POST',
+      })
+    },
   },
 }
 
