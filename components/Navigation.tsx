@@ -155,6 +155,12 @@ const navigationGroups: NavGroup[] = [
         description: 'Deep natal & alchemical synthesis for any spacetime coordinate.',
       },
       {
+        href: '/rectify',
+        label: 'Birth Time Rectifier',
+        badge: 'EIG',
+        description: 'Estimate an unknown rising sign iteratively from life milestones.',
+      },
+      {
         href: '/moon-phases',
         label: 'Lunar Phase Oracle',
         description: 'Track the 9 lunar phases and 360° Moon degree intelligence.',

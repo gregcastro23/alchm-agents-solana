@@ -137,8 +137,14 @@ Available tools:
 - consciousness_analysis: Analyze agent consciousness and synergy
 - multi_agent_coordinator: Assemble agent councils for complex queries
 - memory_retrieval: Access conversation history and context
-- rectify_windows: Scan 24-hour candidate rising sign windows, sunrise/sunset, and Moon ingress
-- rectify_score: Execute Bayesian Ascendant rectification against life events, time clues, and Rodden ratings
+- rectify_windows: Scan 24-hour candidate rising sign windows, sunrise/sunset, Moon ingress, prior entropy (bits), and EIG next_best_questions
+- rectify_score: Execute Bayesian Ascendant rectification against life events, time clues, and Rodden ratings, returning posterior distribution, calculation eligibility (>=70% top sign and <=180m 80% window), and updated EIG next_best_questions
+
+When interviewing a user or investigating an agent with an unknown birth time:
+1. Run rectify_windows first (or rectify_score after each new answer) and inspect next_best_questions[0].
+2. NEVER dump a static personality quiz; ask ONE high-leverage EIG question at a time (coarse time-of-day window first, Moon sign split on ingress days, then specific dated career/marriage/relocation/illness milestones).
+3. After each user answer, re-score with the cumulative evidence array and report the updated top rising sign, posterior probability, 80% credible time window, and remaining entropy bits.
+4. Only declare the Ascendant calculation-eligible when is_calculations_eligible is true (topSignProbability >= 0.70 and window80Minutes <= 180); otherwise stay honest about remaining uncertainty.
 
 Be thoughtful, precise, and leverage the tools effectively.`,
         ],

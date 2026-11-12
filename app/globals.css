@@ -698,3 +698,15 @@ body.desktop-companion-body .fixed.bottom-4.right-4.z-\[100\] {
 .agent-glow-earth {
   filter: drop-shadow(0 0 8px rgba(95, 179, 122, 0.4));
 }
+
+/* Native top-layer modal dialog scroll containment (modern-web-guidance dialog) */
+dialog.rectifier-dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog.rectifier-dialog::backdrop {
+  overflow: hidden;
+  overscroll-behavior: contain;
+  background: rgba(6, 4, 15, 0.78);
+  backdrop-filter: blur(6px);
+}

@@ -885,6 +885,8 @@ class WindowsResponse(BaseModel):
     moon_ingress_time: Optional[str] = None
     sun_rise_lmt: Optional[str] = None
     sun_set_lmt: Optional[str] = None
+    entropy_bits: float = 3.585
+    next_best_questions: List[Dict[str, Any]] = Field(default_factory=list)
 
 
 class RectificationScoreRequest(BaseModel):
@@ -910,6 +912,461 @@ class RectificationScoreResponse(BaseModel):
     certainty: float
     is_calculations_eligible: bool
     evidence_breakdown: List[Dict[str, Any]]
+    entropy_bits: float = 0.0
+    next_best_questions: List[Dict[str, Any]] = Field(default_factory=list)
+
+
+# --- Expected Information Gain (EIG) Interviewer Planner ---
+
+
+def _compute_sun_rise_set(
+    year: int,
+    month: int,
+    day: int,
+    lat: float,
+    lon: float,
+    calendar: str = "gregorian",
+) -> Tuple[Optional[int], Optional[int], Optional[str], Optional[str]]:
+    """Computes local mean sunrise/sunset minutes (`0..1439`) and `HH:MM` strings via Swiss Ephemeris."""
+    cal_flag = swe.JUL_CAL if calendar.lower() == "julian" else swe.GREG_CAL
+    jd_noon = swe.julday(year, month, day, 12.0 - lon / 15.0, cal_flag)
+
+    rise_res = swe.rise_trans(jd_noon, swe.SUN, swe.CALC_RISE, (lon, lat, 0.0), 0.0, 0.0, swe.FLG_MOSEPH)
+    set_res = swe.rise_trans(jd_noon, swe.SUN, swe.CALC_SET, (lon, lat, 0.0), 0.0, 0.0, swe.FLG_MOSEPH)
+
+    sunrise_min: Optional[int] = None
+    sunset_min: Optional[int] = None
+    sunrise_lmt: Optional[str] = None
+    sunset_lmt: Optional[str] = None
+
+    if rise_res[0] == 0:
+        ut_h = (rise_res[1][0] - math.floor(rise_res[1][0]) - 0.5) * 24.0
+        if ut_h < 0:
+            ut_h += 24.0
+        lmt_h = (ut_h + lon / 15.0) % 24.0
+        sunrise_min = int(round(lmt_h * 60.0)) % 1440
+        sunrise_lmt = f"{int(lmt_h):02d}:{int((lmt_h % 1) * 60):02d}"
+
+    if set_res[0] == 0:
+        ut_h = (set_res[1][0] - math.floor(set_res[1][0]) - 0.5) * 24.0
+        if ut_h < 0:
+            ut_h += 24.0
+        lmt_h = (ut_h + lon / 15.0) % 24.0
+        sunset_min = int(round(lmt_h * 60.0)) % 1440
+        sunset_lmt = f"{int(lmt_h):02d}:{int((lmt_h % 1) * 60):02d}"
+
+    return sunrise_min, sunset_min, sunrise_lmt, sunset_lmt
+
+
+def compute_shannon_entropy_bits(distribution: Dict[str, float]) -> float:
+    """Computes base-2 Shannon entropy H(S) = -sum P(s) log2 P(s) over the 12 rising signs."""
+    vals = [max(0.0, float(v)) for v in distribution.values()]
+    total = sum(vals)
+    if total <= 0.0:
+        return round(math.log2(12.0), 4)
+    h = 0.0
+    for v in vals:
+        p = v / total
+        if p > 1e-12:
+            h -= p * math.log2(p)
+    return round(max(0.0, h), 4)
+
+
+def _sign_entropy_from_weights(
+    sign_indices: List[int],
+    weights: List[float],
+) -> Tuple[float, List[float]]:
+    sign_totals = [0.0] * 12
+    for s_idx, w in zip(sign_indices, weights):
+        sign_totals[s_idx] += w
+    mass = sum(sign_totals)
+    if mass <= 1e-15:
+        return 0.0, sign_totals
+    h = 0.0
+    for v in sign_totals:
+        p = v / mass
+        if p > 1e-12:
+            h -= p * math.log2(p)
+    return h, sign_totals
+
+
+def _conditional_eig_bits(
+    sign_indices: List[int],
+    prior_weights: List[float],
+    h_prior: float,
+    outcome_likelihoods: List[List[float]],
+) -> Tuple[float, List[float]]:
+    """
+    Given a channel P(outcome = o | minute i) normalized across outcomes at each candidate i,
+    returns `(eig_bits, outcome_marginals)`.
+    """
+    num_outcomes = len(outcome_likelihoods)
+    num_cands = len(prior_weights)
+    if num_outcomes < 2 or num_cands == 0 or h_prior <= 1e-6:
+        return 0.0, [0.0] * num_outcomes
+
+    # Normalize each candidate minute's likelihoods into a proper probability channel
+    cond_entropy = 0.0
+    marginals: List[float] = []
+
+    col_sums = [0.0] * num_cands
+    for o_idx in range(num_outcomes):
+        row = outcome_likelihoods[o_idx]
+        for i in range(num_cands):
+            col_sums[i] += max(0.0, row[i])
+
+    for o_idx in range(num_outcomes):
+        row = outcome_likelihoods[o_idx]
+        weighted = [
+            prior_weights[i] * (max(0.0, row[i]) / col_sums[i] if col_sums[i] > 1e-15 else 1.0 / num_outcomes)
+            for i in range(num_cands)
+        ]
+        p_o = sum(weighted)
+        marginals.append(p_o)
+        if p_o > 1e-12:
+            h_cond, _ = _sign_entropy_from_weights(sign_indices, weighted)
+            cond_entropy += p_o * h_cond
+
+    return max(0.0, h_prior - cond_entropy), marginals
+
+
+_EVENT_DOMAIN_PROMPTS: Dict[str, Dict[str, Any]] = {
+    "career": {
+        "question": "When did a major career turning point, public office, debut publication, or vocation breakthrough occur?",
+        "rationale": "Public vocation milestones target the Midheaven (MC / 10th house), breaking diurnal 180° quadrant symmetry.",
+        "availability": 1.04,
+        "cusp": "MC",
+        "suggested_label": "Career / Public Milestone (MC)",
+    },
+    "marriage": {
+        "question": "What exact date marked marriage, a primary partnership union, or a major public legal clash?",
+        "rationale": "Committed partnership events activate the Descendant (DSC / 7th house) opposite the Ascendant.",
+        "availability": 1.02,
+        "cusp": "DSC",
+        "suggested_label": "Marriage / Partnership Date (DSC)",
+    },
+    "relocation": {
+        "question": "When was a major geographical relocation, founding of a household, or death of a parent?",
+        "rationale": "Home, roots, and lineage shifts directly trigger the Imum Coeli (IC / 4th house).",
+        "availability": 1.00,
+        "cusp": "IC",
+        "suggested_label": "Relocation / Parent / Home Event (IC)",
+    },
+    "illness": {
+        "question": "When did a major physical crisis, serious illness, surgery, or bodily vitality turning point happen?",
+        "rationale": "Vitality and somatic crises strike the 1st-house Ascendant degree directly.",
+        "availability": 0.98,
+        "cusp": "ASC",
+        "suggested_label": "Physical Crisis / Vitality Shift (ASC)",
+    },
+}
+
+
+def _fmt_hhmm(minute: int) -> str:
+    m = max(0, min(1439, int(minute)))
+    return f"{m // 60:02d}:{m % 60:02d}"
+
+
+def compute_next_best_questions(
+    candidates: List[CandidateMinute],
+    minute_probs: List[float],
+    sign_distribution: Dict[str, float],
+    evidence: List[Dict[str, Any]],
+    sunrise_min: Optional[int],
+    sunset_min: Optional[int],
+    top_k: int = 5,
+) -> List[Dict[str, Any]]:
+    """
+    Computes adaptive Expected Information Gain (EIG = H(S) - E[H(S|Q)]) in bits across
+    highest-leverage unasked evidence families:
+      1. Diurnal solar time_clue bands (when neither time_clue nor recorded_time is supplied).
+      2. Moon sign ingress check (when Moon changes signs across surviving candidates).
+      3. Domain-specific dated life_event categories ranked by cusp geometry separation.
+      4. Capped physical_temperament tie-breaker only when top-2 signs remain close.
+    """
+    n = len(candidates)
+    if n == 0:
+        return []
+
+    w_sum = sum(max(0.0, float(p)) for p in minute_probs)
+    if w_sum > 1e-15:
+        weights = [max(0.0, float(p)) / w_sum for p in minute_probs]
+    else:
+        weights = [1.0 / n] * n
+
+    sign_to_idx = {s: idx for idx, s in enumerate(SIGNS)}
+    sign_indices = [sign_to_idx[c.asc_sign] for c in candidates]
+    h_prior, _ = _sign_entropy_from_weights(sign_indices, weights)
+
+    if h_prior < 0.04:
+        return []
+
+    has_time_evidence = any(
+        ev.get("type") in ("time_clue", "recorded_time") for ev in evidence
+    )
+    has_moon_evidence = any(ev.get("type") == "moon_sign" for ev in evidence)
+    has_physical_evidence = any(
+        ev.get("type") == "physical_temperament" for ev in evidence
+    )
+    asked_categories = {
+        normalize_event_category(ev)
+        for ev in evidence
+        if ev.get("type")
+        in (
+            "life_event",
+            "angular_transits",
+            "secondary_progressions",
+            "annual_profections",
+            "primary_directions",
+        )
+    }
+
+    sorted_signs = sorted(
+        sign_distribution.items(), key=lambda kv: kv[1], reverse=True
+    )
+    top1_sign, top1_prob = sorted_signs[0]
+    top2_sign, top2_prob = sorted_signs[1] if len(sorted_signs) > 1 else ("", 0.0)
+
+    questions: List[Dict[str, Any]] = []
+
+    # 1. Diurnal time_clue partition (only when no time_clue/recorded_time exists yet)
+    if not has_time_evidence:
+        sr = max(180, min(540, sunrise_min if sunrise_min is not None else 360))
+        ss = max(900, min(1320, sunset_min if sunset_min is not None else 1080))
+        b1 = max(90, sr - 75)          # pre-dawn end (~04:45)
+        b2 = min(660, sr + 165)        # dawn / early morning end (~08:45)
+        b3 = max(b2 + 90, 780)         # late morning / midday end (~13:00)
+        b4 = max(b3 + 90, ss - 20)     # afternoon end (~17:40)
+
+        bands = [
+            ("night_pre_dawn", "Late Night / Pre-Dawn", 0, b1),
+            ("dawn_early", "Around Sunrise / Early Morning", b1 + 1, b2),
+            ("morning_midday", "Late Morning / Midday", b2 + 1, b3),
+            ("afternoon", "Afternoon", b3 + 1, b4),
+            ("evening_night", "Sunset / Evening / Night", b4 + 1, 1439),
+        ]
+
+        sigma_band = 35.0
+        two_sig_sq = 2.0 * sigma_band * sigma_band
+        band_likelihoods: List[List[float]] = []
+        for _id, _lbl, s_min, e_min in bands:
+            row: List[float] = []
+            for c in candidates:
+                m = c.minute
+                if s_min <= m <= e_min:
+                    row.append(1.0)
+                else:
+                    dist = min(abs(m - s_min), abs(m - e_min))
+                    row.append(math.exp(-(dist * dist) / two_sig_sq))
+            band_likelihoods.append(row)
+
+        eig_time, band_marginals = _conditional_eig_bits(
+            sign_indices, weights, h_prior, band_likelihoods
+        )
+        band_options = []
+        for idx, (bid, label, s_min, e_min) in enumerate(bands):
+            signs_in_band: Dict[str, float] = {}
+            for i, c in enumerate(candidates):
+                if s_min <= c.minute <= e_min:
+                    signs_in_band[c.asc_sign] = signs_in_band.get(c.asc_sign, 0.0) + weights[i]
+            likely_signs = [
+                k for k, _v in sorted(signs_in_band.items(), key=lambda kv: kv[1], reverse=True)[:3]
+            ]
+            band_options.append(
+                {
+                    "id": bid,
+                    "label": f"{label} ({_fmt_hhmm(s_min)}–{_fmt_hhmm(e_min)} LMT)",
+                    "short_label": label,
+                    "type": "time_clue",
+                    "start_minute": s_min,
+                    "end_minute": e_min,
+                    "margin_minutes": 35,
+                    "time_range": f"{_fmt_hhmm(s_min)}–{_fmt_hhmm(e_min)}",
+                    "estimated_probability": round(band_marginals[idx], 4),
+                    "likely_signs": likely_signs,
+                }
+            )
+
+        questions.append(
+            {
+                "id": "time_clue_diurnal",
+                "type": "time_clue",
+                "category": "time_window",
+                "expected_ig_bits": round(eig_time, 4),
+                "question": "Was the birth in the pre-dawn hours, early morning around sunrise, midday, afternoon, or evening/night?",
+                "rationale": "Coarse diurnal windowing breaks the 24-hour Ascendant circle and eliminates 4-quadrant aspect symmetry.",
+                "options": band_options,
+            }
+        )
+
+    # 2. Moon sign ingress check (only when >= 2 Moon signs carry surviving posterior mass)
+    if not has_moon_evidence:
+        moon_mass: Dict[str, float] = {}
+        ingress_minute: Optional[int] = None
+        first_moon = candidates[0].moon_sign
+        for i, c in enumerate(candidates):
+            moon_mass[c.moon_sign] = moon_mass.get(c.moon_sign, 0.0) + weights[i]
+            if ingress_minute is None and c.moon_sign != first_moon:
+                ingress_minute = c.minute
+
+        active_moon_signs = [
+            m for m, mass in sorted(moon_mass.items(), key=lambda kv: kv[1], reverse=True)
+            if mass >= 0.02
+        ]
+        if len(active_moon_signs) >= 2:
+            moon_likelihoods: List[List[float]] = []
+            for m_sign in active_moon_signs:
+                moon_likelihoods.append(
+                    [1.0 if c.moon_sign == m_sign else 0.01005 for c in candidates]
+                )
+            eig_moon, moon_marginals = _conditional_eig_bits(
+                sign_indices, weights, h_prior, moon_likelihoods
+            )
+            if eig_moon >= 0.015:
+                ingress_str = _fmt_hhmm(ingress_minute) if ingress_minute is not None else "unknown"
+                moon_options = []
+                for idx, m_sign in enumerate(active_moon_signs):
+                    signs_here: Dict[str, float] = {}
+                    for i, c in enumerate(candidates):
+                        if c.moon_sign == m_sign:
+                            signs_here[c.asc_sign] = signs_here.get(c.asc_sign, 0.0) + weights[i]
+                    likely_signs = [
+                        k for k, _v in sorted(signs_here.items(), key=lambda kv: kv[1], reverse=True)[:3]
+                    ]
+                    moon_options.append(
+                        {
+                            "id": f"moon_{m_sign.lower()}",
+                            "label": f"Moon in {m_sign}",
+                            "type": "moon_sign",
+                            "moon_sign": m_sign,
+                            "estimated_probability": round(moon_marginals[idx], 4),
+                            "likely_signs": likely_signs,
+                        }
+                    )
+
+                questions.append(
+                    {
+                        "id": "moon_sign_ingress",
+                        "type": "moon_sign",
+                        "category": "lunar_ingress",
+                        "expected_ig_bits": round(eig_moon, 4),
+                        "ingress_time": ingress_str,
+                        "question": f"The Moon changed signs into {active_moon_signs[1]} around {ingress_str} LMT — which Moon temperament matches ({' vs '.join(active_moon_signs[:2])})?",
+                        "rationale": f"Lunar sign ingress at ~{ingress_str} LMT sharply bifurcates the remaining sky into pre-ingress and post-ingress windows.",
+                        "options": moon_options,
+                    }
+                )
+
+    # 3. Domain-specific dated life events (career -> MC, marriage -> DSC, relocation -> IC, illness -> ASC)
+    zodiac_centers = [k * 30.0 + 15.0 for k in range(12)]
+    unasked_domains = [
+        cat for cat in ("career", "marriage", "relocation", "illness")
+        if cat not in asked_categories
+    ]
+    for cat in unasked_domains:
+        meta = _EVENT_DOMAIN_PROMPTS[cat]
+        cusp = meta["cusp"]
+        domain_outcomes: List[List[float]] = []
+
+        for k_idx, z_center in enumerate(zodiac_centers):
+            row: List[float] = []
+            for c in candidates:
+                if cusp == "MC":
+                    primary_lon = c.mc_lon
+                elif cusp == "DSC":
+                    primary_lon = (c.asc_lon + 180.0) % 360.0
+                elif cusp == "IC":
+                    primary_lon = (c.mc_lon + 180.0) % 360.0
+                else:
+                    primary_lon = c.asc_lon
+
+                d_prim = angular_difference(primary_lon, z_center)
+                d_opp = angular_difference((primary_lon + 180.0) % 360.0, z_center)
+                aff = 1.60 * math.exp(-((d_prim / 18.0) ** 2)) + 0.50 * math.exp(-((d_opp / 18.0) ** 2))
+                if sign_to_idx[c.asc_sign] == k_idx:
+                    aff += 0.80
+                row.append(math.exp(aff))
+            domain_outcomes.append(row)
+
+        eig_dom, _ = _conditional_eig_bits(
+            sign_indices, weights, h_prior, domain_outcomes
+        )
+        weighted_eig = eig_dom * meta["availability"]
+        if weighted_eig >= 0.01:
+            questions.append(
+                {
+                    "id": f"life_event_{cat}",
+                    "type": "life_event",
+                    "category": cat,
+                    "cusp": cusp,
+                    "expected_ig_bits": round(weighted_eig, 4),
+                    "question": meta["question"],
+                    "rationale": meta["rationale"],
+                    "competing_signs": [
+                        {"sign": s, "probability": round(p, 4)}
+                        for s, p in sorted_signs[:3]
+                        if p >= 0.05
+                    ],
+                }
+            )
+
+    # 4. Capped physical_temperament tie-breaker ONLY when top-2 signs remain close AFTER time + event evidence
+    top_gap = top1_prob - top2_prob
+    if (
+        not has_physical_evidence
+        and top1_prob < 0.70
+        and top2_prob >= 0.12
+        and len(asked_categories) >= 1
+        and (has_time_evidence or h_prior <= 1.50)
+        and top_gap <= 0.25
+    ):
+        # Strictly capped Barnum-safe binary preference across top-2 signs (ratio <= 1.5x)
+        phys_outcomes: List[List[float]] = [
+            [
+                1.50 if c.asc_sign == top1_sign else (0.67 if c.asc_sign == top2_sign else 1.0)
+                for c in candidates
+            ],
+            [
+                1.50 if c.asc_sign == top2_sign else (0.67 if c.asc_sign == top1_sign else 1.0)
+                for c in candidates
+            ],
+        ]
+        raw_eig_phys, phys_marginals = _conditional_eig_bits(
+            sign_indices, weights, h_prior, phys_outcomes
+        )
+        eig_phys = min(0.10, raw_eig_phys)
+        if eig_phys >= 0.005:
+            questions.append(
+                {
+                    "id": "physical_temperament_tiebreak",
+                    "type": "physical_temperament",
+                    "category": "temperament",
+                    "expected_ig_bits": round(eig_phys, 4),
+                    "question": f"As a gentle tie-breaker between {top1_sign} and {top2_sign} rising: which outwardly observable demeanor fits better?",
+                    "rationale": "Post-event residual ties between top-2 signs use a Barnum-guarded (<= 1.5x likelihood cap) demeanor check.",
+                    "options": [
+                        {
+                            "id": f"phys_{top1_sign.lower()}",
+                            "label": f"Closer to {top1_sign} Rising demeanor",
+                            "type": "physical_temperament",
+                            "affinity": {top1_sign: 1.5, top2_sign: 0.67},
+                            "estimated_probability": round(phys_marginals[0], 4),
+                        },
+                        {
+                            "id": f"phys_{top2_sign.lower()}",
+                            "label": f"Closer to {top2_sign} Rising demeanor",
+                            "type": "physical_temperament",
+                            "affinity": {top2_sign: 1.5, top1_sign: 0.67},
+                            "estimated_probability": round(phys_marginals[1], 4),
+                        },
+                    ],
+                }
+            )
+
+    questions.sort(key=lambda q: q["expected_ig_bits"], reverse=True)
+    for rank, q in enumerate(questions, start=1):
+        q["rank"] = rank
+    return questions[:top_k]
 
 
 # --- Endpoints ---
@@ -966,27 +1423,30 @@ def post_rectify_windows(payload: WindowsRequest):
             ingress_str = c.local_time
             break
 
-    # Sunrise/Sunset calculation via swe
-    cal_flag = swe.JUL_CAL if payload.calendar.lower() == "julian" else swe.GREG_CAL
-    jd_noon = swe.julday(payload.year, payload.month, payload.day, 12.0 - payload.longitude / 15.0, cal_flag)
-    
-    rise_res = swe.rise_trans(jd_noon, swe.SUN, swe.CALC_RISE, (payload.longitude, payload.latitude, 0.0), 0.0, 0.0, swe.FLG_MOSEPH)
-    set_res = swe.rise_trans(jd_noon, swe.SUN, swe.CALC_SET, (payload.longitude, payload.latitude, 0.0), 0.0, 0.0, swe.FLG_MOSEPH)
+    # Sunrise/Sunset calculation via shared Swiss Ephemeris helper
+    sunrise_min, sunset_min, sunrise_lmt, sunset_lmt = _compute_sun_rise_set(
+        payload.year,
+        payload.month,
+        payload.day,
+        payload.latitude,
+        payload.longitude,
+        payload.calendar,
+    )
 
-    sunrise_lmt = None
-    sunset_lmt = None
-    if rise_res[0] == 0:
-        ut_h = (rise_res[1][0] - math.floor(rise_res[1][0]) - 0.5) * 24.0
-        if ut_h < 0:
-            ut_h += 24.0
-        lmt_h = (ut_h + payload.longitude / 15.0) % 24.0
-        sunrise_lmt = f"{int(lmt_h):02d}:{int((lmt_h % 1) * 60):02d}"
-    if set_res[0] == 0:
-        ut_h = (set_res[1][0] - math.floor(set_res[1][0]) - 0.5) * 24.0
-        if ut_h < 0:
-            ut_h += 24.0
-        lmt_h = (ut_h + payload.longitude / 15.0) % 24.0
-        sunset_lmt = f"{int(lmt_h):02d}:{int((lmt_h % 1) * 60):02d}"
+    # Prior sign distribution from 24-hour rising window durations
+    uniform_probs = [1.0 / len(candidates)] * len(candidates) if candidates else []
+    prior_sign_dist: Dict[str, float] = {s: 0.0 for s in SIGNS}
+    for c in candidates:
+        prior_sign_dist[c.asc_sign] += 1.0 / len(candidates)
+    prior_entropy_bits = compute_shannon_entropy_bits(prior_sign_dist)
+    next_questions = compute_next_best_questions(
+        candidates=candidates,
+        minute_probs=uniform_probs,
+        sign_distribution=prior_sign_dist,
+        evidence=[],
+        sunrise_min=sunrise_min,
+        sunset_min=sunset_min,
+    )
 
     return WindowsResponse(
         rising_windows=windows,
@@ -996,6 +1456,8 @@ def post_rectify_windows(payload: WindowsRequest):
         moon_ingress_time=ingress_str,
         sun_rise_lmt=sunrise_lmt,
         sun_set_lmt=sunset_lmt,
+        entropy_bits=prior_entropy_bits,
+        next_best_questions=next_questions,
     )
 
 
@@ -1105,9 +1567,27 @@ def post_rectify_score(payload: RectificationScoreRequest):
         if p > 1e-7:
             entropy -= p * math.log(p)
     certainty = max(0.0, min(1.0, 1.0 - (entropy / math.log(12.0))))
+    entropy_bits = compute_shannon_entropy_bits(sign_distribution)
 
     # Eligibility for calculations threshold
     is_eligible = (top_sign_prob >= 0.70 and window_80_mins <= 180)
+
+    sunrise_min, sunset_min, _sr_str, _ss_str = _compute_sun_rise_set(
+        payload.year,
+        payload.month,
+        payload.day,
+        payload.latitude,
+        payload.longitude,
+        payload.calendar,
+    )
+    next_questions = compute_next_best_questions(
+        candidates=candidates,
+        minute_probs=minute_probs,
+        sign_distribution=sign_distribution,
+        evidence=payload.evidence,
+        sunrise_min=sunrise_min,
+        sunset_min=sunset_min,
+    )
 
     return RectificationScoreResponse(
         distribution=sign_distribution,
@@ -1121,6 +1601,8 @@ def post_rectify_score(payload: RectificationScoreRequest):
         certainty=round(certainty, 4),
         is_calculations_eligible=is_eligible,
         evidence_breakdown=breakdown,
+        entropy_bits=entropy_bits,
+        next_best_questions=next_questions,
     )
 
 
@@ -1530,3 +2012,40 @@ def post_score_all_rectification_proposals(
         step_minutes=max(1, min(10, step_minutes)),
     )
     return {"count": len(proposals), "proposals": proposals}
+
+
+def _to_json_dict(obj: Any) -> Any:
+    if hasattr(obj, "model_dump"):
+        return obj.model_dump()
+    if hasattr(obj, "dict"):
+        return obj.dict()
+    return obj
+
+
+def _cli_main(argv: Optional[List[str]] = None) -> int:
+    import argparse
+    import json
+    import sys
+
+    parser = argparse.ArgumentParser(description="Standalone CLI for Swiss Ephemeris rectification")
+    sub = parser.add_subparsers(dest="cmd", required=True)
+    for name in ("windows", "score"):
+        p = sub.add_parser(name)
+        p.add_argument("--json", dest="raw_json", default=None, help="JSON payload string")
+        p.add_argument("--stdin", action="store_true", help="Read JSON payload from stdin")
+
+    args = parser.parse_args(argv)
+    raw = sys.stdin.read() if args.stdin or args.raw_json is None else args.raw_json
+    data = json.loads(raw)
+
+    if args.cmd == "windows":
+        res = post_rectify_windows(WindowsRequest(**data))
+    else:
+        res = post_rectify_score(RectificationScoreRequest(**data))
+
+    print(json.dumps(_to_json_dict(res)))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(_cli_main())

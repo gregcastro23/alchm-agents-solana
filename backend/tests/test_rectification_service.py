@@ -266,3 +266,165 @@ def test_historical_dossier_catalog_taxonomy_and_handlers():
         res = client.get("/api/rectify/proposals")
         assert res.status_code == 200
         assert res.json()["count"] == 39
+
+
+def test_eig_entropy_and_adaptive_question_ranking():
+    """Shannon entropy and Expected Information Gain adapt dynamically to remaining uncertainty."""
+    import math
+    from backend.rectification_service import SIGNS
+
+    uniform = {s: 1.0 / 12.0 for s in SIGNS}
+    assert rs.compute_shannon_entropy_bits(uniform) == round(math.log2(12.0), 4)
+
+    point_mass = {s: (1.0 if s == "Virgo" else 0.0) for s in SIGNS}
+    assert rs.compute_shannon_entropy_bits(point_mass) == 0.0
+
+    # Darwin's birth day has a Moon ingress (Capricorn -> Aquarius ~17:36 LMT)
+    win = rs.post_rectify_windows(
+        rs.WindowsRequest(year=1809, month=2, day=12, latitude=52.708, longitude=-2.754)
+    )
+    assert 2.5 < win.entropy_bits <= 3.6
+    assert len(win.next_best_questions) >= 2
+    assert win.next_best_questions[0]["type"] == "time_clue"
+    q_ids = [q["id"] for q in win.next_best_questions]
+    assert "moon_sign_ingress" in q_ids
+    assert "physical_temperament_tiebreak" not in q_ids
+
+    # After restricting morning time before Moon ingress, moon_sign_ingress disappears
+    morn_score = rs.post_rectify_score(
+        rs.RectificationScoreRequest(
+            year=1809,
+            month=2,
+            day=12,
+            latitude=52.708,
+            longitude=-2.754,
+            step_minutes=5,
+            evidence=[
+                {"type": "time_clue", "start_minute": 120, "end_minute": 360, "margin_minutes": 25}
+            ],
+        )
+    )
+    assert morn_score.entropy_bits < win.entropy_bits
+    assert all(q["type"] == "life_event" for q in morn_score.next_best_questions)
+
+    # After adding a life event while top-2 signs still compete (<0.70), capped temperament appears
+    after_ev = rs.post_rectify_score(
+        rs.RectificationScoreRequest(
+            year=1879,
+            month=3,
+            day=14,
+            latitude=48.4011,
+            longitude=9.9876,
+            step_minutes=5,
+            evidence=[
+                {"type": "time_clue", "start_minute": 540, "end_minute": 780, "margin_minutes": 35},
+                {"type": "life_event", "category": "career", "event_date": "1905-06-30"},
+            ],
+        )
+    )
+    q_by_id = {q["id"]: q for q in after_ev.next_best_questions}
+    assert "life_event_career" not in q_by_id
+    if "physical_temperament_tiebreak" in q_by_id:
+        assert q_by_id["physical_temperament_tiebreak"]["expected_ig_bits"] <= 0.10
+
+
+def test_rectification_cli_subcommands(capsys):
+    """Standalone Python CLI executes `windows` and `score` returning valid JSON."""
+    import json
+
+    rc_w = rs._cli_main(
+        [
+            "windows",
+            "--json",
+            json.dumps(
+                {
+                    "year": 1879,
+                    "month": 3,
+                    "day": 14,
+                    "latitude": 48.4011,
+                    "longitude": 9.9876,
+                }
+            ),
+        ]
+    )
+    assert rc_w == 0
+    w_out = json.loads(capsys.readouterr().out)
+    assert "rising_windows" in w_out and len(w_out["rising_windows"]) >= 12
+    assert "next_best_questions" in w_out and w_out["next_best_questions"][0]["type"] == "time_clue"
+
+    rc_s = rs._cli_main(
+        [
+            "score",
+            "--json",
+            json.dumps(
+                {
+                    "year": 1991,
+                    "month": 6,
+                    "day": 23,
+                    "latitude": 40.6782,
+                    "longitude": -73.9442,
+                    "step_minutes": 5,
+                    "evidence": [{"type": "recorded_time", "reported_minute": 628, "rodden_rating": "AA"}],
+                }
+            ),
+        ]
+    )
+    assert rc_s == 0
+    s_out = json.loads(capsys.readouterr().out)
+    assert s_out["top_sign"] == "Virgo"
+    assert s_out["is_calculations_eligible"] is True
+    assert "entropy_bits" in s_out
+
+
+def test_static_sync_cli_dry_run_and_temp_apply(tmp_path):
+    """Static baseline sync previews eligible dossiers cleanly and mutates only when `--apply` targets temp files."""
+    import importlib.util
+    import shutil
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parents[2]
+    script_path = repo_root / "scripts" / "sync-rectified-static-charts.py"
+    spec = importlib.util.spec_from_file_location("sync_rectified_static_charts", str(script_path))
+    assert spec and spec.loader
+    sync_mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(sync_mod)
+
+    # Dry-run on real petrarch.ts must NOT modify the checked-in file
+    real_petrarch = repo_root / "lib" / "agents" / "historical" / "petrarch.ts"
+    before_real = real_petrarch.read_text(encoding="utf-8")
+    dry_report = sync_mod.run_sync(
+        source_mode="dossiers",
+        static_dir=repo_root / "lib" / "agents" / "historical",
+        agents=["petrarch"],
+        eligible_only=True,
+        apply=False,
+    )
+    assert dry_report["mode"] == "dry-run"
+    assert dry_report["actions"][0]["status"] == "would_update"
+    assert real_petrarch.read_text(encoding="utf-8") == before_real
+
+    # Apply on temp copies of the 3 eligible archival static files
+    temp_dir = tmp_path / "historical"
+    temp_dir.mkdir(parents=True, exist_ok=True)
+    for slug in ("petrarch", "leonardo-da-vinci", "greg-castro"):
+        shutil.copy2(repo_root / "lib" / "agents" / "historical" / f"{slug}.ts", temp_dir / f"{slug}.ts")
+
+    apply_report = sync_mod.run_sync(
+        source_mode="dossiers",
+        static_dir=temp_dir,
+        agents=["petrarch", "leonardo-da-vinci", "greg-castro-1991"],
+        eligible_only=True,
+        apply=True,
+    )
+    assert apply_report["mode"] == "apply"
+    assert apply_report["changedCount"] == 3
+
+    updated_petrarch = (temp_dir / "petrarch.ts").read_text(encoding="utf-8")
+    assert "ascendantProvenance: 'rectified'" in updated_petrarch
+    assert "ascendantEstimate: {" in updated_petrarch
+    assert "topSign: 'Leo'" in updated_petrarch
+    assert "method: 'bayesian_rectification_v1'" in updated_petrarch
+
+    updated_greg = (temp_dir / "greg-castro.ts").read_text(encoding="utf-8")
+    assert "ascendantProvenance: 'rectified'" in updated_greg
+    assert "topSign: 'Virgo'" in updated_greg

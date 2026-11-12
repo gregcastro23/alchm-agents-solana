@@ -7,6 +7,9 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { LocationSearch, type LocationData } from '@/components/onboarding/LocationSearch'
+import { BirthTimeRectifierModal } from '@/components/rectification/BirthTimeRectifierModal'
+import type { RectifierApplyPayload } from '@/components/rectification/BirthTimeRectifierPanel'
+import { Compass } from 'lucide-react'
 
 type BirthInfoForm = {
   date: string // YYYY-MM-DD
@@ -22,6 +25,8 @@ export default function ProfileOnboardingForm() {
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
   const [success, setSuccess] = useState(false)
+  const [rectifierOpen, setRectifierOpen] = useState(false)
+  const [rectifiedMeta, setRectifiedMeta] = useState<RectifierApplyPayload | null>(null)
   const [form, setForm] = useState<BirthInfoForm>({
     date: '',
     time: '12:00', // Default to noon
@@ -87,23 +92,45 @@ export default function ProfileOnboardingForm() {
         throw new Error('Please select a valid birth location with coordinates')
       }
 
-      const birthInfo = {
-        year: y,
-        month: m - 1, // zero-based month
-        day: d,
-        hour: hh,
-        minute: mm,
-        latitude: lat,
-        longitude: lng,
-        locationName: form.locationName || 'Unknown Location',
-        name: form.name || 'Explorer',
-      }
+      let res: Response
+      if (rectifiedMeta && rectifiedMeta.workingTime === form.time) {
+        res = await fetch('/api/rectify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            action: 'apply_profile',
+            year: y,
+            month: m,
+            day: d,
+            latitude: lat,
+            longitude: lng,
+            calendar: 'gregorian',
+            locationName: form.locationName || 'Unknown Location',
+            name: form.name || 'Explorer',
+            evidence: rectifiedMeta.evidence,
+            step_minutes: 3,
+            allowUnconfirmed: !rectifiedMeta.isCalculationsEligible,
+          }),
+        })
+      } else {
+        const birthInfo = {
+          year: y,
+          month: m - 1, // zero-based month
+          day: d,
+          hour: hh,
+          minute: mm,
+          latitude: lat,
+          longitude: lng,
+          locationName: form.locationName || 'Unknown Location',
+          name: form.name || 'Explorer',
+        }
 
-      const res = await fetch('/api/profile', {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ birthInfo, name: form.name }),
-      })
+        res = await fetch('/api/profile', {
+          method: 'PATCH',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ birthInfo, name: form.name }),
+        })
+      }
 
       if (!res.ok) {
         const data = await res.json().catch(() => ({}))
@@ -178,11 +205,49 @@ export default function ProfileOnboardingForm() {
                 disabled={loading}
                 className="bg-black/40 border-purple-500/30 text-zinc-100"
               />
-              <p className="text-xs text-zinc-400 mt-1">
-                If unknown, noon (12:00) is used as default
-              </p>
+              <div className="mt-1 flex flex-wrap items-center justify-between gap-1">
+                <p className="text-xs text-zinc-400">If unknown, noon (12:00) is default</p>
+                <button
+                  type="button"
+                  disabled={loading}
+                  onClick={() => setRectifierOpen(true)}
+                  className="inline-flex items-center gap-1 text-xs font-medium text-purple-300 hover:text-purple-200 underline"
+                >
+                  <Compass className="h-3.5 w-3.5" aria-hidden="true" />
+                  Unknown time? Rectify
+                </button>
+              </div>
+              {rectifiedMeta && rectifiedMeta.workingTime === form.time && (
+                <p className="mt-1.5 text-xs text-emerald-300">
+                  Rectified: {rectifiedMeta.score.top_sign} (
+                  {(rectifiedMeta.score.top_sign_probability * 100).toFixed(0)}%,{' '}
+                  {rectifiedMeta.isCalculationsEligible ? 'calculation-eligible' : 'unconfirmed'})
+                </p>
+              )}
             </div>
           </div>
+
+          <BirthTimeRectifierModal
+            open={rectifierOpen}
+            onClose={() => setRectifierOpen(false)}
+            title="Estimate Your Unknown Birth Time"
+            initialBirthDate={form.date}
+            initialLocation={
+              form.latitude !== null && form.longitude !== null
+                ? {
+                    name: form.locationName,
+                    lat: form.latitude,
+                    lon: form.longitude,
+                  }
+                : undefined
+            }
+            mode="embed"
+            autoScan={Boolean(form.date && form.latitude !== null && form.longitude !== null)}
+            onApply={result => {
+              setForm(prev => ({ ...prev, time: result.workingTime }))
+              setRectifiedMeta(result)
+            }}
+          />
 
           {/* Seamless Birth Location Search with Auto-Geocoding */}
           <div>

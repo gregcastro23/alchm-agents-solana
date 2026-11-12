@@ -14,6 +14,12 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import { LocationSearch, type LocationData } from '@/components/onboarding/LocationSearch'
+import {
+  BirthTimeRectifierPanel,
+  type RectifierApplyPayload,
+} from '@/components/rectification/BirthTimeRectifierPanel'
+import { buildAscendantEstimateFromScore } from '@/lib/rectification/types'
+import { Compass } from 'lucide-react'
 
 export interface NatalChartData {
   chartName: string
@@ -26,6 +32,7 @@ export interface NatalChartData {
     lon: number
     timezone?: string
   }
+  preferences?: Record<string, any>
 }
 
 interface NatalChartInputProps {
@@ -52,8 +59,11 @@ export function NatalChartInput({
       lon: 0,
       timezone: 'UTC',
     },
+    ...(initialData?.preferences ? { preferences: initialData.preferences } : {}),
   })
   const [errors, setErrors] = useState<Record<string, string>>({})
+  const [showRectifier, setShowRectifier] = useState(false)
+  const [rectifiedSummary, setRectifiedSummary] = useState<RectifierApplyPayload | null>(null)
 
   const handleLocationSelect = (location: LocationData) => {
     setFormData({
@@ -115,6 +125,68 @@ export function NatalChartInput({
       console.error('Form submission failed:', error)
       setErrors({ ...errors, submit: 'Failed to save natal chart. Please try again.' })
     }
+  }
+
+  const handleRectifierApply = (result: RectifierApplyPayload) => {
+    const estimate = buildAscendantEstimateFromScore(result.score, result.evidence)
+    setFormData(prev => ({
+      ...prev,
+      birthTime: result.workingTime,
+      preferences: {
+        ...(prev.preferences || {}),
+        rectification: {
+          ascendantProvenance: 'rectified',
+          ascendantEstimate: estimate,
+        },
+      },
+    }))
+    setRectifiedSummary(result)
+    setShowRectifier(false)
+    setErrors(prev => {
+      const next = { ...prev }
+      delete next.birthTime
+      return next
+    })
+  }
+
+  if (showRectifier) {
+    return (
+      <Card className="w-full max-w-4xl mx-auto border-violet-500/30 bg-slate-950/95 text-slate-100">
+        <CardHeader className="pb-2">
+          <div className="flex items-center justify-between gap-2">
+            <div>
+              <CardTitle className="text-lg">Rectify Unknown Birth Time</CardTitle>
+              <CardDescription className="text-slate-400">
+                Narrow your rising sign window interactively using life milestones and diurnal
+                clues.
+              </CardDescription>
+            </div>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowRectifier(false)}
+            >
+              Back to Chart Form
+            </Button>
+          </div>
+        </CardHeader>
+        <CardContent>
+          <BirthTimeRectifierPanel
+            initialBirthDate={formData.birthDate}
+            initialLocation={{
+              name: formData.birthLocation.name,
+              lat: formData.birthLocation.lat,
+              lon: formData.birthLocation.lon,
+            }}
+            mode="embed"
+            autoScan={Boolean(formData.birthDate && formData.birthLocation.name)}
+            onApply={handleRectifierApply}
+            onCancel={() => setShowRectifier(false)}
+          />
+        </CardContent>
+      </Card>
+    )
   }
 
   return (
@@ -195,8 +267,34 @@ export function NatalChartInput({
             </div>
             {errors.birthTime && <p className="text-sm text-red-500">{errors.birthTime}</p>}
             <p className="text-sm text-muted-foreground">
-              Enter birth time if known, or mark as unknown for a solar chart
+              Enter birth time if known, or mark as unknown to rectify interactively
             </p>
+            {formData.birthTime === 'unknown' && (
+              <div className="pt-1">
+                <Button
+                  type="button"
+                  variant="secondary"
+                  size="sm"
+                  disabled={isLoading}
+                  onClick={() => setShowRectifier(true)}
+                  className="gap-1.5"
+                >
+                  <Compass className="h-4 w-4" aria-hidden="true" />
+                  Estimate Ascendant via Birth Time Rectifier
+                </Button>
+              </div>
+            )}
+            {rectifiedSummary && (
+              <div className="rounded-md border border-emerald-500/30 bg-emerald-950/30 px-3 py-2 text-xs text-emerald-200">
+                Working Ascendant estimated: <strong>{rectifiedSummary.score.top_sign}</strong> (
+                {(rectifiedSummary.score.top_sign_probability * 100).toFixed(1)}%,{' '}
+                {rectifiedSummary.workingTime} LMT,{' '}
+                {rectifiedSummary.isCalculationsEligible
+                  ? 'calculation-eligible'
+                  : 'unconfirmed — <70% or >180m'}
+                )
+              </div>
+            )}
           </div>
 
           {/* Birth Location */}

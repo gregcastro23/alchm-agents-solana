@@ -73,6 +73,29 @@ export interface NatalChartWithTransits {
   updatedAt: Date
 }
 
+function deriveElementAndModality(planets: any[]): {
+  dominantElement: string
+  dominantModality: string
+} {
+  const elementCounts = { Fire: 0, Water: 0, Air: 0, Earth: 0 }
+  planets.forEach((p: any) => {
+    const element = getElementForSign(p.sign)
+    elementCounts[element]++
+  })
+  const dominantElement = Object.entries(elementCounts).sort((a, b) => b[1] - a[1])[0][0] as string
+
+  const modalityCounts = { Cardinal: 0, Fixed: 0, Mutable: 0 }
+  planets.forEach((p: any) => {
+    const modality = getModalityForSign(p.sign)
+    modalityCounts[modality]++
+  })
+  const dominantModality = Object.entries(modalityCounts).sort(
+    (a, b) => b[1] - a[1]
+  )[0][0] as string
+
+  return { dominantElement, dominantModality }
+}
+
 /**
  * Create a new natal chart with full calculations
  */
@@ -94,23 +117,7 @@ export async function createNatalChart(
     natalData.ascendant?.sign
   )
 
-  // Determine dominant element
-  const elementCounts = { Fire: 0, Water: 0, Air: 0, Earth: 0 }
-  natalData.planets.forEach((p: any) => {
-    const element = getElementForSign(p.sign)
-    elementCounts[element]++
-  })
-  const dominantElement = Object.entries(elementCounts).sort((a, b) => b[1] - a[1])[0][0] as string
-
-  // Determine dominant modality
-  const modalityCounts = { Cardinal: 0, Fixed: 0, Mutable: 0 }
-  natalData.planets.forEach((p: any) => {
-    const modality = getModalityForSign(p.sign)
-    modalityCounts[modality]++
-  })
-  const dominantModality = Object.entries(modalityCounts).sort(
-    (a, b) => b[1] - a[1]
-  )[0][0] as string
+  const { dominantElement, dominantModality } = deriveElementAndModality(natalData.planets)
 
   // Default preferences
   const defaultPreferences = {
@@ -231,6 +238,75 @@ export async function updateNatalChart(
   })
 
   return chart as NatalChartWithTransits
+}
+
+/**
+ * Applies a server-verified rectified working birth time and Ascendant estimate
+ * to an existing user natal chart, recomputing planets, houses, and alchemical totals.
+ */
+export async function applyRectifiedBirthTimeToChart(
+  chartId: string,
+  userId: string,
+  rectifiedTime: string,
+  estimate: Record<string, any>
+): Promise<NatalChartWithTransits | null> {
+  const existing = await prisma.userNatalChart.findFirst({
+    where: { id: chartId, userId },
+  })
+  if (!existing) return null
+
+  const loc = (existing.birthLocation || {}) as { lat?: number; lon?: number }
+  const lat = typeof loc.lat === 'number' ? loc.lat : 0
+  const lon = typeof loc.lon === 'number' ? loc.lon : 0
+
+  const natalData = calculateNatalChart({
+    date: existing.birthDate,
+    time: rectifiedTime,
+    latitude: lat,
+    longitude: lon,
+  })
+  const alchmData = await calculateAlchemicalQuantities(
+    natalData.planets,
+    estimate.workingSign || natalData.ascendant?.sign
+  )
+  const { dominantElement, dominantModality } = deriveElementAndModality(natalData.planets)
+  const existingPrefs =
+    existing.preferences && typeof existing.preferences === 'object'
+      ? (existing.preferences as Record<string, any>)
+      : {}
+
+  const updated = await prisma.userNatalChart.update({
+    where: { id: chartId, userId },
+    data: {
+      birthTime: rectifiedTime,
+      planets: natalData.planets,
+      houses: {
+        cusps: natalData.houses,
+        ASC: estimate.workingLongitude,
+        ascendantProvenance: 'rectified',
+        ascendantEstimate: estimate,
+      } as any,
+      aspects: natalData.aspects,
+      nodes: natalData.nodes,
+      monicaConstant: alchmData.monicaConstant,
+      dominantElement,
+      dominantModality,
+      spiritScore: alchmData.spirit,
+      essenceScore: alchmData.essence,
+      matterScore: alchmData.matter,
+      substanceScore: alchmData.substance,
+      preferences: {
+        ...existingPrefs,
+        rectification: {
+          ascendantProvenance: 'rectified',
+          ascendantEstimate: estimate,
+        },
+      },
+      updatedAt: new Date(),
+    },
+  })
+
+  return updated as NatalChartWithTransits
 }
 
 /**
