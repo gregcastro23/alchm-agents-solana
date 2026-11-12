@@ -16,7 +16,7 @@ Key Capabilities:
 """
 
 from abc import ABC, abstractmethod
-from datetime import datetime, timezone
+from datetime import datetime
 import math
 import random
 from typing import Any, Dict, List, Optional, Tuple
@@ -472,7 +472,6 @@ class SecondaryProgressionScorer(LikelihoodScorer):
         natal_static = _calc_lons(mid_jd, [("Sun", swe.SUN), ("Venus", swe.VENUS), ("Mars", swe.MARS), ("Saturn", swe.SATURN)])
 
         conj_cutoff, conj_sigma = 2.5, 1.15
-        sq_cutoff, sq_sigma = 1.8, 0.90
 
         extra_prog: List[Tuple[str, float, float]] = [("Sun", prog_static["Sun"], 1.0)]
         if category == "marriage":
