@@ -121,10 +121,12 @@ export interface PentaclesAgentRunResult {
   skipped: number
   failed: number
   errors: string[]
+  skippedIdle?: boolean
 }
 
 export interface PentaclesAgentRunOptions {
   dryRun?: boolean
+  force?: boolean
   maxAgents?: number
   maxActions?: number
 }
@@ -655,10 +657,22 @@ export class PentaclesAgentService {
     }
 
     try {
-      const [{ roster, invalid }, world] = await Promise.all([
-        this.loadRoster(maxAgents),
-        this.client.loadWorld(),
-      ])
+      const world =
+        typeof this.client.loadWorldIfActive === 'function'
+          ? await this.client.loadWorldIfActive({ force: options.force })
+          : await this.client.loadWorld()
+      if (!world) {
+        result.skippedIdle = true
+        result.finishedAt = new Date().toISOString()
+        logger.info(
+          'Pentacles controller idle (0 pending agent turns); skipped full loadWorld scan',
+          {
+            runId: result.runId,
+          }
+        )
+        return result
+      }
+      const { roster, invalid } = await this.loadRoster(maxAgents)
       result.rosterSeen = roster.length
       result.errors.push(...invalid)
       const rosterByKey = new Map(roster.map(agent => [agent.agentKey, agent]))

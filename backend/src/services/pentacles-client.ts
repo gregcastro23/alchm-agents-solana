@@ -62,6 +62,14 @@ export interface PentaclesBackendClientOptions {
   requestTimeoutMs?: number
 }
 
+export const DEFAULT_IDLE_HEARTBEAT_MS = 300_000
+
+export interface LoadWorldIfActiveOptions {
+  force?: boolean
+  heartbeatIntervalMs?: number
+  nowMs?: number
+}
+
 const WRAPPER_FIELDS = new Set([
   '__identity__',
   '__connection_id__',
@@ -223,6 +231,51 @@ export class PentaclesBackendClient {
       signal: AbortSignal.timeout(this.requestTimeoutMs),
     })
     if (!response.ok) throw new Error(`${name} ${response.status}: ${await response.text()}`)
+  }
+
+  private lastFullLoadAt: number | null = null
+
+  /**
+   * Lightweight TeV pre-gate before `loadWorld()`. Queries only `agent_melee_turn` so idle
+   * controller ticks avoid 17 parallel full-table scans when no agent turn needs an action.
+   */
+  async checkPendingAgentTurns(nowMs = Date.now()): Promise<boolean> {
+    const countRows = await this.sql('SELECT count(*) AS cnt FROM agent_melee_turn')
+    if (countRows.length === 0) {
+      // Aggregate COUNT(*) always returns one row on SpacetimeDB; 0 rows indicates an empty test stub.
+      return true
+    }
+    const totalCount = pentaclesNumber(countRows[0]?.cnt)
+    if (totalCount <= 0) {
+      return false
+    }
+    const nowMicros = nowMs * 1_000
+    const turnRows = await this.sql('SELECT turn_id, resolved_at, expires_at FROM agent_melee_turn')
+    return turnRows.some(
+      row => row.resolved_at == null && pentaclesTimestampMicros(row.expires_at) > nowMicros
+    )
+  }
+
+  /**
+   * Loads the full 17-table Pentacles world state only when unresolved agent turns are pending,
+   * `force` is requested, or the idle heartbeat interval (`300_000ms` default) has elapsed.
+   */
+  async loadWorldIfActive(
+    options: LoadWorldIfActiveOptions = {}
+  ): Promise<PentaclesWorldState | null> {
+    const nowMs = options.nowMs ?? Date.now()
+    const heartbeatIntervalMs = options.heartbeatIntervalMs ?? DEFAULT_IDLE_HEARTBEAT_MS
+    const heartbeatDue =
+      options.force === true ||
+      this.lastFullLoadAt === null ||
+      nowMs - this.lastFullLoadAt >= heartbeatIntervalMs
+
+    if (heartbeatDue || (await this.checkPendingAgentTurns(nowMs))) {
+      const world = await this.loadWorld()
+      this.lastFullLoadAt = nowMs
+      return world
+    }
+    return null
   }
 
   async loadWorld(): Promise<PentaclesWorldState> {

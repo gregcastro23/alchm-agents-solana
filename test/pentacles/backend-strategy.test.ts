@@ -172,3 +172,204 @@ describe('Pentacles backend strategy', () => {
     expect(intents).toEqual([])
   })
 })
+
+describe('PentaclesBackendClient idle pre-gate', () => {
+  const satsSqlResult = (
+    cols: Array<{ name: string; algebraic_type: Record<string, unknown> }>,
+    rows: unknown[][]
+  ) => [
+    {
+      schema: {
+        elements: cols.map(col => ({
+          name: { some: col.name },
+          algebraic_type: col.algebraic_type,
+        })),
+      },
+      rows,
+    },
+  ]
+
+  const optionTimestampType = {
+    Sum: {
+      variants: [
+        {
+          name: { some: 'some' },
+          algebraic_type: {
+            Product: {
+              elements: [
+                {
+                  name: { some: '__timestamp_micros_since_unix_epoch__' },
+                  algebraic_type: { I64: [] },
+                },
+              ],
+            },
+          },
+        },
+        { name: { some: 'none' }, algebraic_type: { Product: { elements: [] } } },
+      ],
+    },
+  }
+
+  it('skips 17-table loadWorld when 0 agent_melee_turn rows exist and runs on 300_000ms heartbeat', async () => {
+    const { vi } = await import('vitest')
+    const { DEFAULT_IDLE_HEARTBEAT_MS, PentaclesBackendClient } =
+      await import('../../backend/src/services/pentacles-client.js')
+
+    const sqlQueries: string[] = []
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: unknown, init?: { body?: unknown }) => {
+        const sqlText = String(init?.body ?? '')
+        sqlQueries.push(sqlText)
+        const payload = sqlText.includes('count(*)')
+          ? satsSqlResult([{ name: 'cnt', algebraic_type: { U64: [] } }], [[0]])
+          : [{ schema: { elements: [] }, rows: [] }]
+        return {
+          ok: true,
+          status: 200,
+          json: async () => payload,
+          text: async () => '',
+        }
+      })
+    )
+
+    try {
+      const client = new PentaclesBackendClient({
+        uri: 'https://pentacles.test',
+        database: 'asol',
+        ownerToken: 'token',
+      })
+
+      // First tick triggers initial full loadWorld (17 table SELECT * queries).
+      const initial = await client.loadWorldIfActive({ nowMs: 1_000 })
+      expect(initial).not.toBeNull()
+      expect(sqlQueries).toHaveLength(17)
+
+      // Subsequent tick inside 300_000ms window runs only 1 SQL query and skips 17-table scan.
+      sqlQueries.length = 0
+      const idle = await client.loadWorldIfActive({ nowMs: 1_000 + 15_000 })
+      expect(idle).toBeNull()
+      expect(sqlQueries).toEqual(['SELECT count(*) AS cnt FROM agent_melee_turn'])
+
+      // At >= 300_000ms heartbeat, runs full 17-table scan again.
+      sqlQueries.length = 0
+      const heartbeat = await client.loadWorldIfActive({
+        nowMs: 1_000 + DEFAULT_IDLE_HEARTBEAT_MS,
+      })
+      expect(heartbeat).not.toBeNull()
+      expect(sqlQueries).toHaveLength(17)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('distinguishes unresolved active turns from resolved-only turns', async () => {
+    const { vi } = await import('vitest')
+    const { PentaclesBackendClient } =
+      await import('../../backend/src/services/pentacles-client.js')
+
+    const nowMs = 1_700_000_000_000
+    const futureMicros = (nowMs + 60_000) * 1_000
+    const pastMicros = (nowMs - 30_000) * 1_000
+    let turnMode: 'resolved_only' | 'pending' = 'resolved_only'
+    const sqlQueries: string[] = []
+
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(async (_url: unknown, init?: { body?: unknown }) => {
+        const sqlText = String(init?.body ?? '')
+        sqlQueries.push(sqlText)
+        let payload: unknown[]
+        if (sqlText.includes('count(*)')) {
+          payload = satsSqlResult([{ name: 'cnt', algebraic_type: { U64: [] } }], [[2]])
+        } else if (sqlText.startsWith('SELECT turn_id, resolved_at, expires_at')) {
+          const rows =
+            turnMode === 'resolved_only'
+              ? [
+                  [1, [0, [nowMs * 1_000]], [futureMicros]],
+                  [2, [1, []], [pastMicros]],
+                ]
+              : [
+                  [1, [0, [nowMs * 1_000]], [futureMicros]],
+                  [2, [1, []], [futureMicros]],
+                ]
+          payload = satsSqlResult(
+            [
+              { name: 'turn_id', algebraic_type: { U64: [] } },
+              { name: 'resolved_at', algebraic_type: optionTimestampType },
+              {
+                name: 'expires_at',
+                algebraic_type: {
+                  Product: {
+                    elements: [
+                      {
+                        name: { some: '__timestamp_micros_since_unix_epoch__' },
+                        algebraic_type: { I64: [] },
+                      },
+                    ],
+                  },
+                },
+              },
+            ],
+            rows
+          )
+        } else {
+          payload = [{ schema: { elements: [] }, rows: [] }]
+        }
+        return {
+          ok: true,
+          status: 200,
+          json: async () => payload,
+          text: async () => '',
+        }
+      })
+    )
+
+    try {
+      const client = new PentaclesBackendClient({
+        uri: 'https://pentacles.test',
+        database: 'asol',
+        ownerToken: 'token',
+      })
+
+      await client.loadWorldIfActive({ nowMs })
+
+      // Resolved/expired rows only: 2 lightweight queries, skips 17-table scan.
+      sqlQueries.length = 0
+      turnMode = 'resolved_only'
+      expect(await client.loadWorldIfActive({ nowMs: nowMs + 15_000 })).toBeNull()
+      expect(sqlQueries).toEqual([
+        'SELECT count(*) AS cnt FROM agent_melee_turn',
+        'SELECT turn_id, resolved_at, expires_at FROM agent_melee_turn',
+      ])
+
+      // Pending unresolved unexpired turn: triggers full 17-table loadWorld().
+      sqlQueries.length = 0
+      turnMode = 'pending'
+      const activeWorld = await client.loadWorldIfActive({ nowMs: nowMs + 30_000 })
+      expect(activeWorld).not.toBeNull()
+      expect(sqlQueries).toHaveLength(19)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('PentaclesAgentService.evaluate skips loadWorld and loadRoster when idle', async () => {
+    const { vi } = await import('vitest')
+    const { PentaclesAgentService } =
+      await import('../../backend/src/services/pentacles-agent-service.js')
+
+    const loadWorld = vi.fn()
+    const loadWorldIfActive = vi.fn().mockResolvedValue(null)
+    const service = new PentaclesAgentService({ loadWorld, loadWorldIfActive } as any)
+    const loadRosterSpy = vi.spyOn(service as any, 'loadRoster')
+
+    const result = await service.evaluate({ dryRun: true })
+    expect(result.skippedIdle).toBe(true)
+    expect(result.rosterSeen).toBe(0)
+    expect(result.intents).toEqual([])
+    expect(loadWorldIfActive).toHaveBeenCalledTimes(1)
+    expect(loadWorld).not.toHaveBeenCalled()
+    expect(loadRosterSpy).not.toHaveBeenCalled()
+  })
+})
