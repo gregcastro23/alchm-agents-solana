@@ -186,6 +186,7 @@ class CallResult:
     cache: Optional[Dict[str, int]] = None
     input_tokens: Optional[int] = None
     output_tokens: Optional[int] = None
+    finish_reason: Optional[str] = None
 
 
 async def _call_anthropic(
@@ -244,6 +245,7 @@ async def _call_anthropic(
         cache=cache,
         input_tokens=in_tok,
         output_tokens=out_tok,
+        finish_reason=getattr(msg, "stop_reason", None),
     )
 
 
@@ -286,6 +288,7 @@ async def _call_openai_compatible(
         cache=None,
         input_tokens=in_tok,
         output_tokens=out_tok,
+        finish_reason=getattr(resp.choices[0], "finish_reason", None),
     )
 
 

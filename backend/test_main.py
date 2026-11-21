@@ -508,6 +508,45 @@ async def test_generate_recipe_coerces_messy_llm_output(monkeypatch):
     assert data["steps"][0]["time_minutes"] == 12.0
 
 
+def test_cosmic_recipe_default_max_tokens_avoids_4kb_truncation():
+    assert recipe_generation.COSMIC_RECIPE_MAX_TOKENS >= 3072
+
+
+@pytest.mark.asyncio
+async def test_generate_recipe_recovers_from_truncated_json_with_boosted_budget(monkeypatch):
+    recipe_generation.clear_recipe_cache()
+    calls = []
+
+    async def fake_run_chain(**kwargs):
+        calls.append(kwargs)
+        if len(calls) == 1:
+            return providers.CallResult(
+                text='{"id":"sojourner_truth_signature_dish","title":"Sp',
+                provider="openai",
+                model="gpt-4o-mini",
+                finish_reason="length",
+            )
+        return providers.CallResult(
+            text=json.dumps(_sample_cosmic_recipe()),
+            provider="openai",
+            model="gpt-4o-mini",
+            finish_reason="stop",
+        )
+
+    monkeypatch.setattr(providers, "run_chain", fake_run_chain)
+
+    response = client.post(
+        "/api/generate-recipe",
+        json={"prompt": "Sojourner Truth signature dish", "dominantElement": "Earth"},
+    )
+
+    assert response.status_code == 200
+    assert len(calls) == 2
+    assert calls[0]["max_tokens"] == recipe_generation.COSMIC_RECIPE_MAX_TOKENS
+    assert calls[1]["max_tokens"] == 4096
+    assert "truncated mid-JSON" in calls[1]["user_message"]
+
+
 def test_philosophers_stone_positions_get():
     response = client.get("/api/philosophers-stone/positions?year=2026&month=5&day=21&hour=8&minute=0")
     assert response.status_code == 200

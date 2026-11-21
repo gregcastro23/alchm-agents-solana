@@ -19,7 +19,8 @@ import schemas
 
 COSMIC_RECIPE_AGENT_ID = "alchemical-chef"
 COSMIC_RECIPE_CACHE_TTL_SECONDS = float(os.getenv("COSMIC_RECIPE_CACHE_TTL_SECONDS", "3600"))
-COSMIC_RECIPE_MAX_TOKENS = int(os.getenv("COSMIC_RECIPE_MAX_TOKENS", "1024"))
+COSMIC_RECIPE_MAX_TOKENS = int(os.getenv("COSMIC_RECIPE_MAX_TOKENS", "3072"))
+COSMIC_RECIPE_MAX_TOKENS_CEILING = 4096
 COSMIC_RECIPE_PROVIDER_TIMEOUT_SECONDS = float(
     os.getenv("COSMIC_RECIPE_PROVIDER_TIMEOUT_SECONDS", "12.0")
 )
@@ -185,6 +186,12 @@ def _summarize_validation_error(exc: Exception, raw: str) -> str:
     return f"{exc.__class__.__name__}: {str(exc)[:200]}; preview={raw[:240]}"
 
 
+def _is_truncated_json(result: providers.CallResult, exc: Exception) -> bool:
+    if result.finish_reason in ("length", "max_tokens"):
+        return True
+    return isinstance(exc, json.JSONDecodeError) and "Unterminated" in str(exc)
+
+
 def _parse_recipe(text: str) -> schemas.CosmicRecipeResponse:
     raw = _strip_model_json(text)
     parsed = json.loads(raw)
@@ -216,6 +223,7 @@ async def generate_cosmic_recipe(
     t_prompt_compile_ms = (time.perf_counter() - t_chain_start) * 1000.0
 
     last_error = "model did not return a valid recipe"
+    attempt_max_tokens = COSMIC_RECIPE_MAX_TOKENS
 
     for attempt in range(2):
         user_message = _build_recipe_prompt(
@@ -232,7 +240,7 @@ async def generate_cosmic_recipe(
             agent_id=COSMIC_RECIPE_AGENT_ID,
             tier=tier,
             persona_cache_key="cosmic-recipe-v1",
-            max_tokens=COSMIC_RECIPE_MAX_TOKENS,
+            max_tokens=attempt_max_tokens,
             response_format={"type": "json_object"},
             temperature=0.35,
             structured_schema=schema,
@@ -263,9 +271,21 @@ async def generate_cosmic_recipe(
             return recipe
         except Exception as exc:
             t_val_ms = (time.perf_counter() - t_val_start) * 1000.0
-            last_error = _summarize_validation_error(exc, result.text or "")
+            base_error = _summarize_validation_error(exc, result.text or "")
+            used_max_tokens = attempt_max_tokens
+            if _is_truncated_json(result, exc):
+                attempt_max_tokens = max(
+                    attempt_max_tokens, COSMIC_RECIPE_MAX_TOKENS_CEILING
+                )
+                last_error = (
+                    f"{base_error}. Output was truncated mid-JSON; return a more concise, "
+                    "complete JSON object with shorter descriptions and steps so it fits within the token limit."
+                )
+            else:
+                last_error = base_error
             print(
                 f"recipe_validation_failed attempt={attempt + 1} tier={tier} "
+                f"finish_reason={result.finish_reason or 'unknown'} max_tokens={used_max_tokens} "
                 f"validate_ms={t_val_ms:.1f} error={last_error[:400]}",
                 flush=True,
             )
