@@ -184,17 +184,20 @@ export async function GET(_req: NextRequest) {
     })
   }
 
-  return NextResponse.json({
-    success: true,
-    generatedAt: new Date().toISOString(),
-    manifest: {
-      ...typed,
-      ageMinutes: manifestAgeMinutes,
-      staleAfterDays: MANIFEST_STALE_DAYS,
-      stale: manifestAgeDays !== null && manifestAgeDays > MANIFEST_STALE_DAYS,
+  return NextResponse.json(
+    {
+      success: true,
+      generatedAt: new Date().toISOString(),
+      manifest: {
+        ...typed,
+        ageMinutes: manifestAgeMinutes,
+        staleAfterDays: MANIFEST_STALE_DAYS,
+        stale: manifestAgeDays !== null && manifestAgeDays > MANIFEST_STALE_DAYS,
+      },
+      live,
+      liveError,
+      alerts: sortAlerts(alerts),
     },
-    live,
-    liveError,
-    alerts: sortAlerts(alerts),
-  })
+    { headers: { 'Cache-Control': 'no-store' } }
+  )
 }

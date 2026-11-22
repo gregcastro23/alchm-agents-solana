@@ -1,8 +1,10 @@
 import 'server-only'
 
 import { NextResponse } from 'next/server'
+import { isConfiguredAdminEmail } from '@/lib/admin/admin-emails'
 import { auth } from '@/lib/auth'
 import { prisma } from '@/lib/db'
+import { isDatabaseUnavailableError } from '@/lib/db-error'
 
 type AdminIdentity = {
   id?: string | null
@@ -22,7 +24,8 @@ export type AdminSessionUser = AdminIdentity & {
 export type AdminAuthSuccess = {
   ok: true
   user: AdminSessionUser
-  source: 'db-role'
+  source: 'db-role' | 'db-outage-allowlist'
+  degradedAuth?: boolean
 }
 
 export type AdminAuthFailure = {
@@ -119,6 +122,21 @@ export async function requireAdmin(
     }
   } catch (error) {
     console.warn('[AdminAuth] Failed to verify database admin role:', error)
+    if (
+      isDatabaseUnavailableError(error) &&
+      user.role === 'admin' &&
+      isConfiguredAdminEmail(user.email)
+    ) {
+      console.warn(
+        '[AdminAuth] DB unavailable; granting break-glass admin access for configured admin email'
+      )
+      return {
+        ok: true,
+        user,
+        source: 'db-outage-allowlist',
+        degradedAuth: true,
+      }
+    }
   }
 
   return {

@@ -44,6 +44,10 @@
     {
       "path": "/api/cron/agents/weekly-menu",
       "schedule": "9 5 * * 0"
+    },
+    {
+      "path": "/api/cron/system-health-snapshot",
+      "schedule": "58 * * * *"
     }
   ],
   "headers": [
@@ -53,6 +57,33 @@
         {
           "key": "Cache-Control",
           "value": "s-maxage=60, stale-while-revalidate"
+        }
+      ]
+    },
+    {
+      "source": "/api/health",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/api/admin/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
+        }
+      ]
+    },
+    {
+      "source": "/api/cron/(.*)",
+      "headers": [
+        {
+          "key": "Cache-Control",
+          "value": "no-store"
         }
       ]
     }

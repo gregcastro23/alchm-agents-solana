@@ -149,6 +149,7 @@ export const WtenLinkReportSchema = z.object({
       checkedAt: z.string(),
     })
   ),
+  hookSecretConfigured: z.boolean().optional(),
   alerts: z.array(AdminAlertSchema),
 })
 export type WtenLinkPayload = z.infer<typeof WtenLinkReportSchema>

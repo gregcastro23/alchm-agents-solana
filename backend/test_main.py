@@ -26,6 +26,27 @@ def test_health_check():
     response = client.get("/health")
     assert response.status_code == 200
     assert response.json()["status"] == "healthy"
+    assert response.json()["database"] == "connected"
+    assert response.headers.get("cache-control") == "no-store"
+
+
+def test_health_check_returns_503_when_db_down(monkeypatch):
+    import database
+
+    def broken_connect():
+        raise RuntimeError(
+            "FATAL: 53000 exceeded the quota for postgresql://secret:pw@ep-mute-thunder/neondb"
+        )
+
+    monkeypatch.setattr(database.engine, "connect", broken_connect)
+    response = client.get("/health")
+    assert response.status_code == 503
+    body = response.json()
+    assert body["status"] == "unhealthy"
+    assert body["database"] == "disconnected"
+    assert body["error"] == "quota_exceeded"
+    assert "secret" not in response.text
+    assert response.headers.get("cache-control") == "no-store"
 
 
 def test_alchm_mcp_parse_tool_json():

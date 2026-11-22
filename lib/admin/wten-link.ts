@@ -2,7 +2,10 @@ import 'server-only'
 
 import { prisma } from '@/lib/db'
 import type { AdminAlert } from '@/lib/admin/alerts'
+import { classifyDebitPathFromDeliveries, type DebitPathVerdict } from '@/lib/admin/debit-path'
 import type { SourceStatus } from '@/lib/admin/jobs'
+
+export { classifyDebitPathFromDeliveries, type DebitPathVerdict }
 import { WTEN_ENDPOINT_POLICY, type WtenEndpoint } from '@/lib/wten/delivery'
 
 /**
@@ -64,6 +67,7 @@ export interface WtenLinkReport {
   endpoints: EndpointHealth[] | null
   recent: DeliveryRow[] | null
   secrets: SecretProbe[]
+  hookSecretConfigured?: boolean
   alerts: AdminAlert[]
 }
 
@@ -362,6 +366,21 @@ export function linkAlerts(report: Omit<WtenLinkReport, 'alerts'>): AdminAlert[]
       })
     }
   }
+  const debitPath = classifyDebitPathFromDeliveries(report.deliveries, report.endpoints)
+  if (debitPath.verdict === 'INCIDENT') {
+    alerts.push({
+      id: 'wten:debit-path-silent',
+      severity: 'critical',
+      source: 'economy',
+      title: 'Agent feed traffic is active but zero sync-debit calls landed',
+      detail: debitPath.lastDebitError
+        ? `${debitPath.summary} Last error: ${debitPath.lastDebitError}`
+        : debitPath.summary,
+      remediation:
+        'Check /admin/jobs (`agents/tick`) and primary database health — ticks fail before calling sync-debit when DB is down.',
+      href: '/admin/wten',
+    })
+  }
   return alerts
 }
 
@@ -408,6 +427,7 @@ export async function loadWtenLinkReport(
     windowHours,
     ...deliveryPart,
     secrets,
+    hookSecretConfigured: Boolean(process.env.HOOK_SECRET_ASOL?.trim()),
   }
   return { ...partial, alerts: linkAlerts(partial) }
 }

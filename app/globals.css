@@ -700,13 +700,21 @@ body.desktop-companion-body .fixed.bottom-4.right-4.z-\[100\] {
 }
 
 /* Native top-layer modal dialog scroll containment (modern-web-guidance dialog) */
-dialog.rectifier-dialog:modal {
+dialog:modal {
+  overscroll-behavior: contain;
+}
+
+dialog::backdrop {
+  overflow: hidden;
   overscroll-behavior: contain;
 }
 
 dialog.rectifier-dialog::backdrop {
-  overflow: hidden;
-  overscroll-behavior: contain;
   background: rgba(6, 4, 15, 0.78);
+  backdrop-filter: blur(6px);
+}
+
+dialog.admin-command-dialog::backdrop {
+  background: rgba(6, 4, 15, 0.76);
   backdrop-filter: blur(6px);
 }

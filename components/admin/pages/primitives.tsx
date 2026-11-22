@@ -62,9 +62,41 @@ export function useValidatedPoll<T>(url: string, schema: ZodType<T>, intervalMs 
   }, [url, schema])
 
   useEffect(() => {
-    void refresh()
-    const id = setInterval(() => void refresh(), intervalMs)
-    return () => clearInterval(id)
+    if (typeof document === 'undefined') {
+      void refresh()
+      const id = setInterval(() => void refresh(), intervalMs)
+      return () => clearInterval(id)
+    }
+
+    let id: ReturnType<typeof setInterval> | null = null
+    const stopPolling = () => {
+      if (id !== null) {
+        clearInterval(id)
+        id = null
+      }
+    }
+    const startPolling = () => {
+      stopPolling()
+      if (document.hidden) return
+      void refresh()
+      id = setInterval(() => {
+        if (!document.hidden) void refresh()
+      }, intervalMs)
+    }
+    const handleVisibility = () => {
+      if (document.hidden) {
+        stopPolling()
+      } else {
+        startPolling()
+      }
+    }
+
+    startPolling()
+    document.addEventListener('visibilitychange', handleVisibility)
+    return () => {
+      stopPolling()
+      document.removeEventListener('visibilitychange', handleVisibility)
+    }
   }, [refresh, intervalMs])
 
   return { loaded, refresh }

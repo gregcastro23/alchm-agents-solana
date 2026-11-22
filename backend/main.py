@@ -586,11 +586,45 @@ async def _build_alchm_mcp_context(
 
 @app.get("/health", response_model=schemas.HealthResponse)
 async def health():
-    return {
-        "status": "healthy",
-        "service": "planetary-agents-core",
-        "database": "connected"
-    }
+    from sqlalchemy import text
+
+    def _probe_db():
+        started = time.monotonic()
+        with database.engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        return int((time.monotonic() - started) * 1000)
+
+    started = time.monotonic()
+    try:
+        latency_ms = await asyncio.to_thread(_probe_db)
+        return JSONResponse(
+            status_code=200,
+            content={
+                "status": "healthy",
+                "service": "planetary-agents-core",
+                "database": "connected",
+                "latency_ms": latency_ms,
+            },
+            headers={"Cache-Control": "no-store"},
+        )
+    except Exception as exc:
+        latency_ms = int((time.monotonic() - started) * 1000)
+        msg = str(exc)
+        if "53000" in msg or "quota" in msg.lower():
+            sanitized_error = "quota_exceeded"
+        else:
+            sanitized_error = type(exc).__name__
+        return JSONResponse(
+            status_code=503,
+            content={
+                "status": "unhealthy",
+                "service": "planetary-agents-core",
+                "database": "disconnected",
+                "latency_ms": latency_ms,
+                "error": sanitized_error,
+            },
+            headers={"Cache-Control": "no-store"},
+        )
 
 @app.get("/")
 async def root():

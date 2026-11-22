@@ -609,24 +609,27 @@ export async function GET(_req: NextRequest) {
     })
   }
 
-  return NextResponse.json({
-    success: true,
-    generatedAt: now.toISOString(),
-    ephemeris,
-    backends,
-    roster: roster.data,
-    conversations: conversations.data,
-    transits: transits.data,
-    activation: activation.data,
-    crons: { secretConfigured: cronSecretSet, jobs: crons },
-    degraded: Object.entries({
-      roster: roster.error,
-      conversations: conversations.error,
-      transits: transits.error,
-      activation: activation.error,
-    })
-      .filter(([, error]) => error)
-      .map(([name, error]) => ({ section: name, error: error as string })),
-    alerts: sortAlerts(alerts),
-  })
+  return NextResponse.json(
+    {
+      success: true,
+      generatedAt: now.toISOString(),
+      ephemeris,
+      backends,
+      roster: roster.data,
+      conversations: conversations.data,
+      transits: transits.data,
+      activation: activation.data,
+      crons: { secretConfigured: cronSecretSet, jobs: crons },
+      degraded: Object.entries({
+        roster: roster.error,
+        conversations: conversations.error,
+        transits: transits.error,
+        activation: activation.error,
+      })
+        .filter(([, error]) => error)
+        .map(([name, error]) => ({ section: name, error: error as string })),
+      alerts: sortAlerts(alerts),
+    },
+    { headers: { 'Cache-Control': 'no-store' } }
+  )
 }

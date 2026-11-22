@@ -2,6 +2,7 @@ import 'server-only'
 
 import type { AdminAlert } from '@/lib/admin/alerts'
 import { readSection, unreadable, type Section } from '@/lib/admin/section'
+import { classifyDbError } from '@/lib/db-error'
 import type { Prisma } from '@prisma/client'
 import { prisma } from '@/lib/db'
 
@@ -142,74 +143,121 @@ export async function loadDashboard(now: Date = new Date()): Promise<DashboardRe
   const since24h = new Date(now.getTime() - 86_400_000)
   const since7d = new Date(now.getTime() - 7 * 86_400_000)
 
-  const [users, agents, harmony, activity, topAgents, jing, mcp, groupChats, database, backend] =
-    await Promise.all([
-      readSection(async () => {
-        const [total, newToday, admins] = await Promise.all([
-          prisma.users.count(),
-          prisma.users.count({ where: { createdAt: { gte: startOfUtcDay(now) } } }),
-          prisma.users.count({ where: { role: 'admin' } }),
-        ])
-        return { total, newToday, admins }
-      }),
-      readSection(async () => {
-        const [historical, created, conv] = await Promise.all([
-          prisma.historical_agents.count(),
-          prisma.created_agents.count(),
-          prisma.historical_agents.aggregate({ _sum: { conversations: true } }),
-        ])
-        return { historical, created, totalConversations: conv._sum?.conversations ?? 0 }
-      }),
-      readSection(async () => {
-        const avg = await prisma.historical_agents.aggregate({
-          _avg: { spiritScore: true, essenceScore: true, matterScore: true, substanceScore: true },
-        })
-        return {
-          spirit: round2(avg._avg.spiritScore),
-          essence: round2(avg._avg.essenceScore),
-          matter: round2(avg._avg.matterScore),
-          substance: round2(avg._avg.substanceScore),
-        }
-      }),
-      readSection(async () => {
-        const rows = await prisma.consciousness_interactions.findMany({
-          take: 10,
-          orderBy: { timestamp: 'desc' },
-          select: { interactionType: true, agentId: true, timestamp: true },
-        })
-        return rows.map(i => ({
-          type: i.interactionType,
-          description: `Interaction with agent ${i.agentId}`,
-          timestamp: i.timestamp.toISOString(),
-        }))
-      }),
-      readSection(async () => {
-        const top = await prisma.historical_agents.findMany({
-          take: 5,
-          orderBy: { conversations: 'desc' },
-          select: { agentId: true, name: true, conversations: true },
-        })
-        return top.map(a => ({ id: a.agentId, name: a.name, interactions: a.conversations }))
-      }),
-      readSection(() => readJing(since24h, since7d)),
-      readSection(() => readMcp(since24h)),
-      readSection(() => readGroupChats(since24h)),
-      readSection(async () => {
-        const started = Date.now()
+  // Check database & backend liveness first so a dead/quota-exceeded pooler does
+  // not trigger ~25 simultaneous failing Prisma queries on every admin load.
+  let dbFailureReason: string | null = null
+  const [database, backend] = await Promise.all([
+    readSection(async () => {
+      const started = Date.now()
+      try {
         await prisma.$queryRaw`SELECT 1`
         return { latencyMs: Date.now() - started }
-      }),
-      readSection(async () => {
-        const url = agentBackendUrl()
-        const started = Date.now()
-        const res = await fetch(`${url}/health`, {
-          signal: AbortSignal.timeout(3000),
-          cache: 'no-store',
-        })
-        if (!res.ok) throw new Error(`${url}/health answered ${res.status}`)
-        return { url, status: res.status, latencyMs: Date.now() - started }
-      }),
-    ])
+      } catch (err) {
+        const classified = classifyDbError(err)
+        dbFailureReason = classified.summary
+        throw new Error(classified.summary)
+      }
+    }),
+    readSection(async () => {
+      const url = agentBackendUrl()
+      const started = Date.now()
+      const res = await fetch(`${url}/health`, {
+        signal: AbortSignal.timeout(3000),
+        cache: 'no-store',
+      })
+      if (!res.ok) throw new Error(`${url}/health answered ${res.status}`)
+      const body = (await res.json().catch(() => null)) as {
+        status?: string
+        database?: string
+        error?: string
+      } | null
+      if (body && (body.status === 'unhealthy' || body.database === 'disconnected')) {
+        throw new Error(
+          `${url}/health reported ${body.status ?? 'unhealthy'} (db: ${body.database ?? 'disconnected'}${body.error ? `, ${body.error}` : ''})`
+        )
+      }
+      return { url, status: res.status, latencyMs: Date.now() - started }
+    }),
+  ])
+
+  const shortCircuit = <T>(): Section<T> => ({
+    ok: false,
+    reason: dbFailureReason ?? (database.ok ? 'database check failed' : database.reason),
+  })
+
+  const [users, agents, harmony, activity, topAgents, jing, mcp, groupChats] = database.ok
+    ? await Promise.all([
+        readSection(async () => {
+          const [total, newToday, admins] = await Promise.all([
+            prisma.users.count(),
+            prisma.users.count({ where: { createdAt: { gte: startOfUtcDay(now) } } }),
+            prisma.users.count({ where: { role: 'admin' } }),
+          ])
+          return { total, newToday, admins }
+        }),
+        readSection(async () => {
+          const [historical, created, conv] = await Promise.all([
+            prisma.historical_agents.count(),
+            prisma.created_agents.count(),
+            prisma.historical_agents.aggregate({ _sum: { conversations: true } }),
+          ])
+          return { historical, created, totalConversations: conv._sum?.conversations ?? 0 }
+        }),
+        readSection(async () => {
+          const avg = await prisma.historical_agents.aggregate({
+            _avg: {
+              spiritScore: true,
+              essenceScore: true,
+              matterScore: true,
+              substanceScore: true,
+            },
+          })
+          return {
+            spirit: round2(avg._avg.spiritScore),
+            essence: round2(avg._avg.essenceScore),
+            matter: round2(avg._avg.matterScore),
+            substance: round2(avg._avg.substanceScore),
+          }
+        }),
+        readSection(async () => {
+          const rows = await prisma.consciousness_interactions.findMany({
+            take: 10,
+            orderBy: { timestamp: 'desc' },
+            select: { interactionType: true, agentId: true, timestamp: true },
+          })
+          return rows.map(i => ({
+            type: i.interactionType,
+            description: `Interaction with agent ${i.agentId}`,
+            timestamp: i.timestamp.toISOString(),
+          }))
+        }),
+        readSection(async () => {
+          const top = await prisma.historical_agents.findMany({
+            take: 5,
+            orderBy: { conversations: 'desc' },
+            select: { agentId: true, name: true, conversations: true },
+          })
+          return top.map(a => ({ id: a.agentId, name: a.name, interactions: a.conversations }))
+        }),
+        readSection(() => readJing(since24h, since7d)),
+        readSection(() => readMcp(since24h)),
+        readSection(() => readGroupChats(since24h)),
+      ])
+    : [
+        shortCircuit<{ total: number; newToday: number; admins: number }>(),
+        shortCircuit<{ historical: number; created: number; totalConversations: number }>(),
+        shortCircuit<{
+          spirit: number | null
+          essence: number | null
+          matter: number | null
+          substance: number | null
+        }>(),
+        shortCircuit<Array<{ type: string; description: string; timestamp: string }>>(),
+        shortCircuit<Array<{ id: string; name: string; interactions: number }>>(),
+        shortCircuit<Extract<DashboardReport['jing'], { ok: true }>['value']>(),
+        shortCircuit<Extract<DashboardReport['mcp'], { ok: true }>['value']>(),
+        shortCircuit<Extract<DashboardReport['groupChats'], { ok: true }>['value']>(),
+      ]
 
   const report: Omit<DashboardReport, 'alerts'> = {
     generatedAt: now.toISOString(),
@@ -244,28 +292,41 @@ export async function loadDashboard(now: Date = new Date()): Promise<DashboardRe
 }
 
 export function dashboardAlerts(r: Omit<DashboardReport, 'alerts'>): AdminAlert[] {
-  const failed = unreadable({
-    users: r.users,
-    agents: r.agents,
-    harmony: r.harmony,
-    activity: r.activity,
-    topAgents: r.topAgents,
-    jing: r.jing,
-    mcp: r.mcp,
-    groupChats: r.groupChats,
-  })
   const alerts: AdminAlert[] = []
-  if (failed.length > 0) {
+  if (!r.system.database.ok) {
     alerts.push({
-      id: 'dashboard:sections-unreadable',
-      severity: 'warning',
+      id: 'dashboard:database-down',
+      severity: 'critical',
       source: 'infrastructure',
-      title: `Could not read ${failed.join(', ')}`,
-      detail: failed
-        .map(k => `${k}: ${((r as Record<string, unknown>)[k] as { reason: string }).reason}`)
-        .join(' · '),
-      href: '/admin',
+      title: 'Primary database is unreachable',
+      detail: r.system.database.reason,
+      remediation:
+        'Check Neon quota/status (PG 53000) or migrate DATABASE_URL/DIRECT_URL to Railway PostgreSQL.',
+      href: '/admin/infrastructure',
     })
+  } else {
+    const failed = unreadable({
+      users: r.users,
+      agents: r.agents,
+      harmony: r.harmony,
+      activity: r.activity,
+      topAgents: r.topAgents,
+      jing: r.jing,
+      mcp: r.mcp,
+      groupChats: r.groupChats,
+    })
+    if (failed.length > 0) {
+      alerts.push({
+        id: 'dashboard:sections-unreadable',
+        severity: 'warning',
+        source: 'infrastructure',
+        title: `Could not read ${failed.join(', ')}`,
+        detail: failed
+          .map(k => `${k}: ${((r as Record<string, unknown>)[k] as { reason: string }).reason}`)
+          .join(' · '),
+        href: '/admin',
+      })
+    }
   }
   if (!r.system.backend.ok) {
     alerts.push({

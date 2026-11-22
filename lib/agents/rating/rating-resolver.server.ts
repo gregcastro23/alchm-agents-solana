@@ -32,6 +32,7 @@ import {
 } from '@/lib/agents/rating/vessel-payload'
 import { getClientIp, rateLimit } from '@/lib/security/rate-limit'
 import { bearerMatches } from '@/lib/security/secure-compare'
+import { isDatabaseUnavailableError } from '@/lib/db-error'
 
 export const AGENT_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$/
 
@@ -225,6 +226,85 @@ export async function resolveWtenFallbackBalances(
   }
 }
 
+const LEDGER_CACHE_TTL_MS = 15_000
+const LEDGER_CACHE_MAX = 500
+const LEDGER_CIRCUIT_MS = 30_000
+
+type LedgerLoaderFn = (
+  agentId: string,
+  context?: { creatorWallet: CreatorWalletPolicy }
+) => Promise<EsmsHoldings | null>
+
+const ledgerCache = new Map<string, { value: EsmsHoldings | null; expiresAt: number }>()
+let ledgerCircuitOpenUntil = 0
+let ledgerCircuitLogAt = 0
+
+export function __resetRatingLedgerGuardForTests(): void {
+  ledgerCache.clear()
+  ledgerCircuitOpenUntil = 0
+  ledgerCircuitLogAt = 0
+}
+
+/**
+ * Wraps a Prisma ledger loader with a 15s public-read TTL cache (only for
+ * `'deny'` creator-wallet policy so private creator balances are never cached)
+ * and a 30s DB-outage circuit breaker so sudden Neon quota/connectivity drops
+ * fail fast to WTEN's S2S fallback instead of saturating DB sockets.
+ */
+export function createGuardedLedgerLoader(
+  inner: LedgerLoaderFn,
+  options: { now?: () => number; forceEnableInTest?: boolean } = {}
+): LedgerLoaderFn {
+  const nowFn = options.now ?? Date.now
+  return async (agentId, context) => {
+    const isTest = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test'
+    if (isTest && !options.forceEnableInTest) {
+      return inner(agentId, context)
+    }
+
+    const now = nowFn()
+    const policy = context?.creatorWallet ?? 'deny'
+    const cacheable = policy === 'deny'
+
+    if (cacheable) {
+      const hit = ledgerCache.get(agentId)
+      if (hit && hit.expiresAt > now) {
+        return hit.value
+      }
+    }
+
+    if (now < ledgerCircuitOpenUntil) {
+      throw new Error('Database circuit open (recent outage)')
+    }
+
+    try {
+      const result = await inner(agentId, context)
+      if (cacheable) {
+        if (ledgerCache.size >= LEDGER_CACHE_MAX) {
+          for (const [k, entry] of ledgerCache) {
+            if (entry.expiresAt <= now) ledgerCache.delete(k)
+          }
+          if (ledgerCache.size >= LEDGER_CACHE_MAX) ledgerCache.clear()
+        }
+        ledgerCache.set(agentId, { value: result, expiresAt: now + LEDGER_CACHE_TTL_MS })
+      }
+      return result
+    } catch (error) {
+      if (isDatabaseUnavailableError(error)) {
+        ledgerCircuitOpenUntil = now + LEDGER_CIRCUIT_MS
+        if (now - ledgerCircuitLogAt >= LEDGER_CIRCUIT_MS) {
+          ledgerCircuitLogAt = now
+          console.warn('[rating] DB unavailable; opening 30s ledger circuit breaker')
+        }
+      }
+      throw error
+    }
+  }
+}
+
+const guardedPrismaLedgerLoader = createGuardedLedgerLoader(prismaLedgerLoader)
+const isVitestRuntime = process.env.VITEST === 'true' || process.env.NODE_ENV === 'test'
+
 export async function ratedPayload(
   vessel: RatableVessel,
   spacetime: EsmsHoldings | null,
@@ -234,7 +314,7 @@ export async function ratedPayload(
     resolveAgentEsmsBalances(ledgerIdOf(vessel), {
       spacetime,
       strict: false,
-      loadLedger: prismaLedgerLoader,
+      loadLedger: isVitestRuntime ? prismaLedgerLoader : guardedPrismaLedgerLoader,
       creatorWallet,
       onDegraded: (stage, detail) =>
         console.error(`[rating] esms ${stage} fell through: ${detail}`),

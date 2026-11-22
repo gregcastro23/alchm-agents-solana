@@ -1,26 +1,31 @@
 import { NextResponse, type NextRequest } from 'next/server'
 import { adminErrorResponse, requireAdmin } from '@/lib/admin-auth'
 import { sortAlerts } from '@/lib/admin/alerts'
-import { loadDashboard, type DashboardReport } from '@/lib/admin/dashboard'
+import { loadDashboard } from '@/lib/admin/dashboard'
+import { memoizeAdmin } from '@/lib/admin/memory-cache'
 
 export const dynamic = 'force-dynamic'
 export const runtime = 'nodejs'
 
-// Several admin pages poll this at once; a short per-instance memo spares the DB.
-let cached: { at: number; report: DashboardReport } | null = null
-const CACHE_TTL_MS = 5_000
+const CACHE_TTL_MS = 15_000
 
 /**
  * The shared admin read (users, roster, activity, Jing, MCP, councils, system).
  * Every part is read on its own and reports its own failure — see lib/admin/dashboard.ts.
  */
-export async function GET(_req: NextRequest) {
+export async function GET(req: NextRequest) {
   const admin = await requireAdmin()
   if (!admin.ok) return adminErrorResponse(admin)
 
-  if (!cached || Date.now() - cached.at >= CACHE_TTL_MS) {
-    const report = await loadDashboard()
-    cached = { at: Date.now(), report: { ...report, alerts: sortAlerts(report.alerts) } }
-  }
-  return NextResponse.json(cached.report, { headers: { 'Cache-Control': 'no-store' } })
+  const fresh = req.nextUrl.searchParams.get('fresh') === '1'
+  const report = await memoizeAdmin(
+    'admin:dashboard',
+    CACHE_TTL_MS,
+    async () => {
+      const loaded = await loadDashboard()
+      return { ...loaded, alerts: sortAlerts(loaded.alerts) }
+    },
+    { fresh }
+  )
+  return NextResponse.json(report, { headers: { 'Cache-Control': 'no-store' } })
 }

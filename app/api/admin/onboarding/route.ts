@@ -287,14 +287,17 @@ export async function GET(_req: NextRequest) {
     href: 'tab:onboarding',
   })
 
-  return NextResponse.json({
-    success: true,
-    generatedAt: now.toISOString(),
-    funnels,
-    funnelError,
-    recent,
-    recentError,
-    monica,
-    alerts: sortAlerts(alerts),
-  })
+  return NextResponse.json(
+    {
+      success: true,
+      generatedAt: now.toISOString(),
+      funnels,
+      funnelError,
+      recent,
+      recentError,
+      monica,
+      alerts: sortAlerts(alerts),
+    },
+    { headers: { 'Cache-Control': 'no-store' } }
+  )
 }

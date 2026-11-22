@@ -794,6 +794,8 @@ class HealthResponse(BaseModel):
     status: str
     service: str
     database: str
+    latency_ms: Optional[int] = None
+    error: Optional[str] = None
 
 class BulkPositionsRequest(BaseModel):
     startDate: datetime

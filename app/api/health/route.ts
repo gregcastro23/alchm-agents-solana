@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server'
 import { prisma } from '@/lib/db'
+import { classifyDbError } from '@/lib/db-error'
 import { backend } from '@/lib/backend'
 import { feedStreamBus } from '@/lib/agents/feed-stream-bus'
 
@@ -14,18 +15,24 @@ interface HealthCheck {
   version: string
   environment: string
   checks: {
-    database: { status: HealthStatus; latency: number; error: string | null }
+    database: {
+      status: HealthStatus
+      latency: number
+      error: string | null
+      failureKind?: string
+    }
     backend: { status: HealthStatus; latency: number; error: string | null }
     redis: { status: HealthStatus; error: string | null }
     memory: { usage: number; percentage: number }
     uptime: number
-    feed: { activeListeners: number; pendingQueueCount: number }
+    feed: { activeListeners: number; pendingQueueCount: number; live?: boolean }
   }
 }
 
 /**
- * Comprehensive health check endpoint for Docker monitoring
- * Returns detailed health status of all system components
+ * Comprehensive health check endpoint.
+ * Never cached (`Cache-Control: no-store`) and classifies DB failures cleanly
+ * without leaking credentials or firing redundant queries into a dead pooler.
  */
 export async function GET() {
   const healthCheck: HealthCheck = {
@@ -59,10 +66,12 @@ export async function GET() {
     }
   } catch (error) {
     overallStatus = 'unhealthy'
+    const classified = classifyDbError(error)
     healthCheck.checks.database = {
       status: 'unhealthy',
       latency: 0,
-      error: error instanceof Error ? error.message : 'Database connection failed',
+      error: classified.summary,
+      failureKind: classified.kind,
     }
   }
 
@@ -78,6 +87,9 @@ export async function GET() {
       error: null,
     }
   } catch (error) {
+    if (overallStatus === 'healthy') {
+      overallStatus = 'degraded'
+    }
     healthCheck.checks.backend = {
       status: 'unhealthy',
       latency: 0,
@@ -85,20 +97,30 @@ export async function GET() {
     }
   }
 
-  // Feed telemetry check
-  try {
-    const pendingQueueCount = await prisma.agent_action_events.count({
-      where: { status: 'pending' },
-    })
-    healthCheck.checks.feed = {
-      activeListeners: feedStreamBus.listenerCount,
-      pendingQueueCount,
+  // Feed telemetry check — skip redundant DB query if SELECT 1 already failed
+  if (healthCheck.checks.database.status === 'healthy') {
+    try {
+      const pendingQueueCount = await prisma.agent_action_events.count({
+        where: { status: 'pending' },
+      })
+      healthCheck.checks.feed = {
+        activeListeners: feedStreamBus.listenerCount,
+        pendingQueueCount,
+        live: true,
+      }
+    } catch (error) {
+      console.error('[health] failed to query feed pending events:', error)
+      healthCheck.checks.feed = {
+        activeListeners: feedStreamBus.listenerCount,
+        pendingQueueCount: 0,
+        live: false,
+      }
     }
-  } catch (error) {
-    console.error('[health] failed to query feed pending events:', error)
+  } else {
     healthCheck.checks.feed = {
       activeListeners: feedStreamBus.listenerCount,
       pendingQueueCount: 0,
+      live: false,
     }
   }
 
@@ -113,7 +135,7 @@ export async function GET() {
   }
 
   // High memory usage warning
-  if (memoryPercentage > 90) {
+  if (memoryPercentage > 90 && overallStatus === 'healthy') {
     overallStatus = 'degraded'
   }
 
@@ -121,14 +143,20 @@ export async function GET() {
   healthCheck.status = overallStatus
 
   // Return appropriate HTTP status code
-  const statusCode = overallStatus === 'healthy' ? 200 : overallStatus === 'degraded' ? 200 : 503
+  const statusCode = overallStatus === 'unhealthy' ? 503 : 200
 
-  return NextResponse.json(healthCheck, { status: statusCode })
+  return NextResponse.json(healthCheck, {
+    status: statusCode,
+    headers: { 'Cache-Control': 'no-store' },
+  })
 }
 
 /**
  * HEAD request for simple liveness probe
  */
 export async function HEAD() {
-  return new NextResponse(null, { status: 200 })
+  return new NextResponse(null, {
+    status: 200,
+    headers: { 'Cache-Control': 'no-store' },
+  })
 }

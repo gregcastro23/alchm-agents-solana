@@ -16,6 +16,41 @@
 import 'server-only'
 import { createLedgerLoader, type EsmsLedgerStore } from './esms-balance-resolver'
 
+const CIRCUIT_COOLDOWN_MS = 30_000
+let dbCircuitOpenUntil = 0
+let lastCircuitLogAt = 0
+
+function isTestEnv(): boolean {
+  return process.env.VITEST === 'true' || process.env.NODE_ENV === 'test'
+}
+
+function isOutageError(error: unknown): boolean {
+  const obj = error as { name?: unknown; code?: unknown; message?: unknown } | null
+  const text = `${String(obj?.name ?? '')} ${String(obj?.code ?? '')} ${String(obj?.message ?? error)}`
+  return /PrismaClientInitializationError|P1001|P1002|P1017|P2024|53000|53300|exceeded the quota|Can't reach database server|Can’t reach database server|ECONNREFUSED|ETIMEDOUT/i.test(
+    text
+  )
+}
+
+async function withDbCircuit<T>(fn: () => Promise<T>): Promise<T> {
+  if (!isTestEnv() && Date.now() < dbCircuitOpenUntil) {
+    throw new Error('Database circuit open (recent outage)')
+  }
+  try {
+    return await fn()
+  } catch (error) {
+    if (!isTestEnv() && isOutageError(error)) {
+      const now = Date.now()
+      dbCircuitOpenUntil = now + CIRCUIT_COOLDOWN_MS
+      if (now - lastCircuitLogAt >= CIRCUIT_COOLDOWN_MS) {
+        lastCircuitLogAt = now
+        console.warn('[esms-ledger-store] DB outage detected; opening 30s circuit breaker')
+      }
+    }
+    throw error
+  }
+}
+
 async function loadPrisma() {
   const { prisma } = await import('@/lib/db')
   return prisma
@@ -23,34 +58,40 @@ async function loadPrisma() {
 
 export const prismaLedgerStore: EsmsLedgerStore = {
   async findAgenticUserId(email) {
-    const prisma = await loadPrisma()
-    const user = await prisma.users.findFirst({
-      where: { email, isAgentic: true },
-      select: { id: true },
+    return withDbCircuit(async () => {
+      const prisma = await loadPrisma()
+      const user = await prisma.users.findFirst({
+        where: { email, isAgentic: true },
+        select: { id: true },
+      })
+      return user?.id ?? null
     })
-    return user?.id ?? null
   },
 
   async findCreatorUserId(agentId) {
-    const prisma = await loadPrisma()
-    // A forged vessel's public id lives in the blueprint JSON (`app/api/create-agent`); the
-    // row's own cuid is matched too. Oldest first, so a re-forged id keeps its original creator.
-    const vessel = await prisma.created_agents.findFirst({
-      where: {
-        creatorId: { not: null },
-        OR: [{ id: agentId }, { blueprint: { path: ['agentId'], equals: agentId } }],
-      },
-      orderBy: { createdAt: 'asc' },
-      select: { creatorId: true },
+    return withDbCircuit(async () => {
+      const prisma = await loadPrisma()
+      // A forged vessel's public id lives in the blueprint JSON (`app/api/create-agent`); the
+      // row's own cuid is matched too. Oldest first, so a re-forged id keeps its original creator.
+      const vessel = await prisma.created_agents.findFirst({
+        where: {
+          creatorId: { not: null },
+          OR: [{ id: agentId }, { blueprint: { path: ['agentId'], equals: agentId } }],
+        },
+        orderBy: { createdAt: 'asc' },
+        select: { creatorId: true },
+      })
+      return vessel?.creatorId ?? null
     })
-    return vessel?.creatorId ?? null
   },
 
   async findBalanceRow(userId) {
-    const prisma = await loadPrisma()
-    return prisma.tokenBalance.findUnique({
-      where: { userId },
-      select: { spirit: true, essence: true, matter: true, substance: true },
+    return withDbCircuit(async () => {
+      const prisma = await loadPrisma()
+      return prisma.tokenBalance.findUnique({
+        where: { userId },
+        select: { spirit: true, essence: true, matter: true, substance: true },
+      })
     })
   },
 }

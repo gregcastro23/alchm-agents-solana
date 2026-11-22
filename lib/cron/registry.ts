@@ -53,6 +53,7 @@ const TRAITS: Record<string, { callsWten: boolean; callsModel: boolean }> = {
   'agents/refresh-reservoirs': { callsWten: false, callsModel: false },
   'agents/announce-weekly-feature': { callsWten: true, callsModel: false },
   'agents/weekly-menu': { callsWten: true, callsModel: true },
+  'system-health-snapshot': { callsWten: true, callsModel: false },
 }
 
 export function jobNameForPath(path: string): string {

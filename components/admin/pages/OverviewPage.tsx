@@ -1,24 +1,18 @@
 'use client'
 
-import { useCallback, useMemo } from 'react'
+import Link from 'next/link'
+import { useRef, useState } from 'react'
 import CosmicTelemetryPanel from '@/components/admin/panels/CosmicTelemetryPanel'
 import SystemPulsePanel, { type PulsePayload } from '@/components/admin/panels/SystemPulsePanel'
+import { useAdminLiveStream, type StreamConnectionState } from '@/hooks/useAdminLiveStream'
+import { ADMIN_NAV, adminHref } from '@/lib/admin/nav'
 import { LegacyEnvelopeSchema, type DashboardPayload } from '@/lib/admin/page-schemas'
-import { VesselRatingRibbon } from '@/components/vessel/pentacle-rating-display'
-import { rateStats, evaluateSeals, earnedSeals, type CoreStats } from '@/lib/agents/rating'
 import { AdminFrame } from './AdminFrame'
+import { OperationsControlPlane } from './OperationsControlPlane'
 import { ProgressionOverview } from './ProgressionOverview'
-import { useAdminNavigate, useDashboard } from './hooks'
-import {
-  Card,
-  LoadState,
-  Read,
-  Stat,
-  Unknown,
-  formatAgo,
-  num,
-  useValidatedPoll,
-} from './primitives'
+import { PulseStrip } from './PulseStrip'
+import { useAdminNavigate } from './hooks'
+import { Card, Read, Stat, Unknown, formatAgo, num, useValidatedPoll } from './primitives'
 
 function reasonOf(section: { ok: boolean; reason?: string }) {
   return section.ok ? '' : (section.reason ?? 'unreadable')
@@ -30,62 +24,8 @@ export function OverviewView({ data }: { data: DashboardPayload }) {
   const harmonyComplete =
     h && h.spirit !== null && h.essence !== null && h.matter !== null && h.substance !== null
 
-  const getConsultedAgentPvr = useCallback((id: string, interactions: number) => {
-    let hash = 0
-    for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) >>> 0
-    const consultBoost = Math.min(18, Math.round(Math.log10(Math.max(10, interactions + 10)) * 5))
-    const stats: CoreStats = {
-      power: Math.min(99, 68 + (hash % 18) + consultBoost),
-      resonance: Math.min(99, 70 + ((hash >> 3) % 18) + consultBoost),
-      wisdom: Math.min(99, 72 + ((hash >> 6) % 18) + consultBoost),
-      charisma: Math.min(99, 69 + ((hash >> 9) % 18) + consultBoost),
-      intuition: Math.min(99, 71 + ((hash >> 12) % 18) + consultBoost),
-      adaptability: Math.min(99, 68 + ((hash >> 15) % 18) + consultBoost),
-      vitality: Math.min(99, 70 + ((hash >> 18) % 18) + consultBoost),
-    }
-    return rateStats(stats).ovr
-  }, [])
-
-  const overviewRating = useMemo(() => {
-    const sp = h?.spirit ?? 72
-    const es = h?.essence ?? 74
-    const ma = h?.matter ?? 70
-    const su = h?.substance ?? 73
-    const stats: CoreStats = {
-      power: Math.min(99, Math.max(66, Math.round(sp))),
-      resonance: Math.min(99, Math.max(66, Math.round(es))),
-      wisdom: Math.min(99, Math.max(68, Math.round(su))),
-      charisma: Math.min(99, Math.max(66, Math.round((sp + es) / 2))),
-      intuition: Math.min(99, Math.max(68, Math.round((es + su) / 2))),
-      adaptability: Math.min(99, Math.max(66, Math.round((su + ma) / 2))),
-      vitality: Math.min(99, Math.max(66, Math.round(ma))),
-    }
-    const sealProgress = evaluateSeals({
-      stats,
-      esmsBalances: {
-        spirit: Math.max(40, Math.round(sp)),
-        essence: Math.max(40, Math.round(es)),
-        matter: Math.max(40, Math.round(ma)),
-        substance: Math.max(40, Math.round(su)),
-      },
-    })
-    const seals = earnedSeals(sealProgress)
-    const rated = rateStats(stats)
-    return {
-      ovr: rated.ovr,
-      archetype: rated.archetype,
-      seals,
-    }
-  }, [h?.spirit, h?.essence, h?.matter, h?.substance])
-
   return (
     <>
-      <VesselRatingRibbon
-        ovr={overviewRating.ovr}
-        archetype={overviewRating.archetype}
-        seals={overviewRating.seals}
-        compact
-      />
       <div className="grid grid-cols-2 gap-3 xl:grid-cols-4">
         <Stat
           label="Users"
@@ -164,13 +104,8 @@ export function OverviewView({ data }: { data: DashboardPayload }) {
                     return (
                       <li key={a.id}>
                         <div className="flex justify-between gap-3">
-                          <span className="inline-flex items-center gap-1.5 truncate text-zinc-100">
-                            <span>
-                              {i + 1}. {a.name}
-                            </span>
-                            <span className="rounded border border-amber-400/35 bg-amber-500/15 px-1.5 py-0.5 font-mono text-[10px] font-bold text-amber-300">
-                              PVR {getConsultedAgentPvr(a.id, a.interactions)}
-                            </span>
+                          <span className="truncate text-zinc-100">
+                            {i + 1}. {a.name}
                           </span>
                           <span className="tabular-nums text-zinc-300">
                             {a.interactions.toLocaleString('en-US')}
@@ -224,27 +159,227 @@ export function OverviewView({ data }: { data: DashboardPayload }) {
   )
 }
 
-export function OverviewPage() {
+const STREAM_BADGE: Record<StreamConnectionState, { icon: string; label: string; style: string }> =
+  {
+    connecting: {
+      icon: '◌',
+      label: 'Connecting SSE',
+      style: 'border-white/15 bg-zinc-900 text-zinc-300',
+    },
+    live: {
+      icon: '●',
+      label: 'Live SSE',
+      style: 'border-emerald-400/40 bg-emerald-500/10 text-emerald-200',
+    },
+    reconnecting: {
+      icon: '↻',
+      label: 'Reconnecting',
+      style: 'border-sky-400/40 bg-sky-500/10 text-sky-200',
+    },
+    polling: {
+      icon: '◐',
+      label: 'Polling fallback',
+      style: 'border-amber-400/40 bg-amber-500/10 text-amber-200',
+    },
+    paused: {
+      icon: '⏸',
+      label: 'Paused (tab hidden)',
+      style: 'border-zinc-500/40 bg-zinc-800/70 text-zinc-300',
+    },
+    error: {
+      icon: '✕',
+      label: 'Stream error',
+      style: 'border-rose-400/45 bg-rose-500/10 text-rose-200',
+    },
+  }
+
+type OverviewTabId = 'core' | 'digest' | 'consoles'
+
+const OVERVIEW_TABS: Array<{ id: OverviewTabId; label: string }> = [
+  { id: 'core', label: 'Core Metrics & Roster' },
+  { id: 'digest', label: 'Subsystem Digest (14)' },
+  { id: 'consoles', label: 'Console Launchers' },
+]
+
+/** Lazy-mounted only when the operator activates the Subsystem Digest tab. */
+function SubsystemDigestTab() {
   const navigate = useAdminNavigate()
   const pulse = useValidatedPoll('/api/admin/alerts', LegacyEnvelopeSchema, 120_000)
-  const dashboard = useDashboard()
-  const data = dashboard.data
+
+  return (
+    <SystemPulsePanel
+      data={pulse.loaded.state === 'ok' ? (pulse.loaded.data as unknown as PulsePayload) : null}
+      loading={pulse.loaded.state === 'loading'}
+      error={pulse.loaded.state === 'error' ? pulse.loaded.reason : null}
+      onRetry={pulse.refresh}
+      onNavigate={navigate}
+    />
+  )
+}
+
+export function OverviewPage() {
+  const { data: pulse, error, updatedAt, connectionState, refreshNow } = useAdminLiveStream()
+  const [activeTab, setActiveTab] = useState<OverviewTabId>('core')
+  const tabRefs = useRef<Array<HTMLButtonElement | null>>([])
+
+  const streamMeta = STREAM_BADGE[connectionState]
+
+  const onTabKeyDown = (idx: number, e: React.KeyboardEvent<HTMLButtonElement>) => {
+    let nextIdx: number | null = null
+    if (e.key === 'ArrowRight') {
+      nextIdx = (idx + 1) % OVERVIEW_TABS.length
+    } else if (e.key === 'ArrowLeft') {
+      nextIdx = (idx - 1 + OVERVIEW_TABS.length) % OVERVIEW_TABS.length
+    } else if (e.key === 'Home') {
+      nextIdx = 0
+    } else if (e.key === 'End') {
+      nextIdx = OVERVIEW_TABS.length - 1
+    }
+    if (nextIdx === null) return
+    e.preventDefault()
+    const target = OVERVIEW_TABS[nextIdx]
+    if (!target) return
+    setActiveTab(target.id)
+    tabRefs.current[nextIdx]?.focus()
+  }
+
   return (
     <AdminFrame
       title="Overview"
-      description="What is wrong right now across every subsystem, then the headline numbers."
-      updated={data ? `Read ${formatAgo(data.generatedAt)}` : undefined}
+      description="Live operations control plane, provenance-tracked telemetry stream, and deep-dive fleet views."
+      statusSlot={
+        <div className="flex items-center gap-2">
+          <span
+            className={`inline-flex items-center gap-1.5 rounded-md border px-2 py-1 font-mono text-[11px] ${streamMeta.style}`}
+          >
+            <span aria-hidden="true">{streamMeta.icon}</span>
+            <span>{streamMeta.label}</span>
+          </span>
+          <button
+            type="button"
+            onClick={() => void refreshNow()}
+            className="rounded-md border border-white/15 bg-zinc-900 px-2.5 py-1 text-xs text-zinc-200 hover:border-white/30 hover:bg-zinc-800"
+          >
+            Refresh
+          </button>
+        </div>
+      }
+      updated={updatedAt ? `Read ${formatAgo(new Date(updatedAt).toISOString())}` : undefined}
     >
-      <SystemPulsePanel
-        data={pulse.loaded.state === 'ok' ? (pulse.loaded.data as unknown as PulsePayload) : null}
-        loading={pulse.loaded.state === 'loading'}
-        error={pulse.loaded.state === 'error' ? pulse.loaded.reason : null}
-        onRetry={pulse.refresh}
-        onNavigate={navigate}
-      />
-      <ProgressionOverview />
-      <LoadState loaded={dashboard.loaded} onRetry={dashboard.refresh} />
-      {data && <OverviewView data={data} />}
+      {error && !pulse && (
+        <div
+          role="alert"
+          className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-rose-400/40 bg-rose-500/10 px-4 py-3 text-xs text-rose-200"
+        >
+          <span>{error}</span>
+          <button
+            type="button"
+            onClick={() => void refreshNow()}
+            className="rounded border border-rose-300/40 px-2.5 py-1 font-semibold hover:bg-rose-500/20"
+          >
+            Retry
+          </button>
+        </div>
+      )}
+
+      {!pulse ? (
+        <div className="rounded-2xl border border-white/10 bg-zinc-900/50 p-6 text-sm text-zinc-400">
+          Connecting to live operations control plane stream…
+        </div>
+      ) : (
+        <>
+          <PulseStrip pulse={pulse} />
+          <OperationsControlPlane pulse={pulse} />
+
+          <section aria-label="Detailed telemetry tabs" className="space-y-4">
+            <div
+              role="tablist"
+              aria-label="Overview deep dive views"
+              className="flex flex-nowrap gap-1 overflow-x-auto border-b border-white/10"
+            >
+              {OVERVIEW_TABS.map((tab, idx) => {
+                const selected = activeTab === tab.id
+                return (
+                  <button
+                    key={tab.id}
+                    ref={el => {
+                      tabRefs.current[idx] = el
+                    }}
+                    id={`overview-tab-${tab.id}`}
+                    role="tab"
+                    type="button"
+                    aria-selected={selected}
+                    aria-controls={`overview-panel-${tab.id}`}
+                    tabIndex={selected ? 0 : -1}
+                    onClick={() => setActiveTab(tab.id)}
+                    onKeyDown={e => onTabKeyDown(idx, e)}
+                    className={`shrink-0 border-b-2 px-3.5 py-2.5 text-xs font-medium transition focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 ${
+                      selected
+                        ? 'border-amber-400 text-amber-200'
+                        : 'border-transparent text-zinc-400 hover:border-white/20 hover:text-zinc-200'
+                    }`}
+                  >
+                    {tab.label}
+                  </button>
+                )
+              })}
+            </div>
+
+            <div
+              id="overview-panel-core"
+              role="tabpanel"
+              aria-labelledby="overview-tab-core"
+              hidden={activeTab !== 'core'}
+              className="space-y-5"
+            >
+              <ProgressionOverview />
+              <OverviewView data={pulse.dashboard} />
+            </div>
+
+            <div
+              id="overview-panel-digest"
+              role="tabpanel"
+              aria-labelledby="overview-tab-digest"
+              hidden={activeTab !== 'digest'}
+            >
+              {activeTab === 'digest' && <SubsystemDigestTab />}
+            </div>
+
+            <div
+              id="overview-panel-consoles"
+              role="tabpanel"
+              aria-labelledby="overview-tab-consoles"
+              hidden={activeTab !== 'consoles'}
+            >
+              <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-3">
+                {ADMIN_NAV.map(group => (
+                  <div
+                    key={group.group}
+                    className="rounded-xl border border-white/10 bg-zinc-900/50 p-4"
+                  >
+                    <h4 className="text-xs font-semibold uppercase tracking-wider text-zinc-400">
+                      {group.group}
+                    </h4>
+                    <ul className="mt-2.5 space-y-2">
+                      {group.items.map(item => (
+                        <li key={item.href}>
+                          <Link
+                            href={adminHref(item.href)}
+                            className="block rounded-lg border border-white/5 bg-zinc-950/60 px-3 py-2 text-xs hover:border-white/20"
+                          >
+                            <div className="font-semibold text-zinc-100">{item.label}</div>
+                            <div className="text-[11px] text-zinc-400">{item.href}</div>
+                          </Link>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            </div>
+          </section>
+        </>
+      )}
     </AdminFrame>
   )
 }

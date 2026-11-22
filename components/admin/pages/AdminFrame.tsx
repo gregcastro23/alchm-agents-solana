@@ -3,6 +3,7 @@
 import Link from 'next/link'
 import { usePathname } from 'next/navigation'
 import type { ReactNode } from 'react'
+import { AdminCommandPalette } from '@/components/admin/AdminCommandPalette'
 import { ADMIN_NAV } from '@/lib/admin/nav'
 import { cn } from '@/lib/utils'
 
@@ -47,17 +48,25 @@ export function AdminFrame({
   title,
   description,
   updated,
+  statusSlot,
   children,
 }: {
   title: string
   description: ReactNode
   updated?: ReactNode
+  statusSlot?: ReactNode
   children: ReactNode
 }) {
   const pathname = usePathname()
   const current = ADMIN_NAV.flatMap(g => g.items).find(i => i.href === pathname)
   return (
     <main className="min-h-screen overflow-x-hidden bg-zinc-950 text-zinc-100">
+      <a
+        href="#admin-main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-4 focus:top-4 focus:z-50 focus:rounded-lg focus:border focus:border-amber-400/50 focus:bg-zinc-900 focus:px-3 focus:py-2 focus:text-xs focus:font-semibold focus:text-amber-100"
+      >
+        Skip to main content
+      </a>
       <div className="mx-auto grid max-w-[1400px] gap-6 px-4 py-6 lg:grid-cols-[210px_minmax(0,1fr)] lg:px-6">
         <nav aria-label="Admin sections" className="min-w-0">
           {/* Phones get a disclosure so twenty links don't push the page below the fold. */}
@@ -74,13 +83,17 @@ export function AdminFrame({
             <NavList pathname={pathname} />
           </div>
         </nav>
-        <div className="min-w-0 space-y-5">
+        <div id="admin-main-content" tabIndex={-1} className="min-w-0 space-y-5 focus:outline-none">
           <header className="flex flex-wrap items-end justify-between gap-3">
             <div className="min-w-0">
               <h1 className="text-xl font-semibold text-zinc-50">{title}</h1>
               <p className="mt-1 max-w-3xl text-sm text-zinc-400">{description}</p>
             </div>
-            {updated && <div className="text-xs text-zinc-400">{updated}</div>}
+            <div className="flex flex-wrap items-center gap-2.5">
+              {statusSlot}
+              {updated && <div className="text-xs text-zinc-400">{updated}</div>}
+              <AdminCommandPalette />
+            </div>
           </header>
           {children}
         </div>

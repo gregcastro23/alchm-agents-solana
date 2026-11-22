@@ -481,25 +481,28 @@ export async function GET(_req: NextRequest) {
     })
   }
 
-  return NextResponse.json({
-    success: true,
-    generatedAt: now.toISOString(),
-    supply: supply.data,
-    flow: flow.data,
-    chain: chain.data,
-    subscriptions: subscriptions.data,
-    solana: solana.data,
-    pricing,
-    /** Sections that could not be read, so the panel can say so explicitly. */
-    degraded: Object.entries({
-      supply: supply.error,
-      flow: flow.error,
-      chain: chain.error,
-      subscriptions: subscriptions.error,
-      solana: solana.error,
-    })
-      .filter(([, error]) => error)
-      .map(([name, error]) => ({ section: name, error: error as string })),
-    alerts: sortAlerts(alerts),
-  })
+  return NextResponse.json(
+    {
+      success: true,
+      generatedAt: now.toISOString(),
+      supply: supply.data,
+      flow: flow.data,
+      chain: chain.data,
+      subscriptions: subscriptions.data,
+      solana: solana.data,
+      pricing,
+      /** Sections that could not be read, so the panel can say so explicitly. */
+      degraded: Object.entries({
+        supply: supply.error,
+        flow: flow.error,
+        chain: chain.error,
+        subscriptions: subscriptions.error,
+        solana: solana.error,
+      })
+        .filter(([, error]) => error)
+        .map(([name, error]) => ({ section: name, error: error as string })),
+      alerts: sortAlerts(alerts),
+    },
+    { headers: { 'Cache-Control': 'no-store' } }
+  )
 }
