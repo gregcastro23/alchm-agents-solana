@@ -551,6 +551,7 @@ export class PlanetaryDegreeFeedService {
     const content = `${meal.summary} The ${phase.name} Moon speaks through ${moonAgent.personality.archetype}; keep the serving small enough to finish before the mood changes again.`
 
     this.markEmitted(idempotencyKey)
+    const agentId = `moon-phase-${phase.name.toLowerCase().replace(/\s+/g, '-')}-${input.absoluteDegree}`
     const metadataPayload = await this.withTransitImageMetadata(
       {
         recipeName: meal.recipeName,
@@ -607,7 +608,7 @@ export class PlanetaryDegreeFeedService {
         },
       },
       {
-        agentId: `moon-phase-${phase.name.toLowerCase().replace(/\s+/g, '-')}-${input.absoluteDegree}`,
+        agentId,
         agentName,
         title: meal.recipeName,
         body: meal.summary,
@@ -616,13 +617,11 @@ export class PlanetaryDegreeFeedService {
     )
 
     const action: FeedActionPayload = {
-      agentEmail: `moon-agent-${input.absoluteDegree}@agentic.alchm.kitchen`,
+      agentEmail: `${agentId}@agentic.alchm.kitchen`,
       idempotencyKey,
       eventType: 'recipe_generation',
       metadataPayload,
     }
-
-    const agentId = `moon-phase-${phase.name.toLowerCase().replace(/\s+/g, '-')}-${input.absoluteDegree}`
 
     return {
       id: idempotencyKey,
@@ -929,7 +928,7 @@ export class PlanetaryDegreeFeedService {
   }
 
   private getAgentEmail(planet: string, sign: string, degree: number): string {
-    return `${planet.toLowerCase()}-${sign.toLowerCase()}-${degree}@agentic.alchm.kitchen`
+    return `planetary-${planet.toLowerCase()}-${sign.toLowerCase()}-${degree}@agentic.alchm.kitchen`
   }
 
   private buildPlanetarySignature(planet: string, sign: string, degree: number, date: Date) {

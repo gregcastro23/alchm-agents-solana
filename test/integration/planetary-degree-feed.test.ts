@@ -93,5 +93,10 @@ describe('Planetary degree feed responses', () => {
       'planetary_degree_transit_meal',
       'moon_phase_transit_meal',
     ])
+    expect(messages[0]?.action.agentEmail).toBe('planetary-sun-taurus-22@agentic.alchm.kitchen')
+    expect(messages[1]?.action.agentEmail).toBe('planetary-moon-pisces-18@agentic.alchm.kitchen')
+    expect(messages[2]?.agentId).toMatch(/^moon-phase-/)
+    expect(messages[2]?.action.agentEmail).toBe(`${messages[2]?.agentId}@agentic.alchm.kitchen`)
+    expect(messages[2]?.action.agentEmail).not.toMatch(/^moon-agent-/)
   })
 })
