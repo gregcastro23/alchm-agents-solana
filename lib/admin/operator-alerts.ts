@@ -2,6 +2,7 @@ import 'server-only'
 
 import { getConfiguredAdminEmails } from '@/lib/admin/admin-emails'
 import type { AdminAlert } from '@/lib/admin/alerts'
+import { CANONICAL_AGENTS_ORIGIN, resolveSelfOrigin } from '@/lib/self-origin'
 
 /**
  * Operator alert delivery, state-transition classification, and sustained
@@ -92,9 +93,8 @@ export function getAlertDeliveryStatus(env: NodeJS.ProcessEnv = process.env): Al
 
   const siteBase = (
     env.NEXT_PUBLIC_SITE_URL ||
-    env.NEXT_PUBLIC_APP_URL ||
-    (env.VERCEL_URL ? `https://${env.VERCEL_URL}` : '') ||
-    'https://agents.alchm.kitchen'
+    resolveSelfOrigin(env) ||
+    CANONICAL_AGENTS_ORIGIN
   ).replace(/\/$/, '')
 
   return {
