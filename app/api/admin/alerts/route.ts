@@ -9,7 +9,7 @@ import {
   sortAlerts,
   type AdminAlert,
 } from '@/lib/admin/alerts'
-import { __clearAdminCache, memoizeAdmin, withConcurrencyLimit } from '@/lib/admin/memory-cache'
+import { memoizeAdmin, withConcurrencyLimit } from '@/lib/admin/memory-cache'
 import { minutesSince } from '@/lib/admin/serialize'
 
 export const dynamic = 'force-dynamic'
@@ -46,10 +46,6 @@ const SUBSYSTEMS = [
 const SUBSYSTEM_TIMEOUT_MS = 15_000
 const SUBSYSTEM_CONCURRENCY = 4
 const ALERTS_CACHE_TTL_MS = 15_000
-
-export function __resetAlertsCache(): void {
-  __clearAdminCache()
-}
 
 function originFrom(req: NextRequest): string {
   const forwardedHost = req.headers.get('x-forwarded-host') || req.headers.get('host')
