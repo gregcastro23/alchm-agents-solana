@@ -37,6 +37,21 @@ import { pastBudget } from '@/lib/cron/registry'
 import { syncDebitToAlchm } from '@/lib/alchm-debit-sync'
 import { syncCreditToAlchm } from '@/lib/alchm-credit-sync'
 import { syncEventToAlchm } from '@/lib/alchm-event-sync'
+import {
+  MAX_WTEN_BALANCE_PROBES_PER_TICK,
+  computeWtenPauseUntilMs,
+  getLatestWtenCreditSignal,
+  isUnderfundedDebitRefusal,
+  isWtenSnapshotExpired,
+  nextWtenGateSeq,
+  normalizeAgentEmail,
+  normalizeWtenBalances,
+  probeWtenBalanceByEmail,
+  recordWtenCreditSignal,
+  wtenSnapshotToTokenBalances,
+  type WtenAgentGateState,
+  type WtenAutoSwapDetails,
+} from '@/lib/economy/wten-agent-balance-gate'
 import { feedPusherService } from '@/lib/agents/feed-pusher'
 import { isEconomyWallet } from '@/lib/agents/agent-type-model'
 import { WTENEventType } from '@/lib/agents/feed-activation-engine'
@@ -79,6 +94,8 @@ export interface ActivationResult {
   score: number
   activated: boolean
   triggers: string[]
+  /** Reason an otherwise-resonating agent (`score >= AGENT_ACTIVATION_THRESHOLD`) was skipped in pre-check. */
+  skipReason?: 'wten_402_cooldown' | 'wten_insufficient_balance' | 'local_insufficient_balance'
   planetarySignature?: PlanetarySignature
   agentProfile?: any
 }
@@ -124,6 +141,12 @@ export interface TickSummary {
   actionsExecuted: number
   /** Activated agents not acted on because the cron's time budget ran out. */
   skippedForBudget: number
+  /** Resonating agents skipped because of an active post-402 (`insufficient_funds`) cooldown. */
+  skippedFor402Cooldown: number
+  /** Resonating agents skipped because WTEN's authoritative balance snapshot cannot cover action cost. */
+  skippedForWtenBalance: number
+  /** Bounded `GET /api/economy/balance` probes issued for agents whose cooldown expired. */
+  wtenBalanceProbes: number
   activations: ActivationResult[]
   errors: Array<{ userId: string; error: string }>
 }
@@ -303,8 +326,30 @@ function canAffordAction(
   return balanceValue >= costValue
 }
 
+function canAgentAffordAnyAction(
+  agentEmail: string,
+  balances: TokenBalances,
+  prices: ActionPrices | null
+): boolean {
+  const specializedAction = SPECIALIZED_AGENT_ACTIONS.find(action =>
+    agentEmail.includes(action.emailFragment)
+  )
+  if (specializedAction) {
+    const cost = AGENT_OPERATION_COSTS[specializedAction.operationKey] || {}
+    return canAffordAction(balances, cost, prices)
+  }
+  const feedPostCost = AGENT_OPERATION_COSTS['agent_feed_post'] || {}
+  const transmutationCost = AGENT_OPERATION_COSTS['agent_transmutation'] || {}
+  return (
+    canAffordAction(balances, feedPostCost, prices) ||
+    canAffordAction(balances, transmutationCost, prices)
+  )
+}
+
 export class AgentActionService {
   private hourCalc = new PlanetaryHourCalculator()
+  private wtenStateByEmail = new Map<string, WtenAgentGateState>()
+  private lastTickProbeCount = 0
 
   // -----------------------------------------------------------------------
   // 1. Daily Yield
@@ -508,6 +553,9 @@ export class AgentActionService {
     })
 
     // 3. Post-transaction external sync (outside row locks)
+    recordWtenCreditSignal({ userId, userEmail: email })
+    this.wtenStateByEmail.delete(normalizeAgentEmail(email))
+
     if (agent?.isAgentic) {
       console.log(
         `[AgentActionService] Syncing chart-ratio yield for ${email} to alchm.kitchen ` +
@@ -515,13 +563,32 @@ export class AgentActionService {
       )
 
       try {
-        await syncCreditToAlchm({
+        const syncRes = await syncCreditToAlchm({
           userEmail: email,
           amounts: this.toFixedAmounts(amounts),
           source: 'agents_yield',
           idempotencyKey: `daily:agents:sync:${email}:${dateStr}`,
           metadata: { agentName: `${agent.name ?? email.split('@')[0]} ` },
         })
+        const syncedBalances = normalizeWtenBalances(syncRes?.balances)
+        if (syncRes?.ok) {
+          const nowMs = Date.now()
+          recordWtenCreditSignal({
+            userId,
+            userEmail: email,
+            balances: syncedBalances,
+            nowMs,
+          })
+          if (syncedBalances) {
+            this.wtenStateByEmail.set(normalizeAgentEmail(email), {
+              balances: syncedBalances,
+              observedAtMs: nowMs,
+              pausedBy402: false,
+              pauseUntilMs: computeWtenPauseUntilMs(nowMs),
+              seq: nextWtenGateSeq(),
+            })
+          }
+        }
       } catch (err) {
         console.error('[AgentActionService] Failed syncing credit to alchm.kitchen:', err)
       }
@@ -537,9 +604,16 @@ export class AgentActionService {
    * weather and return activation results. If an agent's score exceeds
    * `AGENT_ACTIVATION_THRESHOLD`, they are flagged for action.
    */
-  async evaluateAgentActivations(prices: ActionPrices | null = null): Promise<ActivationResult[]> {
+  async evaluateAgentActivations(
+    prices: ActionPrices | null = null,
+    options: { deadlineMs?: number } = {}
+  ): Promise<ActivationResult[]> {
+    this.lastTickProbeCount = 0
     const agenticUsers = await this.getActiveAgenticUsers()
     const now = new Date()
+    const nowMs = now.getTime()
+
+    await this.hydrateWtenStatesFromDb(agenticUsers)
 
     // Current sky state
     const currentPositions = getCurrentPlanetaryPositions(now)
@@ -564,34 +638,68 @@ export class AgentActionService {
       )
 
       let activated = score >= AGENT_ACTIVATION_THRESHOLD
+      let skipReason: ActivationResult['skipReason']
 
       if (activated) {
-        const balances = await EconomyService.getBalances(agent.id)
+        let wtenState = this.getEffectiveWtenState(agent.id, agent.email)
 
-        let hasEnoughBalance = false
-        const specializedAction = SPECIALIZED_AGENT_ACTIONS.find(action =>
-          agent.email.includes(action.emailFragment)
-        )
-
-        if (specializedAction) {
-          const cost = AGENT_OPERATION_COSTS[specializedAction.operationKey] || {}
-          if (canAffordAction(balances, cost, prices)) {
-            hasEnoughBalance = true
-          }
-        } else {
-          const feedPostCost = AGENT_OPERATION_COSTS['agent_feed_post'] || {}
-          const transmutationCost = AGENT_OPERATION_COSTS['agent_transmutation'] || {}
-
-          const canAffordFeed = canAffordAction(balances, feedPostCost, prices)
-          const canAffordTransmutation = canAffordAction(balances, transmutationCost, prices)
-
-          if (canAffordFeed || canAffordTransmutation) {
-            hasEnoughBalance = true
+        // When a 402 cooldown or cached WTEN balance snapshot expires (e.g. after
+        // WTEN's 00:30Z daily yield), refresh via a bounded GET /api/economy/balance
+        // probe when configured, or expire the stale snapshot so newly funded agents resume.
+        if (wtenState && isWtenSnapshotExpired(wtenState, nowMs)) {
+          if (
+            !pastBudget(options.deadlineMs) &&
+            this.lastTickProbeCount < MAX_WTEN_BALANCE_PROBES_PER_TICK
+          ) {
+            const probe = await probeWtenBalanceByEmail(agent.email, {
+              deadlineMs: options.deadlineMs,
+            })
+            if (probe.status === 'ok' || probe.status === 'no_balance') {
+              this.lastTickProbeCount++
+              const refreshed: WtenAgentGateState = {
+                eventId: wtenState.eventId,
+                balances: probe.balances,
+                observedAtMs: nowMs,
+                pausedBy402: false,
+                pauseUntilMs: computeWtenPauseUntilMs(nowMs),
+                seq: nextWtenGateSeq(),
+              }
+              this.wtenStateByEmail.set(normalizeAgentEmail(agent.email), refreshed)
+              await this.persistRefreshedWtenSnapshot(refreshed)
+              wtenState = refreshed
+            } else {
+              // Sync secret unconfigured or balance endpoint temporarily unreachable:
+              // clear the expired cooldown so WTEN-side credits are never starved.
+              this.wtenStateByEmail.delete(normalizeAgentEmail(agent.email))
+              wtenState = null
+            }
           }
         }
 
-        if (!hasEnoughBalance) {
-          activated = false
+        if (wtenState?.pausedBy402) {
+          const canCoverWithSnapshot =
+            wtenState.balances !== null &&
+            canAgentAffordAnyAction(
+              agent.email,
+              wtenSnapshotToTokenBalances(wtenState.balances),
+              prices
+            )
+          if (!canCoverWithSnapshot) {
+            activated = false
+            skipReason = 'wten_402_cooldown'
+          }
+        } else if (wtenState?.balances) {
+          const wtenBalances = wtenSnapshotToTokenBalances(wtenState.balances)
+          if (!canAgentAffordAnyAction(agent.email, wtenBalances, prices)) {
+            activated = false
+            skipReason = 'wten_insufficient_balance'
+          }
+        } else {
+          const balances = await EconomyService.getBalances(agent.id)
+          if (!canAgentAffordAnyAction(agent.email, balances, prices)) {
+            activated = false
+            skipReason = 'local_insufficient_balance'
+          }
         }
       }
 
@@ -603,6 +711,7 @@ export class AgentActionService {
         score,
         activated,
         triggers,
+        ...(skipReason ? { skipReason } : {}),
         planetarySignature: this.buildPlanetarySignature(
           natalPositions,
           currentPositions,
@@ -732,8 +841,12 @@ export class AgentActionService {
     const { userId, agentEmail, agentName } = activation
 
     try {
-      // Fetch current balances (local pre-check for action type selection)
-      const balances = await EconomyService.getBalances(userId)
+      // Prefer authoritative WTEN balance snapshot when fresh; otherwise local Prisma balance
+      const activeWtenState = this.getEffectiveWtenState(userId, agentEmail)
+      const balances =
+        activeWtenState?.balances && !isWtenSnapshotExpired(activeWtenState, Date.now())
+          ? wtenSnapshotToTokenBalances(activeWtenState.balances)
+          : await EconomyService.getBalances(userId)
 
       let actionType: string
       let operationKey: string
@@ -821,9 +934,26 @@ export class AgentActionService {
       }
 
       if (!debitResult.ok && debitResult.reason !== 'already_applied') {
-        // Record the failed attempt locally
         const now = new Date()
-        await prisma.agent_action_events.upsert({
+        const nowMs = now.getTime()
+        const underfunded = isUnderfundedDebitRefusal(debitResult)
+        const normalizedBalances = normalizeWtenBalances(debitResult.balances)
+        const pauseUntilMs = underfunded ? computeWtenPauseUntilMs(nowMs) : null
+        const failureMetadata: Record<string, unknown> = {
+          error: debitResult.reason ?? debitResult.error,
+          ...(debitResult.reason ? { reason: debitResult.reason } : {}),
+          ...(underfunded && normalizedBalances
+            ? {
+                wtenBalances: normalizedBalances,
+                wtenBalancesObservedAt: now.toISOString(),
+              }
+            : {}),
+          ...(debitResult.autoSwap ? { autoSwap: debitResult.autoSwap } : {}),
+          ...(pauseUntilMs !== null ? { pauseUntil: new Date(pauseUntilMs).toISOString() } : {}),
+        }
+
+        // Record the failed attempt locally
+        const savedFailure = await prisma.agent_action_events.upsert({
           where: { idempotencyKey },
           create: {
             agentId: userId,
@@ -831,10 +961,11 @@ export class AgentActionService {
             eventType: actionType === 'feed_post' ? 'insight' : actionType,
             triggerType: 'celestial_activation',
             triggerSummary: activation.triggers.slice(0, 3).join(', '),
-            metadataPayload: { error: debitResult.reason ?? debitResult.error },
+            metadataPayload: failureMetadata as Prisma.InputJsonValue,
             score: activation.score,
             idempotencyKey,
             status: 'debit_failed',
+            lastError: debitResult.reason ?? debitResult.error ?? null,
             evaluatedAt: now,
             createdAt: now,
             updatedAt: now,
@@ -842,9 +973,24 @@ export class AgentActionService {
           update: {
             attempts: { increment: 1 },
             status: 'debit_failed',
+            lastError: debitResult.reason ?? debitResult.error ?? null,
+            metadataPayload: failureMetadata as Prisma.InputJsonValue,
             updatedAt: now,
           },
         })
+
+        if (underfunded) {
+          this.wtenStateByEmail.set(normalizeAgentEmail(agentEmail), {
+            eventId: (savedFailure as { id?: string } | null)?.id,
+            balances: normalizedBalances,
+            observedAtMs: nowMs,
+            pausedBy402: true,
+            pauseUntilMs,
+            lastReason: debitResult.reason,
+            autoSwap: debitResult.autoSwap ?? null,
+            seq: nextWtenGateSeq(),
+          })
+        }
 
         return {
           success: false,
@@ -855,7 +1001,20 @@ export class AgentActionService {
 
       // ── Debit succeeded (or was already applied) ─────────────────
       const now = new Date()
-      await prisma.agent_action_events.upsert({
+      const nowMs = now.getTime()
+      const postDebitBalances = normalizeWtenBalances(debitResult.balances)
+      const actionMetadata = this.buildActionMetadata(
+        agentName,
+        actionType,
+        activation,
+        agentProfilePayload
+      )
+      if (postDebitBalances) {
+        actionMetadata.wtenBalances = postDebitBalances
+        actionMetadata.wtenBalancesObservedAt = now.toISOString()
+      }
+
+      const savedSuccess = await prisma.agent_action_events.upsert({
         where: { idempotencyKey },
         create: {
           agentId: userId,
@@ -863,12 +1022,7 @@ export class AgentActionService {
           eventType: actionType,
           triggerType: 'celestial_activation',
           triggerSummary: activation.triggers.slice(0, 3).join(', '),
-          metadataPayload: this.buildActionMetadata(
-            agentName,
-            actionType,
-            activation,
-            agentProfilePayload
-          ),
+          metadataPayload: actionMetadata,
           score: activation.score,
           idempotencyKey,
           status: 'executed',
@@ -880,9 +1034,24 @@ export class AgentActionService {
         update: {
           attempts: { increment: 1 },
           status: 'executed',
+          ...(postDebitBalances ? { metadataPayload: actionMetadata } : {}),
           updatedAt: now,
         },
       })
+
+      const emailKey = normalizeAgentEmail(agentEmail)
+      if (postDebitBalances) {
+        this.wtenStateByEmail.set(emailKey, {
+          eventId: (savedSuccess as { id?: string } | null)?.id,
+          balances: postDebitBalances,
+          observedAtMs: nowMs,
+          pausedBy402: false,
+          pauseUntilMs: computeWtenPauseUntilMs(nowMs),
+          seq: nextWtenGateSeq(),
+        })
+      } else if (this.wtenStateByEmail.get(emailKey)?.pausedBy402) {
+        this.wtenStateByEmail.delete(emailKey)
+      }
 
       // Update the user's activation tracking
       await prisma.users.update({
@@ -971,12 +1140,23 @@ export class AgentActionService {
         console.warn('[AgentActionService] WTEN index unavailable; using per-axis affordability')
       }
     }
-    const activations = await this.evaluateAgentActivations(prices)
+    const activations = await this.evaluateAgentActivations(prices, {
+      deadlineMs: options.deadlineMs,
+    })
+    let skippedFor402Cooldown = 0
+    let skippedForWtenBalance = 0
+    for (const candidate of activations) {
+      if (candidate.skipReason === 'wten_402_cooldown') skippedFor402Cooldown++
+      else if (candidate.skipReason === 'wten_insufficient_balance') skippedForWtenBalance++
+    }
     const summary: TickSummary = {
       evaluatedCount: activations.length,
       activatedCount: 0,
       actionsExecuted: 0,
       skippedForBudget: 0,
+      skippedFor402Cooldown,
+      skippedForWtenBalance,
+      wtenBalanceProbes: this.lastTickProbeCount,
       activations,
       errors: [],
     }
@@ -1014,10 +1194,275 @@ export class AgentActionService {
     console.log(
       `[AgentActionService] Tick: ${summary.evaluatedCount} evaluated, ` +
         `${summary.activatedCount} activated, ${summary.actionsExecuted} actions, ` +
+        `${summary.skippedFor402Cooldown} skipped (402 cooldown), ` +
+        `${summary.skippedForWtenBalance} skipped (WTEN balance), ` +
+        `${summary.wtenBalanceProbes} WTEN probes, ` +
         `${summary.errors.length} errors, ${summary.skippedForBudget} skipped for budget`
     )
 
     return summary
+  }
+
+  // -----------------------------------------------------------------------
+  // WTEN Balance Snapshot & 402 Cooldown Reconciliation
+  // -----------------------------------------------------------------------
+
+  private getEffectiveWtenState(userId: string, agentEmail: string): WtenAgentGateState | null {
+    const emailKey = normalizeAgentEmail(agentEmail)
+    const state = this.wtenStateByEmail.get(emailKey) ?? null
+    const creditSignal = getLatestWtenCreditSignal({ userEmail: agentEmail, userId })
+
+    if (creditSignal) {
+      const creditIsNewer =
+        !state || creditSignal.seq > state.seq || creditSignal.atMs > state.observedAtMs
+      if (creditIsNewer) {
+        if (creditSignal.balances) {
+          const updated: WtenAgentGateState = {
+            eventId: state?.eventId,
+            balances: creditSignal.balances,
+            observedAtMs: creditSignal.atMs,
+            pausedBy402: false,
+            pauseUntilMs: computeWtenPauseUntilMs(creditSignal.atMs),
+            seq: creditSignal.seq,
+          }
+          this.wtenStateByEmail.set(emailKey, updated)
+          return updated
+        }
+        if (state) {
+          this.wtenStateByEmail.delete(emailKey)
+        }
+        return null
+      }
+    }
+
+    return state
+  }
+
+  private async hydrateWtenStatesFromDb(agents: AgenticUser[]): Promise<void> {
+    if (agents.length === 0) return
+    const eventsDelegate = (prisma as any).agent_action_events
+    if (typeof eventsDelegate?.findMany !== 'function') return
+
+    const userIds = agents.map(a => a.id)
+    const emails = Array.from(
+      new Set(agents.flatMap(a => [a.email, normalizeAgentEmail(a.email)]).filter(Boolean))
+    )
+    const emailByUserId = new Map<string, string>(
+      agents.map(a => [a.id, normalizeAgentEmail(a.email)])
+    )
+
+    const txDelegate = (prisma as any).tokenTransaction
+    const balDelegate = (prisma as any).tokenBalance
+
+    const [latestActionEvents, latestTxCredits, latestBalanceClaims, latestEventCredits] =
+      await Promise.all([
+        eventsDelegate
+          .findMany({
+            where: {
+              agentId: { in: userIds },
+              status: { in: ['debit_failed', 'executed'] },
+            },
+            orderBy: { updatedAt: 'desc' },
+            distinct: ['agentId'],
+            select: {
+              id: true,
+              agentId: true,
+              agentEmail: true,
+              status: true,
+              metadataPayload: true,
+              evaluatedAt: true,
+              updatedAt: true,
+            },
+          })
+          .catch(() => []),
+        typeof txDelegate?.groupBy === 'function'
+          ? txDelegate
+              .groupBy({
+                by: ['userId'],
+                where: {
+                  userId: { in: userIds },
+                  amount: { gt: 0 },
+                },
+                _max: { createdAt: true },
+              })
+              .catch(() => [])
+          : Promise.resolve([]),
+        typeof balDelegate?.findMany === 'function'
+          ? balDelegate
+              .findMany({
+                where: { userId: { in: userIds } },
+                select: {
+                  userId: true,
+                  lastDailyClaimAt: true,
+                  lastDailyClaimAgentsAt: true,
+                },
+              })
+              .catch(() => [])
+          : Promise.resolve([]),
+        eventsDelegate
+          .findMany({
+            where: {
+              agentEmail: { in: emails },
+              eventType: { in: ['yield_claim', 'attunement'] },
+            },
+            orderBy: { createdAt: 'desc' },
+            distinct: ['agentEmail'],
+            select: {
+              agentEmail: true,
+              createdAt: true,
+            },
+          })
+          .catch(() => []),
+      ])
+
+    const latestCreditMsByEmail = new Map<string, number>()
+    const recordCreditMs = (emailKey: string | undefined, at: Date | string | null | undefined) => {
+      if (!emailKey || !at) return
+      const ms = at instanceof Date ? at.getTime() : Date.parse(String(at))
+      if (!Number.isFinite(ms)) return
+      const prev = latestCreditMsByEmail.get(emailKey)
+      if (prev === undefined || ms > prev) {
+        latestCreditMsByEmail.set(emailKey, ms)
+      }
+    }
+
+    for (const row of latestTxCredits as Array<{
+      userId: string
+      _max?: { createdAt?: Date | null }
+    }>) {
+      recordCreditMs(emailByUserId.get(row.userId), row._max?.createdAt)
+    }
+
+    for (const row of latestBalanceClaims as Array<{
+      userId: string
+      lastDailyClaimAt?: Date | null
+      lastDailyClaimAgentsAt?: Date | null
+    }>) {
+      const emailKey = emailByUserId.get(row.userId)
+      recordCreditMs(emailKey, row.lastDailyClaimAt)
+      recordCreditMs(emailKey, row.lastDailyClaimAgentsAt)
+    }
+
+    for (const row of latestEventCredits as Array<{
+      agentEmail: string
+      createdAt?: Date | null
+    }>) {
+      recordCreditMs(normalizeAgentEmail(row.agentEmail), row.createdAt)
+    }
+
+    for (const row of latestActionEvents as Array<{
+      id: string
+      agentId: string
+      agentEmail: string
+      status: string
+      metadataPayload: unknown
+      evaluatedAt?: Date | null
+      updatedAt?: Date | null
+    }>) {
+      const emailKey = normalizeAgentEmail(row.agentEmail || emailByUserId.get(row.agentId))
+      if (!emailKey) continue
+
+      const meta =
+        row.metadataPayload && typeof row.metadataPayload === 'object'
+          ? (row.metadataPayload as Record<string, unknown>)
+          : {}
+
+      const parsedObserved =
+        typeof meta.wtenBalancesObservedAt === 'string'
+          ? Date.parse(meta.wtenBalancesObservedAt)
+          : NaN
+      const fallbackObserved =
+        row.updatedAt instanceof Date
+          ? row.updatedAt.getTime()
+          : row.evaluatedAt instanceof Date
+            ? row.evaluatedAt.getTime()
+            : NaN
+      const observedAtMs = Number.isFinite(parsedObserved) ? parsedObserved : fallbackObserved
+      if (!Number.isFinite(observedAtMs)) continue
+
+      const dbCreditMs = latestCreditMsByEmail.get(emailKey)
+      if (dbCreditMs !== undefined && dbCreditMs > observedAtMs) {
+        const existing = this.wtenStateByEmail.get(emailKey)
+        if (existing && existing.observedAtMs <= observedAtMs) {
+          this.wtenStateByEmail.delete(emailKey)
+        }
+        continue
+      }
+
+      const balances = normalizeWtenBalances(meta.wtenBalances)
+      const reason =
+        typeof meta.reason === 'string'
+          ? meta.reason
+          : typeof meta.error === 'string'
+            ? meta.error
+            : undefined
+      const autoSwap =
+        meta.autoSwap && typeof meta.autoSwap === 'object'
+          ? (meta.autoSwap as WtenAutoSwapDetails)
+          : undefined
+      const pausedBy402 =
+        row.status === 'debit_failed' && isUnderfundedDebitRefusal({ ok: false, reason, autoSwap })
+
+      if (!pausedBy402 && !balances) continue
+
+      const parsedPauseUntil =
+        typeof meta.pauseUntil === 'string' ? Date.parse(meta.pauseUntil) : NaN
+      const computedPauseUntil = computeWtenPauseUntilMs(observedAtMs)
+      const pauseUntilMs = pausedBy402
+        ? Number.isFinite(parsedPauseUntil)
+          ? Math.min(parsedPauseUntil, computedPauseUntil)
+          : computedPauseUntil
+        : computedPauseUntil
+
+      const existing = this.wtenStateByEmail.get(emailKey)
+      if (!existing || observedAtMs > existing.observedAtMs) {
+        this.wtenStateByEmail.set(emailKey, {
+          eventId: row.id,
+          balances,
+          observedAtMs,
+          pausedBy402,
+          pauseUntilMs,
+          lastReason: reason,
+          autoSwap: autoSwap ?? null,
+          seq: nextWtenGateSeq(),
+        })
+      }
+    }
+  }
+
+  private async persistRefreshedWtenSnapshot(state: WtenAgentGateState): Promise<void> {
+    if (!state.eventId || !state.balances) return
+    const eventsDelegate = (prisma as any).agent_action_events
+    if (
+      typeof eventsDelegate?.findUnique !== 'function' ||
+      typeof eventsDelegate?.update !== 'function'
+    ) {
+      return
+    }
+    try {
+      const existing = await eventsDelegate.findUnique({
+        where: { id: state.eventId },
+        select: { metadataPayload: true },
+      })
+      const baseMeta =
+        existing?.metadataPayload && typeof existing.metadataPayload === 'object'
+          ? (existing.metadataPayload as Record<string, unknown>)
+          : {}
+      const nextMeta: Record<string, unknown> = {
+        ...baseMeta,
+        wtenBalances: state.balances,
+        wtenBalancesObservedAt: new Date(state.observedAtMs).toISOString(),
+        pauseUntil: state.pauseUntilMs !== null ? new Date(state.pauseUntilMs).toISOString() : null,
+      }
+      await eventsDelegate.update({
+        where: { id: state.eventId },
+        data: {
+          metadataPayload: nextMeta as Prisma.InputJsonValue,
+        },
+      })
+    } catch {
+      // Best-effort snapshot persistence; in-memory state still guards this invocation.
+    }
   }
 
   // -----------------------------------------------------------------------

@@ -18,6 +18,7 @@ import { prisma } from '@/lib/db'
 import { getCurrentPlanetaryPositions } from '@/lib/calculate-transits'
 import { convertSignDegreesToLongitude, angularSeparation } from '@/lib/aspects-dynamics'
 import { syncCreditToAlchm } from '@/lib/alchm-credit-sync'
+import { recordWtenCreditSignal } from '@/lib/economy/wten-agent-balance-gate'
 import {
   isEconomyWallet,
   BESTOW_FRACTION,
@@ -263,6 +264,10 @@ async function attune(
         },
       }),
     ])
+    recordWtenCreditSignal({
+      userId: walletUserId,
+      userEmail: `${agentId}${AGENTIC_DOMAIN}`,
+    })
     return true
   }
 

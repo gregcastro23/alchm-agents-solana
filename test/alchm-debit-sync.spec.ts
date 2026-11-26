@@ -78,4 +78,75 @@ describe('alchm.kitchen debit sync contract', () => {
     })
     expect(fetch).not.toHaveBeenCalled()
   })
+
+  it('forwards authoritative balances and autoSwap shortfall details on 402 insufficient_funds', async () => {
+    const balances = { spirit: 0.2, essence: 0.1, matter: 0.1, substance: 0.09 }
+    const autoSwap = {
+      reason: 'insufficient_value',
+      shortfallValue: 2.51,
+      deficits: { Spirit: 1.8, Essence: 0.9 },
+    }
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          ok: false,
+          reason: 'insufficient_funds',
+          userId: 'remote-user-1',
+          balances,
+          autoSwap,
+        }),
+        { status: 402 }
+      )
+    )
+
+    await expect(syncDebitToAlchm(payload)).resolves.toEqual({
+      ok: false,
+      reason: 'insufficient_funds',
+      userId: 'remote-user-1',
+      balances,
+      autoSwap,
+    })
+  })
+
+  it('preserves non-insufficient_funds 402 reasons and 200 autoSwap metadata verbatim', async () => {
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          ok: false,
+          reason: 'rates_unavailable',
+          userId: 'remote-user-1',
+        }),
+        { status: 402 }
+      )
+    )
+
+    await expect(syncDebitToAlchm(payload)).resolves.toEqual({
+      ok: false,
+      reason: 'rates_unavailable',
+      userId: 'remote-user-1',
+      balances: undefined,
+    })
+
+    const postDebitBalances = { spirit: 4, essence: 2, matter: 1, substance: 1 }
+    vi.mocked(fetch).mockResolvedValueOnce(
+      new Response(
+        JSON.stringify({
+          ok: true,
+          userId: 'remote-user-1',
+          transactionGroupId: 'tx-200',
+          balances: postDebitBalances,
+          autoSwap: null,
+        }),
+        { status: 200 }
+      )
+    )
+
+    await expect(syncDebitToAlchm(payload)).resolves.toEqual({
+      ok: true,
+      userId: 'remote-user-1',
+      transactionGroupId: 'tx-200',
+      balances: postDebitBalances,
+      autoSwap: null,
+    })
+  })
 })

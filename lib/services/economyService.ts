@@ -16,6 +16,7 @@ import {
   resolveAgentNatalData,
   validateLedgerClamp,
 } from '@/lib/services/discriminant-faucet'
+import { recordWtenCreditSignal } from '@/lib/economy/wten-agent-balance-gate'
 import { generateAccurateHoroscope } from '@/lib/monica/horoscope-generator'
 
 export type TransactionSourceType =
@@ -259,7 +260,7 @@ export class EconomyService {
     }
 
     try {
-      return await prisma.$transaction(async tx => {
+      const claimed = await prisma.$transaction(async tx => {
         const balances = await tx.tokenBalance.findUnique({ where: { userId } })
         if (isSameUtcDay(balances?.lastDailyClaimAt?.toISOString())) {
           throw new Error('Already claimed today')
@@ -311,6 +312,8 @@ export class EconomyService {
           },
         }
       })
+      recordWtenCreditSignal({ userId, userEmail: user?.email })
+      return claimed
     } catch (error: any) {
       if (error.code === 'P2002' || error.message === 'Already claimed today') {
         throw new Error('Already claimed today')
@@ -344,7 +347,7 @@ export class EconomyService {
     }
 
     try {
-      return await prisma.$transaction(async tx => {
+      const claimed = await prisma.$transaction(async tx => {
         // Re-check hasClaimedAgentsYieldToday within transaction
         const balances = await tx.tokenBalance.findUnique({ where: { userId } })
         if (isSameUtcDay(balances?.lastDailyClaimAgentsAt?.toISOString())) {
@@ -397,6 +400,8 @@ export class EconomyService {
           },
         }
       })
+      recordWtenCreditSignal({ userId, userEmail: user?.email })
+      return claimed
     } catch (error: any) {
       if (error.code === 'P2002' || error.message === 'Already claimed today') {
         throw new Error('Already claimed today')
@@ -685,7 +690,8 @@ export class EconomyService {
     idempotencyKey?: string
   ) {
     try {
-      return await prisma.$transaction(async tx => {
+      let creditedEmail: string | null = null
+      const result = await prisma.$transaction(async tx => {
         // Upsert balance
         const balances = await tx.tokenBalance.upsert({
           where: { userId },
@@ -740,6 +746,7 @@ export class EconomyService {
           where: { id: userId },
           select: { email: true },
         })
+        creditedEmail = user?.email ?? null
 
         if (user?.email) {
           // Fire-and-forget sync to alchm.kitchen
@@ -776,6 +783,8 @@ export class EconomyService {
           },
         }
       })
+      recordWtenCreditSignal({ userId, userEmail: creditedEmail })
+      return result
     } catch (error: any) {
       console.error('[EconomyService] failed to credit tokens:', error)
       throw error
@@ -1000,9 +1009,10 @@ export class EconomyService {
     }
 
     // 6. Sync credit to alchm.kitchen if active
+    recordWtenCreditSignal({ userId: histUser.id, userEmail: historicalEmail })
     try {
       const { syncCreditToAlchm } = await import('@/lib/alchm-credit-sync')
-      await syncCreditToAlchm({
+      const syncRes = await syncCreditToAlchm({
         userEmail: historicalEmail,
         amounts: {
           spirit: bestow.spirit.toFixed(4),
@@ -1018,6 +1028,13 @@ export class EconomyService {
           amount: totalClaim,
         },
       })
+      if (syncRes?.ok && syncRes.balances) {
+        recordWtenCreditSignal({
+          userId: histUser.id,
+          userEmail: historicalEmail,
+          balances: syncRes.balances,
+        })
+      }
     } catch (syncErr) {
       console.error('[EconomyService] failed to sync yield claim credit to alchm.kitchen:', syncErr)
     }
