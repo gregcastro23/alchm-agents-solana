@@ -73,6 +73,13 @@ export interface SyncDebitPayload {
   }
 }
 
+export interface SyncDebitAutoSwap {
+  reason?: string
+  shortfallValue?: number
+  deficits?: Record<string, number>
+  [key: string]: unknown
+}
+
 export interface SyncDebitResult {
   ok: boolean
   /** alchm.kitchen's own UUID for this agent — present on 200, 402, and 409. Use to build /profile/{userId} links. */
@@ -84,12 +91,14 @@ export interface SyncDebitResult {
     matter: number
     substance: number
   }
+  autoSwap?: SyncDebitAutoSwap | null
   reason?:
     | 'insufficient_funds'
     | 'already_applied'
     | 'user_not_found'
     | 'invalid_request'
     | 'internal_error'
+    | (string & {})
   message?: string
   error?: string
   /** True when env vars are missing and the call was skipped */
@@ -166,6 +175,7 @@ export async function syncDebitToAlchm(payload: SyncDebitPayload): Promise<SyncD
       userId: data.userId,
       transactionGroupId: data.transactionGroupId,
       balances: data.balances,
+      ...(data.autoSwap !== undefined ? { autoSwap: data.autoSwap } : {}),
     }
   }
 
@@ -175,17 +185,26 @@ export async function syncDebitToAlchm(payload: SyncDebitPayload): Promise<SyncD
     return { ok: false, error: delivery.error ?? 'network error' }
   }
 
-  // 402 — insufficient funds
+  // 402 — payment / funds refusal (preserve WTEN's exact reason + autoSwap diagnostics)
   if (delivery.status === 402) {
+    const reason =
+      typeof data?.reason === 'string' && data.reason.trim().length > 0
+        ? data.reason
+        : 'insufficient_funds'
+    const shortfall =
+      typeof data?.autoSwap?.shortfallValue === 'number'
+        ? ` (shortfall: ${data.autoSwap.shortfallValue})`
+        : ''
     console.warn(
-      `[alchm-debit-sync] Insufficient funds for ${payload.userEmail}: ` +
-        `needed ${JSON.stringify(payload.amounts)}, has ${JSON.stringify(data?.balances)}`
+      `[alchm-debit-sync] 402 (${reason}) for ${payload.userEmail}: ` +
+        `needed ${JSON.stringify(payload.amounts)}, has ${JSON.stringify(data?.balances)}${shortfall}`
     )
     return {
       ok: false,
-      reason: 'insufficient_funds',
+      reason,
       userId: data?.userId,
       balances: data?.balances,
+      ...(data?.autoSwap !== undefined ? { autoSwap: data.autoSwap } : {}),
     }
   }
 

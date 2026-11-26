@@ -1,4 +1,5 @@
 import { loadAlchmSyncConfig } from './alchmSyncConfig'
+import { recordWtenCreditSignal } from './economy/wten-agent-balance-gate'
 import { deliverToWten } from './wten/delivery'
 import { TransactionSourceType } from './services/economyService'
 
@@ -68,7 +69,11 @@ export async function syncCreditToAlchm(params: {
   })
 
   if (delivery.outcome === 'already_applied') {
-    // Idempotency hit - treat as success
+    // Idempotency hit - treat as success and wake any paused agent gate
+    recordWtenCreditSignal({
+      userEmail: params.userEmail,
+      balances: delivery.body?.balances,
+    })
     console.log(
       `[alchm-credit-sync] Idempotency hit for ${params.userEmail} (key: ${params.idempotencyKey})`
     )
@@ -83,6 +88,10 @@ export async function syncCreditToAlchm(params: {
     return { ok: false, error: errorMsg }
   }
 
+  recordWtenCreditSignal({
+    userEmail: params.userEmail,
+    balances: delivery.body?.balances,
+  })
   console.log(`[alchm-credit-sync] Credit applied for ${params.userEmail}: ${params.source}`)
   return { ok: true, balances: delivery.body?.balances }
 }
